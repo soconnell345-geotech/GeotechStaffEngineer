@@ -304,7 +304,7 @@ def search_toe_circles(geom: SlopeGeometry,
     from slope_stability.search import (
         _compute_fos, _check_entry_exit, _FOS_MAX, _time_up, _record_not_run,
         _scoring_family, _dips_below_base,
-     _remember_arc, _note_screen_unsolved)
+     _remember_arc, _note_screen_unsolved, _note_screen)
 
     scan_method = ("bishop" if method in _SCREENED_METHODS and fos_fn is None
                    else method)
@@ -566,14 +566,22 @@ def search_toe_circles(geom: SlopeGeometry,
             for _fos, ch, u, h in shortlist[:_MAX_RESCORE_TRIES]:
                 fos, u2 = chord_best(ch, method, (u - u_step, u + u_step))
                 rescored.append((fos, ch, u2, h))
-                if fos >= _FOS_MAX:
-                    # the screen's circle, which the method has no solution
-                    # on: its screen value is reported (GM-140 step 6)
-                    with _scoring_family(family):
+                with _scoring_family(family):
+                    if fos >= _FOS_MAX:
+                        # the screen's circle, which the method has no
+                        # solution on: its screen value is reported
+                        # (GM-140 step 6)
                         _note_screen_unsolved(family_scan[family], _fos)
+                    else:
+                        _note_screen(family_scan[family], _fos, "solved")
                 n_ok += fos < _FOS_MAX
                 if n_ok >= _N_RESCORE:
                     break
+            # the circles the screen scored and did not hand on (the step 6
+            # review's D2: the count says how many were re-scored)
+            with _scoring_family(family):
+                for c in shortlist[len(rescored):]:
+                    _note_screen(family_scan[family], c[0], "screen")
             shortlist = sorted(rescored, key=lambda c: c[0])
         return shortlist
 
@@ -611,8 +619,11 @@ def search_toe_circles(geom: SlopeGeometry,
 def _toe_families(geom, method: str, fos_fn, **kw) -> Dict[str, Any]:
     """`search_toe_circles` by the method named and, for a family the
     method solved none of (it lost trials to non-convergence and scored no
-    circle), by the next method in `search.scoring_order` (Spencer's
-    method, then Janbu's simplified method; GM-140 step 6, item 4). The
+    circle), by the next method in `search.scoring_order` (on circles:
+    Spencer's method, then Bishop's simplified method, then Janbu's
+    simplified method; Bishop's, then Janbu's, where a complete equilibrium
+    method is named; GM-140 step 6, item 4, and the orchestrator's ruling
+    on its review's D1). The
     returned dict is `search_toe_circles`'s, with ``scored_by`` naming the
     method that scored each family. A caller's own per-surface solve
     (``fos_fn``) scores both families and nothing stands in."""
@@ -1199,8 +1210,13 @@ def no_solution_warning(result: SearchResult) -> Optional[str]:
     return (f"The governing family ("
             f"{describe_surface_kind(result.governing_surface)}) left {n} "
             f"trial surface(s) without a solution ({by}): the method did "
-            f"not converge on them, so they were not scored and nothing "
-            f"stood in for the method. A lower surface among them cannot "
+            f"not converge on them, so they were not scored"
+            + (f" (the family was scored by "
+               f"{_method_text(result.method_used)} standing in for the "
+               f"method on its own surfaces: method_used)"
+               if result.method_used else
+               " and nothing stood in for the method")
+            + f". A lower surface among them cannot "
             f"be ruled out (UFC 3-220-10 p. 362: critical failure surfaces "
             f"can be missed as a result of non-convergence). no_solution "
             f"counts them for every family and method. Check with another "
@@ -1497,9 +1513,13 @@ def apply_supplements(geom: SlopeGeometry,
     One method across the search (GM-140 step 6). Every family is scored by
     ``method``, the method named, with the interslice function in force
     (`search.interslice_in_force`); a family the method cannot score is
-    scored by Spencer's method, or by Janbu's simplified method where
-    Spencer's solves none of it (`search.scoring_order`), and reported
-    apart, under the method that scored it (``candidate_methods``). The
+    scored by the next method in `search.scoring_order` (planes and
+    polylines: Spencer's method, then Janbu's simplified method; circles:
+    Spencer's, Bishop's simplified method, Janbu's, or Bishop's then
+    Janbu's where a complete equilibrium method is named), and reported
+    apart, under the method that scored it (``candidate_methods``); a
+    family Janbu's simplified method scores says that its value carries
+    the correction factor f0 (the orchestrator's Q2). The
     reported surface is the lowest over all families; where another method
     than the one named scored it, ``method_used`` and a warning say so and
     ``named_method_lowest`` gives the named method's own lowest value.
@@ -1548,11 +1568,15 @@ def apply_supplements(geom: SlopeGeometry,
     main = result.critical
     candidates: Dict[str, float] = {}
     governing = None                # the record of the surface reported
+    # each family's reported surface, by (family, method), for what is said
+    # of a family Janbu's simplified method stood in on (Q2)
+    surfaces: Dict[Tuple[str, str], Any] = {}
     if main is not None and main.FOS < _FOS_MAX:
         # the solver's 999.9 marker is not an FOS (GM-104)
         candidates[search_kind] = round(main.FOS, 4)
         governing = record(search_kind, main_method, main.FOS,
                            search_kind == CIRCULAR)
+        surfaces[(search_kind, main_method)] = _surface_of(main)
     best_kind, best = search_kind, main
     best_fos = main.FOS if main is not None else _FOS_MAX
     warnings_out: List[str] = []
@@ -1569,6 +1593,8 @@ def apply_supplements(geom: SlopeGeometry,
             m = toe["scored_by"].get(TOE_CIRCLE, method)
             rec = record(TOE_CIRCLE, m, toe["FOS"], True,
                          toe["screens"].get(TOE_CIRCLE))
+            surfaces[(TOE_CIRCLE, m)] = CircularSlipSurface(
+                toe["xc"], toe["yc"], toe["radius"], *(toe.get("arc") or ()))
             if toe["FOS"] < best_fos:
                 r = _make_result(
                     geom, CircularSlipSurface(toe["xc"], toe["yc"],
@@ -1584,6 +1610,9 @@ def apply_supplements(geom: SlopeGeometry,
             m = toe["scored_by"].get(ABOVE_TOE, method)
             rec = record(ABOVE_TOE, m, above["FOS"], True,
                          toe["screens"].get(ABOVE_TOE))
+            surfaces[(ABOVE_TOE, m)] = CircularSlipSurface(
+                above["xc"], above["yc"], above["radius"],
+                *(above.get("arc") or ()))
             if above["FOS"] < best_fos:
                 r = _make_result(
                     geom, CircularSlipSurface(above["xc"], above["yc"],
@@ -1608,6 +1637,7 @@ def apply_supplements(geom: SlopeGeometry,
             # (faces scored by different methods are reported apart)
             for m, by in planar["by_method"].items():
                 rec = record(INFINITE_SLOPE, m, by["FOS"], False)
+                surfaces[(INFINITE_SLOPE, m)] = by.get("slip")
                 if fos_fn is None:
                     # the printed checks' flags on the family's lowest plane
                     rec["flags"] = list(by.get("flags") or [])
@@ -1820,6 +1850,19 @@ def apply_supplements(geom: SlopeGeometry,
             f"candidate_methods gives the method that scored each family "
             f"(EM 1110-2-1902 4-3b(9)(a), p. 4-8: state the method "
             f"used)."))
+    # Janbu's simplified method standing in (the orchestrator's Q2): its
+    # value carries Janbu's correction factor f0, which was not found in
+    # the printed sources searched (the account's D28). The warning gives
+    # f0 and the uncorrected factor of safety on the family's reported
+    # surface; no number changes (D28 keeps the decision).
+    if fos_fn is None:
+        for rec in records:
+            if rec["method"] == "janbu" and not rec["named"]:
+                w = _janbu_stand_in_warning(
+                    geom, rec, method,
+                    surfaces.get((rec["family"], "janbu")), n_slices)
+                if w not in warnings_out:
+                    warnings_out.append(w)
     result.warnings = warnings_out
     result.search_ranges = _ranges_record(
         windows_used, grid_used if search_kind == CIRCULAR else None,
@@ -1990,15 +2033,19 @@ def screen_unsolved_warning(result: SearchResult) -> Optional[str]:
     if not rec:
         return None
     by = "; ".join(
-        f"{_FAMILY_TEXT.get(f, f)}: {r['n']}, lowest "
+        f"{_FAMILY_TEXT.get(f, f)}: {r['n']} of {r['k']} re-scored, "
+        f"{r['N']} scored by the screen, lowest "
         f"{r['lowest_screen_FOS']:.3f} by {_method_text(r['screen'])}"
         for f, r in rec["by_family"].items())
-    head = (f"below the reported {result.critical.FOS:.3f}"
-            if result.critical is not None else
-            "and no surface is reported")
-    return (f"{rec['n']} surface(s) that the screen scored {head} have no "
-            f"solution by {_method_text(result.named_method)} and were not "
-            f"scored by it ({by}; screen_unsolved). The screen's value is "
+    below = (f"below the reported minimum ({result.critical.FOS:.3f})"
+             if result.critical is not None else
+             "(no surface is reported)")
+    return (f"Of the {rec['k']} circle(s) re-scored from the screen's "
+            f"lowest, {rec['n']} have no solution by "
+            f"{_method_text(result.named_method)}; the screen scored "
+            f"{rec['N']} circle(s) {below} in all ({by}; screen_unsolved). "
+            f"The lowest screen value of those with no solution is "
+            f"{rec['lowest_screen_FOS']:.3f}. The screen's value is "
             f"another method's and is not a factor of safety of the method "
             f"named, but a lower surface among them cannot be ruled out "
             f"(UFC 3-220-10 p. 362: critical failure surfaces can be "
@@ -2006,6 +2053,68 @@ def screen_unsolved_warning(result: SearchResult) -> Optional[str]:
             f"with another method, or with a tension crack where the top "
             f"of the surface is in tension (EM 1110-2-1902 C-10c, "
             f"p. C-36).")
+
+
+def stand_in_above_screen_warning(result: SearchResult) -> Optional[str]:
+    """A family scored by a method standing in for the one named that
+    governs above the screen's own lowest value on the same family says
+    so, with both values (the orchestrator's ruling on the step 6 review's
+    D1: a stand-in never governs above the screen's value on its family
+    without the result saying so); else None."""
+    if not result.method_used or result.critical is None:
+        return None
+    rec = ((result.screen_unsolved or {}).get("by_family") or {}).get(
+        result.governing_surface)
+    if not rec:
+        return None
+    low = rec.get("lowest_screen_FOS_all", rec["lowest_screen_FOS"])
+    if low >= result.critical.FOS:
+        return None
+    fam = _FAMILY_TEXT.get(result.governing_surface,
+                           result.governing_surface)
+    return (f"The reported factor of safety, {result.critical.FOS:.3f} "
+            f"({fam}), is by {_method_text(result.method_used)} standing in "
+            f"for {_method_text(result.named_method)}, and it is above the "
+            f"screen's own lowest value on the same family, {low:.3f} by "
+            f"{_method_text(rec['screen'])}, on a circle "
+            f"{_method_text(result.named_method)} has no solution on "
+            f"(screen_unsolved). The screen's value is a run-time device's, "
+            f"not a factor of safety of either method, but the circle it "
+            f"found is not ruled out.")
+
+
+def _janbu_stand_in_warning(geom, rec, named: str, slip,
+                            n_slices: int) -> str:
+    """What a family Janbu's simplified method scored in place of the
+    method named says (the orchestrator's Q2): the value carries Janbu's
+    correction factor f0, f0 was not found in the printed sources searched
+    (the account's D28), f0 on the family's reported surface and the
+    uncorrected factor of safety beside it (also put in ``rec`` as
+    ``janbu_f0`` and ``FOS_uncorrected``)."""
+    from slope_stability.analysis import analyze_slope
+    f0 = fu = None
+    if slip is not None:
+        try:
+            r = analyze_slope(geom, slip_surface=slip, method="janbu",
+                              n_slices=n_slices)
+            f0, fu = r.janbu_f0, r.FOS_janbu_uncorrected
+        except (ValueError, ZeroDivisionError, RuntimeError):
+            pass
+    fam = _FAMILY_TEXT.get(rec["family"], rec["family"])
+    if f0 and fu is not None:
+        rec["janbu_f0"] = round(f0, 4)
+        rec["FOS_uncorrected"] = round(fu, 4)
+        vals = (f"f0 = {f0:.3f} on the reported surface; the uncorrected "
+                f"factor of safety there is {fu:.3f}")
+    else:
+        vals = ("f0 and the uncorrected value could not be found again on "
+                "the reported surface")
+    return (f"Janbu's simplified method stands in for "
+            f"{_method_text(named)} on one family ({fam}, FOS "
+            f"{rec['FOS']:.3f}): its value includes Janbu's correction "
+            f"factor f0 ({vals}). f0 was not found in the printed sources "
+            f"searched (the account's D28); nothing here changes it, and "
+            f"the decision is D28's.")
 
 
 def _method_key(label: str, default: str) -> str:
@@ -2582,10 +2691,12 @@ def search_choices(result: SearchResult, *, surface_type: str,
                 + "the circular search is run first by the method that "
                   "scores the polylines, and its critical circle, as the "
                   "polyline of its slice-base points, is one of the "
-                  "noncircular search's trials (circle_check). EM "
-                  "1110-2-1902 4-2e(2), p. 4-7: the initial surface of a "
-                  "noncircular search should correspond to the estimated "
-                  "critical surface",
+                  "noncircular search's trials (circle_check). The "
+                  "module's own call: no print held gives the rule (EM "
+                  "1110-2-1902 4-2e(2), p. 4-7, says only that the "
+                  "initial position of a noncircular slip surface should "
+                  "correspond to the estimated position of the critical "
+                  "slip surface)",
                 ["not checked (circle_check=False): the result then says "
                  "the noncircular minimum was not checked against a "
                  "circle"] if circle_check else

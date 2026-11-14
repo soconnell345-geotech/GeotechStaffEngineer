@@ -853,8 +853,11 @@ class SearchResult:
     screen_unsolved : dict
         Surfaces a screen by another method scored below the minimum
         reported and the named method had no solution on (UFC 3-220-10
-        p. 362): ``{"n", "lowest_screen_FOS", "by_family"}``; empty when
-        there is none. ``warnings`` says so.
+        p. 362): ``{"n", "k", "N", "lowest_screen_FOS", "by_family"}``,
+        ``n`` of the ``k`` circles re-scored from the screen's lowest
+        having no solution by the method, of ``N`` circles the screen
+        scored below the minimum in all (the step 6 review's D2); empty
+        when there is none. ``warnings`` says so.
     circle_check : dict
         A noncircular search's minimum against the critical circle by the
         same method (GM-140 step 6): ``checked``, the ``circle``,
@@ -1034,10 +1037,12 @@ class SearchResult:
             elif cc:
                 lines.append("  Not checked against a circle")
             if self.screen_unsolved:
+                su = self.screen_unsolved
                 lines.append(
                     f"  Screen values below the minimum on surfaces the "
-                    f"method could not solve: {self.screen_unsolved['n']}, "
-                    f"lowest {self.screen_unsolved['lowest_screen_FOS']:.3f}")
+                    f"method could not solve: {su['n']} of {su.get('k')} "
+                    f"re-scored ({su.get('N')} scored by the screen), "
+                    f"lowest {su['lowest_screen_FOS']:.3f}")
         gl = self.governing_location
         if gl.get("layers"):
             lines.append(f"  Governing surface: x {gl['x_entry']:.2f} to "

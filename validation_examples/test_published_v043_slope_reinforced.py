@@ -180,11 +180,16 @@ def test_v043_sand_no_reinforcement_noncircular():
     de = list(_sand_de())
     # GM-140 step 6: 1.234 (1.237 seed 1) -> 1.194; printed 1.188 (Slide2
     # Verification #39, the sand embankment with no reinforcement,
-    # noncircular Spencer; +0.5 %), 1.192 (Tandjiria; +0.2 %)
+    # noncircular Spencer; +0.5 %), 1.192 (Tandjiria; +0.2 %). 1.194 is the
+    # circle trial's value (the critical circle of the circular search, no
+    # seed, as the polyline of its 30 slice bases): deterministic, so it
+    # is pinned; the seeds' own minima are not (below).
     assert de == pytest.approx([1.194] * 3, abs=0.002)
     for r in _sand_de_results():
         cc = r.circle_check
         assert cc["checked"] and cc["governs"]
+        assert r.candidates["noncircular"] == pytest.approx(
+            cc["FOS_as_polyline"], abs=1e-4)
         # the circle by the same method, and the search's own polylines
         # above it (the known gap of the generator)
         assert cc["circle"]["FOS"] == pytest.approx(1.186, abs=0.002)
@@ -227,8 +232,24 @@ def test_v043_sand_noncircular_reaches_the_published():
     1.233 to 1.237, which the result reports beside the circle
     (`circle_check`). That gap is the generator's, step 7 (D12)."""
     assert statistics.median(_sand_de()) == pytest.approx(1.19, abs=0.04)
+
+
+def test_v043_sand_de_seeds_own_minima_are_a_band_and_repeat():
+    """The polylines differential evolution generates itself (each seed's
+    own minimum, `circle_check.noncircular_minimum`, 1.233 to 1.237 here)
+    are watched as a property, not pinned: no exact number of a stochastic
+    search goes in a test the GitHub run executes (the owner's standing
+    rule; the fix round's Q4). The generator's drift stays watched until
+    step 7 (D12): each seed's own minimum lies in the band 1.22 to 1.25,
+    above the circle trial's 1.194 (the generator's own gap), and the same
+    seed run twice gives the same value."""
     own = [r.circle_check["noncircular_minimum"] for r in _sand_de_results()]
-    assert min(own) > 1.19 + 0.04       # the generator's own gap, stated
+    for v in own:
+        assert 1.22 <= v <= 1.25
+    again = search_critical_surface(
+        _geom("sand"), method="spencer", surface_type="noncircular_de",
+        n_slices=30, seed=1)
+    assert again.circle_check["noncircular_minimum"] == own[0]
 
 
 def test_v043_sand_reinforcement_force_brackets_published():

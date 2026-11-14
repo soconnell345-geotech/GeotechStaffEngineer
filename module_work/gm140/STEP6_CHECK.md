@@ -24,6 +24,10 @@ method that did score it, apart from the others.
    the lead wants the named method's value as the headline with the lower
    one beside it, that is the other form of the call in section 6, item 2,
    and a small change in `search_supplements.apply_supplements`.
+   **Since the fix round** (section 10, the ruling on the review's D1):
+   on circles Bishop's simplified method stands in before Janbu's, and the
+   case reads 0.911 by Bishop's simplified method, stated as standing in
+   for Spencer's method.
 2. **A noncircular search now runs a circular search first** (section 3,
    "the circle"). It costs the circular search's time on every noncircular
    search through `search_critical_surface` (ACADS 1(a), 200 random
@@ -60,10 +64,15 @@ method that did score it, apart from the others.
 - **Bishop (1955), p. 10**: Eq. 13 takes moments about the centre of a
   circle.
 - **Morgenstern and Price (1965), p. 85**: the interslice function f(x).
-- **EM 4-2e(2), p. 4-7** (the account's section 3): for a noncircular
-  search the initial surface should correspond to the estimated critical
-  surface. **Duncan (1996, p. 581)**: unless geology constrains it, the
-  critical surface is essentially circular.
+- **EM 4-2e(2), p. 4-7** (the account's section 3): cited here as the
+  basis of the circle check as first built. The fix round removed it as the
+  basis (the orchestrator's N1): the page, read in the owner's copy, says
+  "In all of these methods, the initial position of the slip surface is
+  specified by the user and should correspond to the estimated position of
+  the critical slip surface", not to start from or check against the
+  critical circle. Duncan (1996, p. 581), cited beside it, is not in the
+  reference library and was not verified (the review); it was removed with
+  it. The circle check is the module's own call (section 6, item 5).
 - **Not found in print.** A rule on comparing surfaces solved by different
   methods (the account's D42): none. The order in which another method
   stands in: none. Janbu's correction factor f0 (D28): not in hand.
@@ -213,7 +222,7 @@ Measured on master 2d3c1a9 and on the branch by
 | the same, Morgenstern-Price / Janbu named | 1.0794 / 1.0357 | 0.9844 / 0.9832 | 1.00 | the same |
 | ACADS 1(a), DE seed 1 / particle swarm seed 1, Spencer | 0.9907 / 0.9931 | 0.9844 / 0.9844 | 1.00 | the same |
 | ACADS 1(a), particle swarm, Morgenstern-Price named | 0.9931 by Spencer | 0.9844; own polylines 0.9917 by Morgenstern-Price | 1.00 | item 1 (the swarm by the method named) and the circle check |
-| #85 without its support, Spencer, 6 x 6 (step 2's measured case; no printed value) | 1.0468 (toe circle) | 1.0330 by Janbu (circle above the toe); Spencer's own 1.0468 stated | none (Bishop 0.9095 on this section) | items 4 and 5 (section 0, item 1) |
+| #85 without its support, Spencer, 6 x 6 (step 2's measured case; no printed value) | 1.0468 (toe circle) | 1.0330 by Janbu (circle above the toe); Spencer's own 1.0468 stated; since the fix round 0.9110 by Bishop (section 10) | none (Bishop 0.9095 on this section) | items 4 and 5 (section 0, item 1) |
 | #86 with five tiebacks: `no_solution` | the face's 6 held planes counted under Janbu | counted under Spencer or GLE | (FOS 1.6131 / 1.6065 / 1.6070 not moved; printed 1.629 / 1.620 / 1.622) | item 2 |
 
 ### Values that do not move (to the digits the scripts print)
@@ -310,6 +319,11 @@ check.
    method first (EM C-5a, p. C-26; FHWA Table 6-1, p. 6-21). Other form:
    Janbu's simplified method first for the planes, as before step 6 (it
    sits closer to the closed form: +0.11 % against Spencer's +0.24 %).
+   Since the fix round (the orchestrator's D1 / Q1), on a family of
+   circles: the method named, Spencer's, Bishop's simplified, Janbu's
+   simplified (named, Bishop, Janbu where a complete equilibrium method is
+   named; FHWA NHI-06-088 p. 6-20 and Table 6-1 Note 1, p. 6-21); planes
+   and polylines unchanged. Other form: the spec's order on every family.
 2. **The lower value governs and both are stated** (the lead's). Other
    form: the named method's own lowest value is the headline and the lower
    value by another method is stated beside it. No printed rule was found.
@@ -323,14 +337,16 @@ check.
    which changes what every consumer reads.
 5. **The circle check takes the critical circle of the module's own
    circular search, run by default before a noncircular search**
-   (builder's call on the orchestrator's item). EM 4-2e(2) speaks of the
-   "estimated critical surface"; the library prints no rule (section 1).
+   (builder's call on the orchestrator's item; since the fix round stated
+   as the module's own call, not found in print: EM 4-2e(2) asks only that
+   the initial surface be at the estimated critical position, section 1).
    Other forms: only where the caller hands in a circular result; or
    report the circle's value beside the noncircular minimum without
    adopting the circle's polyline as the surface reported.
 6. **The circular search of the check uses the default 10 x 10 grid and
    the caller's windows**, not `nx` / `ny` (which mean other things in a
-   particle-swarm search). Builder's call.
+   particle-swarm search). Builder's call; replaced in the fix round by the
+   orchestrator's Q3: it takes the caller's `nx` and `ny`.
 7. **The Ordinary Method of Slices on one given polyline stays available,
    with a warning** (builder's call on D26). Other form: refused, or
    solved by Spencer's method as Bishop's is.
@@ -429,3 +445,153 @@ screen scored below the reported minimum that the method could not solve.
 - **The user manual** is in a commit of its own, the last on the branch.
   **The page fingerprints** did not change (re-recorded: no difference),
   so there is no fingerprint commit.
+
+## 10. Fix round after review
+
+Branch `fix/gm140-step6-review`: 573ee42 merged with master a865ec7
+(GM-140 step 8, supports as printed; merge 868989b), then the fixes the
+orchestrator ruled on an independent review of 573ee42 (D1, D2, Q1 to Q4,
+N1 to N3). 2026-11-14.
+
+### The merge with step 8
+
+Conflicts in `slope_stability/VALIDATION.md` (step 8's B25 kept; this
+step's section renumbered B26, with its references here) and
+`docs/user_manual/manual.html` (rebuilt at the end). The rest merged
+without conflict: `analysis.py`, `search_supplements.py`, `results.py`,
+`calc_steps.py`, `rapid_drawdown.py`, `DESIGN.md`, the adapter,
+`method_probes.json`, and V-043's test (step 8's force pin, 45.223 kN/m,
+and this step's pins both kept).
+
+One call of the merge: `analysis._finish_counted` refuses a search by the
+Ordinary Method of Slices where a support crosses any trial surface by the
+method run, not by the method that scored the governing family (since
+step 6 an OMS search's planes are scored by Spencer's method, so the
+refusal would otherwise lapse there): critical, candidates and the
+governing surface are cleared, and nothing stands in. Supports reach every
+method a family is scored with, the stand-ins and the circle trial
+included, because every trial goes through `search._compute_fos`, which
+resolves the supports crossing it (`trial_reinforcement`,
+`supports.resolve_supports`). A noncircular OMS search scores its
+polylines by Spencer's method (this step), so it makes no OMS solve to
+refuse.
+
+### The check after the merge (`merge_check.py`)
+
+Each case built as its test or VALIDATION row builds it; master, this
+step before the merge (573ee42), the merge, and the final tree. Change
+against master for a case with supports, against 573ee42 for one without.
+
+| Case | Supports | N3 | master | pre-merge | merged | final | Change % (merged) | Change % (final) |
+|---|---|---|---|---|---|---|---|---|
+| Fig. 8.1 Bishop tangent-circle minimum, Method A | yes | N3 | 2.2182 | 2.2182 | 2.2182 | 2.2182 | +0.000 (master) | +0.000 (master) |
+| Fig. 8.1 Bishop tangent-circle minimum, Method B | yes | N3 | 1.7219 | 1.7219 | 1.7219 | 1.7219 | +0.000 (master) | +0.000 (master) |
+| Fig. 8.4 Spencer search, Method A (toe window) | yes | N3 | 1.6065 | n/a (TypeError) | 1.6065 | 1.6065 | +0.000 (master) | +0.000 (master) |
+| Fig. 8.4 Spencer search, Method B (toe window) | yes | N3 | 1.4479 | n/a (TypeError) | 1.4479 | 1.4479 | +0.000 (master) | +0.000 (master) |
+| #85 one support (active), Spencer search | yes | N3 | 1.5505 | 1.5505 | 1.5505 | 1.5505 | +0.000 (master) | +0.000 (master) |
+| #85 one support (active), Morgenstern-Price search | yes | N3 | 1.5726 | 1.5726 | 1.5726 | 1.5726 | +0.000 (master) | +0.000 (master) |
+| #86 five tiebacks, Spencer search (global windows) | yes | N3 | 1.6065 | 1.6065 | 1.6065 | 1.6065 | +0.000 (master) | +0.000 (master) |
+| #86 five tiebacks, Morgenstern-Price search (global windows) | yes | N3 | 1.6070 | 1.6070 | 1.6070 | 1.6070 | +0.000 (master) | +0.000 (master) |
+| V-028 ACADS 4 weak-layer search, Spencer, seed 3 | no | N3 | 0.8301 | 0.8301 | 0.8301 | 0.8301 | +0.000 (pre-merge) | +0.000 (pre-merge) |
+| B14 weak layer over rock, Spencer search | no | N3 | 0.8822 | 0.8822 | 0.8822 | 0.8822 | +0.000 (pre-merge) | +0.000 (pre-merge) |
+| V-054 steep phi = 0 slope, Bishop search, 40 slices | no | N3 | 2.3464 | 2.3464 | 2.3464 | 2.3464 | +0.000 (pre-merge) | +0.000 (pre-merge) |
+| V-043 force for Spencer F = 1.35, R - 1e-8 m (kN/m) | yes | N3 | 45.22 | 40.88 | 45.22 | 45.22 | +0.000 (master) | +0.000 (master) |
+| V-043 force for Spencer F = 1.35, R (kN/m) | yes | N3 | 45.22 | 45.22 | 45.22 | 45.22 | +0.000 (master) | +0.000 (master) |
+| V-043 force for Spencer F = 1.35, R + 1e-8 m (kN/m) | yes | N3 | 45.22 | 45.22 | 45.22 | 45.22 | +0.000 (master) | +0.000 (master) |
+| V-040 no pile, Bishop (given circle) | no |  | 1.1140 | 1.1140 | 1.1140 | 1.1140 | +0.000 (pre-merge) | +0.000 (pre-merge) |
+| V-040 no pile, Spencer (given circle) | no |  | 1.1123 | 1.1123 | 1.1123 | 1.1123 | +0.000 (pre-merge) | +0.000 (pre-merge) |
+| V-040 pile row active, Bishop (given circle) | yes |  | 1.2232 | 1.2232 | 1.2232 | 1.2232 | +0.000 (master) | +0.000 (master) |
+| V-040 pile row active, Spencer (given circle) | yes |  | 1.2226 | 1.2226 | 1.2226 | 1.2226 | +0.000 (master) | +0.000 (master) |
+| ACADS 1(a) random 200 polylines, Spencer, seed 42 | no |  | 1.0916 | 0.9844 | 0.9844 | 0.9844 | +0.000 (pre-merge) | +0.000 (pre-merge) |
+| ACADS 1(a) circular Spencer search, same windows | no |  | 0.9838 | 0.9838 | 0.9838 | 0.9838 | +0.000 (pre-merge) | +0.000 (pre-merge) |
+| #86 no supports, Bishop named: planar family | no |  | 0.9430 | 0.9442 | 0.9442 | 0.9442 | +0.000 (pre-merge) | +0.000 (pre-merge) |
+| #85 without its support, Spencer, 6x6 (D1) | no |  | 1.0468 | 1.0330 | 1.0330 | 0.9110 | +0.000 (pre-merge) | -11.807 (pre-merge) |
+
+Every N3 row is unmoved, at the merge and after the fixes. Fig. 8.4 cannot
+be built on 573ee42 (step 8's support inputs). V-043's force at R - 1e-8 m
+(40.88 on 573ee42) is step 8's exact crossing. The rows without supports
+that differ from master move by this step's own stated changes (ACADS
+1(a): the circle trial; #86's planes: Spencer's method for Bishop's; #85
+without its support: the stand-in). The D1 case reads Bishop's value
+after the fixes. The circle check's circular search on the caller's `nx`
+and `ny` moves nothing at the defaults (10 x 10).
+
+### The rulings: what changed, and where
+
+- **D1 / Q1, stand-ins on circles.** `search.scoring_order(method,
+  circular)`: on a family of circles the method named, Spencer's,
+  Bishop's simplified, Janbu's simplified (named, Bishop, Janbu where the
+  method named is Spencer, Morgenstern-Price or GLE); planes and
+  polylines unchanged. The reason names the methods tried before and,
+  for Bishop's, FHWA NHI-06-088 p. 6-20 and Table 6-1 Note 1, p. 6-21.
+  The rule of the result: `search_supplements.stand_in_above_screen_warning`
+  (a stand-in governing above the screen's own lowest value on its family
+  says so, with both values). #85 without its support, Spencer named, 6 x
+  6: **0.9110 by Bishop's simplified method** (was 1.0330 by Janbu's). The
+  brief expected about 0.937, Bishop's value on Janbu's circle; Bishop's
+  method standing in scores the family's circles itself and finds its own
+  lowest, 0.9110, equal to `analyze_slope` by Bishop on the circle
+  reported (0.91101) and to the review's lowest screen value of that
+  family (0.9110). Tests: `test_the_stand_in_order_on_circles_and_on_planes`,
+  `test_slide85_without_its_support_spencer_stands_in_with_bishop`,
+  `test_a_stand_in_above_the_screen_says_both_values`. DESIGN.md "Calls
+  made": the order, with the spec's order as the other form.
+- **Q2, Janbu standing in.** `search_supplements._janbu_stand_in_warning`:
+  the correction factor f0 is applied, f0 was not found in the printed
+  sources searched (the account's D28), f0 on the reported surface and
+  the uncorrected value beside it (the record's `janbu_f0`,
+  `FOS_uncorrected`). No number changes. Test: the planes test of
+  `test_one_method.py`.
+- **D2, the unsolved count.** `screen_unsolved` carries `n`, `k`, `N`
+  (and `lowest_screen_FOS_all` by family); the warning reads as ruled.
+  `n` and `k` from the screen's best circle of each centre, chord or
+  entry-exit pair (`search._note_screen`, kinds unsolved / solved /
+  screen); `N` from every circle Bishop's simplified method scored in the
+  family, each once (`search._note_scored`). #85 without its support: n 2,
+  k 2, N 116 on the toe circles (the review's probe counts 116 below
+  0.911 there too); V-054 by Spencer: n 12, k 12, N 508. `results`'
+  summary and `calc_steps` carry k and N.
+- **Q3, the circle check.** On by default; its circular search takes the
+  caller's `nx` and `ny` (`analysis._critical_circle`; test
+  `test_the_circle_check_takes_the_callers_grid`). The adapter's
+  `circle_check` says a circular search by the same method runs first and
+  what it costs (2 to 21 times the noncircular search alone, the review).
+  Tool descriptions after the fixes (cap 16,000): `search_critical_surface`
+  14,522, `rapid_drawdown_fos` 15,823, `analyze_slope` 14,235,
+  `search_rapid_drawdown` 14,614.
+- **Q4, V-043's evolution seeds.** No exact pin of a seed's own minimum:
+  `test_v043_sand_de_seeds_own_minima_are_a_band_and_repeat` (each seed's
+  `circle_check.noncircular_minimum` in 1.22 to 1.25; seed 1 run twice
+  gives the same value). The 1.194 pin stays: it is the circle trial's
+  value (`FOS_as_polyline`, deterministic), now asserted as such.
+- **N1, the print for the circle check.** EM 1110-2-1902 4-2e(2), p. 4-7,
+  is no longer cited as its basis (DESIGN.md, the warning, the adapter,
+  the tests, section 1 here); the page's sentence is quoted as what it
+  says. The circle check is the module's own call, `circle_check=False`
+  the other form (DESIGN.md "Calls made", OWN-143).
+- **N2, V-054's Spencer row.** Its setup is in VALIDATION B26 and in
+  `test_the_v054_spencer_row_reproduces` (`_toe_geom()`, no crack, 40
+  slices: 2.4448; 12 of 12 re-scored unsolved, down to 2.3464). The
+  review's 2.0861 is with Rankine's crack asked for, another setup.
+- **N3, the OMS refusal.** `test_an_oms_search_crossed_by_a_support_is_refused_and_nothing_stands_in`.
+
+### The review's probe on the final tree
+
+`review/step6/probe.py`, run once (`probe_fixed.txt`), before the D2
+recount of `N` (which changes no factor of safety; the recount's #85 and
+V-054 values are above).
+
+| Quantity | Review (573ee42) | Now | Move, cause |
+|---|---|---|---|
+| Weak-layer slope, each family by the method named (Bishop; Spencer; M-P half-sine; M-P and GLE constant): grid / toe / above toe / planes | 1.1792 / 1.9286 / 1.1770 / 1.3530; 1.1489 / 1.9306 / 1.1443 / 1.3530; 1.1428 / 1.9217 / 1.1392 / 1.3506; = Spencer | the same; each direct check 0.000 % | none |
+| Entry and exit, Spencer; M-P constant (the family) | 1.3490 | 1.3490 | none |
+| Random polylines, Bishop named (Spencer, apart); GLE constant; evolution M-P half-sine; swarm M-P constant; weak layer GLE / Bishop | 1.1466; 1.1466; 1.1381; 1.1466; 1.1466 | the same | none; run time 10.6 / 10.9 / 21.5 / 10.9 / 10.5 s to 4.9 / 5.0 / 15.1 / 5.1 / 4.7 s (Q3: the circle check on the caller's 5 x 5) |
+| Drawdown search, `corps_2stage`, half-sine | 1.3957, Morgenstern-Price | 1.3957 | none |
+| #86 without supports, Bishop: default; circles kept off the face | 0.942; 0.9442 Spencer, `named_method_lowest` 0.9515 | the same | none |
+| #86, Spencer / GLE / M-P default; Janbu off the face | 0.942; 0.9430 | the same | none |
+| GM-56, planes on #86 by each method, ru 0 and 0.2 | 0.9442 / 0.9442 / 0.9427 / 0.9430 / 0.9442 (Spencer for Bishop); 0.6366 / 0.6366 / 0.6336 / 0.6338 / 0.6366 | the same | none |
+| V-054 by Spencer, 40 slices (the probe's setup, Rankine's crack) | 2.0861, nothing unsolved | 2.0861, nothing unsolved | none |
+| #85 without its support, Spencer, 6 x 6 | 1.0330 Janbu (circle above the toe); `screen_unsolved` 8, lowest 0.9095 | **0.9110 Bishop** (circle above the toe), `method_used` bishop; n 2 of k 2, lowest 0.9095 (N 116 after the recount) | D1 (Bishop before Janbu on circles), D2 |
+| ACADS 1(a), Spencer: circular; random 200; swarm; evolution; random with `circle_check=False` | 0.9838; 0.9844; 0.9844; 0.9844; 1.0916 | the same | none |
+| Made-up 1.2H:1V sand, ru 0.3, Spencer, circles off the face | 0.5352 (toe circle); plane 0.5568 flagged `low_m_alpha` | the same | none |
+| Default search wall time: ACADS 1(a); homogeneous; weak-layer slope | 3.0 / 3.8 / 4.2 s | 3.0 / 3.7 / 4.1 s | none |

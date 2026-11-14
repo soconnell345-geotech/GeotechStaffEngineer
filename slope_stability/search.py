@@ -109,12 +109,28 @@ def _applies_interslice(fn):
 #: be used with circular slip surfaces" (EM 1110-2-1902 C-2b, p. C-16).
 CIRCLES_ONLY = ("bishop", "fellenius")
 
-#: The methods that score a family in place of the method named, in order
-#: (a complete equilibrium method first: EM 1110-2-1902 C-5a, p. C-26,
-#: Spencer's method extended to noncircular surfaces; FHWA NHI-06-088
-#: Table 6-1, p. 6-21, Spencer where available; then force equilibrium).
-#: The order is the module's (GM-140 step 6, a call for the owner).
+#: The methods that score a family of planes or polylines in place of the
+#: method named, in order (a complete equilibrium method first: EM
+#: 1110-2-1902 C-5a, p. C-26, Spencer's method extended to noncircular
+#: surfaces; FHWA NHI-06-088 Table 6-1, p. 6-21, Spencer where available;
+#: then force equilibrium). The order is the module's (GM-140 step 6, a
+#: call for the owner).
 STAND_INS = ("spencer", "janbu")
+
+#: The same for a family of circles (the orchestrator's ruling on the step 6
+#: review's D1): Spencer's method, then Bishop's simplified method, then
+#: Janbu's simplified method. Bishop's is the method for circles: FHWA
+#: NHI-06-088 p. 6-20 ("For soils that have frictional strength, the Bishop
+#: Method should be used as a minimum") and Table 6-1, p. 6-21 (its Note 1:
+#: "More rigorous methods such as Spencer's method should be used when a
+#: computer program has such capabilities"). Janbu's stands in on circles
+#: last: on Slide2 #85 without its support it read 1.033 on a circle where
+#: Bishop's reads 0.937 (the review, D1).
+CIRCLE_STAND_INS = ("spencer", "bishop", "janbu")
+
+#: The complete equilibrium methods: named on circles, Bishop's simplified
+#: method stands in for them before Janbu's (Spencer's would add nothing).
+RIGOROUS = ("spencer", "morgenstern_price", "gle")
 
 #: A result's label for each method (as `analyze_slope` names them).
 METHOD_LABELS = {"fellenius": "Fellenius", "bishop": "Bishop",
@@ -139,13 +155,21 @@ def surface_method(method: str, circular: bool) -> str:
 
 
 def scoring_order(method: str, circular: bool) -> List[str]:
-    """The methods that score a family when ``method`` is named, in order:
-    the method itself where it applies to the family's surfaces, then
-    Spencer's method, then Janbu's simplified method (`STAND_INS`). A
-    family moves to the next only where the one before solved none of its
-    surfaces."""
-    order = [] if (not circular and method in CIRCLES_ONLY) else [method]
-    return order + [m for m in STAND_INS if m not in order]
+    """The methods that score a family when ``method`` is named, in order.
+    A family of planes or polylines: the method itself where it applies to
+    them, then Spencer's method, then Janbu's simplified method
+    (`STAND_INS`). A family of circles (``circular``): the method, then
+    Spencer's method, then Bishop's simplified method, then Janbu's
+    simplified method (`CIRCLE_STAND_INS`); the method, Bishop's, Janbu's
+    where the method named is a complete equilibrium method (`RIGOROUS`).
+    A family moves to the next only where the one before solved none of
+    its surfaces."""
+    if not circular:
+        order = [] if method in CIRCLES_ONLY else [method]
+        return order + [m for m in STAND_INS if m not in order]
+    stand = (("bishop", "janbu") if method in RIGOROUS
+             else CIRCLE_STAND_INS)
+    return [method] + [m for m in stand if m != method]
 
 
 def interslice_of(method: str) -> Optional[str]:
@@ -174,10 +198,28 @@ def stand_in_reason(named: str, scored_by: str, circular: bool) -> str:
                "1110-2-1902 C-2b, p. C-16)")
         text = f"{name} {why}, so it does not apply to these surfaces"
     else:
-        text = f"{name} solved none of the family's surfaces"
-    if scored_by == "janbu" and "spencer" != named:
-        text += "; Spencer's method solved none of them either"
+        text = (f"{name} solved none of the family's "
+                f"{'circles' if circular else 'surfaces'}")
+    # the methods tried before the one that scored it, in order
+    order = scoring_order(named, circular)
+    before = ([m for m in order[:order.index(scored_by)] if m != named]
+              if scored_by in order else [])
+    if before:
+        names = [_text_of(m) for m in before]
+        text += (f"; {' and '.join(names)} solved none of them either")
+    if circular and scored_by == "bishop":
+        text += ("; Bishop's simplified method is the method for circles "
+                 "and stands in before Janbu's simplified method (FHWA "
+                 "NHI-06-088 p. 6-20 and Table 6-1, p. 6-21)")
     return text
+
+
+def _text_of(method: str) -> str:
+    """A method's plain name inside a sentence ("Spencer's method", "the
+    Ordinary Method of Slices")."""
+    from slope_stability.solution import METHOD_TEXT
+    name = METHOD_TEXT.get(method, method)
+    return name[0].lower() + name[1:] if name.startswith("The ") else name
 
 
 # Screen values of surfaces the named method could not solve (GM-140 step
@@ -185,44 +227,116 @@ def stand_in_reason(named: str, scored_by: str, circular: bool) -> str:
 # non-convergence, and the engineer should be able to tell). A screen by
 # another method (the Bishop screen of the main search and of the toe
 # circles, the refinement walk's radius by Bishop) gives a value on a
-# surface the named method then has no solution on: [4] of the tally, a
-# list of (family, screen method, screen value).
-def _note_screen_unsolved(screen: str, fos: float) -> None:
+# surface the named method then has no solution on. The count says how
+# many were re-scored and how many the screen scored in all (the step 6
+# review's D2): [4] of the tally, a list of (family, screen method, screen
+# value, kind) for the screen's best circle of each centre, chord or
+# entry-exit pair, kind 'unsolved' (re-scored, the method has no solution
+# on it), 'solved' (re-scored and solved) or 'screen' (not handed on); and
+# [5], every circle Bishop's simplified method scored, by family, each once
+# with its lowest value (`_note_scored`), from which N, the circles the
+# screen scored below the minimum in all, is counted.
+def _note_screen(screen: str, fos: float, kind: str) -> None:
     tally = _REFUSALS.get()
     family = _FAMILY.get()
     if (tally is not None and family is not None and fos is not None
             and fos < _FOS_MAX):
-        tally[4].append((family, screen, fos))
+        tally[4].append((family, screen, fos, kind))
 
 
-def _screen_unsolved_so_far() -> List[Tuple[str, str, float]]:
+def _note_screen_unsolved(screen: str, fos: float) -> None:
+    _note_screen(screen, fos, "unsolved")
+
+
+def _note_scored(method: str, fos: float, slip) -> None:
+    """A circle Bishop's simplified method scored, noted by family, each
+    circle once with its lowest value ([5] of the tally): the screen's
+    circles in all, for ``screen_unsolved``'s N. Bishop's is the only screen
+    by another method (`_screen_method`; the toe circles' scan)."""
+    if method != "bishop":
+        return
+    tally = _REFUSALS.get()
+    family = _FAMILY.get()
+    if tally is None or family is None:
+        return
+    key = (family, round(slip.xc, 6), round(slip.yc, 6),
+           round(slip.radius, 6))
+    seen = tally[5].get(key)
+    if seen is None or fos < seen:
+        tally[5][key] = fos
+
+
+def _screen_scored_so_far() -> Dict[tuple, float]:
+    tally = _REFUSALS.get()
+    return dict(tally[5]) if tally is not None else {}
+
+
+def _screen_unsolved_so_far() -> List[Tuple[str, str, float, str]]:
     tally = _REFUSALS.get()
     return list(tally[4]) if tally is not None else []
 
 
 def screen_unsolved_record(notes, reported: Optional[float],
-                           rename: Optional[Dict[str, str]] = None
+                           rename: Optional[Dict[str, str]] = None,
+                           scored: Optional[Dict[tuple, float]] = None
                            ) -> Dict[str, Any]:
-    """``SearchResult.screen_unsolved`` from the tally: the surfaces a
-    screen by another method scored and the named method had no solution
-    on, whose screen value is below the minimum reported (every one of
-    them when nothing is reported): ``{"n", "lowest_screen_FOS",
-    "by_family": {family: {"n", "lowest_screen_FOS", "screen"}}}``; empty
-    when there is none."""
-    by: Dict[str, Dict[str, Any]] = {}
-    for family, screen, fos in notes:
+    """``SearchResult.screen_unsolved`` from the tally: the circles a
+    screen by another method scored below the minimum reported (every one
+    of them when nothing is reported), by family, for each family where
+    the named method had no solution on one or more of them: ``n`` the
+    circles re-scored by the method that have no solution by it, ``k`` the
+    circles re-scored (from the screen's lowest), ``N`` the circles the
+    screen scored below it in all (every circle Bishop's simplified method
+    scored in the family, each once, where ``scored``, [5] of the tally, is
+    given; else the screen's best circle of each centre or chord, from the
+    notes), ``lowest_screen_FOS`` the lowest screen value of the ``n`` and
+    ``lowest_screen_FOS_all`` that of the ``N``:
+    ``{"n", "k", "N", "lowest_screen_FOS", "by_family": {family: {"n",
+    "k", "N", "lowest_screen_FOS", "lowest_screen_FOS_all",
+    "screen"}}}``; empty when no family has such a circle."""
+    every: Dict[str, Dict[str, Any]] = {}
+    raw: Dict[str, set] = {}
+    for note in notes:
+        family, screen, fos, kind = (tuple(note) + ("unsolved",))[:4]
         if reported is not None and fos >= reported:
             continue
-        family = (rename or {}).get(family, family)
-        rec = by.setdefault(family, {"n": 0, "lowest_screen_FOS": fos,
-                                     "screen": screen})
-        rec["n"] += 1
-        rec["lowest_screen_FOS"] = min(rec["lowest_screen_FOS"], fos)
+        named = (rename or {}).get(family, family)
+        raw.setdefault(named, set()).add(family)
+        family = named
+        rec = every.setdefault(family, {
+            "n": 0, "k": 0, "N": 0, "lowest_screen_FOS": None,
+            "lowest_screen_FOS_all": fos, "screen": screen})
+        rec["N"] += 1
+        rec["lowest_screen_FOS_all"] = min(rec["lowest_screen_FOS_all"],
+                                           fos)
+        if kind in ("unsolved", "solved"):
+            rec["k"] += 1
+        if kind == "unsolved":
+            rec["n"] += 1
+            low = rec["lowest_screen_FOS"]
+            rec["lowest_screen_FOS"] = fos if low is None else min(low, fos)
+    by = {f: r for f, r in every.items() if r["n"]}
     if not by:
         return {}
+    if scored:
+        # every circle the screen scored in the family below the minimum
+        for family, rec in by.items():
+            if rec["screen"] != "bishop":
+                continue
+            vals = [f for key, f in scored.items()
+                    if key[0] in raw[family]
+                    and (reported is None or f < reported)]
+            if vals:
+                rec["N"] = max(rec["N"], len(vals))
+                rec["lowest_screen_FOS_all"] = min(
+                    rec["lowest_screen_FOS_all"], min(vals))
     for rec in by.values():
         rec["lowest_screen_FOS"] = round(rec["lowest_screen_FOS"], 4)
+        rec["lowest_screen_FOS_all"] = round(rec["lowest_screen_FOS_all"],
+                                             4)
     return {"n": sum(r["n"] for r in by.values()),
+            "k": sum(r["k"] for r in by.values()),
+            "N": sum(r["N"] for r in by.values()),
             "lowest_screen_FOS": min(r["lowest_screen_FOS"]
                                      for r in by.values()),
             "by_family": by}
@@ -548,7 +662,7 @@ def _counts_refusals(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         outer = _REFUSALS.get()
-        tally = [0, 0, {}, _new_flag_tally(), []]
+        tally = [0, 0, {}, _new_flag_tally(), [], {}]
         token = _REFUSALS.set(tally)
         outer_arcs = _ARCS.get()
         arcs = {"split": {}, "arc": {}, "outside": {}}
@@ -577,6 +691,9 @@ def _counts_refusals(fn):
                     outer[2][key] = outer[2].get(key, 0) + n
                 _merge_flag_tally(outer[3], tally[3])
                 outer[4].extend(tally[4])
+                for key, f in tally[5].items():
+                    if key not in outer[5] or f < outer[5][key]:
+                        outer[5][key] = f
         target = (result if isinstance(result, SearchResult)
                   else getattr(result, "search", None))
         if isinstance(target, SearchResult):
@@ -1531,6 +1648,7 @@ def _compute_fos(geom: SlopeGeometry,
                 _count_m_alpha_refusal()
                 return _FOS_MAX
             _note_trial_flags(scored_by, fos, names, slip)
+            _note_scored(scored_by, fos, slip)
         return fos
     except CrackRuleRefused as exc:
         # a given crack the crack rule refuses (GM-140 step 4's review,
@@ -2039,6 +2157,12 @@ def grid_search(geom: SlopeGeometry,
                 # the method solved no circle about this centre: the
                 # screen's value there is reported (GM-140 step 6)
                 _note_screen_unsolved(scan, _f)
+            else:
+                _note_screen(scan, _f, "solved")
+        # the centres the screen scored and did not hand on (D2's count)
+        for key, val in found.items():
+            if key not in rescored:
+                _note_screen(scan, val[0], "screen")
 
     for ix in range(nx):
         for iy in range(ny):
@@ -2118,6 +2242,8 @@ def grid_search(geom: SlopeGeometry,
             if f_m >= _FOS_MAX:
                 # Bishop's circle, which the method has no solution on
                 _note_screen_unsolved("bishop", f_b)
+            else:
+                _note_screen("bishop", f_b, "solved")
             return r_b, f_m
 
         def walk_score(xc, yc):
@@ -3073,6 +3199,12 @@ def search_entry_exit(
                 # the method solved no circle on this pair: the screen's
                 # value there is reported (GM-140 step 6)
                 _note_screen_unsolved(scan, found[key][0])
+            else:
+                _note_screen(scan, found[key][0], "solved")
+        # the pairs the screen scored and did not hand on (D2's count)
+        for key, res in found.items():
+            if key not in shortlist:
+                _note_screen(scan, res[0], "screen")
 
     for i in range(len(entry_xs)):
         for j in range(len(exit_xs)):
@@ -3388,11 +3520,13 @@ def search_de(
 # evolution, weak layer) samples polylines; nothing made it find the
 # critical circle, so it could report a minimum above the circle's value by
 # the same method without saying so (ACADS 1(a), 200 random polylines by
-# Spencer's method: 1.092 against the critical circle's 0.984). EM
-# 1110-2-1902 4-2e(2), p. 4-7 (the account's section 3): for a noncircular
-# search "the initial surface should correspond to the estimated critical
-# surface"; Duncan (1996, p. 581): unless geology constrains it, the
-# critical surface is essentially circular. `search_critical_surface` runs
+# Spencer's method: 1.092 against the critical circle's 0.984). No print
+# held gives the rule: running the circular search first is the module's
+# own call (circle_check=False is the other form; the step 6 fix round,
+# the orchestrator's N1). EM 1110-2-1902 4-2e(2), p. 4-7, says only that
+# the initial position of a noncircular slip surface is specified by the
+# user and should correspond to the estimated position of the critical
+# slip surface; it is not the basis. `search_critical_surface` runs
 # the circular search first, by the method that scores the polylines, and
 # its critical circle, as the polyline of its slice-base points, is one of
 # the noncircular search's trials (`add_circle_trial`). Where no circular
@@ -3514,7 +3648,6 @@ def add_circle_trial(geom, result: SearchResult, circle, method: str,
         f"{len(poly.points) - 1} slice bases; circle_check). The circle's "
         f"polyline is one of the search's trials and is the surface "
         f"reported: the polylines the search generated did not reach a "
-        f"lower one (EM 1110-2-1902 4-2e(2), p. 4-7: the initial surface "
-        f"of a noncircular search should correspond to the estimated "
-        f"critical surface).")
+        f"lower one. Running the circular search first is the module's own "
+        f"call (circle_check=False runs none).")
     return out

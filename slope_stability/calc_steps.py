@@ -1010,7 +1010,9 @@ def _search_section(search) -> CalcSection:
         if su:
             rows.append([
                 "Screen values below the minimum, not solved by the method",
-                f"{su['n']} surface(s), lowest screen value "
+                f"{su['n']} of {su.get('k')} circle(s) re-scored from the "
+                f"screen's lowest; {su.get('N')} scored by the screen below "
+                f"the minimum in all; lowest screen value "
                 f"{su['lowest_screen_FOS']:.3f}"])
     search_notes = ("The trial-surface map in the Figures section shows "
                     "every evaluated surface colored by FOS.")

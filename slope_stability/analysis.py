@@ -977,8 +977,12 @@ def search_critical_surface(
     with like: the centre grid, the entry and exit circles, the circles
     through the toe and above it, the shallow planes, random polylines,
     differential evolution, the particle swarm and the weak-layer search.
-    A family the method cannot score is scored by Spencer's method, or by
-    Janbu's simplified method where Spencer's solves none of it, and is
+    A family the method cannot score is scored by the next method in order
+    (planes and polylines: Spencer's method, then Janbu's simplified
+    method; circles: Spencer's method, then Bishop's simplified method,
+    then Janbu's, or Bishop's then Janbu's where a complete equilibrium
+    method is named, FHWA NHI-06-088 p. 6-20 and Table 6-1, p. 6-21;
+    `search.scoring_order`), and is
     reported apart, under the method that scored it: Bishop's simplified
     method and the Ordinary Method of Slices on a plane or a polyline
     (Bishop 1955, p. 10; EM 1110-2-1902 C-2b, p. C-16: the Ordinary Method
@@ -990,7 +994,8 @@ def search_critical_surface(
     ``named_method_lowest`` gives the named method's own lowest value.
     Where a screen by another method scored surfaces below the reported
     minimum that the named method could not solve, ``screen_unsolved``
-    counts them with the lowest screen value (UFC 3-220-10 p. 362). A
+    counts them (how many were re-scored and how many the screen scored
+    in all) with the lowest screen value (UFC 3-220-10 p. 362). A
     noncircular search first runs the circular search by the same method
     and takes its critical circle, as the polyline of its slice-base
     points, as one of its trials (``circle_check``), so it does not report
@@ -1146,12 +1151,14 @@ def search_critical_surface(
         windows, and its critical circle, as the polyline of its slice-base
         points, is one of the noncircular search's trials; ``circle_check``
         in the result gives the circle and both values, and ``warnings``
-        says so when the search's own polylines stayed above it (EM
-        1110-2-1902 4-2e(2), p. 4-7: the initial surface of a noncircular
-        search should correspond to the estimated critical surface). Under
-        a time budget the circular search may use a quarter of it. False:
-        no circular search is run, and the result says the noncircular
-        minimum was not checked against a circle.
+        says so when the search's own polylines stayed above it. The
+        circular search takes the caller's ``nx`` and ``ny`` (for the
+        particle swarm they also set the swarm's size) and windows; it
+        costs about 2 to 21 times the noncircular search alone (the step
+        6 review's measures). Under a time budget it may use a quarter of
+        it. Running it is the module's own call: no print held gives the
+        rule. False: no circular search is run, and the result says the
+        noncircular minimum was not checked against a circle.
 
     Returns
     -------
@@ -1193,10 +1200,11 @@ def search_critical_surface(
         flag_records,
     )
     from slope_stability.search_supplements import (
-        no_solution_warning, screen_unsolved_warning, _method_key)
+        no_solution_warning, screen_unsolved_warning, _method_key,
+        stand_in_above_screen_warning)
     from slope_stability.search import (
         scoring_order, _screen_unsolved_so_far, screen_unsolved_record,
-        add_circle_trial, interslice_of)
+        add_circle_trial, interslice_of, _screen_scored_so_far)
     check_method(method)
     check_interslice(f_interslice)
     given_windows = None            # (set below, once ordered)
@@ -1261,12 +1269,14 @@ def search_critical_surface(
         return result
 
     def _critical_circle(m):
-        """The circular search by ``m`` inside the same windows, run apart
-        (its trials are not this search's), for the check of a noncircular
-        minimum against the critical circle."""
+        """The circular search by ``m`` inside the same windows and on the
+        caller's ``nx`` x ``ny`` grid (the orchestrator's Q3: not a 10 x 10
+        default of its own), run apart (its trials are not this search's),
+        for the check of a noncircular minimum against the critical
+        circle."""
         import contextvars
         share = None if time_budget_s is None else 0.25 * time_budget_s
-        kw = dict(method=m, n_slices=n_slices, tol=tol,
+        kw = dict(method=m, n_slices=n_slices, tol=tol, nx=nx, ny=ny,
                   surface_type="circular", toe_circles=toe_circles,
                   infinite_slope=False, refine=refine, time_budget_s=share,
                   m_alpha_rule=m_alpha_rule, low_m_alpha=low_m_alpha,
@@ -1306,8 +1316,13 @@ def search_critical_surface(
         result.screen_unsolved = screen_unsolved_record(
             _screen_unsolved_so_far(),
             result.critical.FOS if result.critical is not None else None,
-            rename={"main": search_kind})
+            rename={"main": search_kind}, scored=_screen_scored_so_far())
         w = screen_unsolved_warning(result)
+        if w:
+            result.warnings.append(w)
+        # a stand-in that governs above the screen's own value on the same
+        # family says so, with both values (the ruling on D1)
+        w = stand_in_above_screen_warning(result)
         if w:
             result.warnings.append(w)
         # A noncircular minimum that stood above the critical circle's

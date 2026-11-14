@@ -1428,11 +1428,20 @@ noncircular surfaces. FHWA NHI-06-088 Table 6-1, p. 6-21: Bishop's the
 minimum method, Spencer's where available. UFC 3-220-10 Table 7-7 step 5,
 p. 374. UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as a
 result of non-convergence. The engineer should be able to identify when
-convergence issues are present." EM 4-2e(2), p. 4-7: for a noncircular
-search the initial surface should correspond to the estimated critical
-surface. **No printed rule on comparing surfaces solved by different
-methods was found** (the account's D42); the case is that a search
-minimises the factor of safety of the method it reports (GM-138).
+convergence issues are present." FHWA NHI-06-088 p. 6-20: "For soils
+that have frictional strength, the Bishop Method should be used as a
+minimum"; Table 6-1, p. 6-21, Note 1: "More rigorous methods such as
+Spencer's method should be used when a computer program has such
+capabilities" (the stand-in order on circles, below). **No printed rule on
+comparing surfaces solved by different methods was found** (the account's
+D42); the case is that a search minimises the factor of safety of the
+method it reports (GM-138). **No printed rule for checking a noncircular
+search against the critical circle was found** either: EM 1110-2-1902
+4-2e(2), p. 4-7 (read in the owner's copy for the fix round) says only "In
+all of these methods, the initial position of the slip surface is
+specified by the user and should correspond to the estimated position of
+the critical slip surface". It is not the basis of the circle check, which
+is the module's own call (Calls made).
 
 **What was wrong (D13, D42, D26, D49's labels).** Planes were scored by
 Janbu's simplified method whatever method was named; the particle swarm
@@ -1459,12 +1468,34 @@ toe-circle result was labelled 'Morgenstern_price' or 'Gle', and
   `search.CIRCLES_ONLY`, `search.STAND_INS`). Bishop's simplified method
   and the Ordinary Method of Slices do not apply to a plane or a polyline;
   any method can solve none of a family's surfaces (it lost trials to
-  non-convergence and scored none). Such a family is scored by Spencer's
-  method; where Spencer's solves none, by Janbu's simplified method. For
+  non-convergence and scored none). A family of planes or polylines is
+  then scored by Spencer's method, and where Spencer's solves none, by
+  Janbu's simplified method. A family of circles (the grid, entry and
+  exit, the toe circles, the circles above the toe, the refinement walk)
+  is scored by Spencer's method, then Bishop's simplified method, then
+  Janbu's simplified method; where the method named is a complete
+  equilibrium method (Spencer, Morgenstern-Price, GLE), by Bishop's, then
+  Janbu's (`search.CIRCLE_STAND_INS`, `search.RIGOROUS`; the
+  orchestrator's ruling on the step 6 review's D1: on Slide2 #85 without
+  its support, Spencer named, Janbu's stood in on the circles above the
+  toe at 1.033, 10 % above Bishop's 0.937 on the same circle; Bishop's now
+  stands in and reads its own lowest circle of the family, 0.911). For
   the planes the order is applied face by face, so a face the method
   solves keeps the method. The main search does the same
   (`analysis.search_critical_surface`, `_main_search`), and the toe-circle
-  families (`search_supplements._toe_families`).
+  families (`search_supplements._toe_families`). Each stand-in's
+  `reason` names the methods tried before it.
+- *Janbu's simplified method standing in* (the orchestrator's Q2). Its
+  value carries Janbu's correction factor f0, which was not found in the
+  printed sources searched (the account's D28). A family it scores says
+  so in a warning, with f0 on the family's reported surface and the
+  uncorrected factor of safety beside it (also `janbu_f0` and
+  `FOS_uncorrected` in the family's `candidate_methods` entry). No number
+  changes; D28 keeps the decision.
+- *A stand-in above the screen's value.* A family scored by a stand-in
+  never governs above the screen's own lowest value on the same family
+  unless the result says so: a warning names both values
+  (`search_supplements.stand_in_above_screen_warning`).
 - *The record.* `SearchResult.candidate_methods`: one entry per family and
   scoring method, `{family, method, f_interslice, FOS, named, reason}`,
   with `screen` where another method picked the circles. `candidates`
@@ -1485,9 +1516,20 @@ toe-circle result was labelled 'Morgenstern_price' or 'Gle', and
   reported; `choices` names the screens ("screens by another method").
 - *Surfaces the method could not solve.* Where a screen scored surfaces
   below the minimum reported and the named method had no solution on them,
-  `screen_unsolved` gives their count and the lowest screen value, by
-  family, and a warning says so (`search._note_screen_unsolved`,
-  `search_supplements.screen_unsolved_warning`; UFC p. 362).
+  `screen_unsolved` gives, by family, `n` of the `k` circles re-scored
+  from the screen's lowest that have no solution by the method, `N` the
+  circles the screen scored below the minimum in all, and the lowest
+  screen value; the warning reads "of the k circles re-scored from the
+  screen's lowest, n have no solution by <method>; the screen scored N
+  circles below the reported minimum in all" (`search._note_screen`,
+  `search_supplements.screen_unsolved_warning`; UFC p. 362; the step 6
+  review's D2: the count had read as if it covered every circle the
+  screen scored). `n` and `k` count the screen's best circle of a centre,
+  a chord of the toe families or an entry-exit pair, the circles handed on
+  to the method; `N` counts every circle Bishop's simplified method scored
+  in the family below the minimum, each once (`search._note_scored`): on
+  Slide2 #85 without its support, Spencer named, 6 x 6, 116 on the toe
+  circles below 0.911, of which the screen handed on its best 2.
 - *The planar family's findings.* Each `infinite_slope_checks` entry and
   the family's `candidate_methods` entry carry `flags`: what the printed
   acceptability checks find on the lowest plane (the low m_alpha of
@@ -1504,14 +1546,36 @@ toe-circle result was labelled 'Morgenstern_price' or 'Gle', and
   governs; a warning says so when the search's own polylines stayed above
   the circle. `circle_check=False`, a search function called on its own,
   and a rapid-drawdown search run no circular search, and the result says
-  the minimum was not checked against a circle. Under a time budget the
-  circular search may use a quarter of it.
+  the minimum was not checked against a circle. The circular search takes
+  the caller's `nx` and `ny` and windows (the orchestrator's Q3; for the
+  particle swarm `nx` x `ny` also sets the swarm's size), not a 10 x 10
+  default of its own. It costs about 2 to 21 times the noncircular search
+  alone (the step 6 review's measures). Under a time budget the circular
+  search may use a quarter of it.
+- *Supports (after the merge with step 8).* Every trial surface of every
+  family goes through `search._compute_fos`, which takes the supports
+  crossing it (`search.trial_reinforcement`, now
+  `supports.resolve_supports`), so step 8's supports reach every method a
+  family is scored by, the stand-ins and the circle trial included. A
+  search named for the Ordinary Method of Slices where a support crosses
+  any of its trial surfaces is refused whatever scored its governing
+  family (the planes are scored by Spencer's method for it), and no
+  stand-in's value is reported in its place.
 
 **Calls made (for the owner; STEP6_CHECK.md has the other forms).** The
-order Spencer's method, then Janbu's simplified method; the lower value
-governs and both are stated; the order applied face by face for the planes;
-`candidates` kept as it was with the methods beside it; the circular search
-run by default before a noncircular one; the Ordinary Method of Slices on a
+order: on planes and polylines Spencer's method, then Janbu's simplified
+method; on circles Spencer's, then Bishop's simplified method, then
+Janbu's (Bishop's, then Janbu's, where a complete equilibrium method is
+named; the orchestrator's ruling, FHWA NHI-06-088 p. 6-20 and Table 6-1
+Note 1, p. 6-21). Other form: the spec's order, Spencer's then Janbu's, on
+every family. The lower value governs and both are stated; the order
+applied face by face for the planes; `candidates` kept as it was with the
+methods beside it. The circle check on by default: the circular search run
+before a noncircular one is the module's own call, not found in print
+(EM 4-2e(2), p. 4-7 asks only that the initial surface be at the estimated
+critical position); other form: `circle_check=False`, no circular search
+and the result says the minimum was not checked (OWN-143). The Ordinary
+Method of Slices on a
 polyline left available on ONE given surface (`analyze_slope`,
 `compare_methods_table`: Fredlund and Krahn 1977 print it on a composite
 surface), refused only as a search's scoring method.

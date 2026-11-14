@@ -11,9 +11,12 @@ circular slip surfaces"); EM C-5a, p. C-26 (Spencer's method extended to
 noncircular surfaces); FHWA NHI-06-088 Table 6-1, p. 6-21 (Bishop's the
 minimum method, Spencer's where available); UFC 3-220-10 p. 362 ("Critical
 failure surfaces can be missed as a result of non-convergence. The engineer
-should be able to identify when convergence issues are present."); EM
-4-2e(2), p. 4-7 (the initial surface of a noncircular search should
-correspond to the estimated critical surface).
+should be able to identify when convergence issues are present."). The
+circle check is the module's own call (no print held gives it; EM
+4-2e(2), p. 4-7, asks only that the initial surface of a noncircular
+search be at the estimated critical position, and is not its basis).
+FHWA NHI-06-088 p. 6-20 and Table 6-1, p. 6-21: Bishop's simplified
+method for circles (the stand-in order on circles, the fix round).
 
 Every geometry here is made up. Each test failed on master before the
 change (the departures D13, D42, D26 and D49's label part of
@@ -374,6 +377,16 @@ def test_a_method_that_solves_none_of_the_planes_gives_way_in_order(
     assert "Spencer's method solved none of them either" in rec["reason"]
     assert rec["FOS"] == pytest.approx(_SAND_CLOSED, rel=0.005)
     assert res.candidates[INFINITE_SLOPE] == rec["FOS"]
+    # Q2: Janbu's standing in says that f0 is applied, that f0 was not
+    # found in print (D28), f0 on the reported surface and the uncorrected
+    # value beside it; no number changes
+    (w,) = [w for w in res.warnings if "correction factor f0" in w]
+    assert "D28" in w and "not found in the printed sources searched" in w
+    assert f"f0 = {rec['janbu_f0']:.3f}" in w
+    assert f"{rec['FOS_uncorrected']:.3f}" in w
+    assert rec["janbu_f0"] >= 1.0
+    assert rec["FOS_uncorrected"] == pytest.approx(
+        rec["FOS"] / rec["janbu_f0"], rel=1e-3)
 
 
 def test_a_main_search_the_method_solves_nothing_of_gives_way(monkeypatch):
@@ -467,30 +480,74 @@ def test_screen_values_of_surfaces_the_method_could_not_solve(monkeypatch):
         return real(slices, slip, method, *a, **kw)
 
     monkeypatch.setattr(S, "solve_method", solver)
+    kinds, values = [], []
+    real_note = S._note_screen
+
+    def note(screen, fos, kind):
+        kinds.append(kind)
+        values.append(fos)
+        return real_note(screen, fos, kind)
+
+    monkeypatch.setattr(S, "_note_screen", note)
     res = _search(_fill(), method="spencer", bishop_screen=True, nx=6,
                   ny=6, toe_circles=False, infinite_slope=False,
                   refine=False)
     rec = res.screen_unsolved
     assert rec["n"] >= 1
+    # D2: the count says how many were re-scored and how many the screen
+    # scored below the minimum in all; every centre the screen scored is
+    # noted, those it did not hand on to the method included
+    assert rec["n"] <= rec["k"] <= rec["N"]
+    assert {"screen", "unsolved"} <= set(kinds)
+    assert len(kinds) == 36
+    # N counts every circle the screen scored below the minimum (each
+    # once), not only each centre's best circle (52 against 4 when
+    # measured)
+    below = [f for f in values if f < res.critical.FOS]
+    assert rec["N"] > len(below) >= rec["k"]
     assert rec["lowest_screen_FOS"] < res.critical.FOS
     assert rec["by_family"][CIRCULAR]["screen"] == "bishop"
     assert res.to_dict()["screen_unsolved"] == rec
     (w,) = [w for w in res.warnings if "screen_unsolved" in w]
-    assert f"{rec['n']} surface(s)" in w
+    assert (f"Of the {rec['k']} circle(s) re-scored from the screen's "
+            f"lowest, {rec['n']} have no solution by Spencer's method; the "
+            f"screen scored {rec['N']} circle(s) below the reported minimum"
+            in w)
     assert f"{rec['lowest_screen_FOS']:.3f}" in w
     assert "UFC 3-220-10 p. 362" in w
 
 
 def test_screen_unsolved_record_counts_only_those_below_the_minimum():
-    notes = [("main", "bishop", 1.10), ("main", "bishop", 1.31),
-             ("toe_circle", "bishop", 1.05), ("toe_circle", "bishop", 1.40)]
+    """D2: n of the k circles re-scored have no solution; the screen
+    scored N below the minimum in all; only below the minimum counts."""
+    notes = [("main", "bishop", 1.10, "unsolved"),
+             ("main", "bishop", 1.31, "unsolved"),
+             ("main", "bishop", 1.12, "solved"),
+             ("main", "bishop", 1.15, "screen"),
+             ("toe_circle", "bishop", 1.05, "unsolved"),
+             ("toe_circle", "bishop", 0.98, "screen"),
+             ("toe_circle", "bishop", 1.40, "unsolved"),
+             ("circle_above_toe", "bishop", 1.01, "screen")]
     rec = S.screen_unsolved_record(notes, 1.20, rename={"main": CIRCULAR})
-    assert rec == {"n": 2, "lowest_screen_FOS": 1.05, "by_family": {
-        CIRCULAR: {"n": 1, "lowest_screen_FOS": 1.10, "screen": "bishop"},
-        TOE_CIRCLE: {"n": 1, "lowest_screen_FOS": 1.05,
-                     "screen": "bishop"}}}
+    assert rec == {"n": 2, "k": 3, "N": 5, "lowest_screen_FOS": 1.05,
+                   "by_family": {
+        CIRCULAR: {"n": 1, "k": 2, "N": 3, "lowest_screen_FOS": 1.10,
+                   "lowest_screen_FOS_all": 1.10, "screen": "bishop"},
+        TOE_CIRCLE: {"n": 1, "k": 1, "N": 2, "lowest_screen_FOS": 1.05,
+                     "lowest_screen_FOS_all": 0.98, "screen": "bishop"}}}
     assert S.screen_unsolved_record(notes, 1.0) == {}
     assert S.screen_unsolved_record(notes, None)["n"] == 4
+    # N from every circle the screen scored (each once), where given
+    scored = {("main", 1.0, 2.0, 3.0): 1.11, ("main", 1.0, 2.0, 3.5): 1.13,
+              ("main", 1.5, 2.0, 3.0): 1.09, ("main", 4.0, 2.0, 3.0): 1.25,
+              ("toe_circle", 0.0, 9.0, 9.0): 0.97}
+    rec = S.screen_unsolved_record(notes, 1.20, rename={"main": CIRCULAR},
+                                   scored=scored)
+    assert rec["by_family"][CIRCULAR]["N"] == 3
+    assert rec["by_family"][CIRCULAR]["lowest_screen_FOS_all"] == 1.09
+    assert rec["by_family"][TOE_CIRCLE]["N"] == 2     # the notes' 2 kept
+    assert rec["by_family"][TOE_CIRCLE]["lowest_screen_FOS_all"] == 0.97
+    assert rec["N"] == 5
 
 
 # ---------------------------------------------------------------------------
@@ -521,10 +578,11 @@ def test_a_noncircular_minimum_is_checked_against_the_circle():
     """A noncircular search does not report a minimum above the critical
     circle's value by the same method without saying so: the circular
     search is run first and its critical circle, as the polyline of its
-    slice-base points, is one of the trials (EM 1110-2-1902 4-2e(2),
-    p. 4-7: the initial surface should correspond to the estimated
-    critical surface). Before, 30 random polylines reported their own
-    minimum alone."""
+    slice-base points, is one of the trials (the module's own call; the
+    fix round took EM 1110-2-1902 4-2e(2), p. 4-7, off as its basis: the
+    page asks only that the initial surface be at the estimated critical
+    position). Before, 30 random polylines reported their own minimum
+    alone."""
     kw = dict(method="spencer", n_slices=25)
     circle = _search(_fill(), infinite_slope=False, **kw)
     res = _search(_fill(), surface_type="noncircular", n_trials=30, seed=7,
@@ -543,7 +601,7 @@ def test_a_noncircular_minimum_is_checked_against_the_circle():
     assert len(res.critical.slip_points) >= 20
     (w,) = [w for w in res.warnings if "circle_check" in w]
     assert f"{cc['noncircular_minimum']:.3f}" in w
-    assert "4-2e(2), p. 4-7" in w
+    assert "module's own call" in w and "4-2e(2)" not in w
     chosen = {c["what"]: c for c in res.choices}
     assert chosen["noncircular minimum checked against the critical "
                   "circle"]["chosen"] is True
@@ -630,3 +688,152 @@ def test_the_drawdown_search_names_its_solve_for_every_family():
         assert s.named_method == "corps_2stage" and s.f_interslice == f
         assert s.method_used == ""
         assert s.critical.method == label
+
+
+# ---------------------------------------------------------------------------
+# The fix round after the review (the orchestrator's rulings)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("method, circular, order", [
+    ("spencer", True, ["spencer", "bishop", "janbu"]),
+    ("morgenstern_price", True, ["morgenstern_price", "bishop", "janbu"]),
+    ("gle", True, ["gle", "bishop", "janbu"]),
+    ("bishop", True, ["bishop", "spencer", "janbu"]),
+    ("fellenius", True, ["fellenius", "spencer", "bishop", "janbu"]),
+    ("janbu", True, ["janbu", "spencer", "bishop"]),
+    ("bishop", False, ["spencer", "janbu"]),
+    ("fellenius", False, ["spencer", "janbu"]),
+    ("spencer", False, ["spencer", "janbu"]),
+    ("morgenstern_price", False, ["morgenstern_price", "spencer", "janbu"])])
+def test_the_stand_in_order_on_circles_and_on_planes(method, circular,
+                                                     order):
+    """D1 / Q1: on a family of circles the method named, then Spencer's
+    method, then Bishop's simplified method, then Janbu's simplified
+    method (Bishop's, then Janbu's, where a complete equilibrium method is
+    named); Bishop's is the method for circles (FHWA NHI-06-088 p. 6-20,
+    Table 6-1 Note 1, p. 6-21). On planes and polylines the order is
+    unchanged."""
+    assert S.scoring_order(method, circular) == order
+
+
+def test_slide85_without_its_support_spencer_stands_in_with_bishop():
+    """D1: Slide2 #85 without its support, Spencer named, 6 x 6. Spencer's
+    method solves none of the circles passing above the toe (142 without a
+    solution). As first built, Janbu's simplified method stood in there at
+    1.033, 10 % above Bishop's value on that very circle (0.937 by hand,
+    the review). Bishop's simplified method now stands in on circles
+    before Janbu's: the family reads Bishop's own lowest circle, 0.911,
+    labelled Bishop and stated as standing in for Spencer's method, with
+    the reason; Spencer's own lowest value (1.047, toe circle) beside it."""
+    from slope_stability.tests.test_search_reinforcement import _slide85
+    g = _slide85(anchor=False)
+    res = _search(g, method="spencer", nx=6, ny=6)
+    c = res.critical
+    # GM-140 step 6 fix round: 1.033 (Janbu) -> 0.911 (Bishop); no printed
+    # value for this section without its support (the module's own)
+    assert c.FOS == pytest.approx(0.911, abs=0.002)
+    assert c.FOS < 1.033
+    assert res.governing_surface == ABOVE_TOE
+    assert c.method == "Bishop" and res.method_used == "bishop"
+    again = analyze_slope(g, xc=c.xc, yc=c.yc, radius=c.radius,
+                          method="bishop")
+    assert again.FOS == pytest.approx(c.FOS, rel=1e-6)
+    (rec,) = _by_family(res, ABOVE_TOE)
+    assert rec["method"] == "bishop" and not rec["named"]
+    assert ("Spencer's method solved none of the family's circles"
+            in rec["reason"])
+    assert "FHWA NHI-06-088 p. 6-20" in rec["reason"]
+    assert res.warnings[0].startswith(
+        f"The reported factor of safety, {c.FOS:.3f} (circle passing above "
+        f"the toe), is by Bishop's simplified method, not by Spencer's "
+        f"method, the method named")
+    assert res.named_method_lowest["method"] == "spencer"
+    assert res.named_method_lowest["FOS"] == pytest.approx(1.047, abs=0.002)
+    assert all(r["method"] != "janbu" for r in res.candidate_methods)
+
+
+def test_a_stand_in_above_the_screen_says_both_values():
+    """D1's rule of the result: a stand-in never governs above the
+    screen's own value on the same family unless the result says so, with
+    both values."""
+    import types
+    res = types.SimpleNamespace(
+        method_used="janbu", named_method="spencer",
+        governing_surface=ABOVE_TOE,
+        critical=types.SimpleNamespace(FOS=1.033),
+        screen_unsolved={"n": 4, "k": 4, "N": 339,
+                         "lowest_screen_FOS": 0.911,
+                         "by_family": {ABOVE_TOE: {
+                             "n": 4, "k": 4, "N": 339,
+                             "lowest_screen_FOS": 0.911,
+                             "lowest_screen_FOS_all": 0.911,
+                             "screen": "bishop"}}})
+    w = SS.stand_in_above_screen_warning(res)
+    assert "1.033" in w and "0.911" in w
+    assert "Janbu's simplified method standing in for Spencer's method" in w
+    res.critical.FOS = 0.90
+    assert SS.stand_in_above_screen_warning(res) is None
+    res.method_used = ""
+    res.critical.FOS = 1.033
+    assert SS.stand_in_above_screen_warning(res) is None
+
+
+def test_an_oms_search_crossed_by_a_support_is_refused_and_nothing_stands_in():
+    """N3: after the merge with step 8, a search by the Ordinary Method of
+    Slices where a support crosses any trial surface is still refused,
+    though its planes are scored by Spencer's method standing in (the
+    method is for circles): no stand-in's value is reported in its
+    place."""
+    from slope_stability.reinforcement import Geosynthetic
+    plain = _search(_sand_face(), method="fellenius", nx=3, ny=3)
+    # without the support the planes are scored by Spencer's method for it
+    assert any(r["family"] == INFINITE_SLOPE and r["method"] == "spencer"
+               for r in plain.candidate_methods)
+    g = _sand_face()
+    g.geosynthetics = [Geosynthetic(elevation=4.0, T_allow=60.0)]
+    res = _search(g, method="fellenius", nx=3, ny=3)
+    assert res.critical is None and res.candidates == {}
+    assert res.candidate_methods == [] and res.method_used == ""
+    assert res.named_method_lowest is None
+    assert any(r.get("with_supports") for r in res.no_solution)
+    (w,) = res.warnings
+    assert w.startswith("The search by the Ordinary Method of Slices is "
+                        "refused")
+
+
+def test_the_circle_check_takes_the_callers_grid(monkeypatch):
+    """Q3: the circular search of the circle check runs on the caller's
+    nx x ny grid, not a 10 x 10 default of its own."""
+    import slope_stability.analysis as A
+    real = A.search_critical_surface
+    seen = []
+
+    def spy(geom, **kw):
+        if kw.get("surface_type") == "circular":
+            seen.append((kw.get("nx"), kw.get("ny")))
+        return real(geom, **kw)
+
+    monkeypatch.setattr(A, "search_critical_surface", spy)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        res = real(_fill(), method="spencer", surface_type="noncircular",
+                   n_trials=20, seed=3, nx=4, ny=5, n_slices=20,
+                   infinite_slope=False)
+    assert seen == [(4, 5)]
+    assert res.circle_check["checked"] is True
+
+
+def test_the_v054_spencer_row_reproduces():
+    """N2: VALIDATION B26's V-054 Spencer row, from its setup: the steep
+    phi = 0 slope of test_search_supplements (no crack asked for), 40
+    slices. 2.4448, with the 12 circles the screen scored below it that
+    Spencer's method has no solution on, the lowest 2.3464 (Bishop's toe
+    circle, test_search_finds_toe_circle). With Rankine's crack asked for
+    it is another setup (2.0861, the review)."""
+    from slope_stability.tests.test_search_supplements import _toe_geom
+    res = _search(_toe_geom(), method="spencer", n_slices=40)
+    # the module's own (printed 2.16, FLAC 2.18, for the slope)
+    assert res.critical.FOS == pytest.approx(2.4448, abs=0.001)
+    su = res.screen_unsolved
+    assert su["n"] == 12 and su["k"] >= su["n"] and su["N"] > su["k"]
+    assert su["lowest_screen_FOS"] == pytest.approx(2.3464, abs=0.001)

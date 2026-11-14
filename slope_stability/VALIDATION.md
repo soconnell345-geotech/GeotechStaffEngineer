@@ -1323,9 +1323,9 @@ Ordinary Method of Slices on a plane with kh read +8.2 % and +8.8 %.)
 | #86 without supports, Morgenstern-Price: planar family | 0.9430 (Janbu) | 0.9427 | 0.9419 | the same |
 | #86, five tiebacks, Bishop / Spencer / GLE | 1.6131 / 1.6065 / 1.6070 | the same | 1.629 / 1.620 / 1.622 (D&W 1.61) | not moved (the face's planes, held by the tiebacks, are counted under Spencer or GLE, no longer Janbu) |
 | #85, one support, active: Bishop / Spencer / GLE | as STEP3 and the circle-ends record | the same | 1.531 / 1.884 / 1.575 | not moved |
-| #85 without its support, Spencer, 6 x 6 | 1.0468 (toe circle) | 1.0330 by Janbu's simplified method (circle above the toe), stated; Spencer's own lowest 1.0468 beside it; 8 circles Bishop scored down to 0.9095 that Spencer has no solution on, reported | no printed value (Bishop 0.9095 on this section) | item 4: Spencer's method solved none of the circles above the toe (142 without a solution), so the family is scored by Janbu's simplified method; item 5: the lower value governs, both stated |
+| #85 without its support, Spencer, 6 x 6 | 1.0468 (toe circle) | 0.9110 by Bishop's simplified method (circle above the toe), stated; Spencer's own lowest 1.0468 beside it; of 2 circles re-scored from the screen's lowest below 0.911, 2 have no Spencer solution (lowest 0.9095; 116 circles scored by the screen below 0.911 in all). As first built: 1.0330 by Janbu's simplified method | no printed value (Bishop 0.9095 on this section) | item 4: Spencer's method solved none of the circles above the toe (142 without a solution); on circles Bishop's simplified method stands in before Janbu's (the fix round, the ruling on the review's D1: Janbu's 1.0330 was 10 % above Bishop's 0.937 on its own circle); item 5: the lower value governs, both stated |
 | V-054 steep phi = 0 slope, Bishop, 40 slices | 2.346 (toe circle) | 2.346 | 2.16 (FLAC 2.18) | not moved |
-| V-054, Spencer, 40 slices | 2.4448 | 2.4448, with `screen_unsolved`: 12 circles Bishop scored below it, down to 2.3464, that Spencer has no solution on | 2.16 | the value is not moved; the report is new |
+| V-054, Spencer, 40 slices (`test_search_supplements._toe_geom()`, no crack asked for; `step6_section11.py`, `test_one_method.py::test_the_v054_spencer_row_reproduces`) | 2.4448 | 2.4448, with `screen_unsolved`: of the 12 circles re-scored from the screen's lowest below it, 12 have no Spencer solution, down to 2.3464 (508 circles scored by the screen below it in all) | 2.16 | the value is not moved; the report is new. With Rankine's crack asked for the search reads 2.0861 (the review), another setup |
 | V-043 sand, Spencer, default circular | 1.1859 | 1.1859 (planar family 1.2575 -> 1.2591) | Slide2 1.209 (circle) | the planes by Spencer's method |
 | V-043 sand, DE, seeds 1 to 3, Spencer | 1.237 / 1.234 / 1.233 | 1.194 from each (the critical circle, 1.186, as the polyline of its 30 slice bases); the evolution's own polylines 1.237 / 1.234 / 1.233 in `circle_check` | Slide2 1.188, Tandjiria 1.192 | the critical circle is one of the trials; the strict xfail of GM-117 passes and its mark is removed |
 | ACADS 1(a), random noncircular, 200 trials, Spencer | 1.0916 | 0.9844 (circle 0.9838; its polyline of 25 slice bases +0.06 %); own polylines 1.0916 in `circle_check` | 1.00 (Spencer 0.9838 on the circle; Slide2 0.986) | the critical circle is one of the trials |
@@ -1336,6 +1336,16 @@ Ordinary Method of Slices on a plane with kh read +8.2 % and +8.8 %.)
 | B14 weak layer over rock, Spencer | 0.8822 | 0.8822 | none | not moved |
 | Duncan Ex. 4, Bishop / Spencer | 1.2709 / 1.2584 | the same (planar family 2.3471 -> 2.3494) | closed form 2.3439 for the face | the planes by Spencer's method |
 | V-035 / V-036 (Slide2 #79, #81) | closed form (`infinite_slope_fos`) | the same | referee 1.44, 1.15 | no search in these tests |
+
+**Fix round after the review (2026-11-14).** Measured again after the merge
+with step 8 (B25) and after the fixes (the merge check, its table in
+STEP6_CHECK.md, "Fix round after review"): Figs. 8.1 and 8.4,
+#85 and #86 with supports by Spencer and by Morgenstern-Price, V-028,
+B14, V-054 by Bishop, V-043's force at R and R +- 1e-8 m and V-040 read
+as before to the digits printed; the one row that moves is #85 without
+its support (above: Bishop's simplified method stands in on circles before
+Janbu's). A circle check's circular search now takes the caller's `nx` and
+`ny`; with the defaults (10 x 10) nothing moves.
 
 Every other row of section 11 measured by the four scripts is unchanged to
 the digits printed (the list is in STEP6_CHECK.md).
