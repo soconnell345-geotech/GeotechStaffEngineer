@@ -245,9 +245,10 @@ read what they read before step 4, the overhanging circles discarded:
 Taylor's 45 deg slope 1.942 against 1.947, V-054's steep clay slope 2.346
 (printed 2.16 for the slope, whose profile ends at the toe), Slide2 #85 with
 its support Bishop 1.508 / passive 1.316 against 1.531 / 1.324 (D&W 1.51 /
-1.32). The vertical cut reads 0.935 against Taylor's 0.851, a strict xfail
+1.32). The vertical cut read 0.935 against Taylor's 0.851, a strict xfail
 with the reason (before step 4, 0.842 on a circle closed at its centre's
-level; with Rankine's crack asked for, 0.605).
+level; with Rankine's crack asked for, 0.605). Since GM-343 ("Where a
+circle ends", below) it reads 0.851 and the mark is gone.
 
 ## Public API
 ```python
@@ -1112,10 +1113,11 @@ has no solution:
 ### Where a circle ends (GM-343; GM-140 after step 3, 2026-11-13)
 **The rule.** A circle's trial surface is an arc below the ground between
 two points where the circle meets the ground. A circle that meets the
-ground at more than two points (crossing it, or touching it within the
-touch allowance) is split at those points. Each arc with ground above it is
-a trial surface of its own, solved and screened like any other (steps 2 to
-4 apply to it unchanged), and a search scores each one. A mass with no
+ground at more than two points (crossing it, or touching it; "The touch
+allowance" below says what counts as a touch) is split at those points.
+Each arc with ground above it is a trial surface of its own, solved and
+screened like any other (steps 2 to 4 apply to it unchanged), and a search
+scores each one. A mass with no
 driving moment is refused, as any such surface is (step 2). Nothing is
 refused merely for being one of two masses, and no arc is carried under the
 ground in front of the toe. The result says which arc it is.
@@ -1161,10 +1163,27 @@ over the gap of about 2e-5 m that this left.
   older than this step; no printed source) of the circle's greatest depth
   below the ground. Its value is unchanged; its role is now: (1) a stretch
   below the ground whose greatest depth is under it touches the ground,
-  carries no mass and is no arc (as before); (2) a ground corner the arc
-  passes under by less than it, where the depth has a local minimum, is a
-  touch and a meeting point: the arc is split there. Taylor's circle to two
-  decimals passes 0.007 m under the toe; it meets the ground at the toe.
+  carries no mass and is no arc (as before); (2) a ground corner inside an
+  arc that the arc passes under by less than it, where the depth has a
+  local minimum, is a touch (`CircleMeetings.touched`): a point where an
+  arc *given by its two ends* may end. Taylor's circle to two decimals (R
+  13.00) passes 0.007 m under the toe; `CircularSlipSurface(13.02, 10.96,
+  13.00, 20.0, 24.57)` ends it there (0.850). A circle given *without* its
+  ends is not split at such a corner: it crosses the ground twice and is
+  that one surface, as before this step (2.677 for that circle), and the
+  result says which corner it passed under and how to end it there. A
+  corner the arc passes *through* (zero depth to a billionth of the
+  radius: a circle built through a toe) does split it.
+- *Why a touched corner does not split an ungiven circle* (a call, for the
+  owner; `_SPLIT_AT_TOUCHED_CORNERS`). The rule's words, "touching it
+  within the touch allowance", can be read to split there too. Built that
+  way first and measured: an arc may then pass up to the allowance under a
+  toe and be ended at it, which leaves a small free face, so every search's
+  minimum sat a little below its toe circles and moved with the constant.
+  The vertical cut read 0.844 where its toe circles read 0.8514 (Taylor
+  0.8511), and V-042's entry / exit search read 1.3269 for 1.3335 (printed
+  1.334), a benchmark whose circles cross the ground twice. As built, both
+  read as print.
 - *A circle carries its arc's two ends*: `CircularSlipSurface(xc, yc,
   radius, x_start, x_end)`. `find_entry_exit` returns them, so the slices,
   the supports, the crack and every check are cut between them. `arcs(geom)`
@@ -1187,9 +1206,9 @@ over the gap of about 2e-5 m that this left.
   warning says the same in a sentence. FOSM and Monte Carlo on a given
   circle take the arc with the lowest factor of safety at the values given
   and hold it for every evaluation. Ends given by the caller must be the
-  two ends of one of the circle's arcs (within a thousandth of the radius;
-  they are set on the meeting points), or the surface is refused with the
-  circle's arcs listed.
+  two ends of one of the circle's arcs, or a touched corner inside it
+  (within a thousandth of the radius; they are set on those points), or
+  the surface is refused with the circle's arcs listed.
 - *The searches* (`search._compute_fos`, every family's scorer). A split
   circle's score is the lowest of its arcs' scores; each arc goes through
   the same solve, the same counts (`no_solution` by family, method and
@@ -1214,8 +1233,9 @@ refused (`GroundCrossingError`, GM-122 below): the rule above is for
 circles, and the noncircular generators place their ends on the ground.
 
 **Measured** (`module_work/gm140/CIRCLE_ENDS_CHECK.md`). The vertical cut:
-the default Bishop search 0.935 -> 0.844 (Taylor 0.851, -0.9 %); Taylor's
-circle, 120 slices, 2.676 -> 0.850 (0.8514 by hand, -0.1 %). Spencer's
+the default Bishop search 0.935 -> 0.8514, on a toe circle (Taylor 0.8511,
++0.03 %); Taylor's circle through the toe, 120 slices, 2.676 -> 0.8515
+(0.8514 by hand). Spencer's
 method has no solution on that arc (no lambda from -1.5 to 1.5 at which the
 moment and force factors of safety agree) and says so: a Spencer or GLE
 search of such a cut can leave Taylor's surface unscored, and counts it.
@@ -1703,8 +1723,9 @@ boundary, entry to exit, and `build_slices` cuts there.
   polyline asked for 60: 85). Every consumer works from the slices
   themselves (each method, m_alpha (GM-127), the slice tables, the
   rapid-drawdown stage mapping by `x_mid`), so none assumes equal widths;
-  a surface below the ground in more than one stretch (GM-122) is refused
-  by `find_entry_exit` before any slicing; the section figure draws each
+  a polyline below the ground in more than one stretch (GM-122) is refused
+  by `find_entry_exit` before any slicing (a circle is split there and
+  each arc sliced between its own two ends, GM-343); the section figure draws each
   polyline boundary from the surface at the boundary rather than at the
   slice's mid-base.
 - **The planar family** (infinite slope) is a polyline too: its end ramps

@@ -51,8 +51,9 @@ _DE_REFUSED = 100.0
 
 
 # Trial surfaces refused, counted into the tally of the search running in
-# this context: [0] those that leave the ground and come back into it
-# (GM-122, ``GroundCrossingError``; `_compute_fos` and `_check_entry_exit`),
+# this context: [0] polylines that leave the ground and come back into it
+# (GM-122, ``GroundCrossingError``; `_compute_fos` and `_check_entry_exit`;
+# a circle is split there instead, GM-343: `_ARCS`),
 # [1] those with m_alpha < 0.2 on a slice (GM-127; `_compute_fos` and the
 # rapid-drawdown search's per-surface solve).
 _REFUSALS: contextvars.ContextVar = contextvars.ContextVar(

@@ -19,8 +19,9 @@ A circle's trial surface is an arc below the ground between two points
 where the circle meets the ground. The meeting points are found from the
 ground's segments and corners (``circle_ground_meetings``), not by
 sampling, so a toe or any other corner divides the arc. A circle that
-meets the ground at more than two points (crossing it, or touching it
-within the touch allowance) is split at those points, and each arc with
+meets the ground at more than two points (crossing it, or touching it: a
+corner it passes through, or a stretch that dips under the ground by less
+than the touch allowance) is split at those points, and each arc with
 ground above it is a trial surface of its own (``CircularSlipSurface.arcs``):
 a circle carries the two ends of the arc it stands for (``x_start``,
 ``x_end``), and the slices are cut between them. Nothing is refused for
@@ -59,47 +60,12 @@ _ON_GROUND_TOL = 1e-6
 # polyline) below the ground. A stretch below the ground whose greatest depth
 # is under it only touches the ground: it carries no mass and is left out.
 # For a circle (GM-343) a ground corner the arc passes under by less than it,
-# where the depth has a local minimum, is a touch too, and a meeting point:
-# the arc is split there. (The value is the module's own, older than GM-343;
-# no printed source. Only its role changed there.)
+# where the depth has a local minimum, is a touch too: a point where an arc
+# given by its two ends may end (``CircleMeetings.touched``). A circle given
+# without its ends is not split there (`_SPLIT_AT_TOUCHED_CORNERS`). (The
+# value is the module's own, older than GM-343; no printed source. Only its
+# role changed there.)
 _TOUCH_FRACTION = 0.01
-
-
-def _stretches_below(samples, crossings, tol=_ON_GROUND_TOL):
-    """The stretches (x_from, x_to) where a surface is below the ground.
-
-    ``samples`` are (x, depth below the ground) in x order and
-    ``crossings`` the bisected crossings of the ground between them. A
-    stretch is a run of samples more than ``tol`` below the ground; a
-    sample within ``tol`` of the ground (a surface built through a point on
-    it, a toe it passes through) neither starts nor ends one. A stretch
-    starts and ends at its crossings, else at its last or first sample on
-    the ground. One below the ground at the first or last sample runs out
-    of the sampled range there and starts or ends at that sample.
-    """
-    stretches = []
-    run = None
-    last_end = -math.inf
-    for i, (x, depth) in enumerate(samples):
-        if depth > tol:
-            if run is None:
-                before = [c for c in crossings if last_end < c <= x]
-                start = (before[-1] if before
-                         else x if i == 0 else samples[i - 1][0])
-                run = [start, x]
-            run[1] = x
-        elif depth < -tol and run is not None:
-            after = [c for c in crossings if run[1] <= c <= x]
-            end = after[-1] if after else samples[i - 1][0]
-            stretches.append((run[0], end))
-            last_end = end
-            run = None
-    if run is not None:
-        x_last, depth_last = samples[-1]
-        after = [c for c in crossings if run[1] <= c <= x_last]
-        end = (x_last if depth_last > tol or not after else after[-1])
-        stretches.append((run[0], end))
-    return stretches
 
 
 def _masses(stretches, depth_at, xs_extra=()):
@@ -128,8 +94,19 @@ def _masses(stretches, depth_at, xs_extra=()):
 _SIDE_INSET = 1e-9
 
 # Two meeting points closer than this fraction of the radius are one (a
-# corner found from both of its segments).
+# corner found from both of its segments), and an arc within it of a corner
+# passes through the corner (a circle built through a toe).
 _MEET_MERGE = 1e-9
+
+# Whether a circle given without its ends is split at a corner it passes
+# under by less than the touch allowance (the other reading of GM-343's
+# rule, "touching it within the touch allowance"). Off: measured with it
+# on, a search's minimum moved with the allowance (an arc may pass up to
+# the allowance under a toe and be ended there, which leaves a small free
+# face): the vertical cut read 0.844 where its toe circles read 0.8514
+# (Taylor 0.8511), and V-042's entry / exit search 1.3269 for 1.3335
+# (printed 1.334). `module_work/gm140/CIRCLE_ENDS_CHECK.md`, "Calls made".
+_SPLIT_AT_TOUCHED_CORNERS = False
 
 
 @dataclass
@@ -142,8 +119,11 @@ class CircleMeetings:
     touch allowance). ``runs_out``: the stretches below the ground that
     run out of the profile at one of its ends (not between two meeting
     points: not trial surfaces). ``points``: every meeting point's x
-    (crossings, corners touched from below, corners within the allowance,
-    and a circle's side where the ground is above the centre's level).
+    (crossings, corners the arc passes through, and a circle's side where
+    the ground is above the centre's level). ``touched``: the (x, depth)
+    of each ground corner inside an arc that the arc passes under by less
+    than the allowance, at a local minimum of its depth: the arc is not
+    split there, but an arc given by its two ends may end there.
     ``allowance``: the touch allowance (m). ``n_crossings``: the points
     where the arc crosses the ground or touches it exactly."""
     arcs: List[Tuple[float, float]]
@@ -152,6 +132,7 @@ class CircleMeetings:
     points: List[float]
     allowance: float
     n_crossings: int
+    touched: List[Tuple[float, float]] = field(default_factory=list)
 
 
 def circle_ground_meetings(xc: float, yc: float, radius: float,
@@ -172,11 +153,15 @@ def circle_ground_meetings(xc: float, yc: float, radius: float,
     segment's, x = xc + R m / sqrt(1 + m^2).
 
     The rule: a stretch below the ground between two meeting points is an
-    arc. A corner inside a stretch where the depth has a local minimum
-    under the touch allowance (``_TOUCH_FRACTION`` of the circle's greatest
-    depth below the ground) is a meeting point too and splits the stretch;
-    a stretch (or part of one) whose greatest depth is under the allowance
-    is a touch and is left out. A stretch that reaches an end of the
+    arc. A corner the arc passes through from below (its depth there zero,
+    to ``_MEET_MERGE`` of the radius: a circle built through a toe) is a
+    meeting point and splits the stretch. A stretch (or part of one) whose
+    greatest depth is under the touch allowance (``_TOUCH_FRACTION`` of the
+    circle's greatest depth below the ground) is a touch and is left out.
+    A corner inside an arc that the arc passes under by less than the
+    allowance, at a local minimum of its depth, is listed in ``touched``:
+    an arc given by its two ends may end there (`given_arc`); the circle
+    is not split there. A stretch that reaches an end of the
     profile below the ground runs out of the model and is not an arc. A
     circle's side inside the profile with the ground above the centre's
     level ends an arc there (the arc is vertical: a "reverse curvature"
@@ -255,9 +240,12 @@ def circle_ground_meetings(xc: float, yc: float, radius: float,
     allowance = _TOUCH_FRACTION * max(greatest_depth(a, b)
                                       for a, b, _ in stretches)
 
-    # a corner passed under by less than the allowance, at a local minimum
-    # of the depth, is a touch: a meeting point
+    # a corner the arc passes through from below (a local minimum of the
+    # depth, zero to the merge tolerance) is a meeting point; one it passes
+    # under by less than the allowance is a touch, where a given arc may end
     points = list(crossings)
+    touched = []
+    split_under = allowance if _SPLIT_AT_TOUCHED_CORNERS else merge
     parts = []
     for a, b, out in stretches:
         cuts = [a]
@@ -265,14 +253,18 @@ def circle_ground_meetings(xc: float, yc: float, radius: float,
             x, z = pts[i]
             if not (a + merge < x < b - merge):
                 continue
-            if not (0.0 <= z - slip_z(x) < allowance):
+            under = z - slip_z(x)
+            if not (0.0 <= under < max(allowance, merge)):
                 continue
             slope = (x - xc) / math.sqrt(max(r2 - (x - xc) ** 2, 1e-300))
             m_left = (z - pts[i - 1][1]) / (x - pts[i - 1][0])
             m_right = (pts[i + 1][1] - z) / (pts[i + 1][0] - x)
             if m_left <= slope <= m_right:
-                cuts.append(x)
-                points.append(x)
+                if under < split_under:
+                    cuts.append(x)
+                    points.append(x)
+                else:
+                    touched.append((x, under))
         cuts.append(b)
         for j, (c, d) in enumerate(zip(cuts[:-1], cuts[1:])):
             parts.append((c, d, out and ((j == 0 and c == lo)
@@ -294,8 +286,10 @@ def circle_ground_meetings(xc: float, yc: float, radius: float,
                 b = hi - inset
                 points.append(b)
             arcs.append((a, b))
+    touched = [(x, d) for x, d in touched
+               if any(a < x < b for a, b in arcs)]
     return CircleMeetings(arcs, touches, runs_out, sorted(set(points)),
-                          allowance, len(crossings))
+                          allowance, len(crossings), touched)
 
 
 class SeveralArcsError(ValueError):
@@ -331,8 +325,9 @@ def describe_arc(slip, meetings: "CircleMeetings") -> Optional[dict]:
     n = len(arcs)
     where = f"x {slip.x_start:.3f} to {slip.x_end:.3f}"
     if index is None:
-        text = (f"the arc from {where}, its ends as given (the circle "
-                f"meets the ground at {len(meetings.points)} points)")
+        text = (f"the arc from {where}, its ends as given: an end is at a "
+                f"ground corner the circle passes just under, within the "
+                f"touch allowance of {meetings.allowance:.3f} m")
     elif n == 1:
         text = f"the circle's one arc below the ground, {where}"
     else:
@@ -350,23 +345,35 @@ def given_arc(slip, geom) -> "CircularSlipSurface":
     """A circle whose two ends were given, with each end set on the point
     where the circle meets the ground (GM-343).
 
-    Each given end must lie within a thousandth of the radius of a meeting
-    point (a result's ends may have been rounded), and the arc between
-    them must be one of the circle's arcs or a run of neighbouring ones
-    with nothing but touches between. Anything else is refused with the
-    circle's own arcs listed: ends placed anywhere else would cut the
-    sliding mass with a vertical face no method was told of."""
+    Each given end must lie within a thousandth of the radius (a result's
+    ends may have been rounded) of an end of one of the circle's arcs, or
+    of a ground corner inside that arc which the arc passes under by less
+    than the touch allowance (``CircleMeetings.touched``: a touch within
+    the allowance counts as a meeting point, so Taylor's toe circle
+    written to two decimals, which passes 7 mm under the toe, can be
+    ended at the toe). Both ends must belong to the same arc, so the
+    ground is above the surface all the way between them. Anything else
+    is refused with the circle's own arcs listed: ends placed anywhere
+    else would cut the sliding mass with a vertical face no method was
+    told of."""
     found = slip.meetings(geom)
     tol = 1e-3 * slip.radius
     for a, b in found.arcs:
-        if abs(a - slip.x_start) <= tol and abs(b - slip.x_end) <= tol:
-            return slip.arc(a, b)
+        ends = [a] + [x for x, _ in found.touched if a < x < b] + [b]
+        lo = [x for x in ends if abs(x - slip.x_start) <= tol]
+        hi = [x for x in ends if abs(x - slip.x_end) <= tol]
+        if lo and hi and lo[0] < hi[0]:
+            return slip.arc(min(lo, key=lambda x: abs(x - slip.x_start)),
+                            min(hi, key=lambda x: abs(x - slip.x_end)))
     where = ", ".join(f"x {a:.3f} to {b:.3f}" for a, b in found.arcs)
+    at = ", ".join(f"x {x:.3f}" for x, _ in found.touched)
     raise ValueError(
         f"Circle (xc={slip.xc:.2f}, yc={slip.yc:.2f}, R={slip.radius:.2f}): "
         f"the ends given (x {slip.x_start:.3f} to {slip.x_end:.3f}) are not "
         f"the two ends of an arc of this circle below the ground. Its "
-        f"arcs: {where or 'none'}.")
+        f"arcs: {where or 'none'}"
+        + (f"; an arc may also end at the ground corner it passes just "
+           f"under at {at}" if at else "") + ".")
 
 
 def circle_of(result) -> "CircularSlipSurface":

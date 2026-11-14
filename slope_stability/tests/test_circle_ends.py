@@ -10,6 +10,13 @@ surface is. Nothing is refused merely for being one of two masses, and no
 arc is carried under the ground in front of the toe. The result says which
 arc it is.
 
+A touch: a stretch that dips under the ground by less than the touch
+allowance carries no mass and is no arc; a corner the arc passes through
+splits it; a corner it passes just under (within the allowance) is where an
+arc given by its two ends may end, and does not split a circle given
+without them (DESIGN.md says why: the search's minimum would move with the
+allowance).
+
 Print. The family of circles with their lower end on the face: FHWA
 NHI-06-088 p. 6-38. A search that covers face exits at all heights: GEC 11
 p. 9-6. Taylor's stability number for a vertical face in a phi = 0 soil,
@@ -40,10 +47,12 @@ from slope_stability.slip_surface import (
 # Taylor's stability number for a vertical face, phi = 0: 3.83
 _TAYLOR = 3.83 * 20.0 / (18.0 * 5.0)
 
-# Taylor's circle for the cut below, to two decimals: through the toe
-# (20, 0) and the crest at x 24.57. By hand (moments about the centre, the
-# sector less the triangles): F = 0.8514.
-_TAYLOR_CIRCLE = dict(xc=13.02, yc=10.96, radius=13.00)
+# Taylor's circle for the cut below: centre (13.02, 10.96), through the toe
+# (20, 0), to the crest at x 24.57. By hand (moments about the centre, the
+# sector less the triangles): F = 0.8514. To two decimals its radius is
+# 13.00, which passes 7 mm under the toe.
+_TAYLOR_CIRCLE = dict(xc=13.02, yc=10.96,
+                      radius=math.hypot(20.0 - 13.02, 10.96))
 
 
 def _vertical_cut():
@@ -153,12 +162,12 @@ def test_taylors_circle_ends_at_the_toe():
     # the arc named by its two ends is the same surface
     named = analyze_slope(
         geom, method="bishop", n_slices=120,
-        slip_surface=CircularSlipSurface(13.02, 10.96, 13.00, 20.0,
-                                         res.x_exit))
+        slip_surface=CircularSlipSurface(
+            res.xc, res.yc, res.radius, res.x_entry, res.x_exit))
     assert named.FOS == pytest.approx(res.FOS, rel=1e-9)
     # and the slices stop at the toe
     slices = build_slices(geom, circle_of(res), 30)
-    assert min(s.x_mid - 0.5 * s.width for s in slices) >= 20.0 - 1e-9
+    assert min(s.x_mid - 0.5 * s.width for s in slices) >= 20.0 - 1e-6
 
 
 def test_vertical_cut_default_search_reads_taylor():
@@ -180,7 +189,7 @@ def test_spencer_on_taylors_arc_has_no_solution_and_says_so():
     of safety agree. It reports no solution with step 2's reason, never a
     forced value."""
     geom = _vertical_cut()
-    arc = CircularSlipSurface(13.02, 10.96, 13.00).arcs(geom)[1]
+    arc = CircularSlipSurface(**_TAYLOR_CIRCLE).arcs(geom)[1]
     res = analyze_slope(geom, slip_surface=arc, method="spencer",
                         n_slices=60)
     assert res.FOS is None and not res.method_solved
@@ -286,19 +295,35 @@ def test_a_circle_touching_the_floor_within_the_allowance_is_split_there():
     assert arc[0] == pytest.approx(20.0, abs=1e-3)   # on the face
 
 
-def test_a_toe_passed_under_within_the_allowance_is_a_meeting_point():
-    """Taylor's circle to two decimals passes 0.007 m under the toe, less
-    than the touch allowance (0.05 m here): it touches the ground at the
-    toe, and is split there. A circle passing 0.5 m under the toe is one
-    surface running on under the floor (a base circle)."""
+def test_an_arc_may_be_ended_at_a_toe_it_passes_just_under():
+    """Taylor's circle to two decimals (R 13.00) passes 0.007 m under the
+    toe, less than the touch allowance (0.05 m here), and runs on under
+    the floor: given without ends it is that one surface, two crossings,
+    as before (2.68), and the result says what it passed under. A touch
+    within the allowance counts as a meeting point: the arc may be ended
+    there by giving its two ends, and reads Taylor's value. A circle
+    passing 0.5 m under the toe cannot be ended there."""
     geom = _vertical_cut()
-    found = CircularSlipSurface(13.02, 10.96, 13.00).meetings(geom)
-    assert 0.0 < 13.00 - math.hypot(20 - 13.02, 10.96) < found.allowance
-    assert [round(b, 6) for _, b in found.arcs][0] == 20.0
-    assert found.arcs[1][0] == 20.0
-    deep = CircularSlipSurface(13.02, 10.96, 13.50).meetings(geom)
-    assert len(deep.arcs) == 1
-    assert deep.arcs[0][0] < 20.0 < deep.arcs[0][1]
+    slip = CircularSlipSurface(13.02, 10.96, 13.00)
+    found = slip.meetings(geom)
+    assert len(found.arcs) == 1 and found.n_crossings == 2
+    ((x_toe, under),) = found.touched
+    assert x_toe == 20 and under == pytest.approx(0.0072, abs=0.0002)
+    assert under < found.allowance
+    one = analyze_slope(geom, slip_surface=slip, method="bishop",
+                        n_slices=120)
+    assert one.FOS == pytest.approx(2.677, abs=0.005)
+    assert any("under the ground corner at x = 20.00" in w
+               for w in one.warnings)
+    ended = analyze_slope(
+        geom, method="bishop", n_slices=120,
+        slip_surface=CircularSlipSurface(13.02, 10.96, 13.00, 20.0, 24.57))
+    assert ended.FOS == pytest.approx(0.8514, rel=0.005)
+    assert ended.x_entry == 20
+    assert "its ends as given" in ended.arc["description"]
+    with pytest.raises(ValueError, match="not the two ends of an arc"):
+        analyze_slope(geom, method="bishop", slip_surface=CircularSlipSurface(
+            13.02, 10.96, 13.50, 20.0, 24.9))
 
 
 # ---------------------------------------------------------------------------

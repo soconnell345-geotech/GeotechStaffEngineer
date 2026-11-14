@@ -14,6 +14,7 @@ One line per measured value. It runs on both trees: fields that exist only
 after the step are read with getattr. Each geometry is taken from the test
 module that pins it, or is the brief's (nothing else is re-entered).
 """
+import math
 import warnings
 
 warnings.simplefilter("ignore")
@@ -45,7 +46,7 @@ def one(name, geom, **kw):
         r = analyze_slope(geom, **kw)
         arc = getattr(r, "arc", None)
         print(f"{name}: FOS {f3(r.FOS)}, x {r.x_entry:.3f} to {r.x_exit:.3f}"
-              + (f", arc {arc['index']} of {arc['n_arcs']}" if arc else ""))
+              + (f", arc {arc['index'] or 'as given'} of {arc['n_arcs']}" if arc else ""))
     except ValueError as exc:
         print(f"{name}: refused ({str(exc)[:110]})")
 
@@ -71,8 +72,21 @@ def main():
         one(f"Taylor's circle (13.02, 10.96) R 13.00, Bishop, {n} slices",
             cut, xc=13.02, yc=10.96, radius=13.00, method="bishop",
             n_slices=n)
-    one("Taylor's circle, Spencer, 60 slices", cut, xc=13.02, yc=10.96,
-        radius=13.00, method="spencer", n_slices=60)
+    r_toe = math.hypot(20.0 - 13.02, 10.96)
+    for n in (30, 120):
+        one(f"Taylor's circle through the toe (R {r_toe:.4f}), Bishop, "
+            f"{n} slices", cut, xc=13.02, yc=10.96, radius=r_toe,
+            method="bishop", n_slices=n)
+    one("Taylor's circle through the toe, Spencer, 60 slices", cut,
+        xc=13.02, yc=10.96, radius=r_toe, method="spencer", n_slices=60)
+    try:
+        ended = CircularSlipSurface(13.02, 10.96, 13.00, 20.0, 24.57)
+        one("Taylor's circle R 13.00 ended at the toe by its two ends, "
+            "Bishop, 120 slices", cut, slip_surface=ended, method="bishop",
+            n_slices=120)
+    except TypeError:
+        print("Taylor's circle R 13.00 ended at the toe by its two ends: "
+              "a circle takes no ends on this tree")
     one("circle leaving the face 2 % of H above the toe (through "
         "(20.00002, 0.1) and the crest at x 24.57)", cut,
         slip_surface=_through((20.00002, 0.1), (24.57, 5.0), 13.0),
@@ -105,7 +119,6 @@ def main():
 
 def _through(p, q, r):
     """The circle of radius r through p and q with its centre above."""
-    import math
     (x1, z1), (x2, z2) = p, q
     mx, mz = 0.5 * (x1 + x2), 0.5 * (z1 + z2)
     c = math.hypot(x2 - x1, z2 - z1)

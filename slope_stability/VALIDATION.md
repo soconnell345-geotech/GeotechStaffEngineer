@@ -973,6 +973,30 @@ probe `step3fix/probe6.py` of the fix round, run once on each):
 | ACADS 1(a), random noncircular, 200 trials, Spencer | 1.0915 | 0.6332 | base_tension, side_tension, thrust_outside | 1.0959 | 0; 0 | 108 of 144 (side_tension 73, thrust_outside 106, base_tension 1) | 1.00 (Giam and Donald 1989; Slide2 Verification #1) |
 | ACADS 4, weak-layer search, 700 trials, Spencer | 0.8301 | 0.8301 | side_tension, thrust_outside | 1.6666 | 0; 0 | 288 of 344 (base_tension 124, side_tension 257, thrust_outside 268) | 0.760 (Slide2 manual p. 52) |
 
+## B23 — Where a circle ends (GM-343; GM-140 after step 3, 2026-11-13)
+
+A circle that meets the ground at more than two points is split there and
+each arc below the ground is a trial surface of its own; the toe circles
+end at the toe (DESIGN.md "Where a circle ends"). Measured before and after
+with `module_work/gm140/circle_ends_section11.py`; the whole of section 11
+is in `module_work/gm140/CIRCLE_ENDS_CHECK.md`.
+
+| Case | Before | After | Print |
+|---|---|---|---|
+| Vertical 5 m cut, cu 20 kPa, 18 kN/m3: default search, Bishop / Ordinary Method of Slices | 0.9353 | 0.8514 (a toe circle) | Taylor, Ns 3.83: 0.8511 (+0.03 %) |
+| the same, Janbu (corrected) | 1.1250 | 0.9137 | (Taylor's number is a moment solution) |
+| the same, Spencer / Morgenstern-Price | 0.9626 | 0.8632 | 0.8511 (+1.4 %); neither has a solution on Taylor's own arc |
+| Taylor's circle, centre (13.02, 10.96) through the toe, Bishop, 30 / 120 slices | 2.676 / 2.682 (read from x 6.04, under the floor) | 0.8514 / 0.8515, the arc from the toe; the arc under the floor has no driving moment | 0.8514 by hand |
+| the same to two decimals (R 13.00, 7 mm under the toe), ended at the toe by its two ends | a circle took no ends | 0.8503 | 0.8514 (-0.1 %) |
+| the same given without ends | 2.677 | 2.677, one surface (two crossings), with the corner it passes under named | - |
+| Circles leaving the face 2 % / 5 % of H above the toe | refused as two masses | 0.869 / 0.897 | - |
+| Cut over rock (w10), circle (10, 39.5) R 40, Bishop / Spencer | refused as two masses | 7.355 / 7.387, the slope's arc; the lens under the floor has no factor of safety | - |
+| w10 default search, Bishop | 0.9379 (86 circles refused) | 0.9379 (407 circles split) | - |
+| Windows given that leave the toe out (entry 0 to 4, toe at 5) | 1.3164, a "toe circle" carried 1 m under the floor in front of the toe | 1.3198, the main search's circle; no toe circle lies in the window | - |
+
+Every pinned benchmark whose circles meet the ground at two points reads as
+before (the check file lists them).
+
 ## Notes / known deviations
 
 - Ordinary method with ru: formulation-sensitive (F&K 1.607 vs Slide2

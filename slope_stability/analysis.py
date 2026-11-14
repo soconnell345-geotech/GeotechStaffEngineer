@@ -103,6 +103,22 @@ def analyze_slope(geom: SlopeGeometry,
         (``methods.NEGATIVE_TERM_RULES``). None (default) takes the rule in
         force, which is 'as_printed' unless a search was given another.
 
+    Where a circle ends (GM-343; DESIGN.md "Where a circle ends"). A
+    circle's surface is an arc below the ground between two points where
+    the circle meets the ground. A circle given by xc, yc and radius that
+    meets the ground at more than two points (crossing it, or passing
+    through a corner of it) is split at those points; each arc is
+    analysed as a surface of its own and the result is the arc with the
+    lowest factor of safety. ``arc`` names it and lists the others, each
+    with its value or the reason it has none (an arc with no net driving
+    moment has no factor of safety). To analyse one arc, give its two
+    ends: ``slip_surface=CircularSlipSurface(xc, yc, radius, x_start,
+    x_end)``; an end may also be a ground corner the arc passes under by
+    less than the touch allowance (1 % of its greatest depth), and any
+    other ends are refused. A circle given without ends that passes under
+    such a corner is not split there: ``warnings`` names the corner. The
+    rule is the module's: no reference in hand prints one.
+
     Returns
     -------
     SlopeStabilityResult
@@ -456,6 +472,19 @@ def analyze_slope(geom: SlopeGeometry,
     # and supports Bishop / the OMS count little of.
     cracks.apply_to_result(result, crack_out)
     result.arc = arc_info
+    if is_circular and arc_info is None:
+        # a corner the arc passes just under: said, because ending the arc
+        # there is another surface (GM-343)
+        for x_c, under in slip.meetings(geom).touched:
+            if x_entry < x_c < x_exit:
+                result.warnings.append(
+                    f"This circle passes {under:.3f} m under the ground "
+                    f"corner at x = {x_c:.2f}, less than the touch "
+                    f"allowance, and runs on below the ground to x = "
+                    f"{x_entry if abs(x_entry - x_c) > abs(x_exit - x_c) else x_exit:.2f}"
+                    f": it is analysed as that one surface. If the "
+                    f"surface meant ends at the corner (a toe circle), "
+                    f"give the arc's two ends, one of them x = {x_c:.2f}.")
     result._no_solution_kind = primary.kind if not primary.solved else ""
     if is_circular:
         from slope_stability.search_supplements import _support_arm_warning
@@ -833,10 +862,19 @@ def search_critical_surface(
     Caller-given windows and centre ranges are honoured; the automatic
     ones do not restrict the supplementary families.
 
-    A trial surface below the ground over more than one stretch (it leaves
-    the ground and comes back into it) is not one sliding mass and is
-    refused (GM-122, ``slip_surface.GroundCrossingError``);
-    ``n_rejected_ground_crossings`` counts them, in every family.
+    Where a circle ends (GM-343). A trial circle that meets the ground at
+    more than two points (crossing it, or passing through a corner of
+    it) is split at those points, and each arc below the ground is
+    a trial surface of its own, solved and screened like any other; an arc
+    with no driving moment has no factor of safety and is counted
+    (``no_solution``, ``no_driving``). ``circles_split`` counts the circles
+    split, by the arcs each gave, and ``critical.arc`` says which arc the
+    governing surface is. The toe circles end at the toe: no arc is carried
+    under the ground in front of it. The rule is the module's (no reference
+    in hand prints one; DESIGN.md "Where a circle ends"). A noncircular
+    trial surface below the ground over more than one stretch is refused
+    (GM-122, ``slip_surface.GroundCrossingError``);
+    ``n_rejected_ground_crossings`` counts those.
 
     Given a time budget (GM-123, ``time_budget_s``; none by default), the
     main search scores its centres or entry/exit pairs coarse first and
