@@ -1,0 +1,312 @@
+"""The figure test set (BACKLOG GM-314), offline: fake models, no network
+and no model spend."""
+
+from __future__ import annotations
+
+import json
+import os
+
+import pytest
+
+from funhouse_agent.figure_eval import checklist, report, runner
+from funhouse_agent.figure_eval import request_set as freq
+from funhouse_agent.figure_eval.compare import compare, item_outcome
+
+ITEM_IDS = checklist.ITEM_IDS
+
+
+# ---------------------------------------------------------------------------
+# the requests
+# ---------------------------------------------------------------------------
+
+def test_the_set_is_about_twenty_general_requests_on_the_sample_inputs():
+    defs = freq.definitions()
+    rows = freq.sample_rows()
+    probes = freq.probes()
+    assert 18 <= len(defs) <= 24
+    ids = [d["id"] for d in defs]
+    assert len({i.split("-")[0] for i in ids}) == len(ids)
+    for d in defs:
+        assert d["row"] in rows, d["id"]
+        assert d["kind"] in freq.KINDS, d["id"]
+        assert set(d["tests"]) <= set(ITEM_IDS), d["id"]
+        assert d["extra"] and all(x.strip() for x in d["extra"]), d["id"]
+        assert "made-up" in d["ask"], d["id"]
+        probe = (d.get("replace") or {}).get("probe")
+        assert probe is None or probe in probes, d["id"]
+    # spread: every kind of figure, most modules, figures nobody names,
+    # and every checklist item tested by some request
+    assert {d["kind"] for d in defs} == set(freq.KINDS)
+    assert len({rows[d["row"]]["module"] for d in defs}) >= 15
+    assert sum(1 for d in defs if not d["named"]) >= 8
+    assert set().union(*(d["tests"] for d in defs)) == set(ITEM_IDS)
+
+
+def test_requests_pass_the_sample_rows_own_numbers():
+    rows = freq.sample_rows()
+    probes = freq.probes()
+    defs = {d["id"]: d for d in freq.definitions()}
+    for r in freq.resolve():
+        assert json.dumps(r["inputs"]) in r["prompt"]
+        assert "project_name" not in r["inputs"]
+        rep = defs[r["id"]].get("replace")
+        if not rep:
+            want = {k: v for k, v in rows[r["method"]]["params"].items()
+                    if k not in freq.HEADER}
+            assert r["inputs"] == want, r["id"]
+            assert r["sample_row"]["params"] == rows[r["method"]]["params"]
+        else:
+            probe = probes[rep["probe"]]["params"]
+            extra = {k: v for k, v in rep.items() if k != "probe"}
+            assert r["inputs"] == {**probe, **extra}, r["id"]
+            assert r["sample_row"]["origin"] == "method_probe"
+    assert [r["id"] for r in freq.select(freq.resolve(), ["R01"])] == [
+        "R01-bearing-width"]
+    with pytest.raises(KeyError):
+        freq.select(freq.resolve(), ["R99"])
+
+
+# ---------------------------------------------------------------------------
+# the marks
+# ---------------------------------------------------------------------------
+
+REQ = {"id": "R1-x", "ask": "Draw it for a made-up job.", "extra": ["must"]}
+
+
+def test_parse_marks_reads_fenced_json_and_lists_what_is_missing():
+    text = "Here:\n```json\n" + json.dumps({"marks": [
+        {"id": "axes_units", "mark": "YES", "reason": "both axes"},
+        {"id": "kpa_kn", "mark": "n/a", "reason": "no stress"},
+        {"id": "x1", "mark": "no", "reason": "missing"},
+        {"id": "data_ink", "mark": "maybe", "reason": "?"}],
+        "note": "fine"}) + "\n```"
+    out = checklist.parse_marks(text, REQ)
+    m = out["marks"]
+    assert len(m) == len(ITEM_IDS) + 1
+    assert (m["axes_units"]["mark"], m["kpa_kn"]["mark"],
+            m["x1"]["mark"]) == ("yes", "na", "no")
+    assert m["data_ink"]["mark"] == "na"
+    assert "data_ink" in out["unmarked"] and "quantity_axes" in out[
+        "unmarked"] and "axes_units" not in out["unmarked"]
+    bad = checklist.parse_marks("I cannot see a figure.", REQ)
+    assert bad["unmarked"] == [i["id"] for i in checklist.items_for(REQ)]
+
+
+def _check(marks, req=REQ, no_figure=False):
+    ids = [i["id"] for i in checklist.items_for(req)]
+    return {"marks": {i: {"mark": marks.get(i, "yes"), "reason": "r"}
+                      for i in ids}, "no_figure": no_figure,
+            "unmarked": [], "note": ""}
+
+
+def test_the_package_names_what_the_notebook_uses():
+    import funhouse_agent.figure_eval as fe
+    assert fe.score_figure_set is runner.score_figure_set
+    assert fe.ARMS == ("off", "on") and fe.ARM_ENV["off"] == {
+        "GEOTECH_FIGURE_HELPER": "1", "GEOTECH_PLOT_CODE": "0"}
+    assert fe.prepare is freq.prepare and fe.ITEMS is checklist.ITEMS
+
+
+def test_item_outcomes():
+    assert item_outcome("yes", "yes") == item_outcome("na", "na") == "same"
+    assert item_outcome("no", "yes") == "better"
+    assert item_outcome("yes", "no") == "worse"
+    assert item_outcome("na", "yes") == item_outcome("no", "na") == "one_na"
+
+
+def test_equal_marks_compare_same_on_every_item_and_overall():
+    reqs = [{"id": "R1-a", "extra": ["one"]}, {"id": "R2-b", "extra": []}]
+    marks = {iid: ("yes", "no", "na")[k % 3]
+             for k, iid in enumerate(ITEM_IDS)}
+    checks = {r["id"]: {a: _check(marks, r) for a in ("off", "on")}
+              for r in reqs}
+    res = compare(reqs, checks)
+    assert res["requests"] == {"better": [], "same": ["R1-a", "R2-b"],
+                               "worse": []}
+    assert res["items"] == {"better": 0, "same": 2 * len(ITEM_IDS) + 1,
+                            "worse": 0, "one_na": 0}
+    assert all(not row["better"] and not row["worse"] and not row["one_na"]
+               for row in res["per_item"].values())
+    assert res["marks"]["off"] == res["marks"]["on"]
+    md = report.render_markdown(_results(reqs, checks, res))
+    assert "| same | 2 | R1, R2 |" in md
+    assert "| better | 0 | - |" in md and "| worse | 0 | - |" in md
+
+
+def test_different_marks_give_the_right_better_and_worse_counts():
+    reqs = [{"id": f"R{n}-x", "extra": []} for n in (1, 2, 3)]
+    no = {iid: "no" for iid in ITEM_IDS}
+    checks = {
+        "R1-x": {"off": _check({**no, "data_ink": "yes"}, reqs[0]),
+                 "on": _check({**no, "axes_units": "yes", "kpa_kn": "yes"},
+                              reqs[0])},
+        "R2-x": {"off": _check({"plan_drawing": "na"}, reqs[1]),
+                 "on": _check({"axes_units": "no"}, reqs[1])},
+        "R3-x": {"off": _check({}, reqs[2]), "on": _check({}, reqs[2])}}
+    res = compare(reqs, checks)
+    assert res["requests"] == {"better": ["R1-x"], "same": ["R3-x"],
+                               "worse": ["R2-x"]}
+    n = len(ITEM_IDS)
+    assert res["items"] == {"better": 2, "worse": 2, "one_na": 1,
+                            "same": 3 * n - 5}
+    pi = res["per_item"]
+    assert pi["axes_units"]["better"] == ["R1-x"]
+    assert pi["axes_units"]["worse"] == ["R2-x"]
+    assert pi["kpa_kn"]["better"] == ["R1-x"]
+    assert pi["data_ink"]["worse"] == ["R1-x"]
+    assert pi["plan_drawing"]["one_na"] == ["R2-x"]
+    assert res["per_request"]["R1-x"]["counts"] == {
+        "better": 2, "same": n - 3, "worse": 1, "one_na": 0}
+
+
+def test_a_figure_that_did_not_appear_fails_every_item():
+    class Eyes:
+        def invoke(self, messages):
+            raise AssertionError("nothing to look at")
+    none = checklist.check_run(Eyes(), REQ, {"answer": "x"}, [])
+    assert none["no_figure"] and none["note"] == checklist.NO_FIGURE
+    assert {m["mark"] for m in none["marks"].values()} == {"no"}
+    failed = checklist.check_run(Eyes(), REQ, {"error": "Timeout"}, [])
+    assert failed["marks"]["x1"]["reason"].startswith("the run failed")
+    res = compare([REQ], {REQ["id"]: {"off": none,
+                                      "on": _check({"to_scale": "na"})}})
+    assert res["requests"]["better"] == [REQ["id"]]
+    assert res["items"]["better"] == len(ITEM_IDS)       # 12 + x1 - 1 n/a
+    assert res["items"]["one_na"] == 1
+
+
+def _png(path, label="x"):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(2, 1.5))
+    ax.plot([0, 1], [0, 1], label=label)
+    fig.savefig(path)
+    plt.close(fig)
+    return str(path)
+
+
+class _Eyes:
+    def __init__(self, name, marks=None):
+        self.model_name = name
+        self.sent = []
+        self.marks = marks or {}
+
+    def invoke(self, messages):
+        self.sent.append(messages[0].content)
+        text = messages[0].content[0]["text"]
+        ids = [ln[2:].split(":", 1)[0] for ln in text.splitlines()
+               if ln.startswith("- ")]
+
+        class R:
+            content = json.dumps({"marks": [
+                {"id": i, "mark": self.marks.get(i, "yes"), "reason": "seen"}
+                for i in ids], "note": "ok"})
+            usage_metadata = {"input_tokens": 900, "output_tokens": 90}
+        return R()
+
+
+def test_check_run_sends_the_figures_at_auto_detail_and_reads_marks(
+        tmp_path):
+    paths = [_png(tmp_path / f"f{k}.png") for k in range(5)]
+    req = dict(REQ, reference={"numbers": {"q_ult_kPa": 1234.5}})
+    eyes = _Eyes("gpt-5.4")
+    out = checklist.check_run(eyes, req, {"answer": "drawn"}, paths)
+    (content,) = eyes.sent
+    images = [c for c in content if c["type"] == "image_url"]
+    assert len(images) == checklist.MAX_FIGURES and out["dropped"] == 1
+    assert {c["image_url"]["detail"] for c in images} == {"auto"}
+    assert "1234.5" in content[0]["text"] and "x1: must" in content[0][
+        "text"]
+    assert out["marks"]["x1"]["mark"] == "yes" and not out["unmarked"]
+    assert out["usage"] == {"input_tokens": 900, "output_tokens": 90}
+    claude = _Eyes("claude-opus-5-5")
+    checklist.check_run(claude, req, {"answer": "drawn"}, paths[:1])
+    assert "detail" not in claude.sent[0][1]["image_url"]
+
+
+# ---------------------------------------------------------------------------
+# the runner and the report
+# ---------------------------------------------------------------------------
+
+def _results(reqs, checks, cmp_):
+    return {"model": "m", "vision_model": "v", "detail": "auto",
+            "arms": ["off", "on"], "arm_env": runner.ARM_ENV,
+            "requests": [dict(r, kind="curve", ask="a") for r in reqs],
+            "runs": {}, "checks": checks, "comparison": cmp_,
+            "totals": {a: {"runs": 0, "tokens_in": 0, "tokens_out": 0,
+                           "vision_in": 0, "vision_out": 0, "seconds": 0}
+                       for a in ("off", "on")}, "written": "now"}
+
+
+def test_the_runner_writes_results_and_the_page_and_resumes(tmp_path):
+    data = tmp_path / "data"
+    freq.prepare(data, ["R01", "R17"], references=False, say=lambda s: None)
+    calls = []
+    failing = {("R17-pile-group-plan", "on")}
+
+    def run_fn(model, req, arm, agent_dir, recursion_limit=None):
+        calls.append((req["id"], arm))
+        if (req["id"], arm) in failing:
+            failing.clear()
+            return {"started": "t", "error": "RuntimeError: boom",
+                    "files": []}
+        os.makedirs(os.path.join(agent_dir, "files"), exist_ok=True)
+        _png(os.path.join(agent_dir, "files", f"{arm}.png"))
+        return {"started": "t", "answer": f"drew {arm}",
+                "files": [f"files/{arm}.png"], "tokens_in": 100,
+                "tokens_out": 10, "seconds": 1.5,
+                "tool_calls": [{"name": "call_agent", "args": "{}"}]}
+
+    out = tmp_path / "out"
+    eyes = _Eyes("gpt-5.4", {"data_ink": "no"})
+    res = runner.score_figure_set(object(), vision_model=eyes,
+                                  data_dir=data, out_dir=out,
+                                  run_fn=run_fn, say=lambda s: None)
+    assert len(calls) == 4 and len(eyes.sent) == 3   # the failed run: none
+    for name in ("results.json", "RESULTS.md", "side_by_side.html"):
+        assert (out / name).is_file()
+    cmp_ = res["comparison"]
+    assert cmp_["requests"] == {"better": [], "same": ["R01-bearing-width"],
+                                "worse": ["R17-pile-group-plan"]}
+    run = json.loads((out / "runs" / "R01-bearing-width" / "on" /
+                      "run.json").read_text("utf-8"))
+    assert run["figures"] == [os.path.join("runs", "R01-bearing-width", "on",
+                                           "agent", "files", "on.png")]
+    assert run["env"] == {"GEOTECH_FIGURE_HELPER": "1",
+                          "GEOTECH_PLOT_CODE": "1"}
+    page = (out / "side_by_side.html").read_text("utf-8")
+    assert page.count("<img ") == 3 and page.count("<textarea") == 2
+    assert "The run failed: RuntimeError: boom" in page
+    assert page.index("Plot code OFF") < page.index("Plot code ON")
+    md = (out / "RESULTS.md").read_text("utf-8")
+    assert "R17-pile-group-plan on: the run failed" in md
+    assert res["totals"]["off"]["tokens_in"] == 200
+    # resumed: finished runs and their checks are kept; the failed run is
+    # asked again
+    res2 = runner.score_figure_set(object(), vision_model=eyes,
+                                   data_dir=data, out_dir=out,
+                                   run_fn=run_fn, say=lambda s: None)
+    assert calls[4:] == [("R17-pile-group-plan", "on")]
+    assert len(eyes.sent) == 4
+    assert res2["comparison"]["requests"]["same"] == [
+        "R01-bearing-width", "R17-pile-group-plan"]
+
+
+def test_the_dry_run_goes_through_the_real_page_agent(tmp_path):
+    pytest.importorskip("deepagents")
+    res = runner.dry_run(tmp_path, ["R01"], references=True,
+                         say=lambda s: None)
+    ref = json.loads((tmp_path / "data" / "references" / "R01-bearing-width"
+                      / "reference.json").read_text("utf-8"))
+    assert ref["status"] == "success" and ref["numbers"]
+    runs = res["runs"]["R01-bearing-width"]
+    assert [os.path.basename(p) for p in runs["off"]["figures"]] == [
+        "dry_off.png"]
+    assert [os.path.basename(p) for p in runs["on"]["figures"]] == [
+        "dry_on.png"]
+    assert runs["on"]["env"]["GEOTECH_PLOT_CODE"] == "1"
+    pr = res["comparison"]["per_request"]["R01-bearing-width"]
+    assert pr["verdict"] == "worse" and pr["counts"]["worse"] == 1
+    assert pr["counts"]["one_na"] == 1
+    assert (tmp_path / "results" / "side_by_side.html").is_file()
