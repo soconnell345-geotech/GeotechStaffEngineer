@@ -111,7 +111,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          pytest -n auto --dist worksteal -q --tb=short --durations=20 2>&1 | tee "$RUNNER_TEMP/pytest.log"
+          pytest -n auto --dist worksteal -q --tb=short --durations=20 annot_proof 2>&1 | tee "$RUNNER_TEMP/pytest.log"
 
       - name: Name the failed tests
         # A job's log needs a signed-in reader; its annotations do not. After
