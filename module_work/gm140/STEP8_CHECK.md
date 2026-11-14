@@ -285,12 +285,16 @@ cause was not looked for).
 | `webapp/tests/test_public_text.py` | 5 passed |
 | The manual: `check_manual.py --rebuild --write`, `check_manual.py`, `webapp/tests/test_user_manual_current.py`, with `geotech-references` (e1bbc5b, the pin) first on PYTHONPATH | exit 0, exit 0, 1 passed |
 
-Failing first: the new tests were written against master's behaviour and
-fail there for the reason each docstring states (a layer near its end
-carried 200 kN/m; no facing term; the legacy force accepted; one force at
-three radii not held; the Ordinary Method of Slices returning a number with
-supports). Fig. 8.1's two values could already be computed on master and
-are pinned as new printed benchmarks; Fig. 8.4's could not be entered.
+Failing first, as far as it was measured. On master the new test file
+does not import (it uses the new functions), so its tests were not run one
+by one there. What was measured on master is in "What was wrong" and in
+the section 11 table: V-043's two forces, the Ordinary Method of Slices
+returning 1.1946 and 1.1758 with a pile, the 207 arcs. The other
+departures (a layer near its end carrying its full force, no facing term,
+the legacy force accepted) are read from master's code, not run. Fig.
+8.1's two values could already be computed on master (the script ran
+there) and are pinned as new printed benchmarks; Fig. 8.4's layers could
+not be entered.
 
 Tests re-pinned or rewritten, each against print:
 
