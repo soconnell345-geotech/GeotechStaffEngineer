@@ -220,6 +220,10 @@ SWALLOWED = {
         4, _FIGURE_LEFT_OUT),
     ("wave_equation/calc_steps.py", "_drivability_figures"): (
         4, _FIGURE_LEFT_OUT),
+    # review #10: written "except (ImportError, Exception)", which the scan
+    # missed before it read a tuple
+    ("pile_group/calc_steps.py", "get_figures"): (2, _FIGURE_LEFT_OUT),
+    ("settlement/calc_steps.py", "get_figures"): (1, _FIGURE_LEFT_OUT),
     ("calc_package/renderer.py", "figure_to_base64"): (
         1, "the figure is saved as drawn when the print-width pass fails; "
            "its record says so"),
@@ -249,9 +253,18 @@ def _empty(node: ast.Return) -> bool:
         getattr(v, "keys", None) or getattr(v, "elts", None))
 
 
+def _broad(kind) -> bool:
+    """Whether an ``except`` clause's type catches every failure: none, or
+    Exception or BaseException, alone or in a tuple (review #10)."""
+    names = kind.elts if isinstance(kind, ast.Tuple) else [kind]
+    return kind is None or any(
+        isinstance(n, ast.Name) and n.id in ("Exception", "BaseException")
+        for n in names)
+
+
 def _swallowed(tree) -> list:
     """The enclosing function of each broad handler in ``tree`` whose body
-    is one ``pass``, ``continue`` or empty return."""
+    is one ``pass``, ``continue``, ``...`` or empty return."""
     out = []
 
     def visit(node, where):
@@ -259,15 +272,14 @@ def _swallowed(tree) -> list:
             inner = where
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 inner = child.name
-            if isinstance(child, ast.ExceptHandler) and (
-                    child.type is None or (
-                        isinstance(child.type, ast.Name)
-                        and child.type.id in ("Exception",
-                                              "BaseException"))) \
+            if isinstance(child, ast.ExceptHandler) and _broad(child.type) \
                     and len(child.body) == 1:
                 s = child.body[0]
                 if isinstance(s, (ast.Pass, ast.Continue)) or (
-                        isinstance(s, ast.Return) and _empty(s)):
+                        isinstance(s, ast.Return) and _empty(s)) or (
+                        isinstance(s, ast.Expr)
+                        and isinstance(s.value, ast.Constant)
+                        and s.value.value is Ellipsis):
                     out.append(where)
             visit(child, inner)
 
@@ -308,3 +320,12 @@ def test_the_scan_sees_each_form():
         "def e():\n    try:\n        x()\n    except Exception:\n"
         "        return 1.5\n")
     assert _swallowed(tree) == ["a", "b", "c"]
+    # review #10: a tuple holding Exception is broad; a lone ... is empty
+    tree = ast.parse(
+        "def f():\n try:\n  x()\n except (ValueError, Exception):\n  pass\n"
+        "def g():\n try:\n  x()\n except Exception as e:\n  pass\n"
+        "def h():\n try:\n  x()\n except Exception:\n  return None\n"
+        "def k():\n try:\n  x()\n except Exception:\n  return float('nan')\n"
+        "def m():\n try:\n  x()\n except BaseException:\n  ...\n"
+        "def n():\n try:\n  x()\n except (ValueError, KeyError):\n  pass\n")
+    assert _swallowed(tree) == ["f", "g", "h", "m"]
