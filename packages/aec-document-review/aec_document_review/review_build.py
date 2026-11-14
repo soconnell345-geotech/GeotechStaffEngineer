@@ -47,14 +47,23 @@ _BUDGET_OFF = ("0", "off", "none", "no", "false")
 REVIEW_PAGE_STEPS_PER_CALL = 8
 
 #: What the primary is told the reading helper is (the ``task`` tool lists it).
+#: Its return contract is the reader prompt's three lists (BACKLOG DR-46: a
+#: whole set split by page range lost every check between one helper's pages
+#: and another's, because each helper returned only its own findings).
 REVIEW_READER_DESCRIPTION = (
     "A reading helper with your reading and looking tools and your reading "
-    "rules. Hand it a self-contained reading job and get back a compact list "
-    "of findings with citations - e.g. 'open <source>, read sheets 12-20 and "
-    "list every note that sets a concrete strength, with the sheet'. It sees "
+    "rules. Hand it a self-contained reading job - e.g. 'open <source>, read "
+    "sheets 12-20 and list every note that sets a concrete strength, with "
+    "the sheet'. It returns three lists, each item cited: its findings; what "
+    "it read that must be compared with pages outside its job (marks or tags "
+    "with the sheet they are on, schedule or table rows, references to other "
+    "sheets, sections or documents); and its open items (what it could not "
+    "check or read, and what must be checked against another page). Compare "
+    "those lists across helpers yourself: no helper sees another's pages. "
+    "Its whole record is kept as a file, named in its result. It sees "
     "NOTHING of this conversation: put everything it needs in the "
-    "description (the source name, the pages, what to find, what to "
-    "return). It cannot write files or markups.")
+    "description (the source name, the pages, what to find). It cannot "
+    "write files or markups.")
 
 
 #: Tools the geotech page has and this page cannot use: they render a
@@ -360,7 +369,10 @@ def build_review_page_agent(
         summarization_keep=summarization_keep,
         figure_tasks=figure_tasks, allowed_agents=allowed,
         unknown_tool_hint=parts.get("unknown_tool_hint"),
-        page_middleware=page_middleware)
+        page_middleware=page_middleware,
+        # every return of the reading helper keeps its record and its open
+        # items reach this agent (BACKLOG DR-46)
+        keep_readers=(READER_NAME,) if reader is not None else ())
     agent = assembly.compile_agent(
         create or assembly.create_deep_agent, model=model, tools=tools,
         system_prompt=system_prompt, subagents=subagents,
