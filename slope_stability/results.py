@@ -774,6 +774,14 @@ class SearchResult:
         or ``{"FOS", "method", "points"}`` for a plane or polyline; for
         the ordered list of the lowest surfaces
         (``report_views.lowest_surfaces``, FHWA NHI-06-088 p. 6-49).
+    family_lowest : dict
+        Each family's ten lowest scored surfaces, in order, by the method
+        that scored the family (a screen's values left out), one per
+        surface to 0.01 m (GM-140 step 10's fix round, D2):
+        ``{family: [{"FOS", "method", "xc", "yc", "radius"[, "arc"]} or
+        {"FOS", "method", "points"}]}``; pooled by
+        ``report_views.lowest_surfaces``. Set by
+        ``search_critical_surface``; empty otherwise.
     governing_surface : str
         Which kind of surface governs ``critical`` (set by
         ``search_critical_surface``): 'circular' / 'noncircular' (the main
@@ -931,6 +939,8 @@ class SearchResult:
     circle_check: Dict[str, Any] = field(default_factory=dict)
     centre_grid: Dict[str, Any] = field(default_factory=dict)
     family_surfaces: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    family_lowest: Dict[str, List[Dict[str, Any]]] = field(
+        default_factory=dict)
 
     @property
     def n_no_solution(self) -> int:

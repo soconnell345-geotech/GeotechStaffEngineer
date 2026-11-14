@@ -299,13 +299,21 @@ def plot_cross_section(result, geom, show_slices=True,
         z_pt = geom.ground_elevation_at(x_pt)
         ax.plot([x_pt], [z_pt], mk, color=_CRIT_COLOR, markersize=7,
                 zorder=8)
-        # below the ground, on the outer side of the slip surface's end,
-        # clear of the line and of the note above (GM-186)
+        # on the outer side of the slip surface's end: above the ground,
+        # clear of the ground line and of the supports in the ground,
+        # unless the ground rises away from the end, then below it
+        # (GM-186; GM-140 step 10's review, D3)
         outer_left = x_pt <= 0.5 * (result.x_entry + result.x_exit)
+        x_lo, x_hi = geom.x_range
+        step = 0.02 * max(x_hi - x_lo, 1e-9)
+        x_out = (max(x_lo, x_pt - step) if outer_left
+                 else min(x_hi, x_pt + step))
+        rises = geom.ground_elevation_at(x_out) > z_pt + 1e-9
         ax.annotate(lbl, xy=(x_pt, z_pt), fontsize=7,
-                    xytext=(-5 if outer_left else 5, -5),
+                    xytext=(-5 if outer_left else 5, -5 if rises else 5),
                     textcoords='offset points',
-                    ha='right' if outer_left else 'left', va='top')
+                    ha='right' if outer_left else 'left',
+                    va='top' if rises else 'bottom')
 
     # circle center + radius callout
     if result.radius > 0:
@@ -489,24 +497,36 @@ def plot_trial_surface_map(search, geom, max_surfaces: int = 200,
     return fig
 
 
-def plot_centre_contours(search, geom,
-                         title: str = "Minimum FOS over the Circle Centres "
-                                      "and the Ten Lowest Surfaces",
-                         figsize=(10, 7)):
+def plot_centre_contours(search, geom, title: Optional[str] = None,
+                         figsize=(5.0, 4.6)):
     """The contours of the minimum factor of safety over the circle
-    centres of a grid search, with the critical centre marked, and the ten
-    lowest surfaces drawn on the section (GM-140 step 10, D46 and D47;
-    FHWA NHI-06-088 Fig. 6-13, p. 6-23, and p. 6-49; GEC 11 Vol. II
-    p. 9-24). Without a centre grid (an entry/exit or noncircular search)
-    only the ten lowest surfaces are drawn. Values are the search's own
-    (``report_views``)."""
+    centres of a grid search, with the lowest grid centre and the critical
+    centre marked, and the lowest surfaces drawn on the section (GM-140
+    step 10, D46 and D47; FHWA NHI-06-088 Fig. 6-13, p. 6-23, and p. 6-49;
+    GEC 11 Vol. II p. 9-24). The contours are of the values
+    ``report_views.centre_contours`` gives (the method's, or a screened
+    search's screen's, labelled so in the key), at the levels
+    ``report_views.contour_levels`` keeps; where it keeps none (no centre
+    grid, or too few centres with a value) only the lowest surfaces are
+    drawn and the title says so: ``title`` None gives "Minimum FOS over the
+    Circle Centres / and the Lowest Surfaces" or "The Lowest Surfaces".
+    With the screen's contours the lowest surface by the method named is
+    drawn dashed and its centre marked. Drawn at the width it prints at
+    (5.0 in, ``calc_package.renderer.FIGURE_PRINT_WIDTH_IN``), the section
+    to scale with no padding beside it (GM-186). Values are the search's
+    own."""
     from slope_stability.report_views import (centre_contours,
+                                              contour_levels,
                                               lowest_surfaces)
     plt = _get_plt()
     contours = centre_contours(search)
     lowest = lowest_surfaces(search)
+    levels = contour_levels(contours)
     if not lowest and not (contours and contours["n_scored"]):
         raise ValueError("the search kept no surface to draw")
+    if title is None:
+        title = ("Minimum FOS over the Circle Centres\nand the Lowest "
+                 "Surfaces" if levels else "The Lowest Surfaces")
     fig, ax = plt.subplots(figsize=figsize)
     _draw_section_base(ax, geom, layer_alpha=0.35, show_legend_layers=False)
 
@@ -522,32 +542,49 @@ def plot_centre_contours(search, geom,
                 color='#666666', linewidth=0.8, zorder=5)
         handles.append(ax.plot([], [], '--', color='#666666',
                                linewidth=0.8, label="Centre grid")[0])
-        finite = Z[np.isfinite(Z)]
-        if finite.size >= 4 and Z.shape[0] > 1 and Z.shape[1] > 1 \
-                and finite.max() > finite.min():
-            lo = float(finite.min())
-            hi = float(min(finite.max(), lo * 1.3))
-            levels = np.linspace(lo, hi, 5)[1:]
+        if levels:
             cs = ax.contour(X, Y, np.ma.masked_invalid(Z), levels=levels,
                             colors='#1f4e79', linewidths=0.9, zorder=6)
             # every other level labelled, so close contours keep clear
             # labels
             ax.clabel(cs, cs.levels[::2], fmt='%.2f', fontsize=8,
                       inline=True)
+            by = contours["values_by"]
+            handles.append(ax.plot([], [], '-', color='#1f4e79',
+                                   linewidth=0.9,
+                                   label=f"Minimum FOS contours, by "
+                                         f"{by}")[0])
         m = contours["minimum"]
         ax.plot([m["xc"]], [m["yc"]], 's', color='#1f4e79', markersize=6,
                 zorder=8)
         handles.append(ax.plot([], [], 's', color='#1f4e79',
                                label=f"Lowest grid centre "
                                      f"({m['FOS']:.3f})")[0])
-        cc = contours.get("critical_centre")
-        if cc:
-            ax.plot([cc["xc"]], [cc["yc"]], '*', color=_CRIT_COLOR,
-                    markersize=13, markeredgecolor='black',
-                    markeredgewidth=0.6, zorder=9)
-            handles.append(ax.plot([], [], '*', color=_CRIT_COLOR,
-                                   markeredgecolor='black',
-                                   label="Critical centre")[0])
+    cc = contours.get("critical_centre") if contours else None
+    if cc:
+        ax.plot([cc["xc"]], [cc["yc"]], '*', color=_CRIT_COLOR,
+                markersize=13, markeredgecolor='black',
+                markeredgewidth=0.6, zorder=9)
+        handles.append(ax.plot([], [], '*', color=_CRIT_COLOR,
+                               markeredgecolor='black',
+                               label="Critical centre")[0])
+    named = contours.get("named_lowest") if contours else None
+    if named:
+        if "radius" in named:
+            arc = _circle_arc(geom, named["xc"], named["yc"],
+                              named["radius"])
+            xs, zs = arc if arc is not None else ([], [])
+            ax.plot([named["xc"]], [named["yc"]], 'D', color='#7c3aed',
+                    markersize=5, zorder=9)
+        else:
+            pts = np.asarray(named["points"], dtype=float)
+            xs, zs = pts[:, 0], pts[:, 1]
+        ax.plot(xs, zs, '--', color='#7c3aed', linewidth=1.2, zorder=7)
+        handles.append(ax.plot(
+            [], [], '--', marker='D' if "radius" in named else None,
+            color='#7c3aed', markersize=5,
+            label=f"Lowest by {contours['method_text']} "
+                  f"({named['FOS']:.3f})")[0])
     for s in reversed(lowest):
         if "radius" in s:
             arc = _circle_arc(geom, s["xc"], s["yc"], s["radius"])
@@ -564,14 +601,22 @@ def plot_centre_contours(search, geom,
         handles.append(ax.plot([], [], '-', color=_CRIT_COLOR, linewidth=2,
                                label=f"Lowest surface "
                                      f"({lowest[0]['FOS']:.3f})")[0])
-        if len(lowest) > 1:
+        if len(lowest) == 2:
+            handles.append(ax.plot(
+                [], [], '-', color='#e07b00', linewidth=0.8,
+                label=f"Surface 2 ({lowest[1]['FOS']:.3f})")[0])
+        elif len(lowest) > 2:
             handles.append(ax.plot(
                 [], [], '-', color='#e07b00', linewidth=0.8,
                 label=f"Surfaces 2 to {len(lowest)} "
                       f"({lowest[1]['FOS']:.3f} to "
                       f"{lowest[-1]['FOS']:.3f})")[0])
     _style_section_axes(ax, title)
-    _key_below(ax, handles=handles, fontsize=8, ncol=2)
+    # to scale, the axes fitted to the section: no padding beside it
+    ax.set_aspect('equal', adjustable='box')
+    # one column where a label is long, so the key keeps to the print width
+    long = max((len(h.get_label()) for h in handles), default=0)
+    _key_below(ax, handles=handles, fontsize=8, ncol=1 if long > 30 else 2)
     fig.tight_layout()
     return fig
 
@@ -627,7 +672,7 @@ def plot_slice_forces(result, figsize=(9.5, 5)):
 # 4. Interslice forces + thrust line (rigorous methods)
 # ---------------------------------------------------------------------------
 
-def plot_interslice_forces(result, geom=None, figsize=(9.5, 7)):
+def plot_interslice_forces(result, geom=None, figsize=(5.0, 4.6)):
     """Interslice E/X distribution and line of thrust.
 
     Top panel: interslice normal E and shear X at every slice
@@ -669,10 +714,11 @@ def plot_interslice_forces(result, geom=None, figsize=(9.5, 7)):
         note.append(f'theta = {result.theta_spencer:.1f} deg')
     if result.lambda_mp is not None:
         note.append(f'lambda = {result.lambda_mp:.3f}')
-    # (on two lines, so the title fits the printed width: GM-186)
+    # (in lines that each fit the printed width, 5.0 in: GM-186; the
+    # step's review, D4)
     ax1.set_title(
         f'Interslice Forces\n{result.method}, FOS = {fos_text(result.FOS)}'
-        + (f'  ({", ".join(note)})' if note else ''),
+        + (f'\n{", ".join(note)}' if note else ''),
         fontsize=12, fontweight='bold')
     ax1.set_ylabel('Force (kN/m)', fontsize=10)
     ax1.grid(True, alpha=0.25)

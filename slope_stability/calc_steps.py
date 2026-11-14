@@ -1080,23 +1080,30 @@ def _search_section(search) -> CalcSection:
     # lowest closes inside the grid (D46), and the ten lowest surfaces in
     # order (D47) (GM-140 step 10)
     from slope_stability.report_views import (
-        centre_contours, lowest_surfaces, lowest_surfaces_rows,
-        LOWEST_SOURCE)
+        centre_contours, contour_levels, lowest_surfaces,
+        lowest_surfaces_rows, LOWEST_SOURCE)
     contours = centre_contours(search)
     if contours is not None:
+        rows = [["Centres in the grid",
+                 f"{contours['n_centres']} ({len(contours['x'])} x "
+                 f"{len(contours['y'])})"],
+                [f"Centres with a FOS by {contours['method_text']}",
+                 str(contours["n_by_method"])]]
+        if contours["basis"] == "screen":
+            rows.append([f"Centres with a FOS by {contours['values_by']}",
+                         str(contours["n_scored"])])
+        rows += [["Values contoured", contours["values_by"]],
+                 ["Lowest contour closes inside the grid",
+                  {True: "yes", False: "no"}.get(contours["closed"],
+                                                 "cannot be judged")],
+                 ["Statement", contours["statement"]]]
         items.append(TableData(
             title="Minimum FOS over the Circle Centres",
             headers=["Item", "Value"],
-            rows=[["Centres in the grid",
-                   f"{contours['n_centres']} ({len(contours['x'])} x "
-                   f"{len(contours['y'])})"],
-                  ["Centres with a FOS by the method",
-                   str(contours["n_scored"])],
-                  ["Lowest contour closes inside the grid",
-                   "yes" if contours["closed"] else "no"],
-                  ["Statement", contours["statement"]]],
-            notes="The contours are drawn in the figure 'Minimum FOS over "
-                  "the Circle Centres and the Ten Lowest Surfaces'.",
+            rows=rows,
+            notes=(f"The contours, by {contours['values_by']}, are drawn "
+                   f"in the figure '{CONTOUR_FIGURE_TITLE}'."
+                   if contour_levels(contours) else ""),
         ))
     lowest = lowest_surfaces(search)
     if lowest:
@@ -1104,11 +1111,12 @@ def _search_section(search) -> CalcSection:
             title=f"The {len(lowest)} Lowest Surfaces",
             headers=["Rank", "FOS", "Family", "Method", "Geometry"],
             rows=lowest_surfaces_rows(lowest),
-            notes=(f"In order of factor of safety ({LOWEST_SOURCE}). The "
-                   "main search's trials scored by the method, and the "
-                   "lowest surface of each other family (those families "
-                   "keep only their lowest); values a screen alone gave "
-                   "are not listed."),
+            notes=(f"In order of factor of safety ({LOWEST_SOURCE}), over "
+                   "every family's ten lowest scored surfaces, each by the "
+                   "method that scored its family; values a screen alone "
+                   "gave are not listed, and a surface is listed once "
+                   "(the same to 0.01 m). The geometry is as scored; the "
+                   "result's lowest_surfaces gives it to 0.0001 m."),
         ))
 
     checks = getattr(search, "infinite_slope_checks", None) or []
@@ -1359,6 +1367,46 @@ def _probabilistic_section(analysis):
 # Figures
 # ---------------------------------------------------------------------------
 
+#: The title of the figure of the contours and the lowest surfaces, and
+#: of that figure where no contour can be drawn (GM-140 step 10's fix
+#: round, D5).
+CONTOUR_FIGURE_TITLE = ("Minimum FOS over the Circle Centres and the "
+                        "Lowest Surfaces")
+LOWEST_FIGURE_TITLE = "The Lowest Surfaces"
+
+
+def contour_figure_text(search) -> tuple:
+    """(title, caption) of the figure of the contours of the minimum FOS
+    over the centres and the lowest surfaces: titled for the contours only
+    where one is drawn, and otherwise for the lowest surfaces, the caption
+    saying why no contour is drawn (GM-140 step 10's fix round, D5)."""
+    from slope_stability.report_views import (
+        centre_contours, contour_levels, lowest_surfaces, no_contour_reason)
+    try:
+        cc = centre_contours(search)
+    except (KeyError, TypeError, ValueError):
+        cc = None
+    n = len(lowest_surfaces(search))
+    which = (f"the {n} lowest surfaces" if n > 1
+             else "the lowest surface" if n else "")
+    if contour_levels(cc):
+        caption = (f"Contours of the minimum FOS over the circle centres, "
+                   f"by {cc['values_by']} (FHWA NHI-06-088 Fig. 6-13, "
+                   f"p. 6-23), with the lowest grid centre and the critical "
+                   f"centre marked"
+                   + (f", and {which} (FHWA NHI-06-088 p. 6-49)" if n
+                      else "") + ". " + cc["verdict_text"])
+        if cc.get("named_lowest"):
+            caption += (f" The lowest surface by {cc['method_text']} is "
+                        f"drawn dashed.")
+        return CONTOUR_FIGURE_TITLE, caption
+    caption = (f"{which[0].upper()}{which[1:]} (FHWA NHI-06-088 p. 6-49), "
+               f"the lowest in red. " if n else "")
+    caption += (f"No contour of the minimum FOS over the circle centres is "
+                f"drawn: {no_contour_reason(cc)}.")
+    return LOWEST_FIGURE_TITLE, caption
+
+
 def get_figures(result, analysis) -> List[FigureData]:
     """Generate SLOPE/W-style figures for the slope calc package.
 
@@ -1418,19 +1466,9 @@ def get_figures(result, analysis) -> List[FigureData]:
              f"Critical surface search: "
              f"{search.n_surfaces_evaluated} trial surfaces colored "
              f"by FOS; critical surface highlighted.")
-        try:
-            from slope_stability.report_views import centre_contours
-            _cc = centre_contours(search)
-        except (KeyError, TypeError, ValueError):
-            _cc = None
+        _title, _caption = contour_figure_text(search)
         _add(lambda: _plots.plot_centre_contours(search, geom),
-             "Minimum FOS over the Circle Centres and the Ten Lowest "
-             "Surfaces",
-             ("Contours of the minimum FOS over the circle centres "
-              "(FHWA NHI-06-088 Fig. 6-13, p. 6-23), the critical centre "
-              "marked; " + (_cc["statement"].split(" (FHWA")[0] + "; "
-                            if _cc else "")
-              + "the ten lowest surfaces drawn (FHWA NHI-06-088 p. 6-49)."))
+             _title, _caption)
 
     if result.slice_data:
         _add(lambda: _plots.plot_slice_forces(result),

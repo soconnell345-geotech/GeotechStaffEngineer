@@ -2634,21 +2634,61 @@ no factor of safety changes.
   centres carry `node` = (ix, iy) in `grid_fos` and the result its grid
   (`SearchResult.centre_grid`). `report_views.centre_contours` lays the
   per-centre minima scored by the method on the grid (a centre a screen
-  alone scored is left out) and says whether the lowest contour closes
-  inside the grid: it does exactly when the lowest value inside the grid is
-  below the lowest value on its edge (then a contour between the two
-  encloses the minimum without reaching the edge; the module's reading of
-  the plot, not a printed formula). FHWA NHI-06-088 Fig. 6-13, p. 6-23;
-  GEC 11 Vol. II p. 9-24; Duncan, Buchignani and De Wet (1987), Fig. 28.
-  `to_dict()["centre_contours"]`, the summary, the report's table "Minimum
-  FOS over the Circle Centres" and the figure `plot_centre_contours`
-  (the grid outlined, the critical centre marked).
-* **The ten lowest surfaces (D47).** `report_views.lowest_surfaces`: the
-  main search's trials scored by the method and each other family's
-  reported surface (`SearchResult.family_surfaces`, kept by
-  `apply_supplements`; the toe-circle, above-toe and plane families keep
-  only their lowest), in order, each with its FOS, family, method and
-  geometry. FHWA NHI-06-088 p. 6-49; EM 1110-2-1902 4-3b(9)(b), p. 4-8.
+  alone scored is left out) and judges whether the lowest contour closes
+  inside the grid (the fix round's rule, D1 of the review): it closes when
+  the lowest value inside the grid is below the lowest value on its edge
+  AND every centre next to (eight neighbours) the centres below the level
+  midway between the two has a value; then the midway contour encloses the
+  minimum without reaching the edge. It is open when the edge's lowest is
+  at or below the lowest inside, "cannot be judged" (`closed` None) when a
+  centre next to the low ones has no value, or no centre inside the edge
+  (or none on it) has one, and "does not close" when the grid has no
+  centre inside its edge. The module's reading of the plot, not a printed
+  formula: GEC 11 Vol. II p. 9-24 prints "A contour plot of lowest safety
+  factor values about the trial failure circle centroids is recommended";
+  FHWA NHI-06-088 Fig. 6-13, pp. 6-22 to 6-23; Duncan, Buchignani and De
+  Wet (1987), Fig. 28. Where the method's own values cannot be judged (or
+  there are none) and the search screened its circles by Bishop's
+  simplified method, the screen's values are contoured instead and every
+  line names them "Bishop's simplified method (the screen)" (the
+  orchestrator's ruling, Q1); `grid_search` keeps each re-scored centre's
+  `screen_FOS` for it. Where the governing surface's centre lies outside
+  the grid (another family governs), the statement says so. The levels
+  drawn are four through the values and, when the contour closes, the
+  midway level, each only where a whole cell of four valued centres spans
+  it (`contour_levels`); with none, the figure says why no contour is
+  drawn (`no_contour_reason`). `to_dict()["centre_contours"]` (with
+  `values_by`, `verdict`, `level`), the summary, the report's table
+  "Minimum FOS over the Circle Centres" and the figure
+  `plot_centre_contours` (the grid outlined, the critical centre marked
+  and, with the screen's contours, the named method's lowest surface; the
+  drawing at true scale).
+* **The ten lowest surfaces (D47).** `report_views.lowest_surfaces`, from
+  a pool (the ruling on the review's Q3): each family's ten lowest scored
+  surfaces, by the method that scored the family (`SearchResult.
+  family_lowest`, kept while the search runs by `search._note_lowest`; a
+  tension-crack surface once, at its final value), more than one circle
+  about a centre allowed, each surface once to 0.01 m, a value a screen
+  alone gave never in it; a result without `family_lowest` falls back to
+  `family_surfaces`. In order, each with its FOS, family, method and
+  geometry as scored (to 0.0001 m, with the arc's ends where the trial was
+  one arc), so each can be analysed again at its listed value (a radius
+  rounded to 0.01 m reached past the profile's end on #85's eighth
+  surface). FHWA NHI-06-088 p. 6-49; EM 1110-2-1902 4-3b(9)(b), p. 4-8.
+* **Inputs that do nothing in the case (Q4).** A package input given a
+  value other than its default that could act but did nothing in the case
+  (`tol` with the Ordinary Method of Slices
+  scoring the surface reported, `base_in_tension` where no slice base was
+  in tension on the surface reported or any trial, `reverse_curvature`
+  where no circle had reverse curvature) is accepted, and the report's
+  Method Choices and the response (`inputs_without_effect`) say it did
+  nothing and why. A value equal to the default is not said: it is what
+  the package does without it, and gives the same result as leaving it
+  out (`test_defaults_used`). A value that could never act is still
+  refused (a `tol` above 1e-4 with a method other than Bishop's).
+* **A search stopped by its time budget before it scored a surface**: the
+  report package's refusal says so, with the budget and the time it ran,
+  and asks for a larger `time_budget_s` (not a wider grid; D6).
 * **The slice table first** in the report (EM 1110-2-1902 4-2d(2), p. 4-2).
 * **The method each family was scored with** (step 6's statements), with a
   stand-in's reason, Janbu's f0 where Janbu's method stands in, method
@@ -2666,7 +2706,54 @@ no factor of safety changes.
   contour figures below the plot (`plotting._key_below`), the factor of
   safety heading the cross-section's key; the circle centre's label hangs
   from the centre on the side away from the radius line; the entry and
-  exit labels sit below the ground, outside the arc.
+  exit labels sit outside the arc, above the ground (below it where the
+  ground rises away from the end), so neither lands on the ground line's
+  label. The contour and interslice figures are drawn at 5.0 in wide, the
+  interslice figure's theta or lambda on its own title line, so their
+  lettering prints at 7 pt or more (D4).
+
+**Out of scope (the audit's row 1), what each would need:** a
+rapid-drawdown package: the `rapid_drawdown_fos` / `search_rapid_drawdown`
+result's three stages and the per-slice table of Figs. G-10b and G-11b
+(`slice_table()`) as calc steps, the water before and after drawn on the
+section, and the stage factors of safety as a check; a yield-acceleration
+package: the kh search's trace (kh against FOS to FOS = 1) and the critical
+surface at ky; FOSM and Monte Carlo packages: the existing probabilistic
+annex of `calc_steps._probabilistic_section` as the package body, on a
+given surface, with the variables table. None is built.
+
+**Calls made (for the owner's review, OWN-143).** Each with the form taken
+and the other form.
+
+1. *Closed contour*: taken, D1's rule above (lowest inside below lowest on
+   the edge, and every neighbour of the centres below the midway level
+   valued, else "cannot be judged"); other form, the builder's (lowest
+   inside below lowest on the edge, missing centres not considered).
+2. *The pool for the ten lowest*: taken, every family's ten lowest by the
+   method that scored it, more than one circle per centre, distinct to
+   0.01 m, never a screen's value; other form, the main search's trials
+   plus each other family's lowest surface.
+3. *tol above 1e-4*: taken, refused unless the method is Bishop's (it
+   changes nothing); other form, wire tol into the GLE solvers as given,
+   which moves values at the default.
+4. *`m_alpha_rule` of the rapid-drawdown tools*: taken, set in dispatch's
+   MODULE_DEFAULTS; other form, declare it as an input of
+   `rapid_drawdown_fos` (past that description's 16,000-character budget).
+5. *The factor of safety on the cross-section*: taken, in the key's title;
+   other form, a box on the drawing (it met a label in every corner on one
+   probe or another).
+6. *The slice table first* (EM 1110-2-1902 4-2d(2)): taken, first among
+   the calculation sections, after the package's input echo; other form,
+   ahead of the input echo.
+7. *`base_in_tension` in the report package*: taken, always applied (the
+   report compares every method on the critical surface); other form, only
+   with a GLE-system method named, as `slope_stability_package` takes it.
+8. *Q1, which values the contours show*: taken, the method's own, and the
+   Bishop screen's, named as such, where the method's cannot be judged;
+   other form, contour only the centres the named method valued and say
+   "cannot be judged".
+9. *Q4, an input that does nothing in the case*: taken, accepted and
+   stated with its reason; other form, refused.
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`

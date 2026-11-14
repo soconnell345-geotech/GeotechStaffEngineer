@@ -179,9 +179,151 @@ def test_the_report_carries_the_contours_and_the_ordered_list():
     assert "Minimum FOS over the Circle Centres" in titles
     assert "The 10 Lowest Surfaces" in titles
     pytest.importorskip("matplotlib")
+    from slope_stability.calc_steps import CONTOUR_FIGURE_TITLE
     figs = [f.title for f in get_figures(res, analysis)]
-    assert ("Minimum FOS over the Circle Centres and the Ten Lowest "
-            "Surfaces") in figs
+    assert CONTOUR_FIGURE_TITLE in figs     # the contours are drawn
+
+
+# ---------------------------------------------------------------------------
+# The fix round after the review: D1 (closure), D5 (no contour), Q1 (the
+# screen's values), Q3 (the pool) and the governing centre off the grid
+# ---------------------------------------------------------------------------
+
+def _grid_with_screen(method_values, screen_values, screen_only=()):
+    """A 3 x 3 screened grid: each centre the method re-scored carries its
+    value (999.9: no solution) and the screen's (``screen_FOS``); a centre
+    in ``screen_only`` has the screen's value alone."""
+    grid = []
+    for iy in range(3):
+        for ix in range(3):
+            if (ix, iy) in screen_only:
+                grid.append({"xc": float(ix), "yc": float(iy), "R": 5.0,
+                             "FOS": screen_values[iy][ix], "node": (ix, iy),
+                             "method": "bishop"})
+            else:
+                grid.append({"xc": float(ix), "yc": float(iy), "R": 5.0,
+                             "FOS": method_values[iy][ix], "node": (ix, iy),
+                             "screen_FOS": screen_values[iy][ix],
+                             "screen_method": "bishop"})
+    return SearchResult(grid_fos=grid, named_method="spencer", centre_grid={
+        "x_range": (0.0, 2.0), "y_range": (0.0, 2.0), "nx": 3, "ny": 3})
+
+
+def test_cannot_be_judged_when_a_centre_next_to_the_low_ones_has_none():
+    """D1: closed only where every centre next to the centres below the
+    midway level has a value; one without leaves it "cannot be judged"
+    (closed None), never closed."""
+    c = centre_contours(_synthetic([[2.0, 1.9, 2.0],
+                                    [1.8, 1.5, 1.9],
+                                    [2.0, 999.9, 2.1]]))
+    assert c["closed"] is None and c["verdict"] == "unjudged"
+    assert "cannot be judged" in c["statement"]
+    assert "8 of 9 centres" in c["statement"]
+    assert c["minimum"]["FOS"] == 1.5
+
+
+def test_cannot_be_judged_without_a_value_inside_the_edge():
+    c = centre_contours(_synthetic([[2.0, 1.9, 2.0],
+                                    [1.8, 999.9, 1.9],
+                                    [2.0, 2.0, 2.1]]))
+    assert c["closed"] is None
+    assert "no centre inside the grid's edge has one" in c["statement"]
+
+
+def test_the_closed_contour_is_drawn_at_the_midway_level():
+    """The level the statement judges closed (midway between the lowest
+    inside and the lowest edge value) is among those drawn; every level
+    drawn is spanned by a cell of four valued centres."""
+    from slope_stability.report_views import contour_levels
+    c = centre_contours(_synthetic([[2.0, 1.9, 2.0],
+                                    [1.8, 1.5, 1.9],
+                                    [2.0, 2.0, 2.1]]))
+    assert c["closed"] is True and c["level"] == pytest.approx(1.65)
+    levels = contour_levels(c)
+    assert 1.65 in levels
+    assert all(1.5 < v < 2.1 for v in levels)
+
+
+def test_the_screens_values_are_contoured_where_the_methods_cannot_be():
+    """Q1: where the method has too few values to judge the contours and
+    the search screened its circles, the screen's values are contoured,
+    named "Bishop's simplified method (the screen)" in every line."""
+    from slope_stability.report_views import SCREEN_TEXT
+    r = _grid_with_screen(
+        [[2.2, 999.9, 2.2], [999.9, 999.9, 999.9], [2.3, 999.9, 2.4]],
+        [[2.0, 1.9, 2.0], [1.8, 1.5, 1.9], [2.0, 2.0, 2.1]],
+        screen_only={(1, 0)})
+    c = centre_contours(r)
+    assert c["basis"] == "screen" and c["values_by"] == SCREEN_TEXT
+    assert c["closed"] is True and c["fos"][1][1] == 1.5
+    assert c["n_by_method"] == 4
+    assert SCREEN_TEXT in c["statement"]
+    assert "too few to judge the contours by" in c["statement"]
+
+
+def test_the_methods_values_stay_where_the_screen_is_no_better():
+    """A screen as short of values as the method shows nothing more: the
+    method's values stay, and the contours cannot be judged."""
+    r = _synthetic([[2.0, 1.9, 2.0], [1.8, 1.5, 1.9], [2.0, 999.9, 2.1]])
+    r.grid_fos[0]["method"] = "bishop"
+    c = centre_contours(r)
+    assert c["basis"] == "method" and c["closed"] is None
+
+
+def test_the_statement_says_when_the_governing_centre_is_off_the_grid():
+    from slope_stability.analysis import analyze_slope
+    r = _synthetic([[2.0, 1.9, 2.0], [1.8, 1.5, 1.9], [2.0, 2.0, 2.1]])
+    r.critical = analyze_slope(_geom(), xc=15, yc=18, radius=13)
+    r.governing_surface = "toe_circle"
+    c = centre_contours(r)
+    assert "lies outside the centre grid" in c["outside_line"]
+    assert c["outside_line"] in c["statement"]
+    assert "(15.00, 18.00)" in c["outside_line"]
+
+
+def test_no_contour_drawn_is_said_in_the_figure_title_and_caption():
+    """D5: without a contour the figure is titled for the lowest surfaces
+    and its caption says why no contour is drawn."""
+    from slope_stability.calc_steps import (
+        CONTOUR_FIGURE_TITLE, LOWEST_FIGURE_TITLE, contour_figure_text)
+    r = search_critical_surface(_geom(), method="bishop", nx=4, ny=4,
+                                surface_type="entry_exit")
+    title, caption = contour_figure_text(r)
+    assert title == LOWEST_FIGURE_TITLE
+    assert ("No contour of the minimum FOS over the circle centres is "
+            "drawn: the search has no grid of circle centres") in caption
+    sparse = _synthetic([[2.0, 999.9, 2.0], [999.9, 1.5, 999.9],
+                         [2.0, 999.9, 2.1]])
+    title, caption = contour_figure_text(sparse)
+    assert title == LOWEST_FIGURE_TITLE
+    assert "no four neighbouring centres all have one" in caption
+    closed = _search((10, 25), (10, 22))
+    assert contour_figure_text(closed)[0] == CONTOUR_FIGURE_TITLE
+
+
+def test_the_lowest_surfaces_come_from_every_familys_ten_lowest():
+    """Q3: the pool is each family's ten lowest by the method that scored
+    it (more than one circle about a centre allowed, none a screen's
+    value), the geometry as scored: each surface listed, analysed again
+    by its method, gives its listed factor of safety."""
+    from slope_stability.analysis import analyze_slope
+    from slope_stability.slip_surface import CircularSlipSurface
+    r = _search((10, 25), (10, 22))
+    assert set(r.family_lowest) == set(r.candidates)
+    for family, kept in r.family_lowest.items():
+        assert 0 < len(kept) <= 10
+        assert [s["FOS"] for s in kept] == sorted(s["FOS"] for s in kept)
+        assert kept[0]["FOS"] == pytest.approx(r.candidates[family],
+                                               abs=1e-4)
+    low = lowest_surfaces(r)
+    assert len(low) == 10
+    scored_by = {(m["family"], m["method"]) for m in r.candidate_methods}
+    assert all((s["family"], s["method"]) in scored_by for s in low)
+    for s in low:
+        slip = CircularSlipSurface(s["xc"], s["yc"], s["radius"],
+                                   *(s.get("arc") or ()))
+        again = analyze_slope(_geom(), slip_surface=slip, method=s["method"])
+        assert again.FOS == pytest.approx(s["FOS"], abs=2e-4), s
 
 
 # ---------------------------------------------------------------------------

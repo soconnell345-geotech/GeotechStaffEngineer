@@ -1243,7 +1243,8 @@ def search_critical_surface(
         stand_in_above_screen_warning)
     from slope_stability.search import (
         scoring_order, _screen_unsolved_so_far, screen_unsolved_record,
-        add_circle_trial, interslice_of, _screen_scored_so_far)
+        add_circle_trial, interslice_of, _screen_scored_so_far,
+        family_lowest_record)
     check_method(method)
     check_interslice(f_interslice)
     given_windows = None            # (set below, once ordered)
@@ -1356,6 +1357,14 @@ def search_critical_surface(
             _screen_unsolved_so_far(),
             result.critical.FOS if result.critical is not None else None,
             rename={"main": search_kind}, scored=_screen_scored_so_far())
+        # each family's ten lowest scored surfaces, by the method that
+        # scored the family, for the report's ordered list (GM-140 step
+        # 10's fix round, D2; FHWA NHI-06-088 p. 6-49): stored, not scored
+        methods_of = {}
+        for rec in result.candidate_methods or []:
+            methods_of.setdefault(rec["family"], set()).add(rec["method"])
+        result.family_lowest = family_lowest_record(
+            methods_of, rename={"main": search_kind})
         w = screen_unsolved_warning(result)
         if w:
             result.warnings.append(w)
@@ -1400,6 +1409,8 @@ def search_critical_surface(
             result.governing_location = {}
             result.candidates = {}
             result.candidate_methods = []
+            result.family_lowest = {}
+            result.family_surfaces = {}
             result.method_used = ""
             result.named_method_lowest = None
             result.warnings = [oms_search_refusal(

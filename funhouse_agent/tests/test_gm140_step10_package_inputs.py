@@ -193,3 +193,133 @@ def test_the_checks_table_names_the_m_alpha_denominator_and_c10b():
     row = [x for x in rows if x[0] == "m_alpha below 0.2 on a slice"][0]
     assert row[2].startswith("slices ") and "denominator" in row[2]
     assert "C-10b" in row[4]
+
+
+
+# ---------------------------------------------------------------------------
+# The fix round after the review: D4 (lettering at print), D6 (a search the
+# time budget stopped), item 12 (two statements in the report) and Q4
+# (inputs that do nothing in the case)
+# ---------------------------------------------------------------------------
+
+_SLOPE = {"surface_points": [[0, 10], [10, 10], [20, 5], [30, 5]],
+          "soil_layers": [{"name": "Clay", "top_elevation": 10,
+                           "bottom_elevation": 0, "gamma": 18.0,
+                           "c_prime": 10, "phi": 25}]}
+
+
+def _package(name, tmp_path, params):
+    path = tmp_path / f"{name}.html"
+    out = adapter.METHOD_REGISTRY[name](
+        {**params, "format": "html", "output_path": str(path)})
+    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    return out, text
+
+
+@pytest.mark.parametrize("name", ["slope_stability_package",
+                                  "slope_report_package"])
+def test_every_slope_figure_prints_at_seven_points_or_more(tmp_path, name):
+    """D4: the smallest lettering of every figure of the slope packages
+    prints at 7 pt or more at the print width (calc_package/renderer.py),
+    as each figure's PNG records it (layout_ink's Lettering record)."""
+    pytest.importorskip("matplotlib")
+    import base64
+    import re
+    from calc_package.renderer import FIGURE_PRINT_WIDTH_IN
+    from geotech_common import layout_ink as L
+    out, html = _package(name, tmp_path, _probe(name))
+    assert out["status"] == "success", out
+    pngs = re.findall(r'src="data:image/png;base64,([^"]+)"', html)
+    assert pngs
+    for i, b64 in enumerate(pngs):
+        rec = L.parse_lettering(L.png_texts(base64.b64decode(b64)).get(
+            L.LETTERING_KEY, ""))
+        assert rec, f"figure {i} has no Lettering record"
+        at_print = (rec["smallest_pt"] * FIGURE_PRINT_WIDTH_IN
+                    / rec["saved_width_in"])
+        assert at_print >= 7.0 - 1e-6, (i, rec)
+
+
+def test_a_search_its_budget_stopped_before_any_surface_says_so(
+        tmp_path, monkeypatch):
+    """D6: a search the time budget stopped before it scored a surface is
+    refused with that reason and the budget, not "widen the grid"."""
+    import slope_stability.analysis as A
+    from slope_stability.results import SearchResult
+    monkeypatch.setattr(A, "search_critical_surface", lambda **kw: SearchResult(
+        critical=None, n_surfaces_evaluated=12, search_ranges={
+            "time_budget": {"time_budget_s": 0.5, "elapsed_s": 0.6}}))
+    out = _run("slope_report_package", tmp_path, time_budget_s=0.5)
+    assert out["status"] == "error"
+    assert "stopped by its time budget" in out["error"]
+    assert "time_budget_s = 0.5 s (it ran 0.6 s)" in out["error"]
+    assert "Raise time_budget_s (at most 600 s)" in out["error"]
+    assert "Widen" not in out["error"]
+
+
+def test_the_short_arm_warning_reaches_the_report(tmp_path):
+    """Item 12: an anchor crossing a Bishop circle close to the level of
+    its centre counts little through the moment about it; the warning
+    (Duncan, Wright and Brandon 2014, p. 93) is printed in the report."""
+    out, html = _package("slope_stability_package", tmp_path, {
+        **_SLOPE, "xc": 15, "yc": 10.5, "radius": 8, "method": "bishop",
+        "anchors": [{"x_head": 11.0, "z_head": 9.5, "length": 8.0,
+                     "T_allow": 50.0, "inclination": 0.0}]})
+    assert out["status"] == "success", out
+    assert "counts a support through its moment about the circle" in html
+    assert "Eq. 6.78 and p. 93" in html
+
+
+def test_the_janbu_f0_statement_reaches_the_report(tmp_path, monkeypatch):
+    """Item 12: where Janbu's simplified method scores a family in the
+    method named's place, the report's table of the method each family was
+    scored with gives its f0 (applied, not found in print)."""
+    import slope_stability.analysis as A
+    real = A.search_critical_surface
+
+    def with_janbu(**kw):
+        r = real(**kw)
+        r.candidate_methods.append({
+            "family": "noncircular", "method": "janbu", "f_interslice": None,
+            "FOS": 9.876, "named": False,
+            "reason": "spencer's method solved none of the family's "
+                      "surfaces", "janbu_f0": 1.051, "FOS_uncorrected": 9.4})
+        return r
+    monkeypatch.setattr(A, "search_critical_surface", with_janbu)
+    out, html = _package("slope_report_package", tmp_path,
+                         {**_SLOPE, "nx": 4, "ny": 4})
+    assert out["status"] == "success", out
+    assert "f0 = 1.051 applied, not found in print" in html
+
+
+def test_inputs_that_do_nothing_in_the_case_are_said(tmp_path):
+    """Q4: base_in_tension where no slice base is in tension and
+    reverse_curvature where the circle has none are accepted; the response
+    and the report's Method Choices say they did nothing, and why. A value
+    given equal to the default is not said (it is what leaving it out
+    does)."""
+    out, html = _package("slope_stability_package", tmp_path, {
+        **_SLOPE, "xc": 15, "yc": 18, "radius": 13, "method": "spencer",
+        "base_in_tension": "no_friction", "reverse_curvature": "discard"})
+    assert out["status"] == "success", out
+    said = out["inputs_without_effect"]
+    assert [s.split(" = ")[0] for s in said] == ["base_in_tension",
+                                                 "reverse_curvature"]
+    assert "no slice base was in tension" in said[0]
+    assert "not a reverse-curvature circle" in said[1]
+    assert html.count("Nothing in this case") == 2
+    plain, _ = _package("slope_stability_package", tmp_path, {
+        **_SLOPE, "xc": 15, "yc": 18, "radius": 13, "method": "spencer",
+        "base_in_tension": "as_printed", "reverse_curvature": "tension_crack"})
+    assert "inputs_without_effect" not in plain
+
+
+def test_a_tol_the_ordinary_method_does_not_use_is_said(tmp_path):
+    """Q4: a tol the Ordinary Method of Slices does not use (it does not
+    iterate) is accepted and said; one above 1e-4 is still refused."""
+    out, html = _package("slope_report_package", tmp_path, {
+        **_SLOPE, "method": "fellenius", "tol": 1e-5, "nx": 4, "ny": 4})
+    assert out["status"] == "success", out
+    assert out["inputs_without_effect"][0].startswith("tol = 1e-05 (given)")
+    assert "does not iterate" in out["inputs_without_effect"][0]
+    assert "Nothing in this case" in html

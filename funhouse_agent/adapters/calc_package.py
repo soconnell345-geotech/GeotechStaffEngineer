@@ -1806,15 +1806,22 @@ def _generate_slope_stability_package(params: dict) -> dict:
             name="base_in_tension", method="slope_stability_package"),
     )
 
+    # inputs given that did nothing in this case, said (Q4)
+    inert = _say_inputs_without_effect(
+        _inputs_without_effect(params, geom, result), result)
+
     # slope_stability calc_steps expects a dict with "geom" + optional metadata
     analysis_dict = {
         "geom": geom,
         "FOS_required": params.get("FOS_required", 1.5),
     }
+    extra = _slope_fos_extra(result, analysis_dict)
+    if inert:
+        extra["inputs_without_effect"] = inert
     return _build_response(
         "slope_stability", result, analysis_dict, params,
         analysis_type="Slope Stability", package="slope_stability_package",
-        extra=_slope_fos_extra(result, analysis_dict),
+        extra=extra,
     )
 
 
@@ -1838,6 +1845,114 @@ def _check_slope_tol(tol, method: str) -> None:
         raise ValueError(
             f"tol={tol:g} changes nothing with method '{method}': "
             f"{SLOPE_TOL_RULE}. Give tol at most 1e-4, or leave it out.")
+
+
+#: The methods ``base_in_tension`` acts on (``analysis._GLE_SYSTEM_METHODS``).
+_BASE_TENSION_METHODS = ("janbu", "spencer", "morgenstern_price", "gle")
+
+
+def _inputs_without_effect(params: dict, geom, result, search=None,
+                           package: str = "slope_stability_package") -> list:
+    """Inputs given that could act and did nothing in this case (the
+    orchestrator's ruling on GM-140 step 10's review, Q4): accepted, and
+    the report says so and why. Only a value other than the package's
+    default: one equal to it is what the package does without it, and
+    gives the same result as leaving it out. ``[(name, value, why)]``:
+    ``tol`` with the
+    Ordinary Method of Slices, which does not iterate, where it scored the
+    surface reported; ``base_in_tension`` where no slice base was in
+    tension on the surface reported (nor on any trial of the search);
+    ``reverse_curvature`` where no circle had reverse curvature (the
+    circle analysed, or every trial of a search, where a reverse-curvature
+    circle would have been counted). A value that could never act is
+    refused before (``_check_slope_tol``)."""
+    from slope_stability.solution import METHOD_TEXT
+    specs = METHOD_INFO[package]["parameters"]
+
+    def chosen(name):
+        return (name in params
+                and params[name] != specs.get(name, {}).get("default"))
+    out = []
+    method = params.get("method", specs["method"].get("default"))
+    if (search is not None and chosen("tol") and method == "fellenius"
+            and not search.method_used):
+        others = sorted({r["method"] for r in search.candidate_methods
+                         if r["method"] != "fellenius"})
+        why = ("the Ordinary Method of Slices, which scored the surface "
+               "reported, does not iterate, so tol did not act on its "
+               "factor of safety; it acts on the other methods of the "
+               "method comparison")
+        if others:
+            why += (" and on the families "
+                    + " and ".join(METHOD_TEXT.get(m, m) for m in others)
+                    + " scored in its place")
+        out.append(("tol", params["tol"], why))
+    if chosen("base_in_tension") and method in _BASE_TENSION_METHODS:
+        on_surface = any(f.get("check") == "base_tension" and f.get("flag")
+                         for f in getattr(result, "acceptability", None) or [])
+        on_trials = sum(r.get("by_check", {}).get("base_tension", 0)
+                        for r in (getattr(search, "trial_flags", None) or [])
+                        ) if search is not None else 0
+        if not on_surface and not on_trials:
+            where = ("on the surface reported or on any trial the search "
+                     "scored" if search is not None
+                     else "on the surface analysed")
+            out.append((
+                "base_in_tension", params["base_in_tension"],
+                f"no slice base was in tension (a negative effective normal "
+                f"force) {where} by {METHOD_TEXT.get(method, method)}, so "
+                f"the rule had nothing to act on (the other methods of a "
+                f"method comparison are not checked for it)"))
+    if chosen("reverse_curvature"):
+        value = params["reverse_curvature"]
+        none_met = False
+        if search is None:
+            from slope_stability.slip_surface import circle_of
+            try:
+                slip = circle_of(result)
+                none_met = slip.reverse_curvature_crack(geom) is None
+            except (ValueError, AttributeError, TypeError):
+                none_met = False
+        else:
+            asked = (getattr(geom, "tension_crack_depth", 0) > 0
+                     or getattr(geom, "tension_crack_depth_basis", "given")
+                     != "given")
+            # every reverse-curvature circle is counted where it is
+            # discarded, or refused for want of a crack; one a crack
+            # closes is not counted, so with a crack asked and
+            # 'tension_crack' nothing can be said
+            none_met = (not getattr(search, "n_discarded_reverse_curvature",
+                                    0)
+                        and (value == "discard" or not asked))
+        if none_met:
+            what = ("the circle analysed is not a reverse-curvature circle"
+                    if search is None else
+                    "no trial circle of the search was a reverse-curvature "
+                    "circle")
+            out.append((
+                "reverse_curvature", value,
+                f"{what} (one whose centre is below the ground where it "
+                f"ends), so there was none to close with a crack or "
+                f"discard"))
+    return out
+
+
+def _say_inputs_without_effect(found: list, result, search=None) -> list:
+    """Put each input of ``_inputs_without_effect`` in the choices the
+    package's Method Choices section prints (the result's own, or, where
+    it has none, the search's: ``calc_package.tables.package_choices``)
+    and return the statements for the response."""
+    from geotech_common.choices import choice
+    target = (result if getattr(result, "choices", None) or search is None
+              else search)
+    lines = []
+    for name, value, why in found:
+        text = f"{name} = {value!r} (given) did nothing in this case: {why}."
+        target.choices.append(choice(
+            f"{name}, given: what it did in this case", value, "given",
+            f"Nothing in this case: {why}."))
+        lines.append(text)
+    return lines
 
 
 #: The slope tools' later inputs the two slope packages take as the tools
@@ -1939,15 +2054,30 @@ def _generate_slope_report_package(params: dict) -> dict:
 
     crit = search.critical
     if crit is None:
-        return {
-            "status": "error",
-            "analysis_type": "Slope Stability Report",
-            "error": (
+        stopped = (search.search_ranges or {}).get("time_budget")
+        if stopped:
+            # the time budget stopped the search before it scored a
+            # surface: say so, not "widen the grid" (GM-140 step 10's
+            # review, D6; D45: refused with its reason)
+            from slope_stability.search import TIME_BUDGET_MAX_S
+            why = (
+                f"The critical-surface search was stopped by its time "
+                f"budget, time_budget_s = {stopped['time_budget_s']:g} s "
+                f"(it ran {stopped['elapsed_s']:g} s), after "
+                f"{search.n_surfaces_evaluated} surfaces evaluated and "
+                f"before it scored an admissible one, so there is no "
+                f"critical surface to report. Raise time_budget_s (at most "
+                f"{TIME_BUDGET_MAX_S:g} s) and run it again.")
+        else:
+            why = (
                 "Critical-surface search found no admissible surface "
                 f"({search.n_surfaces_evaluated} evaluated). Widen the search "
                 "grid (x_range/y_range for circular, or x_entry_range/"
-                "x_exit_range) or check the geometry."
-            ),
+                "x_exit_range) or check the geometry.")
+        return {
+            "status": "error",
+            "analysis_type": "Slope Stability Report",
+            "error": why,
         }
 
     # Re-analyze the critical surface with method comparison + slice data so the
@@ -2005,6 +2135,12 @@ def _generate_slope_report_package(params: dict) -> dict:
 
     extra = _slope_fos_extra(result, analysis_dict)
     extra["n_surfaces_evaluated"] = search.n_surfaces_evaluated
+    inert = _say_inputs_without_effect(
+        _inputs_without_effect(params, geom, result, search,
+                               package="slope_report_package"),
+        result, search)
+    if inert:
+        extra["inputs_without_effect"] = inert
     if search.no_solution:
         # trials the method has no solution on, by family and method
         extra["search_no_solution"] = [dict(r) for r in search.no_solution]
@@ -3948,11 +4084,11 @@ METHOD_INFO = {
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Factor of safety: the method's own converged solution on the circle; null where the method has none (no_solution says why, and the package prints no number).", "method": "Method used.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on this surface.", "flags": "Present when the surface does not meet a printed acceptability check (low_m_alpha, bishop_below_oms, negative_frictional_term, base_tension, side_tension, thrust_outside): the package's Printed Acceptability Checks table names the slices and values. Report the flags with the factor of safety.", "method_used": "Present when FOS is not the method's own value: with Bishop's method on a circle with no supports and no seismic coefficient, where Bishop's value (FOS_bishop) is below the Ordinary Method of Slices value, FOS is the Ordinary Method of Slices value (Duncan 1996, p. 580)."},
+        "returns": {**_COMMON_RETURNS, "inputs_without_effect": "Only when an input given did nothing in this case: each, and why (also in Method Choices).", "FOS": "Factor of safety: the method's own converged solution on the circle; null where the method has none (no_solution says why, and the package prints no number).", "method": "Method used.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on this surface.", "flags": "Present when the surface does not meet a printed acceptability check (low_m_alpha, bishop_below_oms, negative_frictional_term, base_tension, side_tension, thrust_outside): the package's Printed Acceptability Checks table names the slices and values. Report the flags with the factor of safety.", "method_used": "Present when FOS is not the method's own value: with Bishop's method on a circle with no supports and no seismic coefficient, where Bishop's value (FOS_bishop) is below the Ordinary Method of Slices value, FOS is the Ordinary Method of Slices value (Duncan 1996, p. 580)."},
     },
     "slope_report_package": {
         "category": "Calculation Package",
-        "brief": "One-call slope stability REPORT for a critical-surface SEARCH: input echo, search story (surfaces tried + rejection diagnostics + critical surface/FOS), FOS-by-method table, slice-force + interslice/thrust-line figures, reinforcement summary, a probabilistic annex (FOSM/Monte Carlo) when 'variables' is supplied, and CSV tables (every slice, every trial surface). No fixed circle needed — the search finds the critical surface.",
+        "brief": "One-call slope stability REPORT for a critical-surface SEARCH (no fixed circle): input echo, the search (surfaces tried, refused, critical), FOS by method, slice-force and interslice/thrust-line figures, supports, a FOSM/Monte Carlo annex with 'variables', CSV tables of every slice and trial surface.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "List of [x, z] ground surface coordinates."},
             "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' and 'top_boundary_points' ([[x,z],...]) define a non-horizontal layer base or top (e.g. a weak seam). One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
@@ -3974,15 +4110,15 @@ METHOD_INFO = {
             "monte_carlo": {"type": "bool", "required": False, "default": False, "description": "If True (and 'variables' given), also run a Monte Carlo simulation on the critical surface for the annex."},
             "n": {"type": "int", "required": False, "default": 1000, "description": "Monte Carlo realizations (when monte_carlo=True)."},
             "research_surface": {"type": "bool", "required": False, "default": False, "description": "Monte Carlo: re-search the critical surface each realization (slower) instead of holding it fixed."},
-            "time_budget_s": {"type": "float", "required": False, "default": 180.0, "description": "Time budget of EACH critical-surface search in seconds (at most 600), as slope_stability search_critical_surface: the report's search, and with research_surface each Monte Carlo realization's (per search, not for the run). A search cut short reports the lowest surface in what it covered and says so in its warnings."},
+            "time_budget_s": {"type": "float", "required": False, "default": 180.0, "description": "Time budget of EACH critical-surface search, in seconds (at most 600): the report's search and, with research_surface, each Monte Carlo realization's. A search cut short reports the lowest surface in what it covered and says so in its warnings."},
             "fosm": {"type": "bool", "required": False, "default": True, "description": "With 'variables': run the FOSM annex."},
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
-            "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance: Bishop's simplified method takes it as given; Janbu's simplified method and Spencer's, Morgenstern-Price and GLE run at min(tol, 1e-4) / 10, and the Ordinary Method of Slices does not iterate. A value above 1e-4 is refused with any method but 'bishop' (it would change nothing)."},
-            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": ["constant", "half_sine", "clipped_sine", "trapezoidal"], "description": "Interslice force function of morgenstern_price and gle, in every family of the search and in the re-analysis of the critical surface (before GM-140 step 6 the search always took the half-sine function). Another name is refused."},
+            "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance: Bishop's simplified method takes it as given; Janbu's simplified, Spencer's, Morgenstern-Price and GLE run at min(tol, 1e-4) / 10; the Ordinary Method of Slices does not iterate. Above 1e-4 it is refused except with 'bishop' (it would change nothing)."},
+            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": ["constant", "half_sine", "clipped_sine", "trapezoidal"], "description": "Interslice force function of morgenstern_price and gle, in every family of the search and in the re-analysis of the critical surface. Another name is refused."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety: the converged solution on the governing surface by the method that scored it in the search. That is the method named, except where the governing family was scored by another (Bishop's simplified method and the Ordinary Method of Slices do not apply to a plane or a polyline, which Spencer's method then scores; a family the method solves none of is scored by the next in order: planes and polylines Spencer's method, then Janbu's simplified method; circles Spencer's, then Bishop's simplified method, then Janbu's): method_used then names it, method_named the method asked for and named_method_lowest that method's own lowest value. Tell the user both. Null where that method has no solution on the surface: no_solution says why and the package prints no number.", "candidate_methods": "What scored each family in candidates: [{family, method, f_interslice, FOS, named, reason}].", "method_used": "Present when the governing surface was scored by another method than the one named (with method_named and named_method_lowest), or, with Bishop's method, when the Ordinary Method of Slices value was taken (Duncan 1996, p. 580).", "named_method_lowest": "Present with method_named: the lowest factor of safety by the method named ({method, f_interslice, FOS, family}), or FOS null with a note when it scored no family.", "screen_unsolved": "Present when a screen by another method scored surfaces below the reported minimum that the method named has no solution on: {n, lowest_screen_FOS, by_family} (UFC 3-220-10 p. 362). Tell the user.", "circle_check": "Present only with a noncircular search: the minimum against the critical circle by the same method ({checked, circle, FOS_as_polyline, noncircular_minimum, governs, note}).", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on the governing surface.", "search_no_solution": "The search's trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any; they were not scored; below_0_05: solved with a value below 0.05, which a search does not take as a factor of safety).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
+        "returns": {**_COMMON_RETURNS, "inputs_without_effect": "Only when an input given did nothing in this case: each, and why (also in Method Choices).", "FOS": "Critical factor of safety: the converged solution on the governing surface by the method that scored it in the search. That is the method named, except where the governing family was scored by another (Bishop's simplified method and the Ordinary Method of Slices do not apply to a plane or a polyline, which Spencer's method then scores; a family the method solves none of is scored by the next in order: planes and polylines Spencer's method, then Janbu's simplified method; circles Spencer's, then Bishop's simplified method, then Janbu's): method_used then names it, method_named the method asked for and named_method_lowest that method's own lowest value. Tell the user both. Null where that method has no solution on the surface: no_solution says why and the package prints no number.", "candidate_methods": "What scored each family in candidates: [{family, method, f_interslice, FOS, named, reason}].", "method_used": "Present when the governing surface was scored by another method than the one named (with method_named and named_method_lowest), or, with Bishop's method, when the Ordinary Method of Slices value was taken (Duncan 1996, p. 580).", "named_method_lowest": "Present with method_named: the lowest factor of safety by the method named ({method, f_interslice, FOS, family}), or FOS null with a note when it scored no family.", "screen_unsolved": "Present when a screen by another method scored surfaces below the reported minimum that the method named has no solution on: {n, lowest_screen_FOS, by_family} (UFC 3-220-10 p. 362). Tell the user.", "circle_check": "Present only with a noncircular search: the minimum against the critical circle by the same method ({checked, circle, FOS_as_polyline, noncircular_minimum, governs, note}).", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on the governing surface.", "search_no_solution": "The search's trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any; they were not scored; below_0_05: solved with a value below 0.05, which a search does not take as a factor of safety).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "settlement_package": {
         "category": "Calculation Package",
