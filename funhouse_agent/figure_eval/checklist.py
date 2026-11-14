@@ -6,8 +6,10 @@ of 2026-10-15, split into separate questions a reviewer answers yes, no or
 not applicable, each with a one-line reason. A request adds its own items
 (``extra``: what it says must be on the figure).
 
-:func:`check_run` sends one run's figures (all of them, up to
-:data:`MAX_FIGURES`, newest kept) with the request, the agent's reply and
+:func:`check_run` sends one run's final figures (:func:`choose_figures`:
+the PNGs the agent's reply names by file name, else the newest; never the
+figure helper's look copies; at most :data:`MAX_FIGURES`) with the
+request, the agent's reply and
 the numbers GM-328's build of the same inputs returned, and reads the marks
 back. A run that drew nothing is not sent: every item is marked ``no``,
 "no figure appeared" (:func:`no_figure_marks`). A run that failed (an
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from funhouse_agent.chart_eval import imaging
 from funhouse_agent.chart_eval.judge import _outer_object, _text_of
@@ -81,6 +83,11 @@ MARKS = ("yes", "no", "na")
 #: An item the checker left without a readable mark.
 UNMARKED = "unmarked"
 MAX_FIGURES = 4
+#: Where the figure helper's plot_code box keeps the smaller copy of a
+#: figure it looks at (``aec_agent_core.plot_box.child``: ``.scratch/<name>
+#: _look.png``): never a figure the reply presents.
+LOOK_DIR = ".scratch"
+LOOK_SUFFIX = "_look.png"
 NO_FIGURE = "no figure appeared"
 
 PROMPT = """You are a senior geotechnical engineer marking figures that an assistant drew for a report, as you would mark them in a review. Judge only what you SEE in the figure image(s), not what the reply says the figure shows.
@@ -173,12 +180,38 @@ def image_detail(model: Any, detail: Optional[str] = "auto"
     return None if imaging.family_of(model) == "anthropic" else detail
 
 
-def pick_figures(paths: Sequence[str]) -> List[str]:
-    """The PNGs to show: all, or the newest :data:`MAX_FIGURES`."""
-    pngs = [p for p in paths if p.lower().endswith(".png")
-            and os.path.isfile(p)]
+def is_look_copy(path: str) -> bool:
+    """Whether ``path`` is a look copy (:data:`LOOK_DIR`)."""
+    parts = str(path).replace("\\", "/").split("/")
+    return LOOK_DIR in parts[:-1] or parts[-1].lower().endswith(LOOK_SUFFIX)
+
+
+def run_pngs(paths: Sequence[str]) -> List[str]:
+    """A run's PNGs without the look copies, oldest first."""
+    pngs = [p for p in paths if str(p).lower().endswith(".png")
+            and not is_look_copy(p) and os.path.isfile(p)]
     pngs.sort(key=lambda p: (os.path.getmtime(p), p))
-    return pngs[-MAX_FIGURES:]
+    return pngs
+
+
+def pick_figures(paths: Sequence[str]) -> List[str]:
+    """The newest :data:`MAX_FIGURES` PNGs, look copies left out."""
+    return run_pngs(paths)[-MAX_FIGURES:]
+
+
+def choose_figures(paths: Sequence[str], reply: str = ""
+                   ) -> Tuple[List[str], str]:
+    """The figures to mark and how they were chosen: ``reply`` when the
+    agent's reply names them by file name (the final figures it presents;
+    a draft retired with replaces= is deleted and a redraw under the same
+    name overwrites the file, but a draft drawn under another name stays
+    in ``files/``), else ``newest``."""
+    text = (reply or "").lower()
+    pngs = run_pngs(paths)
+    named = [p for p in pngs if os.path.basename(p).lower() in text]
+    if named:
+        return named[-MAX_FIGURES:], "reply"
+    return pngs[-MAX_FIGURES:], "newest"
 
 
 def check_run(vision_model: Any, request: Dict[str, Any], run: Dict[str, Any],
@@ -190,7 +223,7 @@ def check_run(vision_model: Any, request: Dict[str, Any], run: Dict[str, Any],
         return dict(no_figure_marks(request, f"the run failed: "
                                     f"{run['error']}"[:300]),
                     run_failed=True)
-    shown = pick_figures(figure_paths)
+    shown, how = choose_figures(figure_paths, run.get("answer", ""))
     if not shown:
         return no_figure_marks(request)
     ref = request.get("reference") or {}
@@ -210,8 +243,9 @@ def check_run(vision_model: Any, request: Dict[str, Any], run: Dict[str, Any],
     reply = vision_model.invoke([HumanMessage(content=content)])
     out = parse_marks(_text_of(getattr(reply, "content", "")), request)
     usage = getattr(reply, "usage_metadata", None) or {}
-    out.update(figures=names, dropped=max(0, len(
-        [p for p in figure_paths if p.lower().endswith(".png")]) - len(shown)),
+    out.update(figures=names, picked_by=how, dropped=max(0, len(
+        [p for p in figure_paths if p.lower().endswith(".png")
+         and not is_look_copy(p)]) - len(shown)),
         detail=det, usage={k: usage.get(k) for k in ("input_tokens",
                                                      "output_tokens")})
     return out

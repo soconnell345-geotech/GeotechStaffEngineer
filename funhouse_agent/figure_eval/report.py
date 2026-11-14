@@ -196,9 +196,16 @@ def render_markdown(res: Dict[str, Any]) -> str:
                 notes.append(f"- {req['id']} {a}: the checker left "
                              f"{', '.join(chk['unmarked'])} unmarked "
                              "(counted apart, never same).")
+            if chk and chk.get("picked_by") == "newest" and run and len(
+                    run.get("figures") or []) > 1:
+                notes.append(f"- {req['id']} {a}: the reply named no "
+                             "figure file, so the newest were marked; "
+                             "check that none is a draft.")
             if chk and chk.get("dropped"):
-                notes.append(f"- {req['id']} {a}: {chk['dropped']} older "
-                             "figure(s) not shown to the checker.")
+                why = ("not named in the reply"
+                       if chk.get("picked_by") == "reply" else "older")
+                notes.append(f"- {req['id']} {a}: {chk['dropped']} other "
+                             f"figure(s) ({why}) not shown to the checker.")
     lines += ["", "## Notes", ""] + (notes or ["None."])
     tot = res["totals"]
     lines += ["", "## Tokens and time", "",

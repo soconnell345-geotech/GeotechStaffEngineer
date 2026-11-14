@@ -47,7 +47,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from funhouse_agent.figure_eval import report as _report
 from funhouse_agent.figure_eval import request_set as _requests
-from funhouse_agent.figure_eval.checklist import check_run
+from funhouse_agent.figure_eval.checklist import check_run, is_look_copy
 from funhouse_agent.figure_eval.compare import compare as compare_arms
 
 #: The arms: the figure helper on in both, model-written plot code OFF in
@@ -109,7 +109,8 @@ def _record(request: Dict[str, Any], arm: str, res: Dict[str, Any],
         "prompt": request["prompt"], "started": res.get("started"),
         "answer": res.get("answer") or "",
         "error": res.get("error") or res.get("outcome_error"),
-        "figures": [p for p in rel if p.lower().endswith(".png")],
+        "figures": [p for p in rel if p.lower().endswith(".png")
+                    and not is_look_copy(p)],
         "files": rel, "tool_calls": res.get("tool_calls") or [],
         "tool_counts": res.get("tool_counts") or {},
         "model_calls": res.get("model_calls", 0),

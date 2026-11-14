@@ -231,6 +231,7 @@ def test_check_run_sends_the_figures_at_auto_detail_and_reads_marks(
         "text"]
     assert out["marks"]["x1"]["mark"] == "yes" and not out["unmarked"]
     assert out["usage"] == {"input_tokens": 900, "output_tokens": 90}
+    assert out["picked_by"] == "newest"
     claude = _Eyes("claude-opus-5-5")
     checklist.check_run(claude, req, {"answer": "drawn"}, paths[:1])
     assert "detail" not in claude.sent[0][1]["image_url"]
@@ -323,6 +324,36 @@ def test_the_dry_run_goes_through_the_real_page_agent(tmp_path):
     assert pr["verdict"] == "worse" and pr["counts"]["worse"] == 1
     assert pr["counts"]["one_na"] == 1
     assert (tmp_path / "results" / "side_by_side.html").is_file()
+
+
+def test_the_figures_marked_are_the_reply_s_final_figures(tmp_path):
+    import time
+    os.makedirs(tmp_path / ".scratch")
+    draft = _png(tmp_path / "bearing_draft.png")
+    time.sleep(0.05)
+    final = _png(tmp_path / "bearing_vs_width.png")
+    time.sleep(0.05)
+    module = _png(tmp_path / "package_fig.png")
+    time.sleep(0.05)
+    look = _png(tmp_path / ".scratch" / "bearing_vs_width_look.png")
+    paths = [draft, final, module, look]
+    assert checklist.is_look_copy(look) and not checklist.is_look_copy(final)
+    shown, how = checklist.choose_figures(
+        paths, "The figure is bearing_vs_width.png: q_ult against B.")
+    assert (shown, how) == ([final], "reply")
+    shown, how = checklist.choose_figures(paths, "Drawn.")
+    assert (shown, how) == ([draft, final, module], "newest")
+    eyes = _Eyes("gpt-5.4")
+    out = checklist.check_run(eyes, REQ, {"answer": "See "
+                                          "BEARING_VS_WIDTH.PNG."}, paths)
+    images = [c for c in eyes.sent[0] if c["type"] == "image_url"]
+    assert len(images) == 1 and out["figures"] == ["bearing_vs_width.png"]
+    assert out["picked_by"] == "reply" and out["dropped"] == 2
+    rec = runner._record({"id": "R1-x", "prompt": "p"}, "on",
+                         {"files": ["files/a.png",
+                                    "files/.scratch/a_look.png"]},
+                         str(tmp_path / "agent"), str(tmp_path))
+    assert rec["figures"] == [os.path.join("agent", "files", "a.png")]
 
 
 def test_an_unreadable_reply_is_asked_once_more_then_kept_apart(tmp_path):
