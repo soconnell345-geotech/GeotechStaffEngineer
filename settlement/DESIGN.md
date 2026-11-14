@@ -30,8 +30,15 @@ Every equation, chart and default is read from these as printed
 
 ## Public API
 ```python
-analyze_settlement(q_net, B, L, footing_depth, ...) -> SettlementResult
-analyze_consolidation(layers, delta_sigma, ...) -> ConsolidationResult
+# exports of settlement/__init__.py (see __all__ for the rest)
+SettlementAnalysis(q_applied, q_overburden, B, L=None, ...)  # .compute() -> SettlementResult
+SettlementResult
+stress_at_depth, approximate_2to1, boussinesq_center_rectangular
+elastic_settlement, schmertmann_settlement, SchmertmannLayer
+ConsolidationLayer, consolidation_settlement_layer, total_consolidation_settlement
+HoughLayer, HoughResult, hough_settlement, hough_settlement_layer
+time_factor, degree_of_consolidation, time_for_consolidation, settlement_at_time
+secondary_settlement
 ```
 
 ## Key Notes
