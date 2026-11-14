@@ -665,7 +665,7 @@ _SEEPAGE_FORMS = {
     "water_table": (
         "(gamma'/gamma_sat) tan(phi')/tan(beta)",
         "a face with a water table at its surface and seepage parallel to "
-        "it (water_line_kind 'water_table'; FHWA NHI-06-088 Eq. 6-10, "
+        "it (water_line_kind 'water_table'; FHWA NHI-06-088 Sec. 6.3.2, "
         "p. 6-8)"),
     "piezometric": (
         "(gamma_sat cos^2(beta) - gamma_w) tan(phi') / (gamma_sat "
@@ -686,7 +686,7 @@ def _seepage_closed_form(closed: float, beta_deg: float, gsat: float,
     ``closed`` is the dry form tan(phi')/tan(beta).
 
     - 'water_table' (u = gamma_w z cos^2(beta)): (gamma'/gamma_sat)
-      tan(phi')/tan(beta), FHWA NHI-06-088 Eq. 6-10, p. 6-8.
+      tan(phi')/tan(beta), FHWA NHI-06-088 Sec. 6.3.2, p. 6-8.
     - 'piezometric' (the full head, u = gamma_w z), the same statics:
       (gamma_sat cos^2(beta) - gamma_w) tan(phi') / (gamma_sat sin(beta)
       cos(beta)), that is the dry form x (1 - gamma_w / (gamma_sat

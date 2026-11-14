@@ -200,7 +200,7 @@ class TestInfiniteSlopeWithParallelSeepage:
         geom, slip = self._long_plane("water_table")
         res = analyze_slope(geom, slip_surface=slip, method="fellenius",
                             n_slices=60)
-        # FHWA NHI-06-088 Eq. 6-10, p. 6-8: 0.6704 for these made-up
+        # FHWA NHI-06-088 Sec. 6.3.2, p. 6-8: 0.6704 for these made-up
         # values; the two 2 m end ramps of a 390 m plane are the rest
         assert res.FOS == pytest.approx(self._printed(), rel=0.005)
         # and the module's closed form (same equation)
@@ -762,7 +762,7 @@ def test_the_planar_check_follows_the_reading():
     """The infinite-slope check of a search reports the closed form with
     the water at the face's surface for the reading the run used, and
     names it (the step 5a review): 'water_table', (gamma'/gamma_sat)
-    tan(phi')/tan(beta) (FHWA NHI-06-088 Eq. 6-10, p. 6-8); 'piezometric'
+    tan(phi')/tan(beta) (FHWA NHI-06-088 Sec. 6.3.2, p. 6-8); 'piezometric'
     (the default), the full head, (gamma_sat cos^2(beta) - gamma_w)
     tan(phi') / (gamma_sat sin(beta) cos(beta)). Made-up 2H:1V sand face,
     phi' = 34 deg, gamma_sat = 19.5: 1.3490 x 9.69 / 19.5 = 0.6704 and
