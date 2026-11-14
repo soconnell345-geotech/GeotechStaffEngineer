@@ -305,6 +305,20 @@ def _geometry_section(geom) -> CalcSection:
                   "water (external hydrostatic load).",
         ))
 
+    # What the pore pressure on the slice bases was taken as (GM-140 step
+    # 5a): the reading of a sloping water line, a pore-pressure grid, ru
+    # in a layered column, none on total-stress layers, each with its print.
+    from slope_stability.pore_pressure import water_statements
+    from geotech_common.choices import plain
+    water_choices, _ = water_statements(geom)
+    if water_choices:
+        items.append(TableData(
+            title="Pore Pressure on the Slice Bases",
+            headers=["What", "Used", "Basis"],
+            rows=[[plain(c["what"]), plain(str(c["chosen"])),
+                   plain(c.get("basis", ""))] for c in water_choices],
+        ))
+
     return CalcSection(title="Slope Geometry & Soil Properties",
                        items=items)
 

@@ -249,6 +249,11 @@ class SlopeStabilityResult:
     methods_without_solution: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     layer_overlaps: List[Dict[str, Any]] = field(default_factory=list)
+    #: What the pore pressure on the slice bases was taken as (GM-140 step
+    #: 5a; ``pore_pressure.water_statements``, ``geotech_common.choices``):
+    #: the reading of a sloping water line, a pore-pressure grid, ru in a
+    #: layered column, none on total-stress layers. Empty when none applies.
+    choices: List[Dict[str, Any]] = field(default_factory=list)
     acceptability: List[Dict[str, Any]] = field(default_factory=list)
     thrust_line_unclipped: Optional[List[Tuple[float, float]]] = None
 
@@ -352,6 +357,9 @@ class SlopeStabilityResult:
                          + (f"  (f0={self.janbu_f0:.3f})" if self.janbu_f0 else ""))
         for o in self.layer_overlaps:
             lines.append(f"  LAYERS: {o['statement']}")
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
         for w in self.warnings:
             lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
@@ -460,6 +468,8 @@ class SlopeStabilityResult:
             d["methods_without_solution"] = list(self.methods_without_solution)
         if self.layer_overlaps:
             d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         if self.acceptability:
             # the printed acceptability checks (GM-140 step 3)
             d["flags"] = self.flags
@@ -737,8 +747,11 @@ class SearchResult:
     infinite_slope_checks : list of dict
         One entry per stretch of slope face where cohesionless soil is at
         the surface: x range, slope angle beta, layer, phi', the dry
-        closed-form tan(phi')/tan(beta) and the FOS of the shallow planar
-        surfaces evaluated there (None if not evaluated, with a note).
+        closed-form tan(phi')/tan(beta), the closed form with the water at
+        the surface for the reading used (``FOS_seepage_closed_form``,
+        named by ``seepage_reading``: 'piezometric', 'water_table' or
+        'rapid_drawdown') and the FOS of the shallow planar surfaces
+        evaluated there (None if not evaluated, with a note).
     search_ranges : dict
         The entry / exit windows and centre ranges the main search used
         (x_entry_range, x_exit_range, and x_range / y_range for a centre

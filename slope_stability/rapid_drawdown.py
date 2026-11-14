@@ -215,6 +215,12 @@ class RapidDrawdownResult:
     #: Statements that are not warnings (what the manual's example of the
     #: 1970 procedure was computed by).
     notes: List[str] = field(default_factory=list)
+    #: What was chosen (``geotech_common.choices``): the procedure, the
+    #: method of slices, the strengths, the water before and after
+    #: drawdown, and (GM-140 step 5a, ``pore_pressure.water_statements``)
+    #: what the pore pressure on the bases was taken as: the reading of a
+    #: sloping line before drawdown, or after it where one is given, and
+    #: none on total-stress layers.
     choices: List[Dict[str, Any]] = field(default_factory=list)
     #: Where a layer was given ground a layer listed before it also covers
     #: (`SlopeGeometry.layer_overlaps`; the first listed holds it).
@@ -824,6 +830,30 @@ def _drawdown_choices(method, f_interslice, stage_solver, before_given,
     return out
 
 
+_SLOPING_LINE = "pore pressure under the sloping water line"
+
+
+def _stage_water_statements(g_full, g_draw, after_given):
+    """(choices, warnings) on the pore pressure of the bases (GM-140 step
+    5a): every stage's slices take it from the same function
+    (``pore_pressure.base_pore_pressure``), so a sloping line is read as
+    ``geom.water_line_kind`` says. Stage 1's statements in full, with its
+    warnings; for a line given after drawdown (``drawdown_phreatic_points``,
+    GM-140 step 9) the reading of that line where it slopes. The grid, ru
+    and the total-stress layers are the same soils and inputs in every
+    stage and are said once, by stage 1."""
+    from slope_stability.pore_pressure import water_statements
+    stage1 = "Stage 1 (before drawdown): "
+    found, notes = water_statements(g_full)
+    choices = [dict(c, what=stage1 + c["what"]) for c in found]
+    warnings = [stage1 + n for n in notes]
+    if after_given:
+        after, _ = water_statements(g_draw)
+        choices += [dict(c, what="After drawdown: " + c["what"])
+                    for c in after if c["what"] == _SLOPING_LINE]
+    return choices, warnings
+
+
 def rapid_drawdown_fos(geom: SlopeGeometry,
                        drawdown_from_elevation: float,
                        drawdown_to_elevation: float,
@@ -1017,6 +1047,11 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         res.choices = _drawdown_choices(
             method, f_interslice, stage_solver, before_given, after_given,
             drawdown_from_elevation, drawdown_to_elevation, res.stage_method)
+        # The pore pressure on the bases (GM-140 step 5a): the reading of
+        # a sloping line, named; stage 1's warnings, once.
+        water, notes = _stage_water_statements(g_full, g_draw, after_given)
+        res.choices += water
+        warnings.extend(notes)
         if (method == "corps_2stage"
                 and stage_solver in (None, "gle", "spencer")):
             res.notes.append(CORPS_EXAMPLE_NOTE)

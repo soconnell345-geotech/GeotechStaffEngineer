@@ -24,6 +24,7 @@ stabilizing piles in every method (`reinforcement.py`).
 - `geometry.py` — SlopeSoilLayer (flat or polyline top and bottom), SlopeGeometry (polyline surface/GWT); `column_at`, the one lookup of the layer at a point (GM-140 step 1)
 - `slip_surface.py` — CircularSlipSurface (center + radius), PolylineSlipSurface (polyline points); a surface below the ground over more than one stretch is refused (`GroundCrossingError`, GM-122)
 - `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure (the weight summed over `SlopeGeometry.column_at`)
+- `pore_pressure.py` — `base_pore_pressure()`, the one function that gives a slice base its pore pressure (GM-140 step 5a): the water line as a piezometric line or a water table (`SlopeGeometry.water_line_kind`), ru on the column's overburden stress, a pore-pressure grid, none on total-stress layers; `pond_edges()`; `water_statements()`, what a result says about it
 - `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`); each returns the method's own solution or raises `NoSolution` (GM-140 step 2: the `*_legacy` approximate forms and `solve_rigorous()` are removed)
 - `solution.py` — `solve_method()`, the one solver every caller uses for a method (a result, every search family, the yield acceleration, FOSM, Monte Carlo): a `MethodSolution` with the method's own FOS, or None and the reason; `NoSolution`; `check_method()` / `check_interslice()` (an unknown name is refused)
 - `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
@@ -111,8 +112,9 @@ the repository).
   the su-with-depth law still reads a layer's flat `top_elevation` /
   `bottom_elevation` (the weak-layer search aims at the ground a layer
   holds at each x since the fix round, `search._layer_band_at`; its lower
-  limit is still the lowest flat `bottom_elevation`); `ru` still uses the base
-  layer's unit weight over the column (the account's D3). See
+  limit is still the lowest flat `bottom_elevation`). `ru` took the base
+  layer's unit weight over the column (the account's D3) until step 5a, which
+  takes it on the column's own weight ("Pore pressure as printed", below). See
   `module_work/gm140/STEP1_CHECK.md`.
 
 ## Tension cracks and reverse-curvature circles as printed (GM-140 step 4, 2026-11-13)
@@ -550,7 +552,13 @@ and `refused_lowest` only where the result has them (GM-125).
   drawdown solve can fail -- the result says it is the infinite-slope
   mechanism and gives no window-edge warnings; a deep circle scoring about
   the same is not called that. `infinite_slope_checks` carry both closed
-  forms (`FOS_dry_closed_form`, `FOS_seepage_closed_form`).
+  forms (`FOS_dry_closed_form`, `FOS_seepage_closed_form`). The second
+  follows the reading of the water line and `seepage_reading` names it
+  (GM-140 step 5a review): `'water_table'`, (γ'/γsat) tan φ' / tan β
+  (FHWA NHI-06-088 Eq. 6-10, p. 6-8); `'piezometric'` (the default), the
+  full head, (γsat cos² β − γw) tan φ' / (γsat sin β cos β); in a
+  rapid-drawdown search (`'rapid_drawdown'`, level pools), (γ'/γ) tan φ' /
+  tan β as before.
 - **Toe circles** (Taylor 1937; Duncan, Wright & Brandon 2014): for each
   slope face (`slope_faces`: maximal runs of segments steeper than 5 deg
   rising the same way; a flat stretch ends a face, so each bench has its own
@@ -1666,8 +1674,9 @@ boundary, entry to exit, and `build_slices` cuts there.
   2.287) won partly by the tangent's error at their vertical end.
 - **What moved**: VALIDATION.md B16, every value with its old code's own
   value on 3,840 slices.
-- **Not done.** The edge of ponded water (where the water table crosses
-  the ground) is not a slice boundary.
+- The edge of ponded water (where the water line comes down to the
+  ground) is a slice boundary since GM-140 step 5a ("Pore pressure as
+  printed", below).
 
 ### The refinement walk moves on the method's own FOS (GM-138, 2026-10-18)
 - **The defect.** On V-043 (Slide2 #39 sand fill, c' = 0 / phi' 37 over 3 m
@@ -1813,6 +1822,129 @@ boundary, entry to exit, and `build_slices` cuts there.
 - **Run time** (default searches, laptop, best of three, before / after):
   Taylor Bishop 2.1-2.3 / 2.1 s, Spencer 12.8-14.4 / 12.4 s; V-043 Spencer
   14.1-14.7 / 13.6 s; #85 with its support, Bishop 2.5 / 2.5 s.
+
+### Pore pressure as printed (GM-140 step 5a, 2026-11-13)
+
+The pore pressure on a slice base is the printed one for the kind of water
+input and the kind of strength the base's layer has, from ONE function,
+`pore_pressure.base_pore_pressure`, which `build_slices` calls. Every
+method (OMS, Bishop, Janbu, Spencer, Morgenstern-Price, GLE), every family
+of surfaces and every caller takes its slices from `build_slices`, so the
+rule holds for all of them (the list is in
+`module_work/gm140/STEP5A_CHECK.md`).
+
+- **The water line's kind (account D2; owner call OWN-104).**
+  `SlopeGeometry.water_line_kind` says what `gwt_points` is.
+  - `'piezometric'` (default): a piezometric line, "a surface connecting
+    the height or elevation that water would rise in a series of standpipe
+    piezometers" (UFC 3-220-10 Sec. 7-5.1, p. 355). u = γw × the full
+    vertical depth below it. Never corrected.
+  - `'water_table'`: a water table with seepage parallel to it. "When the
+    water table is sloping, use Equation 6-16 to calculate the water
+    pressure on the base of the slice: u = hw γw cos² αw", αw the slope of
+    the water table from the horizontal (FHWA NHI-06-088 p. 6-14); UFC
+    3-220-10 Sec. 7-5.1 (p. 355) lists "Water table or phreatic surface –
+    can be corrected to approximate the piezometric surface based on the
+    slope of the surface above the specific point". αw is the slope of the
+    line's stretch above the base's mid-point (at a vertex of the line, the
+    flatter of the two stretches; level beyond the line's ends). Where the
+    line is above the ground at the slice (ponded water) nothing is
+    corrected.
+  - Why the default is the uncorrected head although two manuals print the
+    correction (OWN-104): the correction holds for seepage parallel to a
+    straight water table, which is a statement about the seepage that only
+    the caller can make, and the full head is the lower factor of safety.
+  - A result with a line that slopes below the ground names the reading in
+    its `choices` ("pore pressure under the sloping water line"), with the
+    premise and the other reading. A level line reads the same either way
+    and has no entry.
+  - The printed case: FHWA NHI-06-088 Sec. 6.3 (pp. 6-7 to 6-8, Fig. 6-4,
+    Eqs. 6-6 to 6-10), the infinite slope with seepage parallel to it. The
+    pore-water force on the base is U = γw b h cos β over a base b / cos β
+    long, that is u = γw h cos² β, and for c' = 0 the dry FS is "reduced by
+    the factor γ'/γsat" (Eq. 6-10). A plane 390 m long, 0.5 m below a 2H:1V
+    face with the water table at the surface, reproduces Eq. 6-10 with
+    `'water_table'` (OMS 0.6704 against 0.6704) and the full-head statics
+    with `'piezometric'` (OMS 0.5007 against 0.5007);
+    `tests/test_pore_pressure_as_printed.py`.
+- **ru in a layered column (D3).** u = ru × the total overburden stress at
+  the base: the weight of the soil column above it per unit width, each
+  soil at its own unit weight (the column step 1 weighs). EM 1110-2-1902
+  C-7 (p. C-29) defines ru = u / (γ z) for a uniform slope only; the sum
+  over a layered column is the module's reading of that definition, and
+  the result says so (`choices`, "pore pressure from ru"). A surcharge and
+  ponded water are not in the overburden: γ z is the soil's weight (and a
+  base under ponded water is under the line, which governs there). ru is
+  used where the line gives no pressure at the base, as before. It was
+  ru × γ(base layer) × the column's height.
+- **Total-stress layers (D4).** No pore pressure is subtracted on the base
+  of a slice whose layer is analysed in total stresses: "For total stress
+  analyses, pore water pressures are set to zero" (EM 1110-2-1902 Table
+  2-1, p. 2-2); "the pore water pressure should be set to zero" (2-2c,
+  p. 2-4). Total-stress layers: Mohr-Coulomb with
+  `analysis_mode='undrained'`, `'shansep'` and `'anisotropic'`. These all
+  have φ = 0 at the base, so no factor of safety moves; the slice table's
+  u and the GLE's "base tension" note do. `Slice.water_pressure` keeps the
+  water pressure at the base, which the SHANSEP and Hoek-Brown stresses
+  still use (D40, not changed). A total-stress layer given φ > 0 that lies
+  under water draws a warning citing Table 2-1's note 2 (total-stress
+  envelopes with φ > 0 apply only to partially saturated soils) and saying
+  that the φ given is not used.
+- **The pond's edge (D16).** Where the water line comes down to the ground
+  is a slice boundary (`pore_pressure.pond_edges`, in `slice_breaks`), for
+  circles and polylines: each slice's top is wholly under the pond or
+  wholly out of it, and the slices' pond weights add up to the water over
+  the surface at any slice count. FHWA NHI-06-088 p. 6-14 puts slice sides
+  "at the intersection of the ground water level and the circle" and tops
+  "at breaks in the slope"; the pond's edge is cut as a surcharge's edge is.
+- **The pond's thrust on a slice** (`slices._pond_thrust`) is the
+  horizontal resultant of the water's pressure on the ground across the
+  slice, from the pool's depth at each SIDE of the slice (the line's own
+  elevation there less the ground's): γw × the mean depth × the ground's
+  rise over the stretch where the line is above the ground, at the centroid
+  of that pressure trapezoid (boundary water forces with total weights,
+  FHWA NHI-06-088 p. 6-13). Under a level pool this is ½ γw (d_l² − d_r²),
+  the form used before. That form took both depths from the line's
+  elevation at the slice's MIDDLE: the same under a level pool and wherever
+  the line is above the ground at both sides, but a sloping line AT or just
+  under the ground (a water table at the surface of a face) read as a pool
+  at each slice's lower side, with a thrust into the slope. Found while
+  pinning the correction to print: the long plane above read OMS 0.860
+  (Spencer 1.103) as a piezometric line where statics gives 0.501.
+  - **Departure, declared (the step 5a review, ruling 1).** What the
+    step's brief allowed to move a value: ru in a layered column (D3),
+    total-stress bases (D4) and the pond's edge (D16). What this changes:
+    the thrust where a water line is at or just under a sloping ground,
+    which was a phantom pool pushing into the slope; where the pool covers
+    both sides of a slice the value is the old one. Why: it is arithmetic,
+    and the old value erred on the unsafe side. The closed form (made-up
+    values; `TestPondThrust` in `tests/test_pore_pressure_as_printed.py`):
+    a 2H:1V face, c' = 5 kPa, φ' = 34°, γ = γsat = 19.5 kN/m³, the water
+    line on the ground read as a piezometric line, a plane 2 m (vertical)
+    below the face. Per metre of plan W = γsat z, u = γw z, N' = W cos β −
+    u / cos β, and F = c' / (γsat z sin β cos β) + (γsat cos² β − γw)
+    tan φ' / (γsat sin β cos β) = 0.3205 + 0.5007 = 0.8212. OMS on the
+    finite plane (60 slices) gives 0.8238, which is the same statics
+    summed over the plane and its two 2 m end stretches, the frictional
+    term taken as printed where it is negative on the steep head stretch
+    (D21, GM-140 step 3); 0.8253 with `negative_friction_term='zero'`.
+    Before this step it gave 0.9140 (0.9124 with step 3's frictional
+    term). Saved answers that move: such a face, −10 to −13 % (OMS,
+    Janbu, M-P); V-031, −0.005 % (`module_work/gm140/STEP5A_CHECK.md`,
+    "Fix round after review", with the branch against master after the
+    merge with steps 3 and 9).
+- **A pore-pressure grid with a line** (unchanged): the grid governs the
+  base pressure wherever it is given; the line gives the pond's loads and
+  the saturated unit weights below it. The result says so.
+- **Rapid drawdown**: the stages' slices come from `build_slices`, so they
+  take the same function. The pools are level unless a line is given: a
+  sloping seepage line before drawdown (`stage1_phreatic_points`) or a
+  line after it (`drawdown_phreatic_points`, GM-140 step 9) is read as
+  `water_line_kind` says, and the result names it ("Stage 1 (before
+  drawdown): ...", "After drawdown: ..."; `rapid_drawdown.
+  _stage_water_statements`, on every return, a run with no solution
+  too). The ru, grid and total-stress statements concern the same soils
+  in every stage and are said once, by stage 1.
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
@@ -2155,10 +2287,11 @@ boundary, entry to exit, and `build_slices` cuts there.
   contribute negative resistance; consistent with the Fellenius
   effective-normal clamp. Spencer/M-P share the (W − u·b) form but are left
   unclamped to preserve the Duncan-validated behavior (noted for follow-up).
-- **Pore pressure model (SS-3)**: `_pore_pressure_at_base` uses the full
-  hydrostatic head to the GWT surface (no cos²β seepage correction for
-  inclined phreatic surfaces) — slightly conservative (overestimates u) on
-  steep water tables. The layer `ru` coefficient is the alternative.
+- **Pore pressure model (SS-3, rewritten by GM-140 step 5a)**: one function,
+  `pore_pressure.base_pore_pressure`, gives every base its pore pressure; see
+  "Pore pressure as printed" above. By default the water line is a
+  piezometric line and takes the full vertical head; `water_line_kind=
+  'water_table'` applies FHWA NHI-06-088 Eq. 6-16's cos² correction.
 - **Pore-pressure GRID / TIN input (v5.4 E3)**: `SlopeGeometry.pore_pressure_points`
   is an optional list of scattered `(x, z, u)` triples (kPa) — a flow-net / TIN
   sampling of the pore-pressure field. When set, the base pore pressure at each

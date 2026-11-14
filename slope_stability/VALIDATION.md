@@ -1007,6 +1007,86 @@ probe `step3fix/probe6.py` of the fix round, run once on each):
 | ACADS 1(a), random noncircular, 200 trials, Spencer | 1.0915 | 0.6332 | base_tension, side_tension, thrust_outside | 1.0959 | 0; 0 | 108 of 144 (side_tension 73, thrust_outside 106, base_tension 1) | 1.00 (Giam and Donald 1989; Slide2 Verification #1) |
 | ACADS 4, weak-layer search, 700 trials, Spencer | 0.8301 | 0.8301 | side_tension, thrust_outside | 1.6666 | 0; 0 | 288 of 344 (base_tension 124, side_tension 257, thrust_outside 268) | 0.760 (Slide2 manual p. 52) |
 
+## B-5a — Pore pressure as printed (GM-140 step 5a, 2026-11-13)
+
+One function gives every slice base its pore pressure (DESIGN.md, "Pore
+pressure as printed"). Record: `module_work/gm140/STEP5A_CHECK.md`, with the
+whole of the validation set before and after
+(`module_work/gm140/step5a_section11.py`: of 37,043 factors of safety the
+pinned tests compute, 116 move).
+
+**The correction, against print.** FHWA NHI-06-088 Sec. 6.3 (pp. 6-7 to 6-8,
+Eqs. 6-6 to 6-10): an infinite slope with seepage parallel to it and the
+water table at the surface has u = γw h cos² β on the plane and, for c' = 0,
+FS = (γ'/γsat) tan φ' / tan β. Made-up values: β = 26.57° (2H:1V), φ' = 34°,
+γsat = 19.5 kN/m³; a plane 390 m long and 0.5 m deep, 60 slices.
+
+| Reading of the line at the ground surface | OMS | Janbu | Spencer | M-P | Closed form |
+|---|---|---|---|---|---|
+| `water_line_kind='water_table'` (Eq. 6-16) | 0.6704 | 0.6709 | 0.6710 | 0.6706 | 0.6704 (FHWA Eq. 6-10, p. 6-8) |
+| `'piezometric'` (default; the full head) | 0.5007 | 0.5012 | 0.5014 | 0.5009 | 0.5007 (the same statics with u = γw h) |
+| before this step (full head, with the pond thrust read off the slice's middle) | 0.8599 | 1.1025 | 1.1032 | none | 0.5007 |
+
+The last row is the defect found on the way: a sloping water line at the
+ground read as a pool at each slice's lower side (`slices._pond_thrust`).
+The review accepted the fix as a declared departure (DESIGN.md, "The
+pond's thrust on a slice") and it is pinned as arithmetic on the review's
+case, c' = 5 kPa and a plane 2 m deep: closed form 0.8212, OMS 0.8238
+(the same statics over the plane and its two end stretches, the frictional
+term as printed where it is negative on the steep head stretch, B22's
+D21; 0.8253 with `negative_friction_term='zero'`), before 0.9140 (0.9124
+on master since step 3) (`TestPondThrust`).
+
+The infinite-slope check of a search reports the closed form with the
+water at the surface for the reading used (`seepage_reading`): 0.5007
+under `'piezometric'` and 0.6704 under `'water_table'` for the face above
+(`test_the_planar_check_follows_the_reading`); a drawdown search keeps
+(γ'/γ) tan φ' / tan β.
+
+**What moves in the pinned set with the default** (the uncorrected head):
+only the pond's edge as a slice boundary, the pond thrust where a line is
+at or under the ground, and ru in a layered column. No total-stress layer
+in the set has φ > 0 at its base, so D4 moves no factor of safety.
+
+| Benchmark | Before | After | Printed | What moved it |
+|---|---|---|---|---|
+| F&K (1977) circle, ru = 0.25: OMS / Bishop / Spencer / M-P | 1.6067 / 1.7590 / 1.7633 / 1.7651 | the same | 1.607 / 1.766 / 1.761 / 1.764 | nothing: one soil, so ru × the overburden is ru γ h |
+| F&K composite surface, ru = 0.25: Spencer / M-P | 1.1381 / 1.1322 | the same | 1.118 / 1.118 | nothing: both soils 120 pcf |
+| V-031 (Slide2 #57) circle, 50 slices: Bishop / Spencer / GLE | 1.4205 / 1.4247 / 1.4091 | 1.4204 / 1.4246 / 1.4090 | 1.417 / 1.422 | the pond thrust, not the edge: without the edge the value is the same, with the old thrust it is the before value (the step 5a review) |
+| V-031 Spencer search | 1.4174 | 1.4172 | 1.422 | the pond thrust, as on the circle (the search was not rerun with each part undone) |
+| V-044 (Slide2 #70) submerged: Bishop / Spencer / M-P | 1.5974 / 1.5962 / 1.5933 | the same | 1.603 / 1.599 / 1.599 | nothing: the pond covers the whole surface |
+| V-029 pore-pressure grid against the line | 1.7630 / 1.7625 | the same | (not pinned to print) | nothing: the grid governs the base |
+| V-028 (ACADS 4), a piezometric surface | 1.0095 (kept surface), 0.8301 (search) | the same | referee 0.78 | nothing: a piezometric line is not corrected |
+| V-037 (#95) Corps, seepage stage 1 | 1.3392 | 1.3393 | 1.347 | the pond's edge |
+| V-038 (#96) DWW: flat / seepage / 'gle' flat / 'gle' seepage | 1.2349 / 1.2733 / 1.3061 / 1.3699 | 1.2351 / 1.2733 / 1.3064 / 1.3698 | 1.443 | the pond's edge |
+| V-041 (#98) search: Corps / DWW / LK | 0.8362 / 0.9350 / 0.9739 | 0.8364 / 0.9351 / 0.9742 | 0.931 / 1.039 / 1.075 | the pond's edge |
+| V-052 Pilarcitos, assumed 2.5:1: Corps / LK | 0.7861 / 1.3473 | 0.7866 / 1.3488 | 0.823 / 1.047 | the pond's edge; the search ends on a neighbouring circle |
+| V-052 assumed 3:1: LK / DWW | 1.5429 / 1.5416 | 1.5426 / 1.5441 | (1.047 / 1.043 on the real dam) | the same; DWW now 0.1 % above LK, a strict xfail until the merge with step 9 (below) |
+| V-052b true section: Corps / DWW | 0.7218 / 1.2633 | 0.7223 / 1.2652 | 0.823 / 1.043 | the pond's edge |
+| Duncan Ex. 6 (submerged toe), searches | 1.5419 / 1.7977 / 1.6098 | 1.5418 / 1.7976 / 1.6097 | book not in hand | the pond's edge |
+
+The drawdown rows above were measured before the merge with step 9,
+which re-derived every stage from EM 1110-2-1902 Appendix G; B7 gives
+their values since. What step 5a moves against master after that merge
+is in `module_work/gm140/STEP5A_CHECK.md`, section 11 (ruling 5's table).
+
+- **V-052, 3:1, DWW against LK (a strict xfail until the merge with
+  step 9).** The test asserts Corps < DWW < LK on three assumed sections.
+  Before step 9 the two searches on the 3:1 section ended on different
+  circles, DWW 1.5441 on (41.605, 44.623, R 33.510) above LK 1.5426 on
+  (40.416, 44.623, R 33.995): at LK's centre the 20-slice drawdown FOS
+  jumped 1.6 % between R = 33.998 and 33.999 m, where the base angle of
+  the slice just past the circle's lowest point crossed |sin 2α| = 0.05
+  and the K_c rule then in use switched from the at-rest ratio
+  1/(1 − sin φ') to K_f (no slice boundary and no edge moved). Step 9
+  takes K_c from σ'c and τc by Eq. G-11 (p. G-7), held between 1 and
+  K_f, with no switch on the base angle. Merged with it (the final fix
+  round's re-check), LK at that centre reads 1.1581 to 1.1585 over
+  R = 33.985 to 34.005 m, smooth to 0.03 % (the toe end of the circle
+  passing the drawn-down pool's edge, x = 33.8328), and the searches give
+  Corps 0.9141 < DWW 1.1415 < LK 1.1454 (master 0.9131 / 1.1406 /
+  1.1453). The ordering holds; the strict xfail passed and is off.
+
 ## Notes / known deviations
 
 - Ordinary method with ru: formulation-sensitive (F&K 1.607 vs Slide2

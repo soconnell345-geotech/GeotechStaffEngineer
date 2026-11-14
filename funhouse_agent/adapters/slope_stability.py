@@ -30,6 +30,7 @@ _CRACK_SIDES = ["crest", "entry", "exit"]
 _CRACK_MODELS = ["truncation", "strength"]
 _CRACK_DEPTH_BASES = ["given", "rankine", "min_fos"]
 _REVERSE_CURVATURE = ["tension_crack", "discard"]
+_WATER_LINE_KINDS = ["piezometric", "water_table"]
 
 
 # Top-level geometry params consumed by _build_geometry, and the trial-surface
@@ -41,6 +42,7 @@ _GEOM_PARAMS = (
     "tension_crack_depth", "tension_crack_water_depth",
     "tension_crack_side", "tension_crack_model", "pore_pressure_points",
     "surcharges", "reverse_curvature", "tension_crack_depth_basis",
+    "water_line_kind",
 )
 _SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points")
 
@@ -213,6 +215,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     reverse_curvature = _check_choice(
         params.get("reverse_curvature", "tension_crack"), _REVERSE_CURVATURE,
         name="reverse_curvature", method=method)
+    water_line_kind = _check_choice(
+        params.get("water_line_kind", "piezometric"), _WATER_LINE_KINDS,
+        name="water_line_kind", method=method)
     crack_model = _check_choice(params.get("tension_crack_model",
                                            "truncation"),
                                 _CRACK_MODELS, name="tension_crack_model",
@@ -317,7 +322,24 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         tension_crack_depth_basis=crack_basis,
         reverse_curvature=reverse_curvature,
         pore_pressure_points=pore_pressure_points, surcharges=surcharges,
+        water_line_kind=water_line_kind,
     )
+
+
+def _with_water_statements(out: dict, geom) -> dict:
+    """``out`` with what the pore pressure on the slice bases was taken as
+    (GM-140 step 5a; ``slope_stability.pore_pressure.water_statements``),
+    for the results that do not carry it themselves (the yield
+    acceleration, FOSM and Monte Carlo): the reading of a sloping water
+    line, ru in a layered column and total-stress layers in ``choices``,
+    and their warnings in ``warnings``."""
+    from slope_stability.pore_pressure import water_statements
+    choices, notes = water_statements(geom)
+    if choices:
+        out["choices"] = list(out.get("choices") or []) + choices
+    if notes:
+        out["warnings"] = list(out.get("warnings") or []) + notes
+    return out
 
 
 def _slip_surface_from(params: dict):
@@ -448,7 +470,7 @@ def _run_fosm(params: dict) -> dict:
         tol=params.get("tol", 1e-4),
         correlations=params.get("correlations"),
     )
-    return result.to_dict()
+    return _with_water_statements(result.to_dict(), geom)
 
 
 def _run_monte_carlo(params: dict) -> dict:
@@ -476,7 +498,7 @@ def _run_monte_carlo(params: dict) -> dict:
                        if params.get("research_surface") else None),
         correlations=params.get("correlations"),
     )
-    return result.to_dict()
+    return _with_water_statements(result.to_dict(), geom)
 
 
 def _run_infinite_slope(params: dict) -> dict:
@@ -595,7 +617,7 @@ def _run_yield_acceleration(params: dict) -> dict:
         radius=params.get("radius"), slip_surface=_slip_surface_from(params),
         method=method, n_slices=params.get("n_slices", 50),
         tol=params.get("tol", 1e-4), kh_max=params.get("kh_max", 2.0))
-    return result.to_dict()
+    return _with_water_statements(result.to_dict(), geom)
 
 
 def _run_newmark_displacement(params: dict) -> dict:
@@ -653,7 +675,8 @@ METHOD_REGISTRY = {
 _GEOMETRY_PARAMS = {
     "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,y], ...] array (x increasing)."},
     "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru optional; bottom_boundary_points and top_boundary_points ([[x,z],...], sorted by x) optional, a sloping bottom or top in place of the flat elevation}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D) or 'anisotropic' (undrained su varies with the slice-base inclination alpha; fields su_active [kPa, ACTIVE/crest zone, alpha>=+45deg], su_dss [direct simple shear, alpha=0], su_passive [PASSIVE/toe zone, alpha<=-45deg] — su_active>=su_dss>=su_passive for K>1 clays; Casagrande-Carrillo sin(2alpha) interpolation; standard toe-at-low-x slope). For rapid_drawdown_fos and search_rapid_drawdown, a layer that does not drain freely also takes the total-stress R envelope R_c (kPa) and R_phi (deg), from which the strength of soil consolidated at K_c = 1 is derived by EM 1110-2-1902 Eqs. G-5 and G-6, or that envelope as measured, R_d (kPa) and R_psi (deg): tau_ff = R_d + sigma'_c tan(R_psi) (not for 'corps_2stage', which needs R_c and R_phi); a layer with neither R_phi nor R_psi is free-draining. One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
-    "gwt_points": {"type": "array", "required": False, "description": "Groundwater table [[x,y],...]. If above the ground surface, ponded water is auto-detected (water weight + horizontal hydrostatic thrust applied as external loads)."},
+    "gwt_points": {"type": "array", "required": False, "description": "Water line [[x,z],...]: by default a piezometric line (the pore pressure at a slice base is gamma_w x the full vertical depth below it; see water_line_kind). If above the ground surface, ponded water is auto-detected (water weight + horizontal hydrostatic thrust applied as external loads). No pore pressure is subtracted on the base of a slice in a total-stress layer (analysis_mode 'undrained', 'shansep', 'anisotropic'; EM 1110-2-1902 2-2c)."},
+    "water_line_kind": {"type": "str", "required": False, "default": "piezometric", "allowed_values": _WATER_LINE_KINDS, "description": "What gwt_points is. 'piezometric' (default): a piezometric line (measured heads); u = gamma_w x the full vertical depth below it, never corrected. 'water_table': a water table with seepage parallel to it; u = h_w gamma_w cos^2(alpha_w), alpha_w the slope of the line above each slice base (FHWA NHI-06-088 Eq. 6-16, p. 6-14; UFC 3-220-10 Sec. 7-5.1), not applied where the line is above the ground (ponded water). The two differ only under a sloping line; the uncorrected head gives the lower factor of safety. The result's choices names the reading used."},
     "kh": {"type": "float", "required": False, "default": 0.0, "description": "Horizontal pseudo-static seismic coefficient (acts on soil weight only)."},
     "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Vertical surcharge (kPa). A single loaded zone; use 'surcharges' for several distinct loaded areas."},
     "surcharge_x_range": {"type": "array", "required": False, "description": "[x_start, x_end] extent of the single 'surcharge'."},
@@ -686,6 +709,31 @@ _VARIABLES_PARAM = {
 
 _CORRELATIONS_PARAM = {
     "correlations": {"type": "array", "required": False, "description": "Optional correlated scalar pairs: [['c_prime','phi',-0.5], ...] (or [{'var1','var2','rho'}]). Each references two SCALAR variable keys from 'variables' (optionally scoped ':LayerName') and a correlation rho in [-1,1]. FOSM adds the Taylor cross-term 2*rho*(dF1/2)*(dF2/2); Monte Carlo draws the pair from a bivariate normal. Omit for independent variables (default). A c'-phi' negative correlation typically lowers the FOS variance."},
+}
+
+
+# rapid_drawdown_fos's doc must fit the deep agent's reference budget (16,000
+# characters; test_wave1_geotech): these shared inputs point to analyze_slope's
+# full text instead of repeating it there.
+_SEE_ANALYZE_SLOPE = {
+    _k: {**_GEOMETRY_PARAMS[_k], "description": (
+        "As in analyze_slope (describe_method analyze_slope gives the full "
+        "text): " + _s)}
+    for _k, _s in (
+        ("reverse_curvature", "how a circle that turns back over itself is "
+         "treated; a tension crack is a condition of the analysis, the same "
+         "on every trial surface."),
+        ("tension_crack_depth_basis", "'given' (tension_crack_depth), "
+         "'rankine' (EM 1110-2-1902 Eq. C-36, p. C-36) or 'min_fos'."),
+        ("tension_crack_model", "'truncation' (default, as printed: EM "
+         "1110-2-1902 2-2f(3), p. 2-6; C-10c, p. C-36) or 'strength'."),
+        ("geosynthetics", "horizontal layers [{elevation, T_allow kN/m; "
+         "x_start, x_end, support_convention optional}], each acting at the "
+         "base of the slice it crosses."),
+        ("stabilizing_piles", "a single row [{x; spacing; z_head, z_toe "
+         "optional}], resisting by shear_capacity or by ito_matsui=true with "
+         "diameter."),
+    )
 }
 
 METHOD_INFO = {
@@ -738,6 +786,7 @@ METHOD_INFO = {
         "parameters": {
             **_GEOMETRY_PARAMS,
             **_SURFACE_SPEC_PARAMS,
+            **_SEE_ANALYZE_SLOPE,
             "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
             "drawdown_to_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation AFTER drawdown (m); must be below drawdown_from_elevation."},
             "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (the improved procedure, EM G-3: the answer is the third stage's factor of safety, or the second's where no slice's drained strength is lower), 'lowe_karafiath' (the same first and second stages without the drained check: the answer is the second stage's, so never below duncan_3stage), or 'corps_2stage' (the Corps 1970 procedure, EM G-2: the lower of the R envelope with R_c and R_phi as entered and the effective-stress envelope; no third stage). The manual's own example of the 1970 procedure was computed by the Modified Swedish Method at a fixed side-force inclination (3.49, then 1.35); Spencer's method, used here, gives 1.24 on it, and the result says so."},
@@ -1037,6 +1086,18 @@ for _m, _info in METHOD_INFO.items():
             ("pore_pressure_points", {"gwt_points": "set"})):
         if _name in _p and _p[_name].get("when_absent"):
             _p[_name]["applies_when"] = _when
+# The reading of the water line (GM-140 step 5a) applies where a line
+# gives the pore pressure: gwt_points without a pore-pressure grid, or,
+# in a rapid drawdown (whose pools are level), a stage-1 seepage line.
+for _m, _info in METHOD_INFO.items():
+    _p = _info["parameters"]
+    if "water_line_kind" in _p:
+        _p["water_line_kind"] = {
+            **_p["water_line_kind"],
+            "applies_when": (
+                {"stage1_phreatic_points": "set"}
+                if "stage1_phreatic_points" in _p else
+                {"gwt_points": "set", "pore_pressure_points": "unset"})}
 for _m, _seeded in (
         ("search_critical_surface",
          ["noncircular", "noncircular_de", "pso", "weak_layer"]),
