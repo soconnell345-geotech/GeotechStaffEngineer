@@ -576,6 +576,15 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
             out["group_uplift_utilization"] = round(uplift_load / governing,
                                                     3)
             out["group_uplift_adequate"] = uplift_load <= governing
+        else:
+            notes.append(
+                "No pass/fail was made on uplift_load: "
+                "group_uplift_utilization and group_uplift_adequate need "
+                "the group's governing resistance, the lesser of the "
+                "block's and the piles' (GEC-12 Vol I p. 291)" + (
+                    ", and no held page prints the block's factor."
+                    if r["phi_ug"] is None else
+                    "; give axial_capacity_tension (phi_up R_s per pile)."))
     if notes:
         out["group_uplift_note"] = " ".join(notes)
 
@@ -1051,7 +1060,7 @@ METHOD_INFO = {
             "spacing_diameter_ratio": {"type": "float", "required": False, "description": "s/b for the p-multiplier, s the spacing of the rows in the direction of the load (from spacing/pile_diameter if omitted). Below 3 the call is refused (p_m is printed from 3b)."},
             "p_multiplier_method": {"type": "str", "required": False, "default": "aashto", "allowed_values": list(P_MULTIPLIER_METHODS), "description": "'aashto' (default): AASHTO's p_m as GEC-12 prints it (Vol I pp. 367, 370): rows 1, 2, 3+ = 0.8, 0.4, 0.3 at 3b and 1.0, 0.85, 0.7 at 5b, interpolated (0.90, 0.625, 0.5 at 4b, as GEC-12 Vol. III takes them), to 1.0 at 6b and beyond (UFC 3-220-20 Table 6-38). 'mokwa': Mokwa (1999), UFC 3-220-20 Table 6-38: p_m = 0.06(s/b)+0.64, 0.11(s/b)+0.34, 0.14(s/b)+0.16, 0.16(s/b)+0.04 for rows 1, 2, 3, 4+, each <= 1."},
         },
-        "returns": {"group_efficiency": "eta_g (with soil_type).", "s_over_b": "The s/b eta_g was read at.", "group_efficiency_row": "The printed row read.", "block_failure_kN": "Nominal resistance to block failure (with pile_length).", "block_failure_phi": "The printed resistance factor for block failure (null for CFA or DDP, none printed).", "block_failure_factored_kN": "phi x the nominal resistance (null where no factor is printed).", "block_failure_Nc": "Nc used.", "block_width_m": "Group width B.", "block_length_m": "Group length Z.", "p_multiplier": "The row's p-multiplier (with row_position).", "choices": "Each value's basis and alternatives; report them."},
+        "returns": {"group_efficiency": "eta_g (with soil_type).", "s_over_b": "The s/b eta_g was read at (with soil_type).", "group_efficiency_row": "The printed row read (with soil_type).", "block_failure_kN": "Nominal resistance to block failure (only with pile_length and su1 and su2, or one cu; cohesive soil).", "block_failure_phi": "With the block check only: the printed resistance factor (null for CFA or DDP, none printed).", "block_failure_factored_kN": "With the block check only: phi x the nominal resistance (null where no factor is printed).", "block_failure_Nc": "With the block check only: Nc used.", "block_width_m": "With the block check only: group width B.", "block_length_m": "With the block check only: group length Z.", "p_multiplier": "The row's p-multiplier (with row_position).", "choices": "Each value's basis and alternatives; report them."},
     },
     "group_uplift": {
         "category": "Pile Group",
@@ -1074,7 +1083,7 @@ METHOD_INFO = {
             "uplift_load": {"type": "float", "required": False, "description": "The factored uplift on the piles in the block (kN, positive): the net uplift on a group in tension, or the summed tension of the piles in tension; for the utilization, the load over the governing resistance."},
             "piles_under_cap": {"type": "int", "required": False, "description": "The piles under the cap when the block is part of the group (the piles in tension), for the small-group rule, which counts the piles per substructure unit (GEC-12 Vol I p. 225). At least n_rows x n_cols."},
         },
-        "returns": {"block_width_m": "Block width B at the toes.", "block_length_m": "Block length Z at the toes.", "block_top_width_m": "Cohesionless: the block's width at the top.", "block_top_length_m": "Cohesionless: its length at the top.", "block_volume_m3": "The block's volume.", "block_soil_weight_kN": "The soil's effective weight in the block (piles taken as soil).", "block_cap_weight_kN": "The cap weight added.", "block_side_shear_kN": "Cohesive: 2D(B+Z)su.", "block_layers": "With layers: each layer's share.", "group_uplift_block_kN": "The block's nominal uplift resistance R_ug.", "group_uplift_phi": "phi_ug applied (null where none is printed).", "group_uplift_block_factored_kN": "phi_ug R_ug.", "piles_tension_resistance_kN": "n phi_up R_s (with axial_capacity_tension).", "group_uplift_resistance_kN": "The group's factored uplift resistance, the lesser of the two (null without axial_capacity_tension).", "group_uplift_governs": "'block' or 'individual piles'.", "group_uplift_utilization": "uplift_load over the governing resistance.", "group_uplift_adequate": "uplift_load <= the governing resistance.", "group_uplift_note": "What is missing or not printed; report it.", "choices": "Each value's basis and alternatives; report them."},
+        "returns": {"block_width_m": "Block width B at the toes.", "block_length_m": "Block length Z at the toes.", "block_top_width_m": "Cohesionless soil only: the block's width at the top.", "block_top_length_m": "Cohesionless soil only: its length at the top.", "block_volume_m3": "The block's volume.", "block_soil_weight_kN": "The soil's effective weight in the block (piles taken as soil).", "block_cap_weight_kN": "The cap weight added.", "block_side_shear_kN": "Cohesive soil only: 2D(B+Z)su.", "block_layers": "With layers: each layer's share.", "group_uplift_block_kN": "The block's nominal uplift resistance R_ug.", "group_uplift_phi": "phi_ug applied (null where none is printed).", "group_uplift_block_factored_kN": "phi_ug R_ug.", "piles_tension_resistance_kN": "n phi_up R_s (with axial_capacity_tension).", "group_uplift_resistance_kN": "The group's factored uplift resistance, the lesser of the two (null without axial_capacity_tension).", "group_uplift_governs": "'block' or 'individual piles'.", "group_uplift_utilization": "uplift_load over the governing resistance (only with uplift_load and axial_capacity_tension).", "group_uplift_adequate": "uplift_load <= the governing resistance (only with uplift_load and axial_capacity_tension).", "group_uplift_note": "What is missing or not printed; report it.", "choices": "Each value's basis and alternatives; report them."},
     },
     "meyerhof_group_settlement": {
         "category": "Pile Group",
