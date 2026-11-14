@@ -22,7 +22,8 @@ MOST_ANNOTATIONS = 9
 LINE_LIMIT = 300
 
 _ANSI = re.compile(chr(27) + r"\[[0-9;]*m")
-_TOTALS = re.compile(r"^=+ .*\b(failed|errors?)\b.* in [0-9.]+s.*=+$")
+# pytest's last line, with its `====` borders or (under -q) without them.
+_TOTALS = re.compile(r"^(=+ )?\d+ [a-z]+(, \d+ [a-z]+)* in [0-9.]+s( \([0-9:]+\))?( =+)?$")
 
 
 def _lines(text: str) -> list[str]:

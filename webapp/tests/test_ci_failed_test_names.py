@@ -47,6 +47,13 @@ def test_each_failed_test_is_named_once_after_the_totals(script):
     ]
 
 
+def test_the_totals_line_of_a_quiet_run_has_no_border(script):
+    # Under -q pytest's last line is bare; over an hour it adds (h:mm:ss).
+    log = "FAILED pkg/tests/test_a.py::test_one - assert 0\n3 failed, 9 passed, 2 skipped in 3725.10s (1:02:05)\n"
+    (command,) = script.annotations(log)
+    assert command.split("::", 2)[2].split("%0A")[0] == "3 failed, 9 passed, 2 skipped in 3725.10s (1:02:05)"
+
+
 def test_many_failures_are_split_and_capped(script):
     log = "\n".join("FAILED pkg/tests/test_c.py::test_%d - assert 0" % i for i in range(100))
     commands = script.annotations(log)
