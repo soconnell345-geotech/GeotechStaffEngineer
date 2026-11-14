@@ -305,8 +305,15 @@ def test_ordinary_method_of_slices_has_no_m_alpha():
     r = analyze_slope(_w11(), slip_surface=PolylineSlipSurface(
         points=_W11_PTS), method="fellenius", n_slices=40)
     assert not any("m_alpha" in w for w in r.warnings)
-    assert _compute_fos(_w11(), PolylineSlipSurface(points=_W11_PTS),
-                        "fellenius", 40) < _FOS_MAX
+    # GM-140 step 6 (D26): in a search the Ordinary Method of Slices does
+    # not score a polyline (EM 1110-2-1902 C-2b, p. C-16: it "can only be
+    # used with circular slip surfaces"); Spencer's method scores it, and
+    # has no solution on this surface (`test_w11_surface_has_no_spencer_
+    # solution`). Before, the search scored it by the Ordinary Method of
+    # Slices.
+    for method in ("fellenius", "spencer"):
+        assert _compute_fos(_w11(), PolylineSlipSurface(points=_W11_PTS),
+                            method, 40) == _FOS_MAX
 
 
 def test_de_search_leaves_out_and_counts_negative_m_alpha_surfaces():
@@ -392,7 +399,10 @@ def test_w11_de_search_runs_its_whole_budget():
         geom, surface_type="noncircular_de", method="janbu",
         x_entry_range=(20, 30), x_exit_range=(28, 60), n_slices=40,
         n_points=5, seed=3, low_m_alpha="refuse")
-    assert res.n_surfaces_evaluated == 2325
+    # (GM-140 step 6: 2,325 surfaces of the evolution and the critical
+    # circle of the circular search, as a polyline, one more trial)
+    assert res.n_surfaces_evaluated == 2326
+    assert res.circle_check["checked"] is True
     assert res.n_rejected_m_alpha > 0
     c = res.critical
     if c is None:

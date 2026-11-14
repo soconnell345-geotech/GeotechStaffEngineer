@@ -143,29 +143,31 @@ def test_v043_sand_default_search_finds_the_critical_circle():
 
 
 @functools.lru_cache(maxsize=1)
-def _sand_de():
-    """Differential evolution on the sand fill, 30 slices, seeds 1-3: the
-    noncircular minima."""
+def _sand_de_results():
+    """Differential evolution on the sand fill, 30 slices, seeds 1-3."""
     return tuple(search_critical_surface(
         _geom("sand"), method="spencer", surface_type="noncircular_de",
-        n_slices=30, seed=seed).candidates["noncircular"]
-        for seed in (1, 2, 3))
+        n_slices=30, seed=seed) for seed in (1, 2, 3))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "GM-344 (the GLE solver: a root, or no number): seed 1 now ends at "
-    "1.237, seeds 2 and 3 at 1.234 as before; printed 1.188 (Slide2), "
-    "1.192 (Tandjiria). Seed 1 ends 0.25 % higher, 0.003 further from the "
-    "print, so the pin is not moved. The surfaces are scored as before "
-    "where they solve; differential evolution's path changes because "
-    "trial surfaces whose only crossing lay at a negative lambda now have "
-    "no solution. module_work/gm140/GLE_ROOT_CHECK.md"))
+def _sand_de():
+    """The noncircular minima the three searches report."""
+    return tuple(r.candidates["noncircular"] for r in _sand_de_results())
+
+
 def test_v043_sand_no_reinforcement_noncircular():
     """Sand-fill embankment, no reinforcement, noncircular Spencer (Slide2
-    1.188 / Tandjiria 1.192): what the searches reach. The comparison with
-    the published is the known gap below.
+    1.188 / Tandjiria 1.192): what the searches report.
 
-    Differential evolution on 30 slices reaches 1.234 from seeds 1, 2 and 3,
+    GM-140 step 6 (a noncircular minimum checked against the circle): the
+    circular search runs first and its critical circle (Spencer 1.186), as
+    the polyline of its 30 slice bases, is one of the trials: 1.194 from
+    every seed. The polylines differential evolution generates itself stay
+    above it (1.237, 1.234 and 1.233: `circle_check`), and the result says
+    so; the generator is step 7 of the rebuild (D12).
+
+    Differential evolution on 30 slices reached 1.234 from seeds 1, 2 and 3
+    (1.237 from seed 1 since GM-344),
     and its surface reads 1.233-1.234 on 31, 60 and 120 slices. Before
     GM-131 cut a slice at every corner, DE reported 1.09-1.10 on surfaces
     that dip steeply into the soft clay and read 1.24-1.32 with one slice
@@ -176,7 +178,19 @@ def test_v043_sand_no_reinforcement_noncircular():
     state held about one moment axis at 30 slices only; see
     test_search_robustness.)"""
     de = list(_sand_de())
-    assert de == pytest.approx([1.234] * 3, abs=0.002)
+    # GM-140 step 6: 1.234 (1.237 seed 1) -> 1.194; printed 1.188 (Slide2
+    # Verification #39, the sand embankment with no reinforcement,
+    # noncircular Spencer; +0.5 %), 1.192 (Tandjiria; +0.2 %)
+    assert de == pytest.approx([1.194] * 3, abs=0.002)
+    for r in _sand_de_results():
+        cc = r.circle_check
+        assert cc["checked"] and cc["governs"]
+        # the circle by the same method, and the search's own polylines
+        # above it (the known gap of the generator)
+        assert cc["circle"]["FOS"] == pytest.approx(1.186, abs=0.002)
+        assert cc["circle"]["FOS"] < cc["FOS_as_polyline"] \
+            < cc["noncircular_minimum"]
+        assert any("circle_check" in w for w in r.warnings)
     for seed in (1, 2):
         r = search_critical_surface(_geom("sand"), method="spencer",
                                     surface_type="noncircular", n_trials=2000,
@@ -185,13 +199,14 @@ def test_v043_sand_no_reinforcement_noncircular():
 
 
 def test_v043_sand_lowest_de_seed_and_the_random_search_above_it():
-    """Not the pin of the three seeds (that is the strict xfail above):
-    the LOWEST of differential evolution's three minima (seeds 1 to 3, 30
-    slices) reads 1.234, and the random search (2000 trials, seeds 1 and
-    2) stays at or above it, so DE is the search compared with the
-    published (Slide2 1.188 / Tandjiria 1.192)."""
+    """The LOWEST of the three noncircular minima (differential evolution,
+    seeds 1 to 3, 30 slices) reads 1.194 since GM-140 step 6, the critical
+    circle as a polyline, and the random search (2000 trials, seeds 1 and
+    2) reports the same trial, so neither ends above the circle
+    (published: Slide2 1.188 / Tandjiria 1.192)."""
     de = list(_sand_de())
-    assert min(de) == pytest.approx(1.234, abs=0.002)
+    # GM-140 step 6: 1.234 -> 1.194; printed 1.188 (Slide2), +0.5 %
+    assert min(de) == pytest.approx(1.194, abs=0.002)
     for seed in (1, 2):
         r = search_critical_surface(_geom("sand"), method="spencer",
                                     surface_type="noncircular", n_trials=2000,
@@ -199,16 +214,21 @@ def test_v043_sand_lowest_de_seed_and_the_random_search_above_it():
         assert r.candidates["noncircular"] >= min(de) - 1e-9
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "GM-117: the noncircular search falls short. Its best, 1.234, is above "
-    "our own critical circle (1.190 converged; GM-138) and a 41-point "
-    "polyline inscribed in the pinned circle (1.2145), so DE misses "
-    "surfaces it should reach or beat; Slide2 1.188"))
 def test_v043_sand_noncircular_reaches_the_published():
-    """Known gap: the noncircular minimum within 0.04 of Slide2's 1.188 /
-    Tandjiria's 1.192 (it was, at 1.19, only through even slices across the
-    corners of surfaces diving into the soft clay, before GM-131)."""
+    """The noncircular minimum within 0.04 of Slide2's 1.188 / Tandjiria's
+    1.192 (it was, at 1.19, only through even slices across the corners of
+    surfaces diving into the soft clay, before GM-131).
+
+    A strict xfail until GM-140 step 6 (GM-117: the search's best, 1.234,
+    was above the module's own critical circle). It passes now because the
+    critical circle is one of the noncircular search's trials (1.194 as a
+    polyline), not because the generator improved: nothing was tuned, and
+    the polylines differential evolution generates itself still end at
+    1.233 to 1.237, which the result reports beside the circle
+    (`circle_check`). That gap is the generator's, step 7 (D12)."""
     assert statistics.median(_sand_de()) == pytest.approx(1.19, abs=0.04)
+    own = [r.circle_check["noncircular_minimum"] for r in _sand_de_results()]
+    assert min(own) > 1.19 + 0.04       # the generator's own gap, stated
 
 
 def test_v043_sand_reinforcement_force_brackets_published():

@@ -27,9 +27,14 @@ def test_circular_search_names_what_it_did_not_try():
     assert c["search"]["chosen"] == \
         "circular, entry and exit windows ('entry_exit')"
     assert c["search"]["how"] == "given"
-    assert c["FOS method of the search"] == {
-        "what": "FOS method of the search", "chosen": "bishop",
-        "how": "default"}
+    method = c["FOS method of the search"]
+    assert method["chosen"] == "bishop" and method["how"] == "default"
+    # GM-140 step 6: every family is scored by the method named
+    assert "4-3b(9)(a), p. 4-8" in method["basis"]
+    assert "(candidate_methods)" in method["basis"]
+    assert "families scored by another method than the one named" not in c
+    assert all(rec["method"] == "bishop" and rec["named"]
+               for rec in r.candidate_methods)
     fam = c["surface families scored"]
     # c' = 10 everywhere: no planar surface, and the entry says so (GM-125)
     assert fam["chosen"] == ("circular, toe circle, circle passing above "
@@ -56,8 +61,16 @@ def test_noncircular_bishop_is_scored_with_spencer():
                                 n_trials=20, seed=1,
                                 x_entry_range=(0, 6), x_exit_range=(14, 20))
     c = _by_what(r)
+    # GM-140 step 6: the choice names the method asked for; the family
+    # Bishop's simplified method cannot score is named apart, with the
+    # method that scored it and why
     method = c["FOS method of the search"]
-    assert method["chosen"] == "spencer" and method["how"] == "module"
+    assert method["chosen"] == "bishop" and method["how"] == "default"
+    apart = c["families scored by another method than the one named"]
+    assert apart["how"] == "module"
+    assert apart["chosen"].startswith("noncircular: Spencer's method")
+    assert "centre of a circle (Bishop 1955, p. 10)" in apart["chosen"]
+    assert r.method_used == "spencer"
     assert "not tried: toe circle, by a circular search" in \
         c["surface families scored"]["alternatives"]
     assert c["search ranges"] == {**c["search ranges"], "chosen": "given",

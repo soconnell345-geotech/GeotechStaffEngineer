@@ -1315,7 +1315,13 @@ def search_rapid_drawdown(geom: SlopeGeometry,
     n_trials, n_points, seed : int / int / int
         Random / DE noncircular controls (see ``search_noncircular``/``search_de``).
     n_slices, tol, f_interslice :
-        Passed through to each per-surface ``rapid_drawdown_fos`` solve.
+        Passed through to each per-surface ``rapid_drawdown_fos`` solve, in
+        every family and every kind of search (the centre grid, the entry
+        and exit circles, the toe-circle families, the shallow planes, the
+        random polylines and the differential evolution): one staged solve
+        scores them all, and the search's ``candidate_methods`` names the
+        procedure and ``f_interslice`` for each family (GM-140 step 6). An
+        unknown ``f_interslice`` is refused.
     stage1_phreatic_points : list of (x, z), optional
         The seepage line before drawdown (default None: a level pool, the
         assumption of the manual's own example, named in the result).
@@ -1374,6 +1380,8 @@ def search_rapid_drawdown(geom: SlopeGeometry,
             "drawdown_to_elevation must be below drawdown_from_elevation")
     if stage3_effective_normal is not None:
         raise ValueError(STAGE3_NORMAL_RULE)
+    from slope_stability.solution import check_interslice
+    check_interslice(f_interslice)
 
     from slope_stability.search import (
         grid_search, search_entry_exit, search_noncircular, search_de, _FOS_MAX,
@@ -1441,7 +1449,8 @@ def search_rapid_drawdown(geom: SlopeGeometry,
             x_exit_range, n_trials, n_points, seed, n_slices, tol, _dd_fos,
             refine, budget, windows_auto=windows_auto, grid_auto=grid_auto,
             toe_circles=toe_circles, infinite_slope=infinite_slope,
-            auto=auto, given=given, window_note=window_note)
+            auto=auto, given=given, window_note=window_note,
+            solve_name=method, solve_interslice=f_interslice)
 
     # Recompute the stage-level detail on the winning surface.
     dd = None
@@ -1473,30 +1482,40 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
                      x_entry_range, x_exit_range, n_trials, n_points, seed,
                      n_slices, tol, _dd_fos, refine, budget, *, windows_auto,
                      grid_auto, toe_circles, infinite_slope, auto, given,
-                     window_note=None):
+                     window_note=None, solve_name=None,
+                     solve_interslice=None):
     """The search of `search_rapid_drawdown` under its time budget: the
-    main search, its supplementary families and what it chose."""
+    main search, its supplementary families and what it chose. Every
+    family is scored by the one staged solve (``solve_name``, the
+    procedure, with ``solve_interslice``), and ``candidate_methods`` says
+    so for each (GM-140 step 6)."""
     from slope_stability.search import (
         grid_search, search_entry_exit, search_noncircular, search_de,
     )
+    # The stages' own method, for the label of the surface reported: the
+    # GLE with the constant function is Spencer's method, with another
+    # function Morgenstern-Price (before GM-140 step 6 the label said
+    # Spencer whatever function was named).
+    stage_method = ("spencer" if solve_interslice in (None, "constant")
+                    else "morgenstern_price")
     if surface_type == "circular":
         search = grid_search(
-            geom, x_range, y_range, nx, ny, method="spencer",
+            geom, x_range, y_range, nx, ny, method=stage_method,
             n_slices=n_slices, tol=tol, x_entry_range=x_entry_range,
             x_exit_range=x_exit_range, fos_fn=_dd_fos, refine=refine)
     elif surface_type == "entry_exit":
         search = search_entry_exit(
             geom, x_entry_range, x_exit_range, n_entry=nx, n_exit=ny,
-            method="spencer", n_slices=n_slices, tol=tol, fos_fn=_dd_fos)
+            method=stage_method, n_slices=n_slices, tol=tol, fos_fn=_dd_fos)
     elif surface_type == "noncircular":
         search = search_noncircular(
             geom, x_entry_range, x_exit_range, n_trials=n_trials,
             n_points=n_points, n_slices=n_slices, tol=tol, seed=seed,
-            method="spencer", fos_fn=_dd_fos)
+            method=stage_method, fos_fn=_dd_fos)
     else:  # noncircular_de
         search = search_de(
             geom, x_entry_range, x_exit_range, n_points=max(n_points, 5),
-            method="spencer", n_slices=n_slices, tol=tol, seed=seed,
+            method=stage_method, n_slices=n_slices, tol=tol, seed=seed,
             fos_fn=_dd_fos)
 
     # Toe circles and shallow planar surfaces, scored with the drawdown FOS.
@@ -1507,13 +1526,23 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
     circular = surface_type in ("circular", "entry_exit")
     search = apply_supplements(
         geom, search, search_kind=CIRCULAR if circular else NONCIRCULAR,
-        method="spencer", n_slices=n_slices, tol=tol,
+        method=stage_method, n_slices=n_slices, tol=tol,
         windows_used=(x_entry_range, x_exit_range),
         windows_auto=windows_auto,
         grid_used=(x_range, y_range) if surface_type == "circular" else None,
         grid_auto=grid_auto, toe_circles=toe_circles,
         infinite_slope=infinite_slope, fos_fn=_dd_fos, auto_ranges=auto,
+        solve_name=solve_name, solve_interslice=solve_interslice,
         **given)
+    if not circular:
+        # (a circular drawdown search costs two or three staged solves a
+        # circle, so it is not run for the check; GM-140 step 6)
+        search.circle_check = {
+            "checked": False,
+            "note": ("the noncircular minimum was not checked against a "
+                     "circle: a rapid-drawdown search runs no circular "
+                     "search for the check (run surface_type 'circular' "
+                     "and compare)")}
     # What the search chose (GM-115); every trial is the drawdown solve.
     # The surfaces left out for m_alpha < 0.2 on a drawn-down slice so far,
     # the supplementary families' included (GM-127).

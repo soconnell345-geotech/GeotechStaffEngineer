@@ -937,9 +937,54 @@ def _search_section(search) -> CalcSection:
     if governing:
         from slope_stability.search_supplements import describe_surface_kind
         rows.append(["Governing surface", describe_surface_kind(governing)])
+        # The method that scored each family, beside its minimum (GM-140
+        # step 6; EM 1110-2-1902 4-3b(9)(a), p. 4-8: state the method).
+        from slope_stability.solution import METHOD_TEXT
+        by_family = {}
+        for rec in getattr(search, "candidate_methods", None) or []:
+            name = METHOD_TEXT.get(rec["method"], rec["method"])
+            if rec.get("f_interslice") and rec["method"] in (
+                    "morgenstern_price", "gle"):
+                name += f", {rec['f_interslice']} function"
+            if not rec.get("named"):
+                name += ", not the method named"
+            by_family.setdefault(rec["family"], []).append(name)
         for kind, fos in getattr(search, "candidates", {}).items():
+            by = "; ".join(by_family.get(kind, []))
             rows.append([f"  — minimum, {describe_surface_kind(kind)}",
-                         f"{fos:.3f}"])
+                         f"{fos:.3f}" + (f" ({by})" if by else "")])
+        used = getattr(search, "method_used", "")
+        if used:
+            low = getattr(search, "named_method_lowest", None) or {}
+            rows.append([
+                "Method that scored the governing surface",
+                f"{METHOD_TEXT.get(used, used)}, not the method named"])
+            rows.append([
+                "Lowest value by the method named",
+                (f"{low['FOS']:.3f} "
+                 f"({describe_surface_kind(low.get('family', ''))})"
+                 if low.get("FOS") is not None
+                 else low.get("note", "none"))])
+        cc = getattr(search, "circle_check", None) or {}
+        if cc:
+            if cc.get("checked") and cc.get("circle"):
+                poly = cc.get("FOS_as_polyline")
+                own = cc.get("noncircular_minimum")
+                rows.append([
+                    "Checked against the critical circle",
+                    f"circle {cc['circle']['FOS']:.3f}; as a polyline "
+                    + ("not scored" if poly is None else f"{poly:.3f}")
+                    + "; the search's own lowest polyline "
+                    + ("none" if own is None else f"{own:.3f}")])
+            else:
+                rows.append(["Checked against the critical circle",
+                             cc.get("note", "not checked")])
+        su = getattr(search, "screen_unsolved", None) or {}
+        if su:
+            rows.append([
+                "Screen values below the minimum, not solved by the method",
+                f"{su['n']} surface(s), lowest screen value "
+                f"{su['lowest_screen_FOS']:.3f}"])
     search_notes = ("The trial-surface map in the Figures section shows "
                     "every evaluated surface colored by FOS.")
     if n_rejected:

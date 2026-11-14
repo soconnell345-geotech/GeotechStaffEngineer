@@ -30,7 +30,8 @@ from slope_stability.search import (
     grid_search, search_noncircular,
     search_pso, search_weak_layer_biased, search_entry_exit, search_de,
     _counts_refusals, _ordered_windows, _applies_m_alpha_rule,
-    m_alpha_rule_in_force, search_budget,
+    m_alpha_rule_in_force, search_budget, _applies_interslice,
+    surface_method,
 )
 from slope_stability.acceptability import (
     surface_findings, findings_warnings, C10B_REMEDIES,
@@ -355,6 +356,17 @@ def analyze_slope(geom: SlopeGeometry,
             "Bishop's simplified method takes moments about the centre of a "
             "circle; this noncircular surface is analysed with Spencer's "
             "method instead.")
+    if not is_circular and method == "fellenius":
+        # D26 (GM-140 step 6): offered on one given surface, with the
+        # print's limit said; a search does not score a polyline by it.
+        warnings_out.append(
+            "The Ordinary Method of Slices \"can only be used with circular "
+            "slip surfaces\" (EM 1110-2-1902 C-2b, p. C-16). On this "
+            "noncircular surface the value reported is the ratio of the "
+            "resisting to the driving forces summed along the slice bases, "
+            "which is not the printed method (Fredlund and Krahn 1977 "
+            "report such a value on a composite surface). Check the "
+            "surface with Spencer's method.")
 
     # Primary FOS: the method's own solution, or no number (GM-140 step 2)
     labels = {"fellenius": "Fellenius", "janbu": "Janbu",
@@ -912,6 +924,7 @@ def compare_methods_table(geom: SlopeGeometry,
 @_counts_reverse_discards
 @_applies_m_alpha_rule
 @_applies_base_tension
+@_applies_interslice
 def search_critical_surface(
     geom: SlopeGeometry,
     x_range: Tuple[float, float] = None,
@@ -936,8 +949,36 @@ def search_critical_surface(
     low_m_alpha: str = "flag",
     negative_friction_term: str = "as_printed",
     base_in_tension: str = "as_printed",
+    f_interslice: str = "half_sine",
+    circle_check: bool = True,
 ) -> SearchResult:
     """Search for the critical slip surface (minimum FOS).
+
+    One method across the search (GM-140 step 6; EM 1110-2-1902
+    4-3b(9)(a), p. 4-8: state the method used). Every family of surfaces
+    and every kind of search is scored by ``method``, with ``f_interslice``
+    for Morgenstern-Price and GLE, so the reported minimum compares like
+    with like: the centre grid, the entry and exit circles, the circles
+    through the toe and above it, the shallow planes, random polylines,
+    differential evolution, the particle swarm and the weak-layer search.
+    A family the method cannot score is scored by Spencer's method, or by
+    Janbu's simplified method where Spencer's solves none of it, and is
+    reported apart, under the method that scored it: Bishop's simplified
+    method and the Ordinary Method of Slices on a plane or a polyline
+    (Bishop 1955, p. 10; EM 1110-2-1902 C-2b, p. C-16: the Ordinary Method
+    of Slices "can only be used with circular slip surfaces"), and any
+    family the method solves none of. ``candidate_methods`` gives the
+    method and interslice function that scored each family. The reported
+    factor of safety is the lowest over all families; where another method
+    than the one named scored it, ``method_used`` and a warning say so and
+    ``named_method_lowest`` gives the named method's own lowest value.
+    Where a screen by another method scored surfaces below the reported
+    minimum that the named method could not solve, ``screen_unsolved``
+    counts them with the lowest screen value (UFC 3-220-10 p. 362). A
+    noncircular search first runs the circular search by the same method
+    and takes its critical circle, as the polyline of its slice-base
+    points, as one of its trials (``circle_check``), so it does not report
+    a minimum above the critical circle's value without saying so.
 
     Ranges not given are set from the slope itself, not from the model's
     width (GM-57, ``slope_stability.search_ranges``): the toe and crest of
@@ -955,7 +996,7 @@ def search_critical_surface(
     the whole profile, so on a long profile its spacing alone can miss the
     critical circle by several per cent.
 
-    After the main search, two supplementary surface families are scored
+    After the main search, the supplementary surface families are scored
     with the same method and the lowest surface is reported (see
     ``slope_stability.search_supplements``): circles through the toe of
     each slope face (circular / entry_exit searches), and shallow planar
@@ -1075,6 +1116,26 @@ def search_critical_surface(
         family: 'as_printed' (default; the slice's equations unchanged) or
         'no_friction' (the slice taken frictionless in every equation, the
         module's own device, not found in print). See ``analyze_slope``.
+    f_interslice : str
+        Interslice force function of Morgenstern-Price and GLE, in every
+        family and every kind of search: 'half_sine' (default),
+        'constant', 'clipped_sine' or 'trapezoidal' (Morgenstern and Price
+        1965, p. 85; `gle.INTERSLICE_FUNCTIONS`). An unknown name is
+        refused. Spencer's method is the constant function; the other
+        methods have none.
+    circle_check : bool
+        Noncircular searches only. True (default): the circular search
+        (centre grid and, with ``toe_circles``, the toe-circle families) is
+        run first by the method that scores the polylines, inside the same
+        windows, and its critical circle, as the polyline of its slice-base
+        points, is one of the noncircular search's trials; ``circle_check``
+        in the result gives the circle and both values, and ``warnings``
+        says so when the search's own polylines stayed above it (EM
+        1110-2-1902 4-2e(2), p. 4-7: the initial surface of a noncircular
+        search should correspond to the estimated critical surface). Under
+        a time budget the circular search may use a quarter of it. False:
+        no circular search is run, and the result says the noncircular
+        minimum was not checked against a circle.
 
     Returns
     -------
@@ -1098,7 +1159,8 @@ def search_critical_surface(
     Janbu's simplified method or the Ordinary Method of Slices a FOS below
     1.5 on a jagged surface) are the module's own, not found in print;
     ``screen_refusals`` counts each. With Spencer, Morgenstern-Price or GLE
-    (and Bishop, whose noncircular surfaces Spencer scores), a low factor
+    (and Bishop's simplified method and the Ordinary Method of Slices,
+    whose noncircular surfaces Spencer's method scores), a low factor
     of safety on a jagged surface, or a solution that held about one moment
     axis or one slicing only, is no longer refused
     (``search.REMOVED_SCREENS``): such a surface is scored, kept and
@@ -1114,8 +1176,14 @@ def search_critical_surface(
         no_solution_records, _scoring_family, _flag_tally_so_far,
         flag_records,
     )
-    from slope_stability.search_supplements import no_solution_warning
+    from slope_stability.search_supplements import (
+        no_solution_warning, screen_unsolved_warning, _method_key)
+    from slope_stability.search import (
+        scoring_order, _screen_unsolved_so_far, screen_unsolved_record,
+        add_circle_trial, interslice_of)
     check_method(method)
+    check_interslice(f_interslice)
+    given_windows = None            # (set below, once ordered)
     from slope_stability.search_ranges import resolve_ranges
     # Entry is the low-x end, exit the high-x end: windows given the other
     # way round are swapped, and the result says so (GM-124).
@@ -1123,6 +1191,7 @@ def search_critical_surface(
         x_entry_range, x_exit_range)
     given = dict(x_entry_range=x_entry_range, x_exit_range=x_exit_range,
                  x_range=x_range, y_range=y_range)
+    given_windows = dict(given)
     windows_auto = (x_entry_range is None, x_exit_range is None)
     grid_auto = x_range is None and y_range is None
 
@@ -1131,7 +1200,12 @@ def search_critical_surface(
     x_entry_range, x_exit_range, x_range, y_range, auto = resolve_ranges(
         geom, x_entry_range, x_exit_range, x_range, y_range)
 
-    noncirc_method = method if method != "bishop" else "spencer"
+    noncircular_kind = surface_type in ("noncircular", "noncircular_de",
+                                        "pso", "weak_layer")
+    # The method that scored the main search (GM-140 step 6): the method
+    # named or, where it does not apply to the family's surfaces or solved
+    # none of them, the next in `scoring_order` (set by `_main_search`).
+    scored_main = [surface_method(method, not noncircular_kind)]
     screened = (bishop_screen and surface_type in ("circular", "entry_exit")
                 and _screen_method(geom, method, None, True) != method)
     screen_not_applied = None       # asked for, not applied: why (GM-123)
@@ -1151,6 +1225,44 @@ def search_critical_surface(
                 f"the method is {method}; the screen is for Spencer, "
                 f"Morgenstern-Price and GLE")
 
+    def _main_search(run):
+        """The main search by the method named, or by the next method in
+        order where the one before solved none of its surfaces (it lost
+        trials to non-convergence and scored none)."""
+        n_tried = 0
+        result = None
+        for m in scoring_order(method, not noncircular_kind):
+            before = _no_solution_so_far()
+            result = run(m)
+            n_tried += result.n_surfaces_evaluated
+            scored_main[0] = m
+            after = _no_solution_so_far()
+            key = ("main", m, "not_converged")
+            if (result.critical is not None
+                    or after.get(key, 0) <= before.get(key, 0)):
+                break
+        result.n_surfaces_evaluated = n_tried
+        return result
+
+    def _critical_circle(m):
+        """The circular search by ``m`` inside the same windows, run apart
+        (its trials are not this search's), for the check of a noncircular
+        minimum against the critical circle."""
+        import contextvars
+        share = None if time_budget_s is None else 0.25 * time_budget_s
+        kw = dict(method=m, n_slices=n_slices, tol=tol,
+                  surface_type="circular", toe_circles=toe_circles,
+                  infinite_slope=False, refine=refine, time_budget_s=share,
+                  m_alpha_rule=m_alpha_rule, low_m_alpha=low_m_alpha,
+                  negative_friction_term=negative_friction_term,
+                  base_in_tension=base_in_tension,
+                  f_interslice=f_interslice, **given_windows)
+        try:
+            return contextvars.Context().run(search_critical_surface, geom,
+                                             **kw)
+        except (ValueError, ZeroDivisionError, RuntimeError):
+            return None
+
     def _finish(result, search_kind, grid_used=None):
         budget.supplements()      # the rest of the budget (GM-123)
         # (the families count their own trials without a solution; the
@@ -1165,13 +1277,27 @@ def search_critical_surface(
             windows_used=(x_entry_range, x_exit_range),
             windows_auto=windows_auto, grid_used=grid_used,
             grid_auto=grid_auto, toe_circles=toe_circles,
-            infinite_slope=infinite_slope, auto_ranges=auto, **given)
-        # What the search chose (GM-115): PSO and the weak-layer search
-        # score with Spencer whatever is named, a noncircular search with
-        # Spencer for Bishop.
-        scored = ("spencer" if surface_type in ("pso", "weak_layer")
-                  else noncirc_method if search_kind == NONCIRCULAR
-                  else method)
+            infinite_slope=infinite_slope, auto_ranges=auto,
+            main_method=scored_main[0], **given)
+        # The method that scored the governing surface (GM-140 step 6):
+        # the method named, or the one that stood in for it on the
+        # governing family (candidate_methods, method_used).
+        scored = result.method_used or (
+            _method_key(result.critical.method, scored_main[0])
+            if result.critical is not None else scored_main[0])
+        # Surfaces a screen by another method scored below the reported
+        # minimum that the method could not solve (UFC 3-220-10 p. 362).
+        result.screen_unsolved = screen_unsolved_record(
+            _screen_unsolved_so_far(),
+            result.critical.FOS if result.critical is not None else None,
+            rename={"main": search_kind})
+        w = screen_unsolved_warning(result)
+        if w:
+            result.warnings.append(w)
+        # A noncircular minimum that stood above the critical circle's
+        # value by the same method (circle_check) says so.
+        if (result.circle_check or {}).get("warning"):
+            result.warnings.append(result.circle_check["warning"])
         # Surfaces left out for m_alpha < 0.2 so far, the supplementary
         # families' included, and the governing surface on finer slices
         # (GM-127).
@@ -1204,7 +1330,9 @@ def search_critical_surface(
             screened=screened, screen_not_applied=screen_not_applied,
             m_alpha=confirm, m_alpha_rule=m_alpha_rule,
             low_m_alpha=low_m_alpha,
-            negative_friction_term=negative_friction_term)
+            negative_friction_term=negative_friction_term,
+            f_interslice=f_interslice,
+            circle_check=circle_check if noncircular_kind else None)
         # The pore pressure every trial surface's bases took (GM-140 step
         # 5a), said once, by the search.
         from slope_stability.pore_pressure import add_water_statements
@@ -1229,32 +1357,57 @@ def search_critical_surface(
         return result
 
     with search_budget(time_budget_s) as budget:
-        if surface_type in ("noncircular", "noncircular_de", "pso",
-                            "weak_layer"):
-            result = _search_noncircular_kind(
+        if noncircular_kind:
+            # The critical circle by the method that scores the polylines,
+            # found first (GM-140 step 6): one of this search's trials.
+            circle = (_critical_circle(scored_main[0]) if circle_check
+                      else None)
+            result = _main_search(lambda m: _search_noncircular_kind(
                 geom, surface_type, x_entry_range, x_exit_range, nx, ny,
-                n_slices, tol, n_trials, n_points, seed, noncirc_method)
+                n_slices, tol, n_trials, n_points, seed, m))
+            if not circle_check:
+                result.circle_check = {
+                    "checked": False,
+                    "note": ("the noncircular minimum was not checked "
+                             "against a circle: no circular search was run "
+                             "(circle_check=False)")}
+            elif circle is None or (
+                    circle.critical is not None and _method_key(
+                        circle.critical.method, "") != scored_main[0]):
+                by = ("" if circle is None or circle.critical is None else
+                      f" (the circular search's lowest circle was scored "
+                      f"by {circle.critical.method}, the polylines by "
+                      f"{scored_main[0]})")
+                result.circle_check = {
+                    "checked": False,
+                    "note": ("the noncircular minimum was not checked "
+                             "against a circle: the circular search gave "
+                             "no circle scored by the same method" + by)}
+            else:
+                add_circle_trial(geom, result, circle.critical,
+                                 scored_main[0], n_slices, tol)
             return _finish(result, NONCIRCULAR)
 
         if surface_type == "entry_exit":
-            result = search_entry_exit(
+            result = _main_search(lambda m: search_entry_exit(
                 geom,
                 x_entry_range=x_entry_range,
                 x_exit_range=x_exit_range,
                 n_entry=nx,
                 n_exit=ny,
-                method=method,
+                method=m,
                 n_slices=n_slices,
                 tol=tol,
                 bishop_screen=bishop_screen,
-            )
+            ))
             return _finish(result, CIRCULAR)
 
         # Circular search
-        result = grid_search(geom, x_range, y_range, nx, ny, method,
-                             n_slices, tol=tol, x_entry_range=x_entry_range,
-                             x_exit_range=x_exit_range, refine=refine,
-                             bishop_screen=bishop_screen)
+        result = _main_search(lambda m: grid_search(
+            geom, x_range, y_range, nx, ny, m,
+            n_slices, tol=tol, x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range, refine=refine,
+            bishop_screen=bishop_screen))
 
         return _finish(result, CIRCULAR, grid_used=(x_range, y_range))
 
@@ -1299,6 +1452,7 @@ def _search_noncircular_kind(geom, surface_type, x_entry_range, x_exit_range,
             n_slices=n_slices,
             tol=tol,
             seed=seed,
+            method=noncirc_method,
         )
 
     # weak_layer
@@ -1311,6 +1465,7 @@ def _search_noncircular_kind(geom, surface_type, x_entry_range, x_exit_range,
         n_slices=n_slices,
         tol=tol,
         seed=seed,
+        method=noncirc_method,
     )
 
 

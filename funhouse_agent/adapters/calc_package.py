@@ -1889,6 +1889,7 @@ def _generate_slope_report_package(params: dict) -> dict:
         n_points=params.get("n_points", 5),
         seed=params.get("seed"),
         time_budget_s=time_budget_s,
+        f_interslice=params.get("f_interslice", "half_sine"),
     )
     budget_is_default(search.choices, params)
 
@@ -1907,8 +1908,14 @@ def _generate_slope_report_package(params: dict) -> dict:
 
     # Re-analyze the critical surface with method comparison + slice data so the
     # report carries the FOS-by-method table and, for a rigorous method, the
-    # interslice-force / line-of-thrust figure. Uses the SAME method the search
-    # minimized, so the reported critical FOS stays consistent with the search.
+    # interslice-force / line-of-thrust figure. Uses the method that scored
+    # the governing surface in the search (GM-140 step 6): the method named,
+    # or, where the governing family was scored by another (Bishop's
+    # simplified method and the Ordinary Method of Slices do not apply to a
+    # plane or a polyline), that one, so the reported critical FOS is the
+    # search's own; the response says so (method_used).
+    method_named = method
+    method = search.method_used or method
     if crit.is_circular:
         # the governing arc's two ends kept (GM-343)
         from slope_stability.slip_surface import circle_of
@@ -1961,6 +1968,18 @@ def _generate_slope_report_package(params: dict) -> dict:
     if search.governing_surface:
         extra["governing_surface"] = search.governing_surface
         extra["candidates"] = dict(search.candidates)
+        extra["candidate_methods"] = [dict(r) for r in
+                                      search.candidate_methods]
+    if search.method_used:
+        # the governing family was scored by another method than the one
+        # named: both are stated (GM-140 step 6, item 5)
+        extra["method_named"] = method_named
+        extra["method_used"] = search.method_used
+        extra["named_method_lowest"] = dict(search.named_method_lowest or {})
+    if search.screen_unsolved:
+        extra["screen_unsolved"] = dict(search.screen_unsolved)
+    if search.circle_check:
+        extra["circle_check"] = dict(search.circle_check)
     if search.warnings:
         extra["warnings"] = list(search.warnings)
     return _build_response(
@@ -3892,7 +3911,7 @@ METHOD_INFO = {
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "List of [x, z] ground surface coordinates."},
             "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' and 'top_boundary_points' ([[x,z],...]) define a non-horizontal layer base or top (e.g. a weak seam). One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
-            "method": {"type": "str", "required": False, "default": "spencer", "allowed_values": ["spencer", "morgenstern_price", "gle", "bishop", "janbu", "fellenius"], "description": "Limit-equilibrium method the search minimizes and the report highlights. Default 'spencer' (rigorous — populates the interslice-force / line-of-thrust figure)."},
+            "method": {"type": "str", "required": False, "default": "spencer", "allowed_values": ["spencer", "morgenstern_price", "gle", "bishop", "janbu", "fellenius"], "description": "Limit-equilibrium method the search minimizes and the report highlights: every family of surfaces is scored by it. Default 'spencer' (rigorous — populates the interslice-force / line-of-thrust figure). 'bishop' and 'fellenius' are for circles: planes and polylines are then scored by Spencer's method and reported apart (candidate_methods); where such a family governs the report analyses the governing surface by the method that scored it and says so (method_used)."},
             "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": ["circular", "entry_exit", "noncircular", "noncircular_de", "pso", "weak_layer"], "description": "Trial-surface family for the search. 'circular' grids circle centres over x_range/y_range and keeps only circles whose ends fall in x_entry_range/x_exit_range; the others draw their surfaces between x_entry_range and x_exit_range. Ranges not given are set from the slope (toe, crest, height, depth to the base). 'weak_layer' biases trials toward a defined weak seam."},
             "x_range": {"type": "array", "required": False, "description": "[min, max] circle-center x for the search grid (circular)."},
             "y_range": {"type": "array", "required": False, "description": "[min, max] circle-center y for the search grid (circular)."},
@@ -3915,10 +3934,10 @@ METHOD_INFO = {
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
             "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance for the iterative methods."},
-            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": ["constant", "half_sine", "clipped_sine", "trapezoidal"], "description": "Interslice force function for the rigorous re-analysis of the critical surface. Another name is refused."},
+            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": ["constant", "half_sine", "clipped_sine", "trapezoidal"], "description": "Interslice force function of morgenstern_price and gle, in every family of the search and in the re-analysis of the critical surface (before GM-140 step 6 the search always took the half-sine function). Another name is refused."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety: the method's own converged solution on the governing surface. Null where the method has no solution on it (a family scored by another method governs, for example the shallow planar family, scored by Janbu's simplified method): no_solution says why and the package prints no number. Tell the user, and give the search's own value (candidates) with the method that scored it.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on the governing surface.", "search_no_solution": "The search's trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any; they were not scored; below_0_05: solved with a value below 0.05, which a search does not take as a factor of safety).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
+        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety: the converged solution on the governing surface by the method that scored it in the search. That is the method named, except where the governing family was scored by another (Bishop's simplified method and the Ordinary Method of Slices do not apply to a plane or a polyline, which Spencer's method then scores; a family the method solves none of is scored by Spencer's method, then Janbu's simplified method): method_used then names it, method_named the method asked for and named_method_lowest that method's own lowest value. Tell the user both. Null where that method has no solution on the surface: no_solution says why and the package prints no number.", "candidate_methods": "What scored each family in candidates: [{family, method, f_interslice, FOS, named, reason}].", "method_used": "Present when the governing surface was scored by another method than the one named (with method_named and named_method_lowest), or, with Bishop's method, when the Ordinary Method of Slices value was taken (Duncan 1996, p. 580).", "named_method_lowest": "Present with method_named: the lowest factor of safety by the method named ({method, f_interslice, FOS, family}), or FOS null with a note when it scored no family.", "screen_unsolved": "Present when a screen by another method scored surfaces below the reported minimum that the method named has no solution on: {n, lowest_screen_FOS, by_family} (UFC 3-220-10 p. 362). Tell the user.", "circle_check": "Noncircular searches: the minimum against the critical circle by the same method ({checked, circle, FOS_as_polyline, noncircular_minimum, governs, note}).", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on the governing surface.", "search_no_solution": "The search's trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any; they were not scored; below_0_05: solved with a value below 0.05, which a search does not take as a factor of safety).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "settlement_package": {
         "category": "Calculation Package",

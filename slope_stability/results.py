@@ -815,6 +815,41 @@ class SearchResult:
         how its ranges were set (pointing at ``search_ranges``,
         ``governing_location`` and ``refused_lowest`` where the result has
         them), its time budget and any Bishop screen (GM-123).
+    named_method, f_interslice : str
+        The method the search was asked for and the interslice function of
+        Morgenstern-Price and GLE (GM-140 step 6; ``f_interslice`` None for
+        a method that has none; Spencer's method is 'constant'). Empty when
+        a search was called directly (grid_search etc.).
+    candidate_methods : list of dict
+        What scored each family in ``candidates`` (GM-140 step 6; EM
+        1110-2-1902 4-3b(9)(a), p. 4-8: state the method used): one record
+        per family and scoring method, ``{"family", "method",
+        "f_interslice", "FOS", "named", "reason"}``. ``named`` is True
+        where the family was scored by the method named; where it was not
+        (Bishop's simplified method and the Ordinary Method of Slices do
+        not apply to a plane or a polyline; or the method solved none of
+        the family's surfaces), ``method`` is the one that did (Spencer's
+        method, or Janbu's simplified method where Spencer's solved none)
+        and ``reason`` says why. ``screen`` names a screen by another
+        method used to pick the surfaces (the value reported is always the
+        scoring method's own on the surface reported).
+    method_used : str
+        '' when the governing surface was scored by the method named;
+        otherwise the method that scored it, with ``warnings`` saying so
+        and ``named_method_lowest`` giving the named method's own lowest
+        value (``{"method", "f_interslice", "FOS", "family"}``, ``FOS``
+        None with a ``note`` when the named method scored no family).
+    screen_unsolved : dict
+        Surfaces a screen by another method scored below the minimum
+        reported and the named method had no solution on (UFC 3-220-10
+        p. 362): ``{"n", "lowest_screen_FOS", "by_family"}``; empty when
+        there is none. ``warnings`` says so.
+    circle_check : dict
+        A noncircular search's minimum against the critical circle by the
+        same method (GM-140 step 6): ``checked``, the ``circle``,
+        ``FOS_as_polyline``, ``noncircular_minimum``, ``governs`` and
+        ``note``; ``checked`` False with the reason where no circular
+        search ran. Empty for a circular search.
     families_scored : list of str
         The surface families that gave an admissible surface (those in
         ``candidates``; GM-125): the main search's kind, ``toe_circle``,
@@ -856,6 +891,18 @@ class SearchResult:
     critical_flags: List[str] = field(default_factory=list)
     lowest_unflagged: Optional[Dict[str, Any]] = None
     screen_refusals: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # One method across the search (GM-140 step 6): the method and
+    # interslice function named, what scored each family, the method that
+    # scored the governing surface when it is not the one named, the named
+    # method's own lowest value, the screen values of surfaces the named
+    # method could not solve, and a noncircular minimum against the circle.
+    named_method: str = ""
+    f_interslice: Optional[str] = None
+    candidate_methods: List[Dict[str, Any]] = field(default_factory=list)
+    method_used: str = ""
+    named_method_lowest: Optional[Dict[str, Any]] = None
+    screen_unsolved: Dict[str, Any] = field(default_factory=dict)
+    circle_check: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def n_no_solution(self) -> int:
@@ -940,9 +987,42 @@ class SearchResult:
             from slope_stability.search_supplements import describe_surface_kind
             lines.append(f"  Governing surface: "
                          f"{describe_surface_kind(self.governing_surface)}")
+            by = {}
+            for rec in self.candidate_methods:
+                # the method that scored each family (GM-140 step 6)
+                name = rec["method"] + (
+                    f", {rec['f_interslice']}" if rec.get("f_interslice")
+                    and rec["method"] in ("morgenstern_price", "gle")
+                    else "")
+                by.setdefault(rec["family"], []).append(
+                    name + ("" if rec.get("named")
+                            else ", not the method named"))
             for kind, fos in self.candidates.items():
                 lines.append(f"    {describe_surface_kind(kind):<48s} "
-                             f"{fos:.3f}")
+                             f"{fos:.3f}"
+                             + (f"  ({'; '.join(by[kind])})"
+                                if kind in by else ""))
+            if self.method_used:
+                low = self.named_method_lowest or {}
+                lines.append(
+                    f"  Scored by {self.method_used}, not the method named "
+                    f"({self.named_method}); lowest by the method named: "
+                    + (f"{low['FOS']:.3f}" if low.get("FOS") is not None
+                       else "none"))
+            cc = self.circle_check
+            if cc.get("checked") and cc.get("circle"):
+                lines.append(
+                    f"  Critical circle by the same method: "
+                    f"{cc['circle']['FOS']:.3f}"
+                    + (f" (as a polyline {cc['FOS_as_polyline']:.3f})"
+                       if cc.get("FOS_as_polyline") is not None else ""))
+            elif cc:
+                lines.append("  Not checked against a circle")
+            if self.screen_unsolved:
+                lines.append(
+                    f"  Screen values below the minimum on surfaces the "
+                    f"method could not solve: {self.screen_unsolved['n']}, "
+                    f"lowest {self.screen_unsolved['lowest_screen_FOS']:.3f}")
         gl = self.governing_location
         if gl.get("layers"):
             lines.append(f"  Governing surface: x {gl['x_entry']:.2f} to "
@@ -1041,6 +1121,20 @@ class SearchResult:
         if self.governing_surface:
             d["governing_surface"] = self.governing_surface
             d["candidates"] = dict(self.candidates)
+        if self.named_method:
+            d["named_method"] = self.named_method
+            d["f_interslice"] = self.f_interslice
+        if self.candidate_methods:
+            d["candidate_methods"] = [dict(c) for c in
+                                      self.candidate_methods]
+        if self.method_used:
+            d["method_used"] = self.method_used
+        if self.named_method_lowest:
+            d["named_method_lowest"] = dict(self.named_method_lowest)
+        if self.screen_unsolved:
+            d["screen_unsolved"] = dict(self.screen_unsolved)
+        if self.circle_check:
+            d["circle_check"] = dict(self.circle_check)
         if self.infinite_slope_checks:
             d["infinite_slope_checks"] = [dict(c) for c in
                                           self.infinite_slope_checks]
