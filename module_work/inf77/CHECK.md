@@ -114,6 +114,15 @@ fem2d_package mirrors):
 
 ### Not checked here
 
+- T1 (b) covers only what the probes reach (review #4). Of the 2,227 parameters the probed
+  methods declare, 814 (in 111 of the methods, about 37 %) are neither given by any probe nor
+  listed in a run's `defaults_used`, so no check ever changes them. Example,
+  axial_pile_capacity: `extend_last_layer`, `inside_friction_ratio`, `open_pipe_method`,
+  `open_pipe_toe_limit`, `pile_area`, `pile_perimeter`, `pile_tip_area`, `pile_weight`,
+  `uplift_skin_fraction`. The test's docstring says the same.
+- T3 reads only the 12 of 35 packages whose DESIGN.md has a "Public API" section (review
+  #13); the other 23 are not checked. Inside a section, `def`, `class` and `module.func`
+  lines would be dropped silently (none today); the `read >= 10` guard stops an empty pass.
 - gstools' 4 probes cannot run on this machine (Smart App Control blocks gstools' DLLs). A
   static check found every key their `returns` names in the adapter or gstools_agent code;
   the first GitHub run confirms.
@@ -164,3 +173,56 @@ by its generator (unchanged; `--rebuild` exit 0), `test_user_manual_current.py`,
 ## Calls
 
 About 90 tool calls for the build, the checks and these notes.
+
+## Review round (2026-11-13)
+
+An independent review graded the branch MERGE AFTER FIXES. Master was merged in first
+(b5e49ae): no conflicts; the manual and `toc.json` needed no rebuild. What each finding
+became:
+
+- #1 (sheet_pile, a layer that stops above the toe), #6 (the two "Noted, not fixed" items),
+  #7 (surcharge `equivalent_sigma_p_kPa` 0.0), #8 (fem2d_consolidation brief): for the
+  lead to file in BACKLOG.md.
+- #2: `group_uplift_utilization` and `group_uplift_adequate` say they need uplift_load and
+  axial_capacity_tension; a run given uplift_load alone gets a note that no pass/fail was
+  made and what to give (or that no block factor is printed). group_efficiency's block keys
+  say they need pile_length and su1 and su2 (or one cu); s_over_b and the row say "with
+  soil_type". The allowlist reasons say the same. No number changes.
+- #3: a `returns` text excuses its key's absence only with when, if, only, unless or
+  without, a leading "For a ...", or "with" a declared parameter (now any case: "With cv:").
+  The colon rule and the loose words (where, absent, omitted, otherwise) are gone. One run
+  of every probe (a scratch scan with the test's own helpers) found 30 texts that leaned on
+  them; each now states its case: the four the review named (drawing_sheet and
+  drawing_scale with wall_type 'cantilever_reinforced'; strut_forces with struts; the
+  consolidation choices without delta_sigmas; cited_pages when a record cites a page), and
+  case labels such as "Monte Carlo:" now "Monte Carlo only:", "Cohesive:" now "Cohesive
+  soil only:", parse_cpt `u_2_kPa` "only when the file has a u2 column", the log-spiral
+  keys "only for theory 'caquot_kerisel' passive". No value the code computes was removed.
+  The gstools keys could not be run here (Smart App Control); `results` (regions is
+  required) and the variogram `nugget` always come back by the code.
+- #4: coverage stated above ("Not checked here") and in the test's docstring. No new probes.
+- #5: `_norm` drops a figure file's `_2` number and a `site_key`'s `_1` copy suffix. Two
+  identical runs of `subsurface|load_site`, `subsurface|parse_diggs` and
+  `calc_package|render_figures` now agree. Proof in a scratch run: with `friction_angle`
+  (then `width`) made dead in render_figures by a wrapper, the sweep's change reports "not
+  moved", so the check goes red; nothing in the tree was changed for it.
+- #9: `_moved_by` counts a crash (IndexError, TypeError, AttributeError, ZeroDivisionError,
+  NameError, AssertionError and the like, or a KeyError naming a bare key) as not moved. A
+  ValueError, an adapter's worded error, a module's own error class, a missing file and a
+  worded KeyError ("Hammer ... not found") still count as refusals. The fem2d node-index
+  changes (fem2d_seepage `elements` and `head_bcs`, fem2d_staged `elements`, and their
+  fem2d_package mirrors) are allowlisted: "a doubled node index is out of range and raises
+  IndexError, not a worded refusal".
+- #10: `_swallowed` treats a tuple holding Exception or BaseException as broad and a lone
+  `...` as empty (the review's M1 cases in the self-test). It then found three figure
+  handlers written `except (ImportError, Exception): pass` (pile_group and settlement
+  `get_figures`); they are listed in SWALLOWED as figures left out.
+- #11: a nested allowlist label must name a field some probe of that key gives.
+- #12: `_ONE_LAYER` reads "the probe's one layer reaches below the toe (or the wall); a
+  thicker one changes nothing".
+- #13: noted above ("Not checked here").
+
+Checks: test_told_is_real 7 passed; test_defaults_used `-k` pile_group, subsurface,
+calc_package, fem2d, retaining, diggs and the table tests 342 passed, 2 skipped;
+test_catalog_routing_hints 14, test_public_text 5, test_user_manual_current 1,
+test_page_fingerprints 13 passed; `check_manual.py --rebuild` exit 0. About 55 tool calls.
