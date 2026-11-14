@@ -152,9 +152,11 @@ What each became:
 | 6 (C) | "Not named" was overcounted | R08 and R11 are named (worked examples in `figure_examples.py`), and so is the new R02. 12 of the 22 are not named. |
 | 7 (C) | R07's ask said strip; its inputs are a 1.8 m by 7.3 m rectangle | The ask now says "a rectangular footing 1.8 m by 7.3 m". |
 | 8 (C) | Nothing guarded the arms' tool lists | New test: the page agent built under each `ARM_ENV` in one process (OFF, ON, OFF, ON) calls `plot_box.make_plot_code_tool` only under ON. |
+| closing note | Drafts could be marked instead of final figures | The checker took the four newest PNGs of a run. Those could include the figure helper's look copies (`.scratch/<name>_look.png`, newer than their figure) and a draft drawn under another name. Now look copies are never sent and never listed as figures. The PNGs the reply names by file name are sent; when it names none, the newest, recorded as `picked_by: newest` and noted in `RESULTS.md`. A draft under another name cannot be told from a final figure by the file alone, so the section asks the engineer to compare R01's `check.json` with its `files/` before running the rest. New test. |
 
-Tests: `test_figure_eval_offline.py` 14 passed, 3 of them new (the
-unreadable reply, failed and neither-drew runs, the arms' tool lists). The
+Tests: `test_figure_eval_offline.py` 15 passed, 4 of them new (the
+unreadable reply, failed and neither-drew runs, the arms' tool lists, the
+final figures marked). The
 equal-marks test still gives "same 2, better 0, worse 0", and the new
 not-compared rows show 0 and "-". `webapp/tests/test_public_text.py` 5
 passed. The data folder was rebuilt with all 22 requests, and R02's

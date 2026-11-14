@@ -89,8 +89,23 @@ fe.score_figure_set(agent, vision_model=eyes, data_dir=DATA, out_dir=OUT,
 ```
 
 Open `{OUT}/side_by_side.html`: R01 should show one figure in each arm with
-the marks under it. Then the whole set, in the same folder (R01 is not
-asked again):
+the marks under it.
+
+**Check that the final figures were marked, before the rest.** The checker
+is sent the PNGs the agent's reply names by file name (at most four). When
+the reply names none, it gets the four newest PNGs of the run instead, but
+never the figure helper's look copies (`.scratch/..._look.png`). A draft
+the helper retired is deleted, and a redraw under the same name overwrites
+its file. But a draft drawn under another name stays in `files/`, and the
+runner cannot tell it from a final figure by the file alone. So, for each
+arm of R01, open `{OUT}/runs/R01-bearing-width/<arm>/check.json` and
+compare its `figures` and `picked_by` with the PNGs in `agent/files/` and
+with the figure the reply presents. If a draft was marked, or `picked_by`
+is `newest` while `files/` holds more PNGs than the reply presents, stop
+and report it with that folder before running the rest. `RESULTS.md` also
+notes every run whose marks came from the newest PNGs.
+
+Then the whole set, in the same folder (R01 is not asked again):
 
 ```python
 res = fe.score_figure_set(agent, vision_model=eyes, data_dir=DATA,
