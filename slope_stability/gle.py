@@ -728,7 +728,7 @@ class _GLESystem:
         state (GM-140 step 2).
         """
         if self.point_loads and lam != 0.0:
-            return self._solve_marched(lam, f0)
+            return self._solve_marched(lam, f0, above_poles=False)
         ns = self.ns
         n = len(ns)
         E = [0.0] * (n + 1)
@@ -742,15 +742,15 @@ class _GLESystem:
                 # No fixed-point step from this estimate. With support
                 # forces, solve the equations by the direct march instead
                 # (GM-60); without them, as before, no state.
-                return (self._solve_marched(lam, f0) if self.point_loads
-                        else None)
+                return (self._solve_marched(lam, f0, above_poles=False)
+                        if self.point_loads else None)
             Fm_new = resist_m / den_m
 
             # --- force equilibrium with current V state
             resist_f, den_f, N_f, tps = self._force_terms(Ff, V)
             if den_f <= 1e-9:
-                return (self._solve_marched(lam, f0) if self.point_loads
-                        else None)
+                return (self._solve_marched(lam, f0, above_poles=False)
+                        if self.point_loads else None)
             Ff_new = resist_f / den_f
 
             # --- march interslice normals E with force-equilibrium state
@@ -785,7 +785,7 @@ class _GLESystem:
         # factor of safety is a method's own converged solution or no
         # number (GM-140 step 2; UFC 3-220-10 p. 362); before, it was
         # returned as a state and nothing flagged it.
-        return self._solve_marched(lam, f0)
+        return self._solve_marched(lam, f0, above_poles=False)
 
     # -- direct solution for a fixed lambda (GM-60) ---------------------------
 
@@ -1052,7 +1052,8 @@ class _GLESystem:
         no_state.sort(key=abs)
         return None, jumps, no_state
 
-    def _solve_marched(self, lam: float, f0: float):
+    def _solve_marched(self, lam: float, f0: float,
+                       above_poles: bool = True):
         """(F_m, F_f, E, V, N) for a fixed lambda by the direct march, or
         None when the equations have no solution with F > 0.
 
@@ -1063,7 +1064,27 @@ class _GLESystem:
             out = self._march(lam, F)
             return None if out is None else out[0][-1]
 
-        Ff = _nearest_root(residual, max(f0, 0.2))
+        # The F nearest ``f0`` that closes the march with every slice
+        # above its pole (GM-344, `_state`): a sign change of the closing
+        # force across a pole is not a solution, and a solution with a
+        # slice below its pole has that slice's response reversed. The
+        # lagged iteration's fallback (Janbu's simplified method, and the
+        # record of F at lambda = 0) asks with ``above_poles`` False and
+        # gets the nearest sign change, as before: Janbu's solve is not
+        # this step's.
+        if above_poles:
+            above = (False,) * len(self.ns)
+
+            def closes_above(F):
+                out = self._march(lam, F)
+                return (out is not None
+                        and abs(out[0][-1]) <= _CLOSES * self.force_scale
+                        and out[4] == above)
+
+            Ff = _nearest_root(residual, max(f0, 0.2), accept=closes_above,
+                               cuts=self._poles(lam))
+        else:
+            Ff = _nearest_root(residual, max(f0, 0.2))
         if Ff is None:
             return None
         out = self._march(lam, Ff)
