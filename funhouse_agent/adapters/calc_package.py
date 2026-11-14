@@ -351,7 +351,8 @@ def _tables_response(module: str, result, analysis, path: str, calc_tables,
     tables_out = _save_tables(calc_tables, table_names, os.path.dirname(path))
     if tables_out:
         response["tables"] = tables_out
-        response["tables_note"] = _TABLES_FILE_NOTE
+        response["tables_note"] = (_TABLES_FILE_NOTE
+                                   + _tables_left_out(calc_tables))
         failed = [t["title"] for t in tables_out if not t["file_exists"]]
         if failed:
             table_error = ("these table CSVs did not save: "
@@ -552,7 +553,7 @@ def _build_response(module: str, result, analysis, params: dict,
             response["error"] += rescue_note(rescue)
     if tables_out:
         response["tables"] = tables_out
-        response["tables_note"] = _TABLES_NOTE
+        response["tables_note"] = _TABLES_NOTE + _tables_left_out(calc_tables)
         failed = [t["title"] for t in tables_out if not t["file_exists"]]
         if failed:
             table_error = ("these table CSVs did not save: "
@@ -576,6 +577,14 @@ _TABLES_NOTE = (
     "echo is the *_inputs.csv) and printed in the package's Calculation "
     "Tables section. They show as downloads under your reply; name them to "
     "the user.")
+
+
+def _tables_left_out(tables) -> str:
+    """The sentences the tables carry for the agent's response: rows a
+    table leaves out, or a table the module could not build (GM-328
+    review C1); "" when none."""
+    said = [t.left_out for t in tables if getattr(t, "left_out", "")]
+    return (" " + " ".join(said)) if said else ""
 
 
 def _save_tables(tables, names, out_dir) -> list:
@@ -913,6 +922,38 @@ _PACKAGE_TOOLS = {
                   "monte_carlo": "monte_carlo", "form": "form"},
         "selector_values": {"mc": "monte_carlo", "monte carlo": "monte_carlo",
                             "taylor": "fosm"},
+    },
+    "fem2d_package": {
+        "adapter": "fem2d_adapter",
+        "selector": ("analysis_type", "slope_srm",
+                     "Which finite element analysis to run and report: "
+                     "'slope_srm' (the fem2d_slope_srm tool), 'excavation' "
+                     "(fem2d_excavation), 'consolidation' "
+                     "(fem2d_consolidation), 'seepage' (fem2d_seepage) or "
+                     "'staged' (fem2d_staged)."),
+        "tools": {"slope_srm": "fem2d_slope_srm",
+                  "excavation": "fem2d_excavation",
+                  "consolidation": "fem2d_consolidation",
+                  "seepage": "fem2d_seepage",
+                  "staged": "fem2d_staged"},
+        "selector_values": {"fem2d_slope_srm": "slope_srm", "srm": "slope_srm",
+                            "slope": "slope_srm",
+                            "fem2d_excavation": "excavation",
+                            "fem2d_consolidation": "consolidation",
+                            "fem2d_seepage": "seepage",
+                            "fem2d_staged": "staged"},
+        # The factor of safety the package's adequacy check sets the
+        # strength-reduction FOS against: the package's, not the tool's
+        # (the tool reports the FOS and checks nothing).
+        "own": {"FOS_required": {
+            "type": "float", "required": False, "default": 1.5,
+            "description": "Required factor of safety, this package's "
+                           "choice, not a printed requirement; the "
+                           "package's check sets the strength-reduction "
+                           "FOS against it (analysis_type 'slope_srm' "
+                           "only). A finite number at or above 1.0; the "
+                           "default 1.5: give the project's own.",
+            "applies_when": {"analysis_type": ["slope_srm"]}}},
     },
     "pavement_design_package": {
         "adapter": "pavement_design_adapter",
@@ -1465,7 +1506,12 @@ def _run_tool(package: str, params: dict) -> _ToolRun:
         used[spec["selector"][0]] = spec["selector"][1]
     used.update(_defaults_used(mod, tool, given, p, inputs.reported,
                                inputs.took))
-    used.update(_own_defaults_used(spec.get("own", {}), own, p, declared))
+    # the selector in force too, so a package's own input can apply to
+    # one of its tools only (fem2d_package's FOS_required, GM-328)
+    in_force = ({**p, spec["selector"][0]: value} if "selector" in spec
+                else p)
+    used.update(_own_defaults_used(spec.get("own", {}), own, in_force,
+                                   declared))
     return _ToolRun(value, tool, p, out, own, used,
                     declared=declared, package=package)
 
@@ -2888,6 +2934,72 @@ def _generate_reliability_package(params: dict) -> dict:
     )
 
 
+def _fem2d_numbers(result) -> dict:
+    """The single numbers of a fem2d result (its tool's own keys), the
+    notes and the warnings: what the package's response says beside the
+    file. Arrays and per-node tables stay in the package and its CSVs."""
+    from funhouse_agent.adapters import clean_result
+    d = clean_result(result.to_dict())
+    if getattr(result, "analysis_type", None) == "srm":
+        # the slope tool adds the failure basis beside to_dict (GM-328
+        # review B1): which bound, if any, the FOS is
+        d.setdefault("fos_basis", getattr(result, "fos_basis", None))
+    out = {k: v for k, v in d.items()
+           if k != "analysis_type"
+           and (v is None or isinstance(v, (bool, int, float, str)))}
+    for key in ("warnings", "notes"):
+        if d.get(key):
+            out[key] = d[key]
+    return out
+
+
+def _generate_fem2d_package(params: dict) -> dict:
+    if "FOS_required" in params:
+        # refused before the FEM run, not after it (GM-328 review B2)
+        req = params["FOS_required"]
+        if (isinstance(req, bool) or not isinstance(req, (int, float))
+                or not math.isfinite(req) or req < 1.0):
+            raise ValueError(
+                f"fem2d_package: FOS_required takes a finite number at or "
+                f"above 1.0 (the factor of safety the package's check sets "
+                f"the strength-reduction FOS against; default 1.5); got "
+                f"{req!r}.")
+    run = _run_tool("fem2d_package", params)
+    result, model = run.out
+    analysis = dict(model)
+    if run.value == "slope_srm":
+        analysis["FOS_required"] = run.own.get(
+            "FOS_required",
+            _PACKAGE_TOOLS["fem2d_package"]["own"]["FOS_required"]["default"])
+    elif "FOS_required" in run.own:
+        raise ValueError(
+            f"fem2d_package: FOS_required is for analysis_type 'slope_srm' "
+            f"(the strength-reduction factor of safety); analysis_type "
+            f"{run.value!r} reports none.")
+    extra = _fem2d_numbers(result)
+    if run.value == "slope_srm":
+        # the package's own check, said beside the file as it is printed
+        # true to the bound a run that did not bracket the failure gives
+        # (GM-328 review A1)
+        from fem2d.calc_steps import srm_meets
+        extra["FOS_required"] = analysis["FOS_required"]
+        meets, note = srm_meets(result, analysis["FOS_required"])
+        extra["meets_FOS_required"] = meets
+        if note:
+            extra["FOS_required_note"] = note
+    return _build_response(
+        "fem2d", result, analysis, params,
+        run=run,
+        analysis_type={
+            "slope_srm": "FEM Slope Stability (Strength Reduction)",
+            "excavation": "FEM Staged Excavation",
+            "consolidation": "FEM Coupled Consolidation",
+            "seepage": "FEM Steady-State Seepage",
+            "staged": "FEM Staged Construction"}[run.value],
+        extra=extra,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Generic HTML -> PDF report render (owner wall session 2026-07-14: no canned
 # package matched an atypical wall, and the agent had no way to turn its own
@@ -3461,6 +3573,7 @@ METHOD_REGISTRY = {
     "sheet_pile_package": _generate_sheet_pile_package,
     "soe_package": _generate_soe_package,
     "reliability_package": _generate_reliability_package,
+    "fem2d_package": _generate_fem2d_package,
 }
 
 
@@ -3880,6 +3993,29 @@ METHOD_INFO = {
         "category": "Calculation Package",
         "brief": "Run a reliability analysis (FOSM, point estimates, Monte Carlo or FORM) on a performance function of random variables and generate its calc package: the variables and their distributions, the moments of g, the reliability index beta and the probability of failure, and which variable matters.",
         "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure.", "n_failed": "Monte Carlo: realizations with g below the threshold.", "n": "Monte Carlo: realizations kept (finite g); pf is n_failed / n.", "n_requested": "Monte Carlo: realizations run.", "n_dropped": "Monte Carlo: realizations left out because g was not finite.", "pf_bounds_dropped": "Monte Carlo: [pf if no dropped realization had failed, pf if all had]; null when nothing was dropped.", "pf_ci95": "Monte Carlo: 95% interval on pf.", "pf_ci95_method": "Monte Carlo: 'normal_approximation', or the Clopper-Pearson bound with no failure or only failures.", "warnings": "What the engine could not resolve (dropped realizations, a count at the edge, bounds FOSM or PEM did not apply), then any warning the code raised while it ran. Report every one."},
+    },
+    "fem2d_package": {
+        "category": "Calculation Package",
+        "brief": ("Run a 2D plane-strain finite element analysis "
+                  "(strength-reduction slope stability, staged excavation "
+                  "with a wall, coupled consolidation, steady seepage or "
+                  "staged construction) and generate its calc package: "
+                  "the mesh and materials, the analysis's steps and "
+                  "results, the convergence check (and, for slope_srm, "
+                  "the FOS against FOS_required), mesh and contour "
+                  "figures, and tables (CSV + printed). The parameters of "
+                  "the fem2d tool analysis_type names."),
+        "returns": {**_COMMON_RETURNS,
+                    "extra": "The fem2d tool's own single-number results "
+                             "under its own keys (FOS, converged and the "
+                             "largest movements, as the analysis has "
+                             "them), with its notes and warnings. Report "
+                             "every warning.",
+                    "FOS_required": "slope_srm: the required factor of "
+                                    "safety the package's check used.",
+                    "meets_FOS_required": "slope_srm: whether the "
+                                          "strength-reduction FOS is at "
+                                          "least FOS_required."},
     },
 }
 

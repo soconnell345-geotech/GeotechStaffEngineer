@@ -24,6 +24,7 @@ stabilizing piles in every method (`reinforcement.py`).
 - `geometry.py` — SlopeSoilLayer (flat or polyline top and bottom), SlopeGeometry (polyline surface/GWT); `column_at`, the one lookup of the layer at a point (GM-140 step 1)
 - `slip_surface.py` — CircularSlipSurface (center + radius, and the two ends of the arc it stands for), PolylineSlipSurface (polyline points); `circle_ground_meetings`, where a circle meets the ground, from the ground's segments and corners: a circle that meets it at more than two points is split there and each arc is a trial surface (GM-343); a polyline below the ground over more than one stretch is refused (`GroundCrossingError`, GM-122)
 - `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure (the weight summed over `SlopeGeometry.column_at`)
+- `pore_pressure.py` — `base_pore_pressure()`, the one function that gives a slice base its pore pressure (GM-140 step 5a): the water line as a piezometric line or a water table (`SlopeGeometry.water_line_kind`), ru on the column's overburden stress, a pore-pressure grid, none on total-stress layers; `pond_edges()`; `water_statements()`, what a result says about it
 - `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`); each returns the method's own solution or raises `NoSolution` (GM-140 step 2: the `*_legacy` approximate forms and `solve_rigorous()` are removed)
 - `solution.py` — `solve_method()`, the one solver every caller uses for a method (a result, every search family, the yield acceleration, FOSM, Monte Carlo): a `MethodSolution` with the method's own FOS, or None and the reason; `NoSolution`; `check_method()` / `check_interslice()` (an unknown name is refused)
 - `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
@@ -111,8 +112,9 @@ the repository).
   the su-with-depth law still reads a layer's flat `top_elevation` /
   `bottom_elevation` (the weak-layer search aims at the ground a layer
   holds at each x since the fix round, `search._layer_band_at`; its lower
-  limit is still the lowest flat `bottom_elevation`); `ru` still uses the base
-  layer's unit weight over the column (the account's D3). See
+  limit is still the lowest flat `bottom_elevation`). `ru` took the base
+  layer's unit weight over the column (the account's D3) until step 5a, which
+  takes it on the column's own weight ("Pore pressure as printed", below). See
   `module_work/gm140/STEP1_CHECK.md`.
 
 ## Tension cracks and reverse-curvature circles as printed (GM-140 step 4, 2026-11-13)
@@ -553,7 +555,13 @@ and `refused_lowest` only where the result has them (GM-125).
   drawdown solve can fail -- the result says it is the infinite-slope
   mechanism and gives no window-edge warnings; a deep circle scoring about
   the same is not called that. `infinite_slope_checks` carry both closed
-  forms (`FOS_dry_closed_form`, `FOS_seepage_closed_form`).
+  forms (`FOS_dry_closed_form`, `FOS_seepage_closed_form`). The second
+  follows the reading of the water line and `seepage_reading` names it
+  (GM-140 step 5a review): `'water_table'`, (γ'/γsat) tan φ' / tan β
+  (FHWA NHI-06-088 Eq. 6-10, p. 6-8); `'piezometric'` (the default), the
+  full head, (γsat cos² β − γw) tan φ' / (γsat sin β cos β); in a
+  rapid-drawdown search (`'rapid_drawdown'`, level pools), (γ'/γ) tan φ' /
+  tan β as before.
 - **Toe circles** (Taylor 1937; Duncan, Wright & Brandon 2014): for each
   slope face (`slope_faces`: maximal runs of segments steeper than 5 deg
   rising the same way; a flat stretch ends a face, so each bench has its own
@@ -1805,8 +1813,9 @@ boundary, entry to exit, and `build_slices` cuts there.
   2.287) won partly by the tangent's error at their vertical end.
 - **What moved**: VALIDATION.md B16, every value with its old code's own
   value on 3,840 slices.
-- **Not done.** The edge of ponded water (where the water table crosses
-  the ground) is not a slice boundary.
+- The edge of ponded water (where the water line comes down to the
+  ground) is a slice boundary since GM-140 step 5a ("Pore pressure as
+  printed", below).
 
 ### The refinement walk moves on the method's own FOS (GM-138, 2026-10-18)
 - **The defect.** On V-043 (Slide2 #39 sand fill, c' = 0 / phi' 37 over 3 m
@@ -1953,6 +1962,129 @@ boundary, entry to exit, and `build_slices` cuts there.
   Taylor Bishop 2.1-2.3 / 2.1 s, Spencer 12.8-14.4 / 12.4 s; V-043 Spencer
   14.1-14.7 / 13.6 s; #85 with its support, Bishop 2.5 / 2.5 s.
 
+### Pore pressure as printed (GM-140 step 5a, 2026-11-13)
+
+The pore pressure on a slice base is the printed one for the kind of water
+input and the kind of strength the base's layer has, from ONE function,
+`pore_pressure.base_pore_pressure`, which `build_slices` calls. Every
+method (OMS, Bishop, Janbu, Spencer, Morgenstern-Price, GLE), every family
+of surfaces and every caller takes its slices from `build_slices`, so the
+rule holds for all of them (the list is in
+`module_work/gm140/STEP5A_CHECK.md`).
+
+- **The water line's kind (account D2; owner call OWN-104).**
+  `SlopeGeometry.water_line_kind` says what `gwt_points` is.
+  - `'piezometric'` (default): a piezometric line, "a surface connecting
+    the height or elevation that water would rise in a series of standpipe
+    piezometers" (UFC 3-220-10 Sec. 7-5.1, p. 355). u = γw × the full
+    vertical depth below it. Never corrected.
+  - `'water_table'`: a water table with seepage parallel to it. "When the
+    water table is sloping, use Equation 6-16 to calculate the water
+    pressure on the base of the slice: u = hw γw cos² αw", αw the slope of
+    the water table from the horizontal (FHWA NHI-06-088 p. 6-14); UFC
+    3-220-10 Sec. 7-5.1 (p. 355) lists "Water table or phreatic surface –
+    can be corrected to approximate the piezometric surface based on the
+    slope of the surface above the specific point". αw is the slope of the
+    line's stretch above the base's mid-point (at a vertex of the line, the
+    flatter of the two stretches; level beyond the line's ends). Where the
+    line is above the ground at the slice (ponded water) nothing is
+    corrected.
+  - Why the default is the uncorrected head although two manuals print the
+    correction (OWN-104): the correction holds for seepage parallel to a
+    straight water table, which is a statement about the seepage that only
+    the caller can make, and the full head is the lower factor of safety.
+  - A result with a line that slopes below the ground names the reading in
+    its `choices` ("pore pressure under the sloping water line"), with the
+    premise and the other reading. A level line reads the same either way
+    and has no entry.
+  - The printed case: FHWA NHI-06-088 Sec. 6.3 (pp. 6-7 to 6-8, Fig. 6-4,
+    Eqs. 6-6 to 6-10), the infinite slope with seepage parallel to it. The
+    pore-water force on the base is U = γw b h cos β over a base b / cos β
+    long, that is u = γw h cos² β, and for c' = 0 the dry FS is "reduced by
+    the factor γ'/γsat" (Eq. 6-10). A plane 390 m long, 0.5 m below a 2H:1V
+    face with the water table at the surface, reproduces Eq. 6-10 with
+    `'water_table'` (OMS 0.6704 against 0.6704) and the full-head statics
+    with `'piezometric'` (OMS 0.5007 against 0.5007);
+    `tests/test_pore_pressure_as_printed.py`.
+- **ru in a layered column (D3).** u = ru × the total overburden stress at
+  the base: the weight of the soil column above it per unit width, each
+  soil at its own unit weight (the column step 1 weighs). EM 1110-2-1902
+  C-7 (p. C-29) defines ru = u / (γ z) for a uniform slope only; the sum
+  over a layered column is the module's reading of that definition, and
+  the result says so (`choices`, "pore pressure from ru"). A surcharge and
+  ponded water are not in the overburden: γ z is the soil's weight (and a
+  base under ponded water is under the line, which governs there). ru is
+  used where the line gives no pressure at the base, as before. It was
+  ru × γ(base layer) × the column's height.
+- **Total-stress layers (D4).** No pore pressure is subtracted on the base
+  of a slice whose layer is analysed in total stresses: "For total stress
+  analyses, pore water pressures are set to zero" (EM 1110-2-1902 Table
+  2-1, p. 2-2); "the pore water pressure should be set to zero" (2-2c,
+  p. 2-4). Total-stress layers: Mohr-Coulomb with
+  `analysis_mode='undrained'`, `'shansep'` and `'anisotropic'`. These all
+  have φ = 0 at the base, so no factor of safety moves; the slice table's
+  u and the GLE's "base tension" note do. `Slice.water_pressure` keeps the
+  water pressure at the base, which the SHANSEP and Hoek-Brown stresses
+  still use (D40, not changed). A total-stress layer given φ > 0 that lies
+  under water draws a warning citing Table 2-1's note 2 (total-stress
+  envelopes with φ > 0 apply only to partially saturated soils) and saying
+  that the φ given is not used.
+- **The pond's edge (D16).** Where the water line comes down to the ground
+  is a slice boundary (`pore_pressure.pond_edges`, in `slice_breaks`), for
+  circles and polylines: each slice's top is wholly under the pond or
+  wholly out of it, and the slices' pond weights add up to the water over
+  the surface at any slice count. FHWA NHI-06-088 p. 6-14 puts slice sides
+  "at the intersection of the ground water level and the circle" and tops
+  "at breaks in the slope"; the pond's edge is cut as a surcharge's edge is.
+- **The pond's thrust on a slice** (`slices._pond_thrust`) is the
+  horizontal resultant of the water's pressure on the ground across the
+  slice, from the pool's depth at each SIDE of the slice (the line's own
+  elevation there less the ground's): γw × the mean depth × the ground's
+  rise over the stretch where the line is above the ground, at the centroid
+  of that pressure trapezoid (boundary water forces with total weights,
+  FHWA NHI-06-088 p. 6-13). Under a level pool this is ½ γw (d_l² − d_r²),
+  the form used before. That form took both depths from the line's
+  elevation at the slice's MIDDLE: the same under a level pool and wherever
+  the line is above the ground at both sides, but a sloping line AT or just
+  under the ground (a water table at the surface of a face) read as a pool
+  at each slice's lower side, with a thrust into the slope. Found while
+  pinning the correction to print: the long plane above read OMS 0.860
+  (Spencer 1.103) as a piezometric line where statics gives 0.501.
+  - **Departure, declared (the step 5a review, ruling 1).** What the
+    step's brief allowed to move a value: ru in a layered column (D3),
+    total-stress bases (D4) and the pond's edge (D16). What this changes:
+    the thrust where a water line is at or just under a sloping ground,
+    which was a phantom pool pushing into the slope; where the pool covers
+    both sides of a slice the value is the old one. Why: it is arithmetic,
+    and the old value erred on the unsafe side. The closed form (made-up
+    values; `TestPondThrust` in `tests/test_pore_pressure_as_printed.py`):
+    a 2H:1V face, c' = 5 kPa, φ' = 34°, γ = γsat = 19.5 kN/m³, the water
+    line on the ground read as a piezometric line, a plane 2 m (vertical)
+    below the face. Per metre of plan W = γsat z, u = γw z, N' = W cos β −
+    u / cos β, and F = c' / (γsat z sin β cos β) + (γsat cos² β − γw)
+    tan φ' / (γsat sin β cos β) = 0.3205 + 0.5007 = 0.8212. OMS on the
+    finite plane (60 slices) gives 0.8238, which is the same statics
+    summed over the plane and its two 2 m end stretches, the frictional
+    term taken as printed where it is negative on the steep head stretch
+    (D21, GM-140 step 3); 0.8253 with `negative_friction_term='zero'`.
+    Before this step it gave 0.9140 (0.9124 with step 3's frictional
+    term). Saved answers that move: such a face, −10 to −13 % (OMS,
+    Janbu, M-P); V-031, −0.005 % (`module_work/gm140/STEP5A_CHECK.md`,
+    "Fix round after review", with the branch against master after the
+    merge with steps 3 and 9).
+- **A pore-pressure grid with a line** (unchanged): the grid governs the
+  base pressure wherever it is given; the line gives the pond's loads and
+  the saturated unit weights below it. The result says so.
+- **Rapid drawdown**: the stages' slices come from `build_slices`, so they
+  take the same function. The pools are level unless a line is given: a
+  sloping seepage line before drawdown (`stage1_phreatic_points`) or a
+  line after it (`drawdown_phreatic_points`, GM-140 step 9) is read as
+  `water_line_kind` says, and the result names it ("Stage 1 (before
+  drawdown): ...", "After drawdown: ..."; `rapid_drawdown.
+  _stage_water_statements`, on every return, a run with no solution
+  too). The ru, grid and total-stress statements concern the same soils
+  in every stage and are said once, by stage 1.
+
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
   directly, because `sin(alpha)` can be negative for L-to-R slopes
@@ -2078,100 +2210,105 @@ boundary, entry to exit, and `build_slices` cuts there.
   surface to (γ'/γ)·that. Validated vs Slide2 #79 (1.44) / #81 (1.15). This is
   the exact answer for the c'=0 circular-overestimate limitation noted above;
   the search reaches it through the infinite-slope family (GM-14).
-- **Rapid drawdown (v5.3 B2a)** — `rapid_drawdown.rapid_drawdown_fos(geom, from_el,
-  to_el, xc/yc/radius, method='corps_2stage'|'lowe_karafiath'|'duncan_3stage')`
-  → `RapidDrawdownResult`
-  (also `analysis.rapid_drawdown_fos`). Low-permeability layers carry the total-stress
-  **R-envelope** (`R_c`, `R_phi`) alongside the effective `c_prime`/`phi`; `R_phi is
-  None` = free-draining. The method is wired to the GLE engine by OVERRIDING each
-  undrained slice's base strength to a fixed `c = τ_ff, φ = 0` and re-solving. Theory:
-  * **Stage 1** — effective-stress ("S") analysis at the FULL pool gives the
-    consolidation stresses on each base: σ'_fc = N'/l and τ_fc = S_mob/l (from the
-    GLE per-slice effective normal / mobilized shear).
-  * **Stage 2** — undrained strength τ_ff. Corps 2-stage: τ_ff = min(R-envelope,
-    drained) at σ'_fc (the "combined" envelope, capping R-envelope over-strength at
-    low σ'). Duncan 3-stage AND Lowe-Karafiath 2-stage: linear interpolation with the
-    consolidation stress ratio Kc = σ'_1c/σ'_3c between the Kc=1 (R / IC-U, lower) and
-    Kc=Kf (drained, upper) envelopes: τ_ff = τ_R + (Kc−1)/(Kf−1)·(τ_drained − τ_R),
-    capped at the drained (Kf) bound. Kc per slice is back-figured from σ'_fc, τ_fc
-    and the base angle α assuming a vertical major principal consolidation stress;
-    Kf = (1+sinφ')/(1−sinφ'). **Lowe-Karafiath (1960)** uses this identical stage-2
-    strength but stops here (no stage 3); Duncan-Wright-Wong (1990) is Lowe-Karafiath
-    plus the stage-3 drained check, so `lowe_karafiath` FOS ≥ `duncan_3stage` FOS
-    always (stage 3 only ever *substitutes a lower* strength). On the exact #95/#96
-    dam `lowe_karafiath` lands at 1.36 flat / 1.45 seepage — the seepage value sits
-    on the published Duncan-Wright-Wong 1.443, corroborating that the Kc stage-2 is
-    sound and the default 3-stage's deficit is entirely the Fellenius stage-3 normal
-    (see the E2 note below), not the interpolation.
-  * **R-envelope input convention — the Kc=1 line (EM G-12 reconciliation).** The
-    Kc=1 (R / IC-U) envelope is taken DIRECTLY as `τ_R = R_c + σ'_fc·tan(R_phi)`,
-    i.e. `(R_c, R_phi)` are the strength envelope ALREADY plotted as τ_ff vs the
-    effective consolidation stress σ'_fc — the "Total Stress R Envelope (linear)"
-    Slide2/GeoStudio expose and that the EM 1110-2-1902 App. G verification
-    problems (#95–#99) tabulate. This is NOT the raw isotropically-consolidated CU
-    triaxial envelope: EM Eq. G-12 maps that raw envelope onto the τ_ff-vs-σ'_fc
-    plane via d = R_c·cos(R_phi)·cos(φ')/(1−sin R_phi) and ψ = atan[sin(R_phi)·
-    cos(φ')/(1−sin R_phi)]. Feeding the raw parameters through *and* letting the
-    module treat them as the plotted line would double-apply that transform and
-    OVER-predict: for #96 (R_c=1200 psf, R_phi=16°, φ'=30°) the G-12 image is
-    (d=1379 psf, ψ=18.24°), which drives `lowe_karafiath` to 1.53 seepage —
-    overshooting the published 1.443 that the raw (as-plotted) inputs reproduce at
-    1.45. So supply `(R_c, R_phi)` as the τ_ff-vs-σ'_fc envelope (Slide2
-    convention, validated by V-037/V-048); a user starting from raw CU triaxial
-    data applies EM G-12 first. Confirmed empirically (raw 1.45 vs G-12 1.53 on
-    #95/#96; published 1.443).
-  * **Stage 3** (3-stage only, `duncan_3stage`) — where the post-drawdown DRAINED
-    strength (low-pool effective stress) is less than the stage-2 undrained strength,
-    it is substituted
-    (Duncan, Wright & Brandon 2014, Ch. 9: third-stage drained strength on the
-    drawn-down effective stresses).
-  * The final FOS is a GLE/Spencer solve at the DRAWN-DOWN pool (external water load
-    removed to the low level; undrained slices carry τ_ff as φ=0 total-stress
-    strength). Validated vs Slide2 #95 (2-stage) / #96 (3-stage) — see RESULTS V-037/V-038.
-  * **Stage-1 seepage option (`stage1_phreatic_points`)** — the DEFAULT stage-1 uses a
-    flat full-pool phreatic (hydrostatic to the reservoir), the conservative
-    no-through-seepage bound. A low-permeability embankment under an established full
-    pool actually has a steady-state seepage field whose phreatic DECLINES through the
-    dam, so the true σ'_fc (and mobilized τ_ff) are higher. Passing the flow-net /
-    Casagrande phreatic line as `stage1_phreatic_points` (a `[(x,z),…]` surface that
-    starts at the pool level on the upstream face, preserving the external reservoir
-    load there) reproduces the steady-seepage condition Slide2/EM 1110-2-1902 use.
-    Default `None` = unchanged. For Slide2 #95 this recovers the Corps 2-stage FOS from
-    the conservative 1.21 to 1.34 vs the published 1.347 (~0.6%).
-  * **Duncan 3-stage for c'=0 soils — stage-3 normal (v5.4 E2).** For #95/#96 the
-    default 3-stage lands ~12% below the published 1.443. The V5.3 note blamed the Kc
-    interpolation; the E2 re-investigation found the Kc interpolation is sound (it yields
-    ~1.45 on its own) and the deficit is in the STAGE-3 drained substitution: the
-    drawn-down effective normal σ'_post was estimated with the Fellenius `W·cosα/l − u`
-    term, which under-predicts N' (it neglects interslice forces) and so substitutes a
-    too-low drained strength on 17/50 slices. The optional
-    `stage3_effective_normal='gle'` uses the RIGOROUS GLE effective normal from a
-    drawn-down drained solve (the same `base_normal_eff` basis stage 1 uses) — 9
-    physically-genuine substitutions instead of 17 — lifting #96 to 1.306 (flat) /
-    1.370 (seepage), closing most of the residual (~5% left, within the
-    representative-flow-net + LE-N'-at-FOS sensitivity that shows as the +0.6% Corps
-    residual). **Default is `'fellenius'` (byte-identical to before);** the refinement
-    is opt-in. Only the 3-stage has a stage 3, so the 2-stage is untouched.
-    The default is the Ordinary Method of Slices estimate of the normal, as
-    FHWA NHI-06-088 sets the method out (pp. 6-12 to 6-13: the side forces
-    ignored, the uplift at the base taken off the total weight);
-    'gle' takes the normal from a rigorous equilibrium solution, the basis
-    stage 1 uses, and comes closer to Duncan, Wright & Wong (1990)'s published
-    3-stage values (#96: 1.31 / 1.37 against 1.443; 'fellenius' 1.235 /
-    1.273). The default stays 'fellenius' by the owner's ruling.
-  * **The Fellenius normal under the remaining pool (GM-57 review).** Water
-    ponded above a slice raises its total normal stress and its pore pressure
-    equally (FHWA NHI-06-088 p. 6-13: total weights with the boundary water
-    forces, or submerged weights, give the same result), but the per-slice
-    `W·cosα/l − u` counted the pond's pressure on the base in full and its
-    weight only at cos²α. Under a deep pool on an inclined base σ'_post went
-    negative, was clamped to zero, and the drained substitution left no
-    strength: the true Pilarcitos section searched fully automatically gave
-    DWW 0.052 on a toe circle wholly under the remaining pool (2.048 with
-    'gle'). `_fellenius_effective_normal` takes the pond out of both W and u:
-    that circle now gives 1.57; slices with no pond are byte-identical. (The
-    stage-1 fallback, used when the full-pool GLE fails, uses the same
-    estimate.) The default stays `'fellenius'` (the owner's ruling).
+- **Rapid drawdown, as EM 1110-2-1902 Appendix G prints it (GM-140 step 9,
+  2026-11-13)** — `rapid_drawdown.rapid_drawdown_fos(geom, from_el, to_el,
+  xc/yc/radius, method='duncan_3stage'|'lowe_karafiath'|'corps_2stage')`
+  → `RapidDrawdownResult` (also `analysis.rapid_drawdown_fos`). **The rule:
+  each stage is computed as Appendix G prints it, each stage's factor of
+  safety is reported, and the answer is the factor of safety of the last stage
+  computed.** A layer that does not drain freely carries the R envelope
+  (`R_c`, `R_phi`) beside its effective `c_prime`/`phi`, or the measured
+  `R_d`, `R_psi`; a layer with neither is free-draining. The manual (31 Oct
+  2003) is the owner's copy; the equations below were read from its pages.
+  * **First stage (G-3a, p. G-2).** Effective-stress analysis with the pore
+    pressures before drawdown: σ'_c = N'/dl (Eq. G-1), τ_c = S/dl (Eq. G-2).
+  * **Strengths for the second stage, `lowe_karafiath` and `duncan_3stage`
+    (G-3b, pp. G-4 to G-8).** The strength of soil consolidated at K_c = 1 is
+    τ_ff = d + σ'_c tan ψ (Eq. G-9), with d = c_R cos φ_R cos φ' / (1 − sin φ_R)
+    (Eq. G-5) and ψ = arctan[sin φ_R cos φ' / (1 − sin φ_R)] (Eq. G-6)
+    (`r_envelope_d_psi`), or d and ψ as measured (`R_d`, `R_psi`; G-3b(1)(a)
+    and (b)). The strength of soil consolidated at failure is τ_ff = c' + σ'_c
+    tan φ' (Eq. G-10); K_f by Eq. G-7 where c' = 0 and Eq. G-8 where it is not
+    (`_Kf`). The slice's K_c is Eq. G-11 (p. G-7), held between 1 and K_f
+    (`consolidation_stress_ratio`), and τ_ff Eq. G-12 (p. G-8;
+    `second_stage_strength`).
+  * **Strength for the second stage, `corps_2stage` (G-2, pp. G-1 to G-2).**
+    The lower of the R envelope, c_R + σ'_c tan φ_R with c_R and φ_R as
+    entered, and the effective-stress envelope. No third stage.
+  * **Second stage (G-3c, p. G-8).** Solved after drawdown with τ_ff as
+    cohesion, φ = 0 and no pore pressure on the slices that do not drain
+    freely; c', φ' and the pore pressure after drawdown on the free-draining
+    ones; the water left against the slope is an external load. Its factor of
+    safety and its N on every base are kept. It is the answer of
+    `lowe_karafiath` and `corps_2stage`.
+  * **Drained check (G-3d, p. G-8), `duncan_3stage`.** σ = N/dl with N from
+    the second stage (Eq. G-13), σ'_d = σ − u with u after drawdown (G-14),
+    s_d = c' + σ'_d tan φ' (G-15) (`drained_check`). A negative σ'_d gives
+    s_d = c': the manual prints 0.00 for such a slice with c' = 0 (Fig. G-11b);
+    for c' above zero that is the module's reading. Where s_d is not below
+    τ_ff on any slice the second stage is the answer and no third stage is
+    computed.
+  * **Third stage (G-3e, pp. G-8 to G-9).** The second stage again with c', φ'
+    and the after-drawdown pore pressure on the slices whose drained strength
+    is lower (not that strength entered as a cohesion), τ_ff with φ = 0 on the
+    rest.
+  * **Water (Table 2-1, p. 2-2; G-4b, p. G-9).** Before drawdown: the seepage
+    line when one is given (`stage1_phreatic_points`), otherwise a level pool,
+    the assumption of the manual's own example ("for simplicity"; seepage
+    analyses would often be appropriate), named in the result as assumed.
+    After drawdown: the line given (`drawdown_phreatic_points`), otherwise the
+    level lowered pool, named. No printed benchmark uses a line after
+    drawdown.
+  * **One set of slices (GM-135).** The slices are cut at the water crossings
+    before and after drawdown alike and paired by index; a surface on which
+    the two cuts differ is refused.
+  * **A stage with no solution gives no number.** `FOS` is None and
+    `no_solution` says which stage and why; no Ordinary Method of Slices
+    estimate stands in for a first stage that did not converge.
+  * **A base in tension before drawdown (σ'_c below zero).** The manual
+    prints no rule. The module takes σ'_c as zero there, uses the lower of
+    the two envelope strengths and names the slices in a warning.
+  * **What the result carries.** `stage1_fos`, `stage2_fos`, `stage3_fos`
+    (None where not computed), `answer_stage`, `stage_method`, `water_before`,
+    `water_after`, `choices`, and per slice the columns of Figs. G-10b and
+    G-11b: σ'_c, τ_c, K_c, K_f, the two envelope strengths, τ_ff, the second
+    stage's N, the after-drawdown u, σ'_d, s_d and the strength used
+    (`slice_table()`; `to_dict()["slices"]`).
+  * **The method of slices.** Every stage is solved by Spencer's method (the
+    GLE engine; `f_interslice` selects another side-force function), which the
+    manual recommends (G-5, p. G-9). The manual's example of the improved
+    procedure is by the Simplified Bishop Method (2.20 / 1.52 / 1.44, pp. G-15
+    to G-20) and its example of the 1970 procedure by the Modified Swedish
+    Method with the side forces at a fixed 19.4 degrees (3.49, then 1.35;
+    pp. G-9 to G-15). **The manual's check method (EM C-4):**
+    `rapid_drawdown.fixed_inclination_solution(slices, slip, theta_deg,
+    equilibrium)` is the force-equilibrium factor of safety at a fixed,
+    constant side-force inclination (the GLE engine's direct march at
+    λ = tan θ), and, with `equilibrium='moment'` at θ = 0, the Simplified
+    Bishop Method. It is a library function for reproducing the manual's
+    numbers (`rapid_drawdown_fos(stage_solver=('force', 19.4))` or
+    `'bishop'`, with `extra_boundaries` for the manual's own slice edges);
+    it is not one of the agent's tools and not a `method` name. On the
+    manual's example the 1970 procedure reads 3.486 / 1.341 by that method
+    (printed 3.49 / 1.35) and 1.239 by Spencer's method, the module's answer;
+    a Corps result says so in `notes`.
+  * **The removed input.** `stage3_effective_normal` ('fellenius', an
+    Ordinary Method of Slices normal, or 'gle', a drained solution of the
+    drawn-down slope) is gone: neither basis is the manual's. A caller who
+    names it is refused with the rule (`STAGE3_NORMAL_RULE`). This settles
+    OWN-17.
+  * **What this replaced.** Until step 9 the K_c = 1 strength took c_R and
+    φ_R as entered (13 % low on the manual's example: 1,200 psf and 16° are
+    1,379 psf and 18.2° by Eqs. G-5 and G-6, and Fig. G-5 prints both pairs),
+    K_c came from the base inclination with two special branches (1.68 to
+    3.00 on the example's slices, where Eq. G-11 gives the printed 1.71 on all
+    twelve), the drained check ran before any second-stage solution on an
+    Ordinary Method of Slices normal, and the second and third stages were one
+    solve. An earlier note here argued from values on a seepage line no page
+    prints that c_R and φ_R were already the τ_ff-against-σ'_c envelope; the
+    manual's own example shows otherwise, and that note is withdrawn. Pinned
+    stage by stage in `tests/test_rapid_drawdown_em_appendix_g.py`; record in
+    `module_work/gm140/STEP9_CHECK.md`.
 - **Rapid-drawdown critical-surface search (v5.4 E1)** — `rapid_drawdown.
   search_rapid_drawdown(geom, from_el, to_el, method=…, surface_type='circular'|
   'entry_exit'|'noncircular'|'noncircular_de', …)` → `RapidDrawdownSearchResult`
@@ -2184,8 +2321,10 @@ boundary, entry to exit, and `build_slices` cuts there.
   closure so the grid/entry-exit/random/DE loops, radius optimisation, entry/exit
   filtering, and noncircular guards are all SHARED — no search internals are duplicated.
   The result carries the ordinary rich `SearchResult` plus the stage-level
-  `RapidDrawdownResult` recomputed on the winning surface. **Robustness gate:** the
-  drawdown closure REJECTS a trial surface whose stage-1 or stage-3 GLE did not converge,
+  `RapidDrawdownResult` recomputed on the winning surface. **Every trial is scored by
+  `rapid_drawdown_fos` itself (GM-140 step 9), so a trial on which a stage has no
+  solution, or whose slices before and after drawdown differ, is not scored.**
+  The drawdown closure also REJECTS a trial surface
   whose drawn-down solve retained too few slices, or whose stage-1 (full-pool) FOS is
   implausibly low (<0.5) — a large near-flat circle self-clips to a handful of slices
   whose GLE "converges" to a spurious low FOS (~0.18) that would otherwise win the
@@ -2287,10 +2426,11 @@ boundary, entry to exit, and `build_slices` cuts there.
   contribute negative resistance; consistent with the Fellenius
   effective-normal clamp. Spencer/M-P share the (W − u·b) form but are left
   unclamped to preserve the Duncan-validated behavior (noted for follow-up).
-- **Pore pressure model (SS-3)**: `_pore_pressure_at_base` uses the full
-  hydrostatic head to the GWT surface (no cos²β seepage correction for
-  inclined phreatic surfaces) — slightly conservative (overestimates u) on
-  steep water tables. The layer `ru` coefficient is the alternative.
+- **Pore pressure model (SS-3, rewritten by GM-140 step 5a)**: one function,
+  `pore_pressure.base_pore_pressure`, gives every base its pore pressure; see
+  "Pore pressure as printed" above. By default the water line is a
+  piezometric line and takes the full vertical head; `water_line_kind=
+  'water_table'` applies FHWA NHI-06-088 Eq. 6-16's cos² correction.
 - **Pore-pressure GRID / TIN input (v5.4 E3)**: `SlopeGeometry.pore_pressure_points`
   is an optional list of scattered `(x, z, u)` triples (kPa) — a flow-net / TIN
   sampling of the pore-pressure field. When set, the base pore pressure at each

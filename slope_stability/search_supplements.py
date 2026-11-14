@@ -687,6 +687,50 @@ def _planar_surface(geom: SlopeGeometry, xa: float, xb: float,
         return None
 
 
+# The infinite slope with c' = 0 and the water at the face's surface, by
+# the reading the run used (GM-140 step 5a review): (formula, condition).
+_SEEPAGE_FORMS = {
+    "water_table": (
+        "(gamma'/gamma_sat) tan(phi')/tan(beta)",
+        "a face with a water table at its surface and seepage parallel to "
+        "it (water_line_kind 'water_table'; FHWA NHI-06-088 Eq. 6-10, "
+        "p. 6-8)"),
+    "piezometric": (
+        "(gamma_sat cos^2(beta) - gamma_w) tan(phi') / (gamma_sat "
+        "sin(beta) cos(beta))",
+        "a face with a piezometric line at its surface (water_line_kind "
+        "'piezometric', the default: the full head, u = gamma_w z)"),
+    "rapid_drawdown": (
+        "(gamma'/gamma) tan(phi')/tan(beta)",
+        "a face saturated to the surface with seepage parallel to it (as "
+        "after a rapid drawdown)"),
+}
+
+
+def _seepage_closed_form(closed: float, beta_deg: float, gsat: float,
+                         reading: str) -> float:
+    """The infinite slope's FOS for c' = 0 with the water at the face's
+    surface, by the reading of the water line (``_SEEPAGE_FORMS``).
+    ``closed`` is the dry form tan(phi')/tan(beta).
+
+    - 'water_table' (u = gamma_w z cos^2(beta)): (gamma'/gamma_sat)
+      tan(phi')/tan(beta), FHWA NHI-06-088 Eq. 6-10, p. 6-8.
+    - 'piezometric' (the full head, u = gamma_w z), the same statics:
+      (gamma_sat cos^2(beta) - gamma_w) tan(phi') / (gamma_sat sin(beta)
+      cos(beta)), that is the dry form x (1 - gamma_w / (gamma_sat
+      cos^2(beta))).
+    - 'rapid_drawdown' (a drawdown search, whose pools are level):
+      (gamma'/gamma) tan(phi')/tan(beta), the saturated face a rapid
+      drawdown leaves, as before.
+    """
+    if gsat <= 0:
+        return 0.0
+    if reading == "piezometric":
+        c2 = math.cos(math.radians(beta_deg)) ** 2
+        return closed * max(gsat * c2 - _GAMMA_W, 0.0) / (gsat * c2)
+    return closed * max(gsat - _GAMMA_W, 0.0) / gsat
+
+
 def check_infinite_slope(geom: SlopeGeometry,
                          method: str = PLANAR_METHOD,
                          n_slices: int = 30,
@@ -731,18 +775,20 @@ def check_infinite_slope(geom: SlopeGeometry,
     best_fos, best_slip = _FOS_MAX, None
     checks: List[Dict[str, Any]] = []
     n_eval = 0
+    reading = ("rapid_drawdown" if fos_fn is not None
+               else getattr(geom, "water_line_kind", "piezometric"))
     for run in cohesionless_face_runs(geom):
         beta = run["slope_angle_deg"]
         closed = (math.tan(math.radians(run["phi_deg"]))
                   / math.tan(math.radians(beta)))
-        gsat = run["gamma_sat"]
-        seep = closed * max(gsat - _GAMMA_W, 0.0) / gsat if gsat > 0 else 0.0
+        seep = _seepage_closed_form(closed, beta, run["gamma_sat"], reading)
         check = {
             "x_from": round(run["x_from"], 3), "x_to": round(run["x_to"], 3),
             "slope_angle_deg": round(beta, 3), "layer": run["layer"],
             "phi_deg": run["phi_deg"],
             "FOS_dry_closed_form": round(closed, 4),
             "FOS_seepage_closed_form": round(seep, 4),
+            "seepage_reading": reading,
             "FOS": None, "note": "",
         }
         checks.append(check)
@@ -1105,8 +1151,9 @@ def _depth_ratio(geom: SlopeGeometry, crit) -> float:
 def _infinite_slope_match(checks, crit, fos: float):
     """(run, text) when ``crit`` lies on a cohesionless face run and its FOS
     is within ``_PLANAR_TIE`` of what the infinite slope gives there: the
-    closed form for a dry face, tan(phi') / tan(beta), or for seepage
-    parallel to the face with the water at the surface, (gamma'/gamma)
+    closed form for a dry face, tan(phi') / tan(beta), or with the water at
+    the surface the form for the reading the run used (``seepage_reading``,
+    ``_SEEPAGE_FORMS``), in a drawdown search (gamma'/gamma)
     tan(phi') / tan(beta) (Duncan, Wright & Brandon 2014, Ch. 14;
     `infinite_slope_fos`) -- the saturated face a rapid drawdown leaves
     (Pilarcitos: a circle 9 ft long and an inch deep at 1.075 against
@@ -1122,10 +1169,9 @@ def _infinite_slope_match(checks, crit, fos: float):
                      f"for a dry face"))
         seep = c.get("FOS_seepage_closed_form")
         if seep:
-            refs.append((seep, f"(gamma'/gamma) tan(phi')/tan(beta) = "
-                               f"{seep:.3f} for a face saturated to the "
-                               f"surface with seepage parallel to it (as "
-                               f"after a rapid drawdown)"))
+            formula, condition = _SEEPAGE_FORMS[
+                c.get("seepage_reading", "rapid_drawdown")]
+            refs.append((seep, f"{formula} = {seep:.3f} for {condition}"))
         if c["FOS"] is not None:
             refs.append((c["FOS"], f"the planar surfaces parallel to the "
                                    f"face score {c['FOS']:.3f}"))

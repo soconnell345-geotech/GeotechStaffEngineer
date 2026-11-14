@@ -496,6 +496,12 @@ def analyze_slope(geom: SlopeGeometry,
                                      in_search=False)
             if w:
                 result.warnings.append(w)
+    # What the pore pressure on the bases was taken as (GM-140 step 5a):
+    # the reading of a sloping water line (OWN-104), ru in a layered
+    # column, none on total-stress layers, with their print.
+    from slope_stability.pore_pressure import water_statements
+    result.choices, notes = water_statements(geom)
+    result.warnings.extend(notes)
     return result
 
 
@@ -801,6 +807,8 @@ def compare_methods_table(geom: SlopeGeometry,
         out["methods_without_solution"] = list(res.methods_without_solution)
     if res.layer_overlaps:
         out["layer_overlaps"] = [dict(o) for o in res.layer_overlaps]
+    if res.choices:
+        out["choices"] = [dict(c) for c in res.choices]
     if res.warnings:
         out["warnings"] = list(res.warnings)
     return out
@@ -1087,6 +1095,10 @@ def search_critical_surface(
             m_alpha=confirm, m_alpha_rule=m_alpha_rule,
             low_m_alpha=low_m_alpha,
             negative_friction_term=negative_friction_term)
+        # The pore pressure every trial surface's bases took (GM-140 step
+        # 5a), said once, by the search.
+        from slope_stability.pore_pressure import add_water_statements
+        add_water_statements(result, geom)
         # the crack rule (GM-140 step 4): the crack asked for, and what
         # was done with reverse-curvature circles
         result.choices += _crack_choices(
@@ -1199,35 +1211,22 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                        n_slices: int = 50,
                        tol: float = 1e-4,
                        stage1_phreatic_points=None,
-                       stage3_effective_normal: str = "fellenius"):
-    """Rapid-drawdown factor of safety (USACE 2-stage / Duncan-Wright-Wong
-    3-stage) on a specified slip surface.
+                       stage3_effective_normal=None,
+                       drawdown_phreatic_points=None,
+                       **check_arguments):
+    """Rapid drawdown on a specified slip surface, as EM 1110-2-1902
+    Appendix G prints it: the improved three-stage procedure
+    ('duncan_3stage', the default), Lowe and Karafiath's two-stage procedure
+    ('lowe_karafiath') or the Corps of Engineers' 1970 two-stage procedure
+    ('corps_2stage'). Each stage's factor of safety is reported and the
+    answer is the factor of safety of the last stage computed.
 
-    Low-permeability layers must carry the R-envelope (`R_c`, `R_phi`) in
-    addition to the effective `c_prime`/`phi`; `R_phi is None` marks a
-    free-draining layer. See `slope_stability.rapid_drawdown` for the full
-    theory and `RapidDrawdownResult`.
-
-    Parameters
-    ----------
-    geom : SlopeGeometry
-    drawdown_from_elevation, drawdown_to_elevation : float
-        Reservoir surface elevation before / after drawdown (m).
-    xc, yc, radius / slip_surface :
-        The specified slip surface (circle or explicit surface).
-    method : str
-        'duncan_3stage' (default) or 'corps_2stage'.
-    f_interslice : str
-        Interslice function ('constant' = Spencer). Default 'constant'.
-    n_slices, tol : usual meanings.
-    stage1_phreatic_points : list of (x, z), optional
-        Steady-seepage phreatic surface for the stage-1 consolidation stresses
-        only (default None = flat full-pool, the conservative no-through-seepage
-        bound). See `slope_stability.rapid_drawdown` for details.
-    stage3_effective_normal : str, optional
-        Stage-3 (3-stage) drained-substitution effective-normal basis:
-        'fellenius' (default, preserved) or 'gle' (rigorous). See
-        `slope_stability.rapid_drawdown` for details.
+    A layer that does not drain freely carries the R envelope (`R_c`,
+    `R_phi`) or the measured `R_d` and `R_psi` beside its effective
+    `c_prime` and `phi`; a layer with neither is free-draining. This is
+    `slope_stability.rapid_drawdown.rapid_drawdown_fos`: its docstring has
+    every parameter, and the module's docstring every equation with its
+    page.
 
     Returns
     -------
@@ -1238,7 +1237,9 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                xc=xc, yc=yc, radius=radius, slip_surface=slip_surface,
                method=method, f_interslice=f_interslice, n_slices=n_slices,
                tol=tol, stage1_phreatic_points=stage1_phreatic_points,
-               stage3_effective_normal=stage3_effective_normal)
+               stage3_effective_normal=stage3_effective_normal,
+               drawdown_phreatic_points=drawdown_phreatic_points,
+               **check_arguments)
 
 
 # Re-export the rapid-drawdown critical-surface search (defined in

@@ -228,6 +228,16 @@ def shape_factors(phi_deg: float, B: float, L: float,
 #: UFC 3-220-20 Table 5-6 prints them; "none": no depth factors.
 DEPTH_FACTOR_METHODS = ("hansen", "gec6", "linear", "none")
 
+
+def default_depth_factor_method(method: str) -> str:
+    """The depth factors a factor method takes when none is named: with
+    Meyerhof's factors his own, "linear" (UFC 3-220-20 Table 5-6, p. 294:
+    k = Df/B at any depth); otherwise "hansen" (Brinch Hansen's k, whose
+    arctangent form the manual prints for his method only, Table 5-8 note
+    B, p. 295). GM-310, the call for OWN-131 of 2026-11-12; "hansen" for
+    every method before it."""
+    return "linear" if str(method).lower() == "meyerhof" else "hansen"
+
 #: Where each depth-factor method is printed.
 #: Brinch Hansen's depth parameter k as UFC 3-220-20 prints it.
 DEPTH_K_BASIS = ("Brinch Hansen (1970): k = Df/B for Df/B < 1, k = "
@@ -256,7 +266,11 @@ DEPTH_FACTOR_BASIS = {
                "d_q = d_gamma = 1 + 0.1 k sqrt(K_P) for phi' > 10 deg, 1 at "
                "phi = 0 (the table prints nothing for 0 < phi' <= 10 deg; "
                "d_q = d_gamma = 1 there); K_P = tan^2(pi/4 + phi'/2). "
-               "Larger than the 'hansen' factors beyond Df/B = 1"),
+               "Larger than the 'hansen' factors beyond Df/B = 1, and "
+               "growing in proportion to Df/B with no limit; the default "
+               "with factor_method 'meyerhof' (the arctangent form is "
+               "printed only for Brinch Hansen's method, Table 5-8 note B, "
+               "p. 295)"),
     "none": ("no depth factors: GEC-6 Sec. 5.2.3.3 (p. 57) omits them "
              "unless the cover over the footing is high-quality compacted "
              "granular material sure to stay in place, and Table 5-4's "
@@ -271,9 +285,11 @@ def depth_parameter_k(Df: float, B: float, method: str = "vesic") -> float:
     For the Vesic factors k = Df/B for Df/B < 1 and arctan(Df/B) for
     Df/B >= 1, as UFC 3-220-20 Tables 5-7 and 5-8 note B (pp. 295-296)
     print it; GEC-6 Table 5-4 (p. 57) prints d_q at Df/B = 1 from the
-    arctan too (1.20 at 32 deg, not the 1.30 of k = 1). Meyerhof's factors
-    take k = Df/B as UFC 3-220-20 Table 5-6 (p. 294) prints it up to
-    Df/B = 1 and Hansen's arctan beyond it.
+    arctan too (1.20 at 32 deg, not the 1.30 of k = 1). With ``method``
+    "meyerhof" this is the "hansen" option of Meyerhof's factors: k = Df/B
+    as UFC 3-220-20 Table 5-6 (p. 294) prints it up to Df/B = 1 and
+    Hansen's arctan beyond it (Meyerhof's default is k = Df/B at every
+    depth, depth_method "linear", GM-310).
     """
     if B <= 0:
         raise ValueError(f"Footing width B must be positive, got {B}")
@@ -298,7 +314,7 @@ def ufc_table_5_8_printed_dc(phi_deg: float, Df: float, B: float) -> float:
 
 def depth_factors(phi_deg: float, Df: float, B: float,
                   method: str = "vesic",
-                  depth_method: str = "hansen") -> Tuple[float, float, float]:
+                  depth_method: str = None) -> Tuple[float, float, float]:
     """Depth correction factors for embedded footings.
 
     Parameters
@@ -313,9 +329,11 @@ def depth_factors(phi_deg: float, Df: float, B: float,
         "vesic" (default) or "meyerhof".
     depth_method : str, optional
         One of :data:`DEPTH_FACTOR_METHODS` (basis in
-        :data:`DEPTH_FACTOR_BASIS`): "hansen" (default), "gec6" (with
+        :data:`DEPTH_FACTOR_BASIS`): "hansen", "gec6" (with
         ``method="vesic"`` only), "linear" (with ``method="meyerhof"``
-        only: k = Df/B at every depth) or "none".
+        only: k = Df/B at every depth) or "none". Default None:
+        :func:`default_depth_factor_method`, "linear" with Meyerhof's
+        factors and "hansen" otherwise (GM-310).
 
     Returns
     -------
@@ -346,9 +364,9 @@ def depth_factors(phi_deg: float, Df: float, B: float,
         dc = 1 + 0.2*sqrt(Kp) * k
         dq = dg = 1 + 0.1*sqrt(Kp) * k   for phi > 10
         dq = dg = 1.0                     for phi <= 10
-    With depth_method="hansen" k is Df/B up to 1 and arctan(Df/B) beyond;
-    with depth_method="linear" k = Df/B at every depth, as Table 5-6
-    prints it (GM-309).
+    With depth_method="linear" (the default for Meyerhof, GM-310) k =
+    Df/B at every depth, as Table 5-6 prints it (GM-309); with
+    depth_method="hansen" k is Df/B up to 1 and arctan(Df/B) beyond.
     """
     if B <= 0:
         raise ValueError(f"Footing width B must be positive, got {B}")
@@ -357,6 +375,8 @@ def depth_factors(phi_deg: float, Df: float, B: float,
     method = method.lower()
     if method not in ("vesic", "meyerhof"):
         raise ValueError(f"Unknown depth factor method '{method}'. Options: 'vesic', 'meyerhof'")
+    if depth_method is None:
+        depth_method = default_depth_factor_method(method)
     depth_method = str(depth_method).strip().lower()
     if depth_method not in DEPTH_FACTOR_METHODS:
         raise ValueError(

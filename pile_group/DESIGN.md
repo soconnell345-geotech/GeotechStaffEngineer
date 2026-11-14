@@ -27,6 +27,12 @@ assumption. Includes group efficiency and p-multiplier corrections.
   3-220-20 Eqs. 6-40 to 6-43 and Table 6-28. Vol. III Block 13 (North and
   South Abutments) reproduced (`module_work/gm289/CHECK.md`). Removed in
   GM-286: Converse-Labarre, printed in no held document.
+- The small group in uplift (GM-310, the call for OWN-118 of 2026-11-12):
+  the 20 % cut starts below 5 piles for every pile type (UFC 3-220-20 Table
+  6-28 note A, AASHTO 2020). GEC-12 p. 225 (AASHTO 2014) reads it as fewer
+  than 3 for driven piles, the driven default before GM-310; the two differ
+  only for 3 or 4 driven piles (phi_ug 0.40 against 0.50), where the
+  result's choices give GEC-12's value and the block at it.
 
 ## Files
 - `pile_layout.py` — GroupPile dataclass, create_rectangular_layout() generator

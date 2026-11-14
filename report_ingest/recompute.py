@@ -970,8 +970,11 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float,
                         {**params, "factor_method": other})
             alternatives.append({"option": f"factor_method '{other}'",
                                  "method": other, "result": alt})
-    # the module's default depth factors are Hansen's; a printout that names
-    # none may have used none (GEC-6 Sec. 5.2.3.3), so both run
+    # the default depth factors are the result's (GM-310: Meyerhof's own
+    # Table 5-6 with his factors, Brinch Hansen's otherwise); a printout
+    # that names none may have used none (GEC-6 Sec. 5.2.3.3), so both run
+    depth_used = (result.get("defaults_used") or {}).get(
+        "depth_factor_method", "hansen")
     labels = [_lab(n.name) for n in list(calc.inputs) + list(calc.results)]
     depth_alt = (params.get("depth", 0) > 0 and used in ("vesic", "meyerhof")
                  and not any(_DEPTH_FACTOR_LABEL.search(lab)
@@ -985,28 +988,33 @@ def _recompute_bearing(calc: Calculation, index: int, tolerance: float,
                       "'none'",
             "method": used, "depth_factor_method": "none",
             "why": ("no depth factor is printed: the module's default "
-                    "(depth_factor_method 'hansen') and none both run"),
+                    f"(depth_factor_method '{depth_used}') and none both "
+                    "run"),
             "basis": _basis(alt, "depth factors"), "result": alt})
-    # GM-309: beyond Df/B = 1 Meyerhof's own k = Df/B (UFC 3-220-20
-    # Table 5-6) runs beside the default's arctan(Df/B)
-    linear_alt = (used == "meyerhof"
-                  and params.get("depth", 0) > params.get("width", 0) > 0)
-    if linear_alt:
+    # GM-309, GM-310: beyond Df/B = 1 Meyerhof's own k = Df/B and Brinch
+    # Hansen's arctan(Df/B) part; the one not the default runs beside it
+    forms = {"linear": "Meyerhof's own k = Df/B (UFC 3-220-20 Table 5-6)",
+             "hansen": "Brinch Hansen's arctan(Df/B) (UFC 3-220-20 Table "
+                       "5-8 note B)"}
+    other_depth = {"linear": "hansen", "hansen": "linear"}.get(depth_used)
+    deep_alt = (used == "meyerhof" and other_depth is not None
+                and params.get("depth", 0) > params.get("width", 0) > 0)
+    if deep_alt:
         alt = _call("bearing_capacity", "bearing_capacity_analysis",
                     {**run, "factor_method": "meyerhof",
-                     "depth_factor_method": "linear"})
+                     "depth_factor_method": other_depth})
         alternatives.append({
             "option": "factor_method 'meyerhof' with depth_factor_method "
-                      "'linear'",
-            "method": "meyerhof", "depth_factor_method": "linear",
-            "why": ("beyond Df/B = 1 Meyerhof's own k = Df/B (UFC 3-220-20 "
-                    "Table 5-6) runs beside the default's arctan(Df/B)"),
+                      f"'{other_depth}'",
+            "method": "meyerhof", "depth_factor_method": other_depth,
+            "why": (f"beyond Df/B = 1 {forms[other_depth]} runs beside "
+                    f"the default's {forms[depth_used]}"),
             "basis": _basis(alt, "depth factors"), "result": alt})
     default = (f"factor_method '{used}'"
                + (", ngamma_method 'hansen'"
                   if params.get("ngamma_method") else "")
-               + (", depth_factor_method 'hansen'"
-                  if depth_alt or linear_alt else ""))
+               + (f", depth_factor_method '{depth_used}'"
+                  if depth_alt or deep_alt else ""))
     rows = []
     for key, nq in claims:
         row = _base_row(calc, index)

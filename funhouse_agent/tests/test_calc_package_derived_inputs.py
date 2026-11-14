@@ -188,7 +188,7 @@ def test_aggregate_pier_inputs_given_by_older_names_are_printed(built):
     from ground_improvement.calc_steps import get_input_summary
     module, r, analysis = built("ground_improvement_package", {
         "method": "aggregate_piers", "diameter": 0.8, "spacing": 2.0,
-        "E_soil": 4000.0})
+        "E_soil": 4000.0, "column_type": "stone_column"})
     assert module == "ground_improvement"
     items = {i.name: i.value for i in get_input_summary(r, analysis)}
     assert items["d_c"] == 0.8 and items["E_s"] == 4000.0
@@ -240,7 +240,8 @@ def test_aggregate_pier_column_modulus_default_is_stated(built):
     # default in the choices rather than printing it as an input
     from ground_improvement.calc_steps import get_input_summary
     _, r, analysis = built("ground_improvement_package", {
-        "method": "aggregate_piers", "column_diameter": 0.8, "spacing": 2.0})
+        "method": "aggregate_piers", "column_diameter": 0.8, "spacing": 2.0,
+        "column_type": "rammed_aggregate_pier"})
     items = {i.name: i.value for i in get_input_summary(r, analysis)}
     assert "E_c" not in items and items["E_s"] == 5000.0
     by = {c["what"]: c for c in r.choices}

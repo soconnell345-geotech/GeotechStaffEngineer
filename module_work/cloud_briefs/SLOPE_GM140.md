@@ -348,6 +348,8 @@ Branch `claude/gm-140-step10-reporting`. Requires on master: step 1. Runs in par
 7. **A circle scored on its own in cohesionless soil** (the audit's row 9): the result of `analyze_slope` says that a single circle through soil with c' = 0 at the face overestimates against the infinite-slope mechanism, which the search scores with planes. A statement only.
 8. **The method each family was scored with**, in the report: this part waits for step 6. If step 6's CHECK file is not on master when you start, leave the table out and say so.
 
+**See also GM-346** (filed 2026-11-13 by the GSE session): `slope_stability_package` takes no tension crack, so no calc package can be made for a slope with one (worked example WE-SLOPE-1 as now printed).
+
 **Out of scope.** Calc packages for rapid drawdown, the yield acceleration, FOSM and Monte Carlo (the audit's row 1): say what each would need; build none. DXF export of the slip surface. Any change to a computed value: if a value moves, something is wrong; stop and say so.
 
 **Benchmarks.** All of section 11, to show no value moves.
