@@ -204,6 +204,9 @@ This repository builds three packages; the app also needs two more of the same p
   Standing tests since 2026-11-14 (INF-77): every promised returns key and
   every parameter a probe gives is checked on each run; `test_told_is_real.py`
   checks packages, brief counts, DESIGN.md names and swallowed exceptions.
+  Figure test set since 2026-11-14 (GM-314): `funhouse_agent/figure_eval/`,
+  plot code OFF against ON, offline-tested; its paid run on Foundry is
+  GM-352 (`module_work/gm314/FOUNDRY_SECTION_FIGURE_SET.md`).
   Defaults since 2026-11-13 (the owner's calls, OWN-143): a drilled shaft's
   rock base with no RQD is refused, MSE backfill with Cu below 4 needs
   `F_star_tested`, log-spiral wall friction only for a layer marked clean,
