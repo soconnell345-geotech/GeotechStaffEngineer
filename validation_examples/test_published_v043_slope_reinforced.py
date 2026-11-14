@@ -190,10 +190,20 @@ def test_v043_sand_noncircular_reaches_the_published():
 
 def test_v043_sand_reinforcement_force_brackets_published():
     """CONVENTION: the geosynthetic force to raise the pinned sand circle to
-    FS=1.35 is 41 kN/m, 7% below the published circular 44-45 kN/m
+    FS=1.35 is 45 kN/m, against the published circular 44-45 kN/m
     (critical-surface sensitive; on the critical circle, GM-138, 57 kN/m,
     matching the published noncircular 56; see module note). ~55 kN/m
-    before GM-134."""
+    before GM-134, 41 kN/m until GM-343.
+
+    The layer (z = 3) crosses this circle at x 8.388, which is also a slice
+    boundary (the same level is a layer top), and the circle leaves the
+    ground at x = 22 on that level. Which of the two slices at the
+    boundary takes the force is decided in the ninth figure: on the code
+    before GM-343 the same circle with its radius 1e-8 m larger also read
+    45 kN/m (Spencer 1.335 for 1.350 at T = 40.9). GM-343 finds the
+    circle's ends from the ground's segments (x = 22 exactly, where
+    bisection gave 22.0000003), which lands on the other side. Not a rule
+    of that step; the tie itself is for step 8 (supports)."""
     xc, yc, r = _SAND_CIRC
     slip = CircularSlipSurface(xc=xc, yc=yc, radius=r)
     lo, hi = 0.0, 300.0
@@ -206,7 +216,9 @@ def test_v043_sand_reinforcement_force_brackets_published():
         else:
             hi = mid
     T = 0.5 * (lo + hi)
-    assert T == pytest.approx(40.9, abs=1.0)            # ours (pinned)
+    # GM-343: 40.9 -> 45.2; printed 44-45 (Tandjiria et al. 2002 and
+    # Slide2's verification, the module note above): +0.5 % to +2.8 %
+    assert T == pytest.approx(45.2, abs=1.0)            # ours (pinned)
     assert T == pytest.approx(44.0, rel=0.1)    # within 10% of published 44
     # the solved force does raise this surface to the target
     fs_at_T = analyze_slope(_geom("sand", T=T), slip_surface=slip,
