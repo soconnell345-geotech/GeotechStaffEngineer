@@ -4536,6 +4536,44 @@
           }
         ],
         "multi": true
+      },
+      {
+        "label": "39. Supports as printed (GM-140 step 8, built 2026-11-14), seven calls: (1) GEC 7 Eqs. 5.6 to 5.9 (pp. 118 to 120) are not taken as an Ordinary Method of Slices with known forces (one planar wedge's force balance; the method on a circle is a moment equation), so the OMS is refused where a support crosses the surface, its reason citing them and Duncan, Wright and Brandon (2014) p. 93 (no such equation is given); (2) an OMS search is refused when a support crosses any trial surface (a search whose surfaces no support crosses runs as before); (3) a layer with no pullout input carries its full T_allow, and the result's warnings say the pullout was not checked and what to give; (4) a geosynthetic's force acts along the reinforcement's own orientation by default (Duncan, Wright and Brandon Sec. 8.6), along the slip surface as the option (GEC 11 p. 9-7: continuous sheets act tangentially); (5) a nail's force at the slip surface is R_F plus the pullout of the length in front of it, a reading of GEC 7 Fig. 5.7 (p. 106; the library holds its caption) beside Eq. 5.2 (p. 105); (6) under `pullout_basis='gec11'` the pullout is divided by Eq. 9-9's FS under Method B as under Method A; (7) Method A's basis states GEC 11 Eq. 9-17 (p. 9-24): in that form Tal \"must be divided by a required minimum factor of safety FSR = 1.3\"; the allowable force is the engineer's input and nothing divides it.",
+        "options": [
+          {
+            "label": "Let all seven stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) GEC 7's wedge as the OMS with supports",
+            "effect": "The support's normal component in N and its parallel component off the driving force, as the module's old polyline form did; V-040 gets an OMS number again (1.1946 / 1.1758 before the step)."
+          },
+          {
+            "label": "(2) An OMS search over the surfaces no support crosses",
+            "effect": "Reported with that said in the headline (a made-up case: 1.741, with 481 crossed surfaces left out, not the slope's minimum)."
+          },
+          {
+            "label": "(3) Refuse a layer with no pullout input",
+            "effect": "A geosynthetic with no pullout inputs is refused instead of carrying its full T_allow."
+          },
+          {
+            "label": "(4) Tangential by default",
+            "effect": "A geosynthetic acts along the slip surface unless asked otherwise, as GEC 11 takes sheets."
+          },
+          {
+            "label": "(5) The literal min(R_T, R_F, R_PO)",
+            "effect": "A nail's force at the slip surface is the least of the three, with no front term added."
+          },
+          {
+            "label": "(6) GEC 11's pullout not divided under Method B",
+            "effect": "As the step first had it: a made-up layer carries 33.17 kN/m where it now carries 22.11."
+          },
+          {
+            "label": "(7) Divide an active support's force by at least 1.3",
+            "effect": "Under Method A the module divides (or asks for a factor), not only states GEC 11 p. 9-24."
+          }
+        ],
+        "multi": true
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
