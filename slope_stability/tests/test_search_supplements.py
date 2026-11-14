@@ -219,17 +219,28 @@ def test_search_finds_infinite_slope_86():
     shallow slide at tan(phi')/tan(beta) = 0.942. The circle search's own
     minimum was ~1.57 with windows from the model width; with windows from
     the slope (GM-57: a circle across the face's mid-length) it reaches a
-    tiny shallow circle at the closed form itself, 0.9420, against 0.9430
-    for the planar surfaces (Janbu's f0 and the end ramps, +0.11 %; 0.9443
-    at a tenth of a slice width deep, before GM-131). It governs, and the
-    result says it is the infinite-slope mechanism (and gives no window-edge
-    warning: shallower slides only tend to the same value)."""
+    tiny shallow circle at the closed form itself, 0.9420, against 0.9442
+    for the planar surfaces (Spencer's method, which scores a plane where
+    Bishop's is named, and the end ramps, +0.24 %; GM-140 step 6: 0.9430
+    by Janbu's simplified method before, whatever method was named). It
+    governs, and the result says it is the infinite-slope mechanism (and
+    gives no window-edge warning: shallower slides only tend to the same
+    value)."""
     res = search_critical_surface(_fill_geom(), method="bishop")
     c = res.critical
     assert c.FOS == pytest.approx(_TAN_RATIO_86, abs=0.002)
     assert res.governing_surface in (INFINITE_SLOPE, CIRCULAR)
     assert res.candidates[CIRCULAR] == pytest.approx(_TAN_RATIO_86, abs=0.002)
-    assert res.candidates[INFINITE_SLOPE] == pytest.approx(0.9430, abs=0.001)
+    # GM-140 step 6: 0.9430 -> 0.9442; printed tan 37 deg / tan 38.66 deg
+    # = 0.9419 (the closed form; +0.24 % by Spencer's method, +0.11 % by
+    # Janbu's simplified method before, which the method named did not ask
+    # for)
+    assert res.candidates[INFINITE_SLOPE] == pytest.approx(0.9442, abs=0.001)
+    assert res.candidates[INFINITE_SLOPE] == pytest.approx(_TAN_RATIO_86,
+                                                           rel=0.003)
+    (planar,) = [r for r in res.candidate_methods
+                 if r["family"] == INFINITE_SLOPE]
+    assert planar["method"] == "spencer" and not planar["named"]
     assert any("infinite slope" in w for w in res.warnings)
     assert not any("edge of the automatic" in w for w in res.warnings)
     chk = res.infinite_slope_checks
@@ -244,18 +255,32 @@ def test_search_finds_infinite_slope_86():
         res.candidates[INFINITE_SLOPE], abs=1e-3)
 
 
-def test_planar_family_alone_on_86_is_janbu():
+def test_planar_family_alone_on_86_is_reported_under_its_method():
     """With the circles kept off the face (windows that make a circle
-    span it), the planar family governs on its own, scored by force
-    equilibrium as the closed form is."""
+    span it), the planar family governs on its own. GM-140 step 6: it is
+    scored by Spencer's method, Bishop's being for circles, and reported
+    under it, with Bishop's own lowest value beside it (before: by
+    Janbu's simplified method whatever method was named)."""
     res = search_critical_surface(_fill_geom(), method="bishop",
                                   x_entry_range=(0.0, 5.0),
                                   x_exit_range=(30.0, 75.0))
     c = res.critical
     assert res.governing_surface == INFINITE_SLOPE
     assert not c.is_circular and len(c.slip_points) == 4
-    assert c.method == "Janbu"
+    assert c.method == "Spencer"
+    assert res.method_used == "spencer"
+    assert res.named_method_lowest["method"] == "bishop"
+    assert res.named_method_lowest["FOS"] == pytest.approx(
+        min(res.candidates[k] for k in (CIRCULAR, TOE_CIRCLE,
+                                        "circle_above_toe")))
     assert c.FOS == pytest.approx(_TAN_RATIO_86, abs=0.01)
+    # Janbu's simplified method named scores the planes itself
+    janbu = search_critical_surface(_fill_geom(), method="janbu",
+                                    x_entry_range=(0.0, 5.0),
+                                    x_exit_range=(30.0, 75.0))
+    assert janbu.critical.method == "Janbu" and janbu.method_used == ""
+    assert janbu.candidates[INFINITE_SLOPE] == pytest.approx(0.9430,
+                                                             abs=0.001)
     assert res.to_dict()["critical"]["surface_type"] == "noncircular"
 
 

@@ -321,9 +321,10 @@ def test_unknown_interslice_function_is_refused_whatever_the_method():
     accepted, and not used, unless the method was Morgenstern-Price or the
     GLE (or a comparison was asked for). It is refused with the list of
     names whatever the method, on one surface and by the solver. The
-    searches, the yield acceleration, FOSM and Monte Carlo take no
-    f_interslice (their Morgenstern-Price and GLE solves use the half-sine
-    function), so none of them can accept an unknown one."""
+    yield acceleration, FOSM and Monte Carlo take no f_interslice (their
+    Morgenstern-Price and GLE solves use the half-sine function), so none
+    of them can accept an unknown one. A search takes it since GM-140
+    step 6, and refuses an unknown one with the same list."""
     g = _fill_slope()
     slip = CircularSlipSurface(**_FILL_CIRCLE)
     slices = build_slices(g, slip, 30)
@@ -332,6 +333,8 @@ def test_unknown_interslice_function_is_refused_whatever_the_method():
     calls += [lambda m=m: solve_method(slices, slip, m,
                                        f_interslice="sine")
               for m in METHODS]
+    calls += [lambda m=m: search_critical_surface(
+        g, method=m, f_interslice="sine", nx=3, ny=3) for m in METHODS]
     for call in calls:
         with pytest.raises(ValueError) as exc:
             call()
@@ -341,8 +344,6 @@ def test_unknown_interslice_function_is_refused_whatever_the_method():
             assert name in str(exc.value)
     variables = {"c_prime": {"mean": 12.0, "std": 2.0}}
     for call in (
-            lambda: search_critical_surface(g, f_interslice="sine", nx=3,
-                                            ny=3),
             lambda: yield_acceleration(g, f_interslice="sine",
                                        **_FILL_CIRCLE),
             lambda: fosm_fos(g, variables, f_interslice="sine",

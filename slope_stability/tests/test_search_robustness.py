@@ -508,7 +508,7 @@ def _acads1a():
                                     phi=19.6, c_prime=3.0)])
 
 
-@pytest.mark.parametrize("method", ["janbu", "fellenius"])
+@pytest.mark.parametrize("method", ["janbu"])
 def test_jagged_screen_stays_for_methods_without_c10a_checks(method,
                                                              monkeypatch):
     """The step 3 review's defect 1. On ACADS 1(a), a 200-trial random
@@ -516,7 +516,11 @@ def test_jagged_screen_stays_for_methods_without_c10a_checks(method,
     admitted 29 and 42 jagged surfaces below F 1.5 once the screen was
     gone, none of them flagged: neither method has a check of EM
     1110-2-1902 C-10a. With the screen kept for them no scored surface is
-    jagged below 1.5, and every refusal is counted under the screen."""
+    jagged below 1.5, and every refusal is counted under the screen.
+    (GM-140 step 6: the Ordinary Method of Slices no longer scores a
+    polyline in a search, EM 1110-2-1902 C-2b, p. C-16; Spencer's method
+    scores it, with its own C-10a checks, so the case is Janbu's alone.
+    `test_one_method.py` has the Ordinary Method of Slices' case.)"""
     from slope_stability import search as search_mod
     scored = []
     real = search_mod._compute_fos

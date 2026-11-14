@@ -712,9 +712,9 @@ def test_a_crossing_below_0_is_named_where_one_surface_is_analysed():
 def test_a_search_makes_no_scan_below_0(monkeypatch):
     """Fix round 2 (F2): never inside a search's trials (run time).
     ACADS 1(a)'s 200-trial random Spencer search leaves trials without a
-    solution; the scan below 0 is made on none of them, and the search's
-    value stands (1.0916). Trial 167 analysed alone (no number) is
-    scanned once."""
+    solution; the scan below 0 is made on none of them, and the lowest of
+    its own polylines stands (1.0916). Trial 167 analysed alone (no
+    number) is scanned once."""
     calls = []
     real = gle._GLESystem.crossing_below
 
@@ -727,10 +727,18 @@ def test_a_search_makes_no_scan_below_0(monkeypatch):
         _acads1a(), x_entry_range=(20.0, 32.0), x_exit_range=(46.0, 68.0),
         surface_type="noncircular", n_trials=200, n_points=6, n_slices=25,
         seed=42, method="spencer")
-    # The minimum of a 200-trial random polyline sample: a pin on the search's repeatability,
-    # not a benchmark value. ACADS 1(a)'s benchmark is the circle: Spencer 0.9838 against the
-    # printed 1.00 (Bishop 0.9849).
-    assert r.critical.FOS == pytest.approx(1.0916, abs=5e-4)
+    # GM-140 step 6: 1.0916 -> 0.9844; printed 1.00 (ACADS 1(a), Giam and Donald 1989; -1.6 %).
+    # The search no longer reports the minimum of its 200 random polylines (1.0916, a pin on
+    # the sample's repeatability, kept below) above the critical circle's value by the same
+    # method: the circular search runs first (Spencer 0.9838 on the circle) and that circle,
+    # as the polyline of its 25 slice bases, is one of the trials. 0.9844 is the circle's
+    # value plus the difference of discretisation (+0.06 %).
+    assert r.critical.FOS == pytest.approx(0.9844, abs=5e-4)
+    assert r.critical.FOS <= 0.9838 * 1.002
+    assert r.circle_check["circle"]["FOS"] == pytest.approx(0.9838, abs=5e-4)
+    assert r.circle_check["noncircular_minimum"] == pytest.approx(
+        1.0916, abs=5e-4)
+    assert r.circle_check["governs"] is True
     assert r.no_solution[0]["not_converged"] > 0
     assert calls == []
     one = analyze_slope(_acads1a(), method="spencer", n_slices=25,
