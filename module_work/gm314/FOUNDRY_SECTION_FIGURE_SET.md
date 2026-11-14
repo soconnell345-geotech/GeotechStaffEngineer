@@ -102,11 +102,22 @@ That is 22 requests x 2 arms = 44 agent runs, one after another. Each is a
 fresh conversation on the GeotechStaffEngineer page through the review
 suite's own runner (`run_task`, page `geotech`). Then come 44 vision checks,
 one per run, with all of that run's figures in one call (at most the four
-newest). A run that fails or draws nothing is marked `no` on every item ("no
-figure appeared") and is not sent to the vision model. The runs resume: a
-finished run is never asked again, and a failed one is asked again on the
-next call. `RESULTS.md`, `results.json` and `side_by_side.html` are
-rewritten after every run.
+newest). A run that finishes and draws nothing is marked `no` on every item
+("no figure appeared") and is not sent to the vision model. A run that
+fails (an error, a rate limit such as 429, a timeout, a crash) is "run
+failed": it is kept out of better, same and worse and named in the
+headline of `RESULTS.md`. So is a request where neither arm drew a figure,
+and a vision reply that cannot be read even when asked a second time
+("not scored"). The runs resume: a finished run is never asked again, and
+a failed one is asked again on the next call. `RESULTS.md`, `results.json`
+and `side_by_side.html` are rewritten after every run.
+
+**Failed runs: retry once.** When the first call ends, read the headline
+of `RESULTS.md`. If its row "run failed, not compared" names any request,
+wait about ten minutes and run the same cell once more, with the same
+`DATA` and `OUT`: only the failed runs are asked again. Report each run
+that still fails in the hand-back (the request, the arm and the error in
+its `run.json`).
 
 **numpy 1.26.4.** That host's numpy predates `np.trapezoid`. Master takes it
 from `geotech_common.numpy_compat`, so these requests should run. Three
@@ -143,7 +154,9 @@ The **whole output folder** `{OUT}`:
 - `RESULTS.md` and `results.json`. They hold the comparison request by
   request and item by item, as counts of better, same and worse for each
   item and overall, with the requests named. "No difference" is shown as
-  plainly as a gain or a loss. They also hold the tokens and time per arm,
+  plainly as a gain or a loss. Runs that failed, vision replies that could
+  not be read and requests neither arm drew are counted apart, by request.
+  They also hold the tokens and time per arm,
   and whether each ON run called `plot_code` at all;
 - `side_by_side.html`: each request's two figures, OFF left and ON right,
   the vision marks under each, and a box for the owner's own mark;
@@ -163,6 +176,9 @@ FDE's notes on anything that had to change in the environment.
 One run per request and arm is a measurement, not a verdict. A request is
 "better" when ON passes more items than it fails against OFF, "worse" when
 fewer, and "same" otherwise. An item one arm marks not applicable is
-counted apart, never as a gain or a loss. A "same" where ON never called
+counted apart, never as a gain or a loss, and so is an item the vision
+model left unmarked. A request with a failed run, an unreadable vision
+reply or no figure from either arm is not compared at all. A "same" where
+ON never called
 `plot_code` says ON was not used, not that it gained nothing. The owner's
 own marks on the side-by-side page come before the vision model's.
