@@ -695,11 +695,20 @@ def fixed_inclination_solution(slices, slip, theta_deg: float = 0.0,
     n = len(ns)
     try:
         if equilibrium == "force":
-            st = sys_._solve_marched(lam, 1.3)
+            # The branch on which every slice lies above its pole, asked
+            # for by name: the setting of every solve of the GLE engine
+            # (GM-344, `gle._GLESystem._state`). The rule for a base in
+            # tension is the one in force (`gle.base_tension`), as for
+            # every other solve: `analysis.rapid_drawdown_fos` takes
+            # ``base_in_tension``.
+            st = sys_._solve_marched(lam, 1.3, above_poles=True)
             if st is None:
                 return StageSolution(
                     reason=f"{name} has no solution with F > 0", method=name)
             F, V, N = st[1], st[3], list(st[4])
+            # tan(phi') as the march used it on each slice (zero on a
+            # slice taken frictionless under base_in_tension='no_friction')
+            tps = list(sys_._march(lam, F)[3])
         else:
             st = sys_.solve_for_lambda(0.0, max_iter=400)
             if st is None:
@@ -711,7 +720,9 @@ def fixed_inclination_solution(slices, slip, theta_deg: float = 0.0,
             if den_m <= 1e-9 or abs(res_m / den_m - F) > 1e-3:
                 return StageSolution(
                     reason=f"{name} did not converge", method=name)
-            N = [sys_._normal(s, F, 0.0) for s in ns]
+            normals = [sys_._normal_eff(s, F, 0.0) for s in ns]
+            N = [nt[0] for nt in normals]
+            tps = [nt[1] for nt in normals]
     except (ValueError, ZeroDivisionError, OverflowError) as exc:
         return StageSolution(reason=f"{name} stopped with an error ({exc})",
                              method=name)
@@ -719,7 +730,10 @@ def fixed_inclination_solution(slices, slip, theta_deg: float = 0.0,
         return StageSolution(reason=f"{name} has no usable factor of safety",
                              method=name)
     N_eff = [N[i] - s.u * s.length for i, s in enumerate(ns)]
-    S = [(s.c * s.length + max(N_eff[i], 0.0) * s.tan_phi) / F
+    # the mobilized shear of the equations solved: tan(phi') as each
+    # slice's own solve took it, N' as solved (before, max(N', 0), which
+    # no longer matched the equations, GM-344)
+    S = [(s.c * s.length + N_eff[i] * tps[i]) / F
          for i, s in enumerate(ns)]
     if mirrored:
         N, N_eff, S = N[::-1], N_eff[::-1], S[::-1]

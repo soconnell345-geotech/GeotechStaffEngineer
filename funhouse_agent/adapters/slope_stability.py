@@ -554,7 +554,7 @@ def _run_rapid_drawdown(params: dict) -> dict:
         _GEOM_PARAMS + _SURFACE_PARAMS + (
             "drawdown_from_elevation", "drawdown_to_elevation", "method",
             "f_interslice", "n_slices", "tol", "stage1_phreatic_points",
-            "drawdown_phreatic_points"),
+            "drawdown_phreatic_points", "base_in_tension"),
         method="rapid_drawdown_fos")
     geom = _build_geometry(params, method="rapid_drawdown_fos")
     require_params(params, ["drawdown_from_elevation", "drawdown_to_elevation"],
@@ -571,6 +571,10 @@ def _run_rapid_drawdown(params: dict) -> dict:
         n_slices=params.get("n_slices", 50), tol=params.get("tol", 1e-4),
         stage1_phreatic_points=params.get("stage1_phreatic_points"),
         drawdown_phreatic_points=params.get("drawdown_phreatic_points"),
+        base_in_tension=_check_choice(
+            params.get("base_in_tension", "as_printed"),
+            BASE_TENSION_RULES, name="base_in_tension",
+            method="rapid_drawdown_fos"),
     )
     return result.to_dict()
 
@@ -818,6 +822,7 @@ METHOD_INFO = {
             "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices."},
             "stage1_phreatic_points": {"type": "array", "required": False, "description": "The seepage (phreatic) line BEFORE drawdown, [[x,z],...], for the first stage's pore pressures (EM 1110-2-1902 Table 2-1: steady seepage). Omitted: a level pool at drawdown_from_elevation with hydrostatic pressures below it, the assumption of the manual's own example (G-4b, p. G-9), which the result names as assumed. The line should start at the pool level on the upstream face so the pool still loads the face."},
             "drawdown_phreatic_points": {"type": "array", "required": False, "description": "The piezometric line AFTER drawdown, [[x,z],...]: the pore pressures on free-draining slices in the second stage, in the drained check (Eq. G-14) and on the drained slices of the third stage. Omitted: a level pool at drawdown_to_elevation, as in the manual's example, which the result names as assumed."},
+            "base_in_tension": {"type": "str", "required": False, "default": "as_printed", "allowed_values": list(BASE_TENSION_RULES), "description": "As in analyze_slope (describe_method analyze_slope gives the full text): a slice base in tension in every stage's solve, 'as_printed' (default) or 'no_friction' (the module's own device)."},
         },
         "returns": {"arc": "Present when the circle meets the ground at more than two points, or its arc's ends were given: which arc of the circle this result is ({x_start, x_end, index, n_arcs, arcs, description}) and, where the arcs were each analysed, governs, others (each other arc with its value, or not_scored and the reason) and not_scored (the count by reason: no_driving, not_converged, refused). Tell the user which arc the result is.", "FOS": "Drawdown factor of safety: that of the last stage computed (answer_stage); null where a stage has no solution (no_solution says which and why).", "answer_stage": "2 or 3: the stage FOS is from.", "stage1_FOS": "First stage (before drawdown).", "stage2_FOS": "Second stage (after drawdown, undrained strengths).", "stage3_FOS": "Third stage; null when not computed (two-stage procedures, or no slice's drained strength lower).", "stage_method": "The method of slices that solved every stage.", "water_before": "The water before drawdown: the line given, or the level pool assumed.", "water_after": "The water after drawdown: the line given, or the level lowered pool assumed.", "n_undrained_slices": "Slices that do not drain freely.", "m_alpha_min_stage1": "Least m_alpha of the first stage at its own FOS (a warning says so below 0.2).", "m_alpha_min": "Least m_alpha of the last stage computed at its FOS.", "n_drained_substituted": "Slices on c', phi' and the after-drawdown pore pressure in the third stage.", "slices": "Per slice, low x to high x, the columns of EM Figs. G-10b and G-11b (kPa; N in kN/m): x_left, x_right, sigma_c, tau_c, Kc, Kf, tau_ff_Kc1, tau_ff_Kcf, tau_ff, N_stage2, u_after, sigma_d, s_d, strength_used; 'columns' explains each.", "choices": "The procedure, the method of slices, the strength rules and the water assumed, each with its printed basis.", "layer_overlaps": "Where a layer loses ground to one listed before it (present when any does): layer, held_by, x_from, x_to, max_overlap_m, statement."},
     },

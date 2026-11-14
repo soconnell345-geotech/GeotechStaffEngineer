@@ -333,9 +333,11 @@ def gle_failure_reason(res, err) -> str:
         return "no solution"
     for w in res.warnings:
         if w.startswith("no F_m = F_f crossing"):
-            # gle_fos adds, after a ';', where the branch of solutions it
-            # followed has no state and each lambda at which the two
-            # factors changed order by a jump (GM-344)
+            # gle_fos adds, after a ';', how the scan went (upward from
+            # lambda = 0 on the branch that starts there, to 1.5 or to
+            # where that branch ends), each lambda at which the two
+            # factors changed order by a jump, and EM C-10c where the
+            # starting state has tension on a slice with cohesion (GM-344)
             more = w.partition(";")[2].strip()
             return ("no lambda from 0 to 1.5 gives moment and force "
                     "factors of safety that agree"

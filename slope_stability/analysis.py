@@ -206,7 +206,10 @@ def analyze_slope(geom: SlopeGeometry,
     they find, and ``acceptability`` lists each finding with its check, its
     source, the slices or slice sides and the values; ``flags`` names the
     checks not met: m_alpha below 0.2 on a slice (Whitman and Bailey 1967,
-    p. 487; the warning names EM 1110-2-1902 C-10b's remedies, none is
+    p. 487; for Spencer, Morgenstern-Price and GLE the denominator of the
+    slice's own equations, cos(alpha - theta) + sin(alpha - theta)
+    tan(phi') / F with its side-force inclination theta, GM-344; the
+    warning names EM 1110-2-1902 C-10b's remedies, none is
     applied); a negative frictional term in Bishop's method or the
     Ordinary Method of Slices; and, for Spencer, Morgenstern-Price and GLE,
     a negative effective normal force on a slice base, a tensile
@@ -1307,6 +1310,7 @@ def _search_noncircular_kind(geom, surface_type, x_entry_range, x_exit_range,
     )
 
 
+@_applies_base_tension
 def rapid_drawdown_fos(geom: SlopeGeometry,
                        drawdown_from_elevation: float,
                        drawdown_to_elevation: float,
@@ -1319,6 +1323,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                        stage1_phreatic_points=None,
                        stage3_effective_normal=None,
                        drawdown_phreatic_points=None,
+                       base_in_tension: str = "as_printed",
                        **check_arguments):
     """Rapid drawdown on a specified slip surface, as EM 1110-2-1902
     Appendix G prints it: the improved three-stage procedure
@@ -1332,20 +1337,28 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     `c_prime` and `phi`; a layer with neither is free-draining. This is
     `slope_stability.rapid_drawdown.rapid_drawdown_fos`: its docstring has
     every parameter, and the module's docstring every equation with its
-    page.
+    page. ``base_in_tension`` (`gle.BASE_TENSION_RULES`) is the rule for a
+    slice base in tension in every stage's solve, as in `analyze_slope`
+    (GM-344); the result's ``choices`` name it.
 
     Returns
     -------
     RapidDrawdownResult
     """
     from slope_stability.rapid_drawdown import rapid_drawdown_fos as _rd
-    return _rd(geom, drawdown_from_elevation, drawdown_to_elevation,
-               xc=xc, yc=yc, radius=radius, slip_surface=slip_surface,
-               method=method, f_interslice=f_interslice, n_slices=n_slices,
-               tol=tol, stage1_phreatic_points=stage1_phreatic_points,
-               stage3_effective_normal=stage3_effective_normal,
-               drawdown_phreatic_points=drawdown_phreatic_points,
-               **check_arguments)
+    result = _rd(geom, drawdown_from_elevation, drawdown_to_elevation,
+                 xc=xc, yc=yc, radius=radius, slip_surface=slip_surface,
+                 method=method, f_interslice=f_interslice,
+                 n_slices=n_slices, tol=tol,
+                 stage1_phreatic_points=stage1_phreatic_points,
+                 stage3_effective_normal=stage3_effective_normal,
+                 drawdown_phreatic_points=drawdown_phreatic_points,
+                 **check_arguments)
+    if check_arguments.get("stage_solver") in (None, "gle", "spencer"):
+        result.choices += _base_tension_choices(
+            "spencer" if f_interslice == "constant" else "morgenstern_price",
+            base_in_tension)
+    return result
 
 
 # Re-export the rapid-drawdown critical-surface search (defined in

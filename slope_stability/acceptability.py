@@ -15,8 +15,19 @@ The checks, each with its printed source:
     any slice, the denominator becomes negative or small, "for example, if
     cos(theta) + tan(phi) sin(theta) / F < 0.2 ... the user must examine
     the result in detail". A warning and an instruction, not a rejection.
-    EM 1110-2-1902 C-10b (pp. C-34 to C-36) prints the remedies for the
-    steep exit that causes it (`C10B_REMEDIES`). Slices with phi' = 0 are
+    For Spencer, Morgenstern-Price and GLE the value read is the
+    denominator of the method's own slice equations at the reported
+    state, cos(alpha - theta_i) + sin(alpha - theta_i) tan(phi') / F with
+    the slice's side-force inclination theta_i
+    (`gle.GLEResult.slice_denominator`); for horizontal side forces it is
+    m_alpha, so Bishop's and Janbu's checks are unchanged. Whitman and
+    Bailey print the check for m_alpha; reading it with an inclined side
+    force is the lead's call (DESIGN.md, GM-344; the other form keeps the
+    check on horizontal side forces). EM 1110-2-1902 C-10b (p. C-34): where
+    the resultant on a base is nearly parallel to the side force, as on a
+    surface exiting too steeply, the forces become very large and the
+    factor of safety is not meaningful; pp. C-34 to C-36 print the
+    remedies (`C10B_REMEDIES`). Slices with phi' = 0 are
     not looked at by default: there m_alpha = cos(alpha) does not depend on
     F and the strength is c l whatever the normal force. That exemption is
     the module's own reasoning, with no printed source; "every_slice" is
@@ -104,11 +115,22 @@ C10B_REMEDIES = (
     "EM 1110-2-1902 C-10b (pp. C-34 to C-36) prints four remedies for a "
     "steep exit, in this order: (1) flatten the toe of the surface, to an "
     "exit at alpha = -(45 deg - phi'/2) for a horizontal ground surface "
-    "and interslice force (Eq. C-32), which needs a noncircular surface; "
-    "(2) change the side-force inclination; (3) use the Ordinary Method of "
-    "Slices; (4) give the exit zone a passive strength as cohesion with "
-    "phi = 0, the only one usable with Bishop's simplified method. None is "
-    "applied here: the surface is analysed as given")
+    "and interslice force (Eq. C-32; Eq. C-33 for an inclined interslice "
+    "force), which needs a noncircular surface (the EM: probably the best "
+    "approach); (2) change the side-force inclination (the EM names the "
+    "Modified Swedish Method and the Morgenstern and Price method; here "
+    "Morgenstern-Price with the half-sine side-force function is the "
+    "module's form of it); (3) use the Ordinary Method of Slices, which "
+    "neglects side forces (the EM: not accurate for effective stress "
+    "analyses where pore pressures are high); (4) give the exit zone a "
+    "passive strength as cohesion with phi = 0 (Eq. C-35), the only one "
+    "usable with Bishop's simplified method. None is applied here: the "
+    "surface is analysed as given")
+
+#: The method's name in a finding's text.
+_METHOD_NAME = {"spencer": "Spencer's method",
+                "morgenstern_price": "Morgenstern-Price",
+                "gle": "the GLE"}
 
 #: An interslice force below this fraction of the largest on the surface
 #: is taken as zero (the GLE engine's own threshold for the thrust line).
@@ -145,41 +167,84 @@ def _numbers(items: List[Dict[str, Any]], key: str = "slice") -> str:
 
 def low_m_alpha_finding(slices, slip, method: str, fos: Optional[float],
                         fos_janbu_uncorrected: Optional[float] = None,
-                        rule: str = "frictional"
+                        rule: str = "frictional", gle=None
                         ) -> Optional[Dict[str, Any]]:
     """The ``low_m_alpha`` finding of a surface solved by ``method`` at its
     own factor of safety (Janbu: the uncorrected F of its force
     equilibrium; Bishop: Bishop's own value, also where the Ordinary
     Method of Slices value was taken), or None. The Ordinary Method of
-    Slices has no m_alpha (its base normal force is W cos(alpha))."""
+    Slices has no m_alpha (its base normal force is W cos(alpha)).
+
+    Spencer, Morgenstern-Price and GLE, given their converged state
+    (``gle``, a `gle.GLEResult`): the denominator of the slice's own
+    equations in that state, cos(alpha - theta_i) + sin(alpha - theta_i)
+    tan(phi') / F with the slice's side-force inclination theta_i
+    (``gle.slice_denominator``), against the same 0.2; each slice located
+    also gives theta_i, the interslice normal force on that side and the
+    effective normal force on its base. For horizontal side forces this is
+    m_alpha. Without the state, m_alpha (horizontal side forces)."""
     if method == "fellenius" or fos is None or not (0.0 < fos < 900.0):
         return None
     which = ("gle" if method in _RIGOROUS
              else "janbu" if method == "janbu" else "bishop")
     f = (fos_janbu_uncorrected if method == "janbu"
          and fos_janbu_uncorrected else fos)
-    vals = m_alpha_values(slices, f, slip, which)
+    side = (method in _RIGOROUS and gle is not None
+            and len(getattr(gle, "slice_denominator", None) or [])
+            == len(slices))
+    vals = (list(gle.slice_denominator) if side
+            else m_alpha_values(slices, f, slip, which))
     sign = sliding_sign(slices, slip, which)
     low = []
     for i, (s, m) in enumerate(zip(slices, vals)):
         if m < M_ALPHA_MIN and m_alpha_checked(s, rule):
-            low.append({"slice": i + 1, "x": _r(s.x_mid),
-                        "m_alpha": _r(m, 4),
-                        "alpha_deg": _r(math.degrees(s.alpha), 1),
-                        "phi_deg": _r(s.phi, 2),
-                        "against_sliding": bool(sign * s.alpha < 0)})
+            it = {"slice": i + 1, "x": _r(s.x_mid),
+                  "m_alpha": _r(m, 4),
+                  "alpha_deg": _r(math.degrees(s.alpha), 1),
+                  "phi_deg": _r(s.phi, 2),
+                  "against_sliding": bool(sign * s.alpha < 0)}
+            if side:
+                it.update(theta_deg=_r(gle.side_force_theta_deg[i], 2),
+                          E_side_kN_per_m=_r(gle.side_force_E[i], 1),
+                          N_eff_kN_per_m=_r(gle.base_normal_eff[i], 1))
+            low.append(it)
     if not low:
         return None
     worst = min(low, key=lambda it: it["m_alpha"])
     n_exempt = sum(1 for s in slices if not m_alpha_checked(s, rule))
-    text = (f"m_alpha = cos(alpha) + sin(alpha) tan(phi') / F is below 0.2 "
-            f"on slice {_numbers(low)} of {len(slices)} at F = {f:.3f} "
-            f"(least {worst['m_alpha']:.2f} on slice {worst['slice']}, "
-            f"x = {worst['x']:.2f}, base inclined "
-            f"{abs(worst['alpha_deg']):.0f} deg "
-            + ("against" if worst["against_sliding"] else "with")
-            + " the sliding). The result must be examined in detail "
-              "(Whitman and Bailey 1967, p. 487).")
+    sense = ("against" if worst["against_sliding"] else "with")
+    if side:
+        text = (f"The denominator of the slice equations of "
+                f"{_METHOD_NAME.get(method, method)}, cos(alpha - theta) + "
+                f"sin(alpha - theta) tan(phi') / F with theta the "
+                f"inclination of the side force on the slice (m_alpha "
+                f"where the side forces are horizontal), is below 0.2 on "
+                f"slice {_numbers(low)} of {len(slices)} at F = {f:.3f} "
+                f"(least {worst['m_alpha']:.3g} on slice {worst['slice']}, "
+                f"x = {worst['x']:.2f}, base inclined "
+                f"{abs(worst['alpha_deg']):.0f} deg {sense} the sliding, "
+                f"side force inclined {worst['theta_deg']:.1f} deg; the "
+                f"forces on it: an interslice normal force of "
+                f"{worst['E_side_kN_per_m']:.0f} kN/m on that side and an "
+                f"effective normal force of {worst['N_eff_kN_per_m']:.0f} "
+                f"kN/m on its base). The result must be examined in detail "
+                f"(Whitman and Bailey 1967, p. 487, who print the check "
+                f"for m_alpha; here it is read with the slice's own "
+                f"side-force inclination, DESIGN.md).")
+        if any(it["against_sliding"] for it in low):
+            text += (" Where the resultant on a base is nearly parallel to "
+                     "the side force, as on a surface that exits too "
+                     "steeply, the forces near the toe become very large "
+                     "and the factor of safety is not meaningful "
+                     "(EM 1110-2-1902 C-10b, p. C-34).")
+    else:
+        text = (f"m_alpha = cos(alpha) + sin(alpha) tan(phi') / F is below "
+                f"0.2 on slice {_numbers(low)} of {len(slices)} at "
+                f"F = {f:.3f} (least {worst['m_alpha']:.2f} on slice "
+                f"{worst['slice']}, x = {worst['x']:.2f}, base inclined "
+                f"{abs(worst['alpha_deg']):.0f} deg {sense} the sliding). "
+                f"The result must be examined in detail (Whitman and "
+                f"Bailey 1967, p. 487).")
     if rule != "every_slice" and n_exempt:
         text += (f" {n_exempt} slice(s) with phi' = 0 are not looked at: "
                  f"there m_alpha does not depend on F and the strength is "
@@ -192,6 +257,8 @@ def low_m_alpha_finding(slices, slip, method: str, fos: Optional[float],
     passive = any(it["against_sliding"] for it in low)
     return _finding("low_m_alpha", True, text, slices=low, F=_r(f, 4),
                     rule=rule,
+                    denominator=("side_force_inclination" if side
+                                 else "m_alpha"),
                     remedies=(C10B_REMEDIES + ".") if passive else "")
 
 
@@ -374,7 +441,8 @@ def surface_findings(geom, slip, slices, sol, rule: str = "frictional"
     f_own = sol.fos_bishop if method == "bishop" and sol.fos_bishop else \
         sol.fos
     f = low_m_alpha_finding(slices, slip, method, f_own,
-                            sol.fos_uncorrected, rule)
+                            sol.fos_uncorrected, rule,
+                            gle=sol.gle if method in _RIGOROUS else None)
     if f:
         out.append(f)
     out.extend(bishop_oms_findings(sol))

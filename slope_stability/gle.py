@@ -207,6 +207,19 @@ class GLEResult:
     jumps : list of float
         Each lambda at which F_m - F_f changed sign by a jump between two
         branches of solutions (not a crossing; the scan went on).
+    slice_denominator : list of float
+        Per slice, the denominator of the slice's own two equations at the
+        reported state: cos(alpha - theta_i) + sin(alpha - theta_i)
+        tan(phi') / F, theta_i = atan(lambda f(x)) the inclination of the
+        side force on its upslope side (the side the march solves for;
+        zero at the end of the mass) and tan(phi') as in force (zero on a
+        slice taken frictionless). With horizontal side forces it is
+        m_alpha. ``acceptability.low_m_alpha_finding`` reads it (GM-344).
+    side_force_theta_deg : list of float
+        theta_i of each slice, degrees (the normalized frame's sign, as
+        Spencer's theta is reported).
+    side_force_E : list of float
+        The interslice normal force on that side of each slice, kN/m.
     """
     fos: float = 0.0
     lam: float = 0.0
@@ -227,6 +240,9 @@ class GLEResult:
     base_tension_rule: str = "as_printed"
     frictionless: List[bool] = field(default_factory=list)
     jumps: List[float] = field(default_factory=list)
+    slice_denominator: List[float] = field(default_factory=list)
+    side_force_theta_deg: List[float] = field(default_factory=list)
+    side_force_E: List[float] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -349,13 +365,16 @@ ROOT_CHOICE = (
     "from lambda = 0 upward (steps of 0.1 to the upper bound, 1.5), on "
     "the branch of solutions on which every slice stays above the pole "
     "of its own two equations, F = tan(phi') tan(theta - alpha), each "
-    "state found from its neighbour's F. Spencer (1967, p. 15) finds F "
+    "state found from its neighbour's F. Where that branch has no state "
+    "at a lambda it ends there, and with no crossing met before it there "
+    "is no number. Spencer (1967, p. 15) finds F "
     "where the two curves of F against theta cross; which crossing, "
-    "where there are several, is not found in print. Other form: the "
-    "lowest of every root in the range. That needs every root found, "
+    "where there are several, is not found in print. Other forms: the "
+    "lowest of every root in the range (that needs every root found, "
     "which is not built, and on an ordinary circle the roots include "
-    "many with slices below their poles (bases and sides in tension) at "
-    "very low F")
+    "many with slices below their poles, bases and sides in tension, at "
+    "very low F); or, where no crossing is met upward, a scan downward "
+    "from lambda = 0 (D29's former range, -1.5 to 1.5)")
 
 
 # ---------------------------------------------------------------------------
@@ -1002,8 +1021,14 @@ class _GLESystem:
 
         Scans lambda upward from ``lam0`` in steps of 0.1 to ``hi_b``
         (the bound itself is tried too: fifteen steps of 0.1 overshoot 1.5
-        by a rounding error). A lambda at which the branch has no state is
-        stepped over (GM-60). Lambda below ``lam0`` is not scanned: there
+        by a rounding error). The scan stops at the first lambda at which
+        the branch has no state: the branch ends there, and with no
+        crossing met before it there is no number (``self.branch_end``
+        holds the last lambda with a state and the first without). Before
+        (GM-60), that lambda was stepped over, and the next state found
+        could lie on another branch with the same pole signature, which
+        ruling 2 excludes (the review's question 4). Lambda below ``lam0``
+        is not scanned: there
         the interslice shear acts against the sense the sliding gives it,
         and the crossings found there on made-up and benchmark surfaces
         were all states with bases and sides in tension (before, the scan
@@ -1020,6 +1045,7 @@ class _GLESystem:
         jumps: List[float] = []
         no_state: List[float] = []
         self.undriven = 0
+        self.branch_end = None
         if self.agrees(st0):
             if st0[8]:
                 return (lam0, st0), jumps, no_state
@@ -1034,8 +1060,10 @@ class _GLESystem:
                     break
                 st = self._state(lam_try, prev[1], prev[7])
                 if st is None:
+                    # the branch from lam0 ends here: no number
                     no_state.append(lam_try)
-                    continue
+                    self.branch_end = (prev_lam, lam_try)
+                    break
                 if self.agrees(st):
                     if st[8]:
                         return (lam_try, st), jumps, no_state
@@ -1180,7 +1208,9 @@ def gle_fos(slices: List[Slice],
     lambda_bounds : (float, float)
         Range for lambda. Default (-1.5, 1.5). The scan runs from
         lambda = 0 (or the lowest lambda above it that has a state) up
-        to the upper bound; the lower bound is not used (GM-344).
+        to the upper bound, on the branch of solutions that starts there,
+        and stops where that branch ends; the lower bound is not used
+        (GM-344; D29's former range was scanned both ways).
     reinf_forces : list of ReinforcementForce, optional
         Resolved reinforcement crossings (see
         slope_stability.reinforcement). Applied as external point forces
@@ -1241,8 +1271,8 @@ def gle_fos(slices: List[Slice],
     # is the first crossing met from lambda = 0 upward; finding every
     # root is not built (`ROOT_CHOICE`).
     # The scan starts from the lowest lambda above 0 that has a state
-    # when lambda = 0 has none, and steps over a lambda with no state
-    # (GM-60).
+    # when lambda = 0 has none (GM-60), and stops where the branch it
+    # follows has no state (`_GLESystem.first_crossing`).
     # The branch followed is the one on which every slice lies above its
     # pole (`_GLESystem._poles`): the side a slice is on for a large F,
     # where its determinant has the sign of cos(alpha - theta). A state
@@ -1285,11 +1315,35 @@ def gle_fos(slices: List[Slice],
         result.lam = lam0
         result.converged = False
         w = "no F_m = F_f crossing found in lambda range"
-        if no_state:
-            w += (f"; the branch of solutions followed from lambda = "
-                  f"{lam0:g} has no state at lambda = {no_state[0]:.1f}"
-                  + (f" and {len(no_state) - 1} more of the lambdas tried"
-                     if len(no_state) > 1 else ""))
+        end = sys_.branch_end
+        w += (f"; the scan went upward from lambda = {lam0:g} on the "
+              f"branch of solutions that starts there"
+              + (f" and stopped where that branch ends, between lambda = "
+                 f"{end[0]:.1f} and {end[1]:.1f} (no state at "
+                 f"{end[1]:.1f})" if end else
+                 f" to lambda = {hi_b:g}"))
+        # EM 1110-2-1902 C-10c (p. C-36): with cohesion at the crest the
+        # normal and side forces there are often negative, and such
+        # tensile forces should be eliminated, by a tension crack near
+        # the upper end of the surface (step 4's tension_crack_depth).
+        # Named where the branch's starting state has a base or a side in
+        # tension on a slice with cohesion (the same zero as the
+        # ``side_tension`` finding: `acceptability.E_NEGLIGIBLE`).
+        E0, N0 = st0[2], st0[4]
+        e_ref0 = max((abs(e) for e in E0), default=0.0)
+        n_base = sum(1 for i, s in enumerate(ns)
+                     if s.c > 0.0 and N0[i] - s.u * s.length < 0.0)
+        n_side = sum(1 for j in range(1, len(ns))
+                     if E0[j] < -max(1e-6, 1e-3 * e_ref0)
+                     and (ns[j - 1].c > 0.0 or ns[j].c > 0.0))
+        if n_base or n_side:
+            w += (f"; the state at lambda = {lam0:g} has tension on "
+                  f"{n_base} slice base(s) and {n_side} slice side(s) "
+                  f"where the soil has cohesion: EM 1110-2-1902 C-10c "
+                  f"(p. C-36) asks that such tensile forces be eliminated "
+                  f"by a tension crack near the upper end of the surface "
+                  f"(tension_crack_depth, or tension_crack_depth_basis="
+                  f"'rankine' for the depth of Eq. C-36)")
         if sys_.undriven:
             w += (f"; {sys_.undriven} crossing(s) met have no net driving "
                   f"moment or force, where the ratio of resisting to "
@@ -1333,6 +1387,26 @@ def gle_fos(slices: List[Slice],
             result.warnings.append("base tension (N' < 0)")
     result.frictionless = (list(reversed(frictionless)) if mirrored
                            else frictionless)
+
+    # The denominator of each slice's own two equations in this state
+    # (`_GLESystem._poles`, divided through by cos(theta_i)):
+    # cos(alpha - theta_i) + sin(alpha - theta_i) tan(phi') / F, theta_i
+    # the inclination of the side force on the slice's upslope side, the
+    # one the march solves for (zero at the end of the mass). With
+    # horizontal side forces it is m_alpha (Whitman and Bailey 1967,
+    # p. 487, Eq. 5). `acceptability.low_m_alpha_finding` reads it.
+    den, theta_s, e_side = [], [], []
+    for i, s in enumerate(ns):
+        t = math.atan(lam_star * sys_.fb[i + 1]) if i + 1 < n else 0.0
+        den.append(math.cos(s.alpha - t)
+                   + math.sin(s.alpha - t) * tps[i] / F)
+        theta_s.append(math.degrees(t))
+        e_side.append(E[i + 1])
+    if mirrored:
+        den, theta_s, e_side = den[::-1], theta_s[::-1], e_side[::-1]
+    result.slice_denominator = den
+    result.side_force_theta_deg = theta_s
+    result.side_force_E = e_side
 
     # Thrust line: moments about each slice base midpoint to locate E
     thrust = [0.0] * (n + 1)
