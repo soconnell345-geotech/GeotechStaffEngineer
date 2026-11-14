@@ -167,6 +167,13 @@ class SlopeSoilLayer:
     R_phi: Optional[float] = None   # R-envelope friction angle (deg); None = free-draining
     # Non-horizontal top (GM-140 step 1); last so positional calls keep.
     top_boundary_points: Optional[List[Tuple[float, float]]] = None
+    # Rapid drawdown, the K_c = 1 strength envelope as measured (GM-140
+    # step 9; EM 1110-2-1902 G-3b(1)(a) and (b), pp. G-4 to G-5): tau_ff =
+    # R_d + sigma'_c tan(R_psi). Given in place of R_c and R_phi, from which
+    # Eqs. G-5 and G-6 otherwise derive them. A layer with R_psi set does
+    # not drain freely. Not used by the Corps 1970 procedure.
+    R_d: float = 0.0                # intercept d (kPa)
+    R_psi: Optional[float] = None   # slope angle psi (deg)
 
     def __post_init__(self):
         if (self.bottom_boundary_points is None
@@ -397,17 +404,25 @@ class SlopeGeometry:
     stabilizing_piles: Optional[list] = None
     tension_crack_depth: float = 0.0
     tension_crack_water_depth: float = 0.0
-    # Tension-crack placement + model (v5.4 E4). Defaults reproduce the historical
-    # entry-side, strength-truncation behaviour byte-for-byte.
-    #  * ``tension_crack_side``: 'entry' (default, low-x / slip-surface entry) or
-    #    'exit' (high-x). The crack forms at the CREST; put it on whichever side
-    #    of the surface the crest is on (no need to mirror the slope any more).
-    #  * ``tension_crack_model``: 'strength' (default) keeps the cracked wedge as
-    #    zero-shear-strength DRIVING soil; 'truncation' REMOVES it from the sliding
-    #    mass (the mass ends at the vertical crack face, as Slide2/UTEXAS do).
-    #    Both apply the hydrostatic crack-water thrust on the retained face.
-    tension_crack_side: str = "entry"
-    tension_crack_model: str = "strength"
+    # Tension cracks as printed (GM-140 step 4; ``slope_stability.cracks``).
+    #  * ``tension_crack_depth_basis``: 'given' (default: the depth above,
+    #    0 = no crack), 'rankine' (EM 1110-2-1902 Eq. C-36 with the developed
+    #    strengths of Eqs. 2-5 and 2-6, at the surface's own F) or 'min_fos'
+    #    (the depth of minimum factor of safety from a scan, EM 2-2f(4),
+    #    C-10c(1)). With 'rankine' or 'min_fos' leave the depth at 0.
+    #  * ``tension_crack_side``: 'crest' (default: the end of the slip
+    #    surface where the ground is higher, EM 2-2f(3)), or 'entry' (low x)
+    #    / 'exit' (high x) to give the end.
+    #  * ``tension_crack_model``: 'truncation' (default, as printed: the slip
+    #    surface ends at the crack and the soil upslope of it is left out,
+    #    EM 2-2f(3), C-10c; Slide v6 Tutorial 16) or 'strength' (the cracked
+    #    soil kept as driving weight without strength; no printed source).
+    #    Both apply the crack's water thrust on the vertical boundary.
+    #  * ``tension_crack_water_depth``: water in the crack (m); a depth
+    #    above the crack's own fills it.
+    tension_crack_side: str = "crest"
+    tension_crack_model: str = "truncation"
+    tension_crack_depth_basis: str = "given"
     # Discrete pore-pressure field: scattered (x, z, u) points (kPa), e.g. from a
     # flow net / TIN. When set, the base pore pressure at each slice is
     # INTERPOLATED from this field (linear on the Delaunay triangulation, with a
@@ -415,15 +430,21 @@ class SlopeGeometry:
     # models. The ponded-water buttress is still driven by ``gwt_points`` (set
     # both for a pool over a flow-net field). Default None = unchanged.
     pore_pressure_points: Optional[List[Tuple[float, float, float]]] = None
-    # Circles whose centre lies below the ground where they come out would
-    # turn back above their own centre ("reverse curvature" surfaces in
-    # Slide2, which "cannot actually exist"). 'tension_crack' (default, as
-    # Slide2's default "Create tension crack for reverse curvature", and as
-    # this module has always done) closes such a surface with a vertical,
-    # dry crack from the centre's level to the ground; 'discard' makes the
-    # searches drop them (Slide2's other choice). ``analyze_slope`` always
-    # evaluates a circle it is given. GM-59.
+    # A circle whose centre lies below the ground at its upper end would
+    # turn back over itself ("reverse curvature"). 'tension_crack' (default)
+    # closes it with the tension crack asked for (tension_crack_depth, or
+    # tension_crack_depth_basis 'rankine' / 'min_fos') where its overhang
+    # lies within that crack's depth, and discards it where the overhang
+    # runs deeper (owner's call OWN-103) or no crack was asked for (the
+    # crack is a condition of the analysis, never switched on by a circle's
+    # shape: the step 4 review's F1); 'discard' discards every such circle.
+    # The circles discarded are counted by reason and located in a search's
+    # result (``crack_refused``); one given to ``analyze_slope`` raises
+    # ``cracks.ReverseCurvatureDiscarded``.
     reverse_curvature: str = "tension_crack"
+    # This surface's crack, fixed by ``cracks.solve_with_crack`` on a copy.
+    _crack_fixed: Optional[dict] = field(default=None, init=False,
+                                         repr=False, compare=False)
     # Where a layer loses ground to a layer listed before it
     # (``layer_overlaps``); found once, when the model is built.
     _overlaps: Optional[list] = field(default=None, init=False, repr=False,
@@ -461,11 +482,23 @@ class SlopeGeometry:
             raise ValueError(f"tension_crack_depth must be non-negative, got {self.tension_crack_depth}")
         if self.tension_crack_water_depth < 0:
             raise ValueError(f"tension_crack_water_depth must be non-negative, got {self.tension_crack_water_depth}")
-        if self.tension_crack_water_depth > self.tension_crack_depth:
+        if self.tension_crack_depth_basis not in ("given", "rankine",
+                                                  "min_fos"):
+            raise ValueError(
+                "tension_crack_depth_basis must be 'given', 'rankine' or "
+                f"'min_fos', got '{self.tension_crack_depth_basis}'")
+        if (self.tension_crack_depth_basis != "given"
+                and self.tension_crack_depth > 0):
+            raise ValueError(
+                "tension_crack_depth is a given depth: leave it at 0 with "
+                f"tension_crack_depth_basis='{self.tension_crack_depth_basis}'"
+                ", or give the depth with tension_crack_depth_basis='given'")
+        if (self.tension_crack_depth_basis == "given"
+                and self.tension_crack_water_depth > self.tension_crack_depth):
             self.tension_crack_water_depth = self.tension_crack_depth
-        if self.tension_crack_side not in ("entry", "exit"):
-            raise ValueError("tension_crack_side must be 'entry' or 'exit', "
-                             f"got '{self.tension_crack_side}'")
+        if self.tension_crack_side not in ("crest", "entry", "exit"):
+            raise ValueError("tension_crack_side must be 'crest', 'entry' or "
+                             f"'exit', got '{self.tension_crack_side}'")
         if self.tension_crack_model not in ("strength", "truncation"):
             raise ValueError("tension_crack_model must be 'strength' or "
                              f"'truncation', got '{self.tension_crack_model}'")

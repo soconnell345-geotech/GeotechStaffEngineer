@@ -213,6 +213,7 @@ class TestGroundImprovementAliases:
         from funhouse_agent.adapters.ground_improvement import METHOD_REGISTRY as R
         r = R["aggregate_piers"]({
             "column_diameter": 0.76, "area_replacement_ratio": 0.15,
+            "column_type": "stone_column",
         })
         assert 0.10 < r["area_replacement_ratio"] < 0.20
 

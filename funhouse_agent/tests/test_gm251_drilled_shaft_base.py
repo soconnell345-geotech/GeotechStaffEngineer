@@ -82,13 +82,24 @@ def test_gsi_on_a_layer_no_base_takes_is_refused():
 
 
 def test_conditions_left_out_at_rqd_100_take_eq_10_23():
-    """GM-251 review: with the rock at its default RQD 100 and GSI and m_i
+    """GM-251 review: with the rock given at RQD 100 and GSI and m_i
     given, Eq. 10-23 as GEC-10 p. 10-22 recommends, the Hoek-Brown base
-    beside it."""
-    layers = [dict(_ROCK["layers"][0]),
+    beside it. GM-310 (the call for OWN-84): with no RQD given the base is
+    the Hoek-Brown base, and with no GSI and m_i either it is refused,
+    naming the three inputs."""
+    no_rqd = [dict(_ROCK["layers"][0]),
               {k: v for k, v in _ROCK["layers"][1].items() if k != "RQD"}]
+    left_out = _call("drilled_shaft_capacity", {**_ROCK, "layers": no_rqd})
+    assert left_out["base_steps"]["equation"] == "10-29"
+    bare = [no_rqd[0], {k: v for k, v in no_rqd[1].items()
+                        if k not in ("GSI", "m_i")}]
+    err = _call("drilled_shaft_capacity", {**_ROCK, "layers": bare})["error"]
+    for name in ("RQD", "rock_base_conditions_met", "GSI and m_i"):
+        assert name in err
+    layers = [no_rqd[0], {**no_rqd[1], "RQD": 100.0}]
     r = _call("drilled_shaft_capacity", {**_ROCK, "layers": layers})
     assert r["base_steps"]["equation"] == "10-23"
+    assert r["Q_tip_kN"] > left_out["Q_tip_kN"]
     (base,) = [c for c in r["choices"]
                if c["what"] == "base resistance in rock"]
     assert any("GSI 45 and m_i 10" in a for a in base["alternatives"])

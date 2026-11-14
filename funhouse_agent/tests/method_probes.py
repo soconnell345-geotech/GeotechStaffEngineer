@@ -116,6 +116,8 @@ SLOW = frozenset({"slope_stability|search_rapid_drawdown"})
 ECHO_IS_NOT_THE_INPUT = {
     ("calc_package|seismic_package", "analysis_type"):
         "the package's title",
+    ("calc_package|fem2d_package", "analysis_type"):
+        "the package's title",
     ("calc_package|downdrag_package", "neutral_plane_method"):
         "the method 'auto' chose",
     ("downdrag|downdrag_analysis", "neutral_plane_method"):
@@ -141,6 +143,12 @@ _PLANE_STRAIN = ("plane strain: the thickness scales the stiffness, the "
                  "beams, springs and wall joints), so the per-metre "
                  "results do not change")
 LABEL_ONLY = {
+    # GM-310 (OWN-82): a layer naming no wall friction takes none under
+    # log_spiral, and at delta = 0 every source's Kp is Rankine's; the
+    # #log_spiral and #interface_soil probes (a delta given) reach it
+    ("sheet_pile|cantilever_wall#log_spiral_left_out", "log_spiral_source"):
+        "the probe's layer names no wall friction, so delta = 0, where "
+        "every printed source of the log-spiral Kp gives Rankine's",
     **{(f"wave_equation|{m}", n): _HAMMER_LABEL
        for m in ("bearing_graph", "drivability", "single_blow")
        for n in ("hammer_type", "hammer_custom_name")},
@@ -195,7 +203,23 @@ _DRAINED = ("the probe's soil is elastic and the reported movements are "
 _ITERATIONS = "the probe converges in fewer iterations"
 _BLOWUP = ("the probe's strength reduction fails by non-convergence "
            "before either blow-up factor")
+_NO_ARTESIAN = ("the probe has no water, so no slice's pore-water force "
+                "exceeds its weight and the frictional term is never "
+                "negative (GM-140 step 3)")
+_NO_LOW_M_ALPHA = ("no trial surface of the probe's search has m_alpha "
+                   "below 0.2 on a slice, so keeping and leaving out such "
+                   "surfaces give the same search (GM-140 step 3)")
 NOT_REACHED = {
+    **{(f"slope_stability|{m}", "negative_friction_term"): _NO_ARTESIAN
+       for m in ("analyze_slope", "search_critical_surface")},
+    **{(f"slope_stability|{m}", "low_m_alpha"): _NO_LOW_M_ALPHA
+       for m in ("search_critical_surface", "search_rapid_drawdown")},
+    ("slope_stability|analyze_slope", "m_alpha_rule"):
+        "the probe's surface has m_alpha above 0.2 on every slice, so "
+        "which slices the check looks at changes nothing (GM-140 step 3)",
+    ("dxf_import|parse_geometry", "ignore_header_units"):
+        "the probe gives no units, so there is no difference from the "
+        "drawing's header to ignore",
     ("axial_pile|axial_pile_capacity#clay", "adhesion_curve"): _ADHESION,
     ("axial_pile|axial_pile_capacity#clay", "adhesion_chart"):
         "the probe gives no fig_7_18_case, so no Fig. 7-18 chart is read",
@@ -262,8 +286,8 @@ NOT_REACHED = {
     # met) reaches it, and the #hoek_brown probe (RQD 40 with GSI and m_i,
     # the Hoek-Brown base, GM-251)
     ("drilled_shaft|drilled_shaft_capacity#rock", "rock_base_method"):
-        "the probe's rock has RQD 100 (the default), where the 'rqd' base "
-        "also takes q_b = 2.5 qu",
+        "the probe's rock has RQD 100 (given: GM-310 refuses a rock base "
+        "with no RQD), where the 'rqd' base also takes q_b = 2.5 qu",
     ("downdrag|downdrag_analysis", "n_sublayers"): _GRID,
     # GM-228: the warning when the two rules for the depth below the toe
     # disagree; the #toe_in_sand probe (26 % apart) reaches it
@@ -452,9 +476,30 @@ NOT_REACHED = {
         "the probe's blow counts stay below either refusal",
     ("worked_examples|find_worked_examples", "limit"):
         "the probe's topic matches one example",
+    ("calc_package|fem2d_package", "FOS_required"):
+        "the probe's FOS (1.48) is below both 1.5 and 2.25, so "
+        "meets_FOS_required reads the same; a FOS of 1.2 required passes "
+        "(funhouse_agent/tests/test_fem2d_package_gm328.py)",
     ("calc_package|html_to_pdf", "allow_unembeddable"):
         "the probe's HTML has no image to embed",
 }
+
+#: fem2d_package runs the fem2d tools (GM-328), so an input that does not
+#: show on a tool's probe does not show on the package's probe of the same
+#: tool either, for the tool's reason: its entries are the tools', one
+#: source.
+_FEM2D_PACKAGE_PROBES = {
+    "calc_package|fem2d_package": "fem2d|fem2d_slope_srm",
+    "calc_package|fem2d_package#consolidation": "fem2d|fem2d_consolidation",
+    "calc_package|fem2d_package#excavation": "fem2d|fem2d_excavation",
+    "calc_package|fem2d_package#seepage": "fem2d|fem2d_seepage",
+    "calc_package|fem2d_package#staged": "fem2d|fem2d_staged",
+}
+for _table in (LABEL_ONLY, NOT_REACHED):
+    for _package, _tool in _FEM2D_PACKAGE_PROBES.items():
+        _table.update({(_package, _n): _why
+                       for (_k, _n), _why in list(_table.items())
+                       if _k == _tool})
 
 #: Mismatches the guard finds and leaves, each with its BACKLOG item.
 #: slope_stability is frozen by the owner until the integral review.

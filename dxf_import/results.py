@@ -130,9 +130,16 @@ class DxfParseResult:
     nail_lines : list of dict
         Each dict: {x_head, z_head, x_tip, z_tip}.
     text_annotations : list of dict
-        Each dict: {text, x, y, layer}.
+        Each dict: {text, x, y, layer}; x and y in metres, converted like
+        the geometry.
     units_used : str
         Units that coordinates were converted from.
+    units_source : str
+        Where ``units_used`` came from: given by the caller, read from the
+        drawing's header, or given against the header.
+    header_units : str or None
+        The units the drawing's own $INSUNITS header states, when it states
+        one this importer converts.
     warnings : list of str
         Any warnings encountered during parsing.
     """
@@ -144,6 +151,8 @@ class DxfParseResult:
     nail_lines: List[Dict[str, float]] = field(default_factory=list)
     text_annotations: List[Dict[str, Any]] = field(default_factory=list)
     units_used: str = "m"
+    units_source: str = ""
+    header_units: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -163,7 +172,8 @@ class DxfParseResult:
             lines.append(f"  Nail lines: {len(self.nail_lines)}")
         if self.text_annotations:
             lines.append(f"  Text annotations: {len(self.text_annotations)}")
-        lines.append(f"  Units converted from: {self.units_used}")
+        source = f" ({self.units_source})" if self.units_source else ""
+        lines.append(f"  Units converted from: {self.units_used}{source}")
         if self.warnings:
             lines.append("")
             for w in self.warnings:
@@ -182,6 +192,8 @@ class DxfParseResult:
                 for name, pts in self.boundary_profiles.items()
             },
             "units_used": self.units_used,
+            "units_source": self.units_source,
+            "header_units": self.header_units,
             "warnings": self.warnings,
         }
         if self.gwt_points is not None:
@@ -195,5 +207,8 @@ class DxfParseResult:
                 for nl in self.nail_lines
             ]
         if self.text_annotations:
-            d["text_annotations"] = self.text_annotations
+            d["text_annotations"] = [
+                {**ann, "x": round(ann["x"], 4), "y": round(ann["y"], 4)}
+                for ann in self.text_annotations
+            ]
         return d

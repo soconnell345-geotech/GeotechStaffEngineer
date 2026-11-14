@@ -312,7 +312,7 @@ REFERENCE_INFO = {
             "catalogs."),
     "gec4": ("FHWA GEC-4", "FHWA-IF-99-015, June 1999",
              "Ground anchors and anchored systems &mdash; chapter text and figures, with lookups for "
-             "anchor bond stress and load transfer (Tables 6-8) and corrosion protection (Table 20)."),
+             "anchor bond stress and load transfer (Tables 6 to 8) and corrosion protection (Table 20)."),
     "gec5": ("FHWA GEC-5", "FHWA NHI-16-072, April 2017",
              "Geotechnical site characterization &mdash; chapter text and figure catalog."),
     "gec6": ("FHWA GEC-6", "FHWA-SA-02-054, September 2002",
@@ -347,10 +347,14 @@ REFERENCE_INFO = {
     "micropile": ("FHWA Micropile Manual", "FHWA NHI-05-039, December 2005",
                   "Micropile design and construction &mdash; bond stress, structural capacity, the "
                   "LPILE benchmark the lateral-pile module checks against."),
-    "ufc_backfill": ("UFC 3-220-04N", "UFC 3-220-04N, Backfill for Subsurface Structures (the copy held, UFC 3-220-04FA of 16 January 2004, lacks the compaction table and filter ratios the module uses)",
-                     "Backfill design &mdash; compaction, filter criteria, drainage."),
+    "ufc_backfill": ("UFC 3-220-04FA", "UFC 3-220-04FA, Backfill for Subsurface Structures, 16 January 2004",
+                     "Backfill for subsurface structures &mdash; density requirements, Table 5-1 compaction "
+                     "criteria, backfill materials, lift thickness, compaction equipment and Fig. 2-5's "
+                     "compaction-induced lateral pressures."),
     "ufc_expansive": ("UFC 3-220-07", "UFC 3-220-07, Foundations in Expansive Soils, 16 January 2004",
-                      "Expansive soils &mdash; swell potential, heave, pier design."),
+                      "Expansive soils &mdash; swell potential, the active zone, heave prediction (Table "
+                      "4-2's swell relations, Van Der Merwe's Eq. 4-1, Eqs. 5-2 and 5-8), Table 6-1's "
+                      "foundation systems and the grade-beam void."),
     "ufc_pavement": ("UFC 3-250-01",
                      "UFC 3-250-01, Pavement Design for Roads and Parking Areas, 14 November 2016",
                      "Road and parking-area pavement design (not airfields) &mdash; CBR flexible design "
@@ -384,6 +388,18 @@ REFERENCE_INFO = {
                     "Flexible structural number and rigid slab design equations, layer coefficients, "
                     "reliability, Appendix D load-equivalency factors, the composite k worksheet and "
                     "Appendix G swelling and frost-heave loss (US units)."),
+    "em_1905": ("USACE EM 1110-1-1905", "EM 1110-1-1905, Geotechnical Design of Shallow Foundations "
+                "on Soils, 31 July 2025",
+                "Shallow foundations on soils (it supersedes EM 1110-1-1904 and the 1992 EM "
+                "1110-1-1905) &mdash; minimum factors of safety (Table 2-1), bearing capacity "
+                "factors and the shape, depth, inclination and undrained factors (Tables 5-2 to "
+                "5-4), in-situ bearing factors (Table 5-5), the ultimate limit state equations "
+                "(Eqs. 5-1 to 5-36: effective dimensions, drained and undrained bearing capacity, "
+                "punching, sliding, uplift), stress distribution (Eqs. 6-1 to 6-13), settlement "
+                "(Eqs. 7-1 to 7-47: consolidation, constrained modulus, Menard, Schmertmann, "
+                "Burland and Burbidge, time rate, secondary compression) and the table printed on "
+                "Figure 7-16; chapter text by the printed paragraph numbers (5-5a(2), B-1b) and a "
+                "figure catalog (US units)."),
     "em_2104": ("USACE EM 1110-2-2104", "EM 1110-2-2104, 1 November 2023",
                 "Strength design for reinforced concrete hydraulic structures &mdash; load factors and "
                 "combinations, flexure and axial load, shear, serviceability, detailing (US units)."),
@@ -422,12 +438,21 @@ REFERENCE_INFO = {
                       "properties, fastenings and structural analysis equations (chapters 4, 5, 8 "
                       "and 9)."),
     "reference_db": ("Cross-reference text search", "&mdash;",
-                     "A full-text (SQLite FTS5) search DB over the chapter text of every reference, "
-                     "with synonym query expansion."),
+                     "A full-text (SQLite FTS5) search DB over the chapter text of the references "
+                     "that have it indexed (all but UFC 3-220-04FA and UFC 3-220-07, which are "
+                     "lookups and figures only), with synonym query expansion."),
     "figure_db": ("Figure catalog + vision read-off", "&mdash;",
-                  "A searchable catalog of every figure across the references; pairs with the "
-                  "<code>read_reference_figure</code> vision tool to render a chart and read a value "
-                  "off it."),
+                  "A searchable catalog of the figures the references' catalogs list; pairs with "
+                  "the <code>read_reference_figure</code> vision tool to render a chart and read a "
+                  "value off it where the reference PDFs reach the host (a docs folder or the "
+                  "SharePoint fetcher); without them a figure is found and cited, not read."),
+    "table_db": ("Table catalog + printed-page read", "&mdash;",
+                 "A searchable catalog of the printed tables in the references that have a "
+                 "table catalog. Each row says where the table's values are: in a stored "
+                 "section of text, in a lookup function, or only on the printed page. Pairs "
+                 "with the <code>read_reference_table</code> vision tool to read a table "
+                 "that is only on its page where the reference PDFs reach the host; without "
+                 "them the table is found and its printed page cited, not read."),
 }
 
 
@@ -640,8 +665,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "GEC-10 gives 0.65, Eq. 10-22&rsquo;s value at &alpha;<sub>E</sub> = 1, and 1.9 for roughened "
             "sockets, a C above 1.0 to be verified by load tests or local experience; Eq. 10-22 for caving sockets), q<sub>u</sub> held no higher than the concrete&rsquo;s "
             "f&prime;<sub>c</sub> when it is given; base 2.5&nbsp;q<sub>u</sub> (Eq. 10-23) only where the "
-            "engineer states the conditions of p. 10-22 or the rock below the base is at RQD 100 (a rock layer given no RQD is taken at 100, so a profile "
-            "without RQD gets 2.5&nbsp;q<sub>u</sub>, and the result&rsquo;s choices say so), else the "
+            "engineer states the conditions of p. 10-22 or the rock below the base is given at RQD 100 (no RQD is assumed: a base on rock with no RQD, "
+            "no <code>rock_base_conditions_met</code> and no GSI with m<sub>i</sub> is refused, naming the three), else the "
             "Hoek&ndash;Brown base or a refusal. Permanent casing, fractured rock at the top of the socket, "
             "and a top exclusion zone in clay (1.5&nbsp;m by default; none in sand or rock unless given).",
             "LRFD resistance factors and capacity-vs-depth curves.",
@@ -887,11 +912,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "points (<code>pore_pressure_points</code>) interpolated linearly on their Delaunay "
             "triangulation, with suction set to zero. The ACADS 5 / Slide2 #10 flow net could not be "
             "pinned: Fig. 10.2&rsquo;s grid values did not survive the text extraction, and they are not invented (V-029).",
-            "A tension crack sits at the entry side (default) or the exit side "
-            "(<code>tension_crack_side</code>). By default the cracked wedge is kept as zero-strength "
-            "driving soil with the full hydrostatic thrust, which is conservative. "
-            "<code>tension_crack_model='truncation'</code> removes the wedge from the sliding mass, as "
-            "Slide2 does, and reproduces ACADS 1(b) within 0.5&nbsp;% (V-026).",
+            "A tension crack ends the slip surface: the soil upslope of it is left out and its water acts on the vertical boundary there (EM 1110-2-1902 2-2f(3), C-10c; Slide2 the same), which reproduces ACADS 1(b) within 0.5&nbsp;% (V-026). It sits at the end of the surface where the ground is higher unless <code>tension_crack_side</code> gives the end. Its depth is given, Rankine&rsquo;s with the developed strengths (EM Eq. C-36) or the depth of minimum factor of safety (<code>tension_crack_depth_basis</code>). <code>tension_crack_model='strength'</code> keeps the cracked soil as weight without strength, the earlier default (lower, no printed source). The crack is a condition of the analysis, the same on every trial surface: a circle whose centre is below the ground at its upper end is closed by the crack asked for where its overhang lies within the crack&rsquo;s depth, discarded where it overhangs deeper, and discarded when no crack is asked for (<code>reverse_curvature</code>). A surface wholly within a given crack&rsquo;s depth is no slip surface; a search counts what the crack rule refused, by reason (<code>crack_refused</code>).",
             "When a rigorous method finds no solution on a surface that supports cross, the result gives "
             "no FOS for that method and says so, rather than an unreinforced value.",
         ],
@@ -1998,9 +2019,7 @@ def _ch9_limitations(ctx):
         "<code>wave_equation</code> models every hammer as a rigid ram at its rated energy; a diesel&rsquo;s "
         "combustion and changing stroke are not modelled and the result warns that its blow counts are "
         "likely low (GEC-12 Vol. 2 p. 206); treat diesel bearing graphs as a trend, not a tie-out.",
-        "<code>slope_stability</code>&rsquo;s tension crack keeps the cracked wedge as zero-strength "
-        "driving soil by default (a conservative convention); <code>tension_crack_model='truncation'</code> "
-        "removes it from the sliding mass as Slide2 does.",
+        "<code>slope_stability</code>&rsquo;s tension crack ends the slip surface at the crack, as EM 1110-2-1902 and Slide2 do; <code>tension_crack_model='strength'</code> keeps the cracked soil as zero-strength driving soil (lower).",
         "<code>ground_improvement</code> uses an equal-strain settlement-reduction model for aggregate "
         "piers, not the GEC-13 stiffness-modulus two-layer method; the Priebe curve is GEC-13's "
         "printed curve (&phi; = 37.5&deg;) and depends on the area-ratio convention you feed it.",

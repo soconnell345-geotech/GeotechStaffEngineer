@@ -920,25 +920,25 @@
       ".github/workflows/publish.yml"
     ]
   },
-  "OWN-153": {
+  "OWN-154": {
     "kind": "action",
-    "ask_who": "CfA (the Tiny Apps team)",
-    "question": "Ask CfA whether testers' keys can reach Claude Opus 5.5.",
-    "why": "You chose Opus 5.5 for the testers. In the standing tests it found every planted problem in all three repeats of the whole-set reviews, where GPT-5.6 Sol passed 3 of 9. But the testers' app can only use the model behind each tester's key, and that key comes from CfA's Prompter. Today the planned deployment is a GPT model.",
-    "background": "The app talks to the Prompter the way it talks to an OpenAI model. If CfA can serve Opus 5.5 the same way, switching is a setting and a new key for each tester, with no release. If CfA serves it only through Anthropic's own interface, the app needs a small addition that ships with the next release of the shared core.",
+    "ask_who": null,
+    "question": "Release the app with the corrected reference library (geotech-references 1.7.0)?",
+    "why": "The reference library was released on 2026-11-13 as 1.7.0: several hundred lookups and stored equations now give what the manuals print, a lookup outside its printed range refuses instead of guessing, and the references helper can find and read printed tables. The app on master already pins it, but no app release carries the change to users until you say so.",
+    "background": "The released app 5.35.0 asks for geotech-references 1.6.0 or later, so a fresh install of it already picks up 1.7.0 and its corrected values. An app release would add the pin as a floor of 1.7.0 (so an install that still has 1.6.0 cannot keep the uncorrected values), the references helper's table tools, EM 1110-1-1905 as a reference, and everything else on master since 5.35.0. On a host without the reference PDFs (Foundry today) the helper finds a table and cites its page but cannot read its values; that is OWN-142.",
     "options": [],
-    "recommendation": "Send the message below to CfA. When they answer, tell me which interface they offer and I will set up the rest.",
-    "if_no_answer": "Testers stay on the GPT deployment their keys name.",
-    "message_to_send": "Hello, for the Document Review app on Tiny Apps: can the Prompter serve a Claude Opus 5.5 deployment that accepts images, with one key per tester as planned? If so, is it reached through the same OpenAI-style chat completions interface as today's deployment, or through Anthropic's own Messages interface? And what does it cost per million input and output tokens, compared with the GPT deployment? Thank you.",
+    "recommendation": "Release when the other things waiting on master are ready, and answer OWN-142 first so the release notes can say what the helper does on Foundry.",
+    "if_no_answer": "No app release. Users who install the released 5.35.0 fresh still get geotech-references 1.7.0.",
+    "message_to_send": null,
     "steps": [
-      "Send the message to your CfA contact.",
-      "Paste their answer here, or tell the orchestrating session."
+      "Say yes or no to an app release, and whether it waits for OWN-142."
     ],
     "unblocks": [
-      "TA-44"
+      "OWN-142"
     ],
     "sources": [
-      "BACKLOG.md OWN-153, TA-44, OWN-150"
+      "BACKLOG.md OWN-154, OWN-142",
+      "HANDOFF.md section 0a-current (the record on the reference library 1.7.0)"
     ]
   }
 }

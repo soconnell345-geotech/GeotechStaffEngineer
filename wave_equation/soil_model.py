@@ -21,7 +21,7 @@ Two Smith damping variants are provided (``damping_model``), as UFC
 
 * ``"smith"`` (default) — "the product of the damping factor, pile
   velocity, and mobilized static resistance": R_d = J * R_static * v,
-  i.e. R = R_s * (1 + J*v). GEC-12 Vol 2 (FHWA-NHI-16-009) Sec. 12.3,
+  i.e. R = R_s * (1 + J*v). GEC-12 Vol 2 (FHWA-NHI-16-010) Sec. 12.3,
   p. 156 states the same, and Sec. 12.7.1, p. 242 makes Smith damping
   the usual setting.
 * ``"smith_viscous"`` — "uses the fully-mobilized static resistance in

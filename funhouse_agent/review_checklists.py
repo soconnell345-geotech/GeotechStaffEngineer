@@ -162,13 +162,14 @@ provisions that ARE available:
 - **`gec7`** — pseudo-static seismic design of soil nail walls.
 - **`gec5`** — seismic site characterization, Vs/Gmax, and seismic hazards
   (liquefaction screening).
-- **`dm7`** — NAVFAC DM7 general soil mechanics, dynamic soil properties, and
-  seismic settlement anchors.
+- **`dm7`** — DM 7.1 / 7.2 (UFS 3-220-10, UFC 3-220-20) general soil
+  mechanics, dynamic soil properties, and seismic settlement anchors.
 - **`reference_db` / `figure_db`** — full-text and figure search across the
   WHOLE library (not just the seismic subset), so you can find a seismic
   provision or chart wherever it lives. When a value lives on a design chart,
-  find it with `figure_search` and read it off with `read_reference_figure` —
-  never read a chart value from memory.
+  find it with `figure_search` and read it off with `read_reference_figure`
+  where the hit says it can be read (otherwise say the chart could not be
+  read here) — never read a chart value from memory.
 
 ## Output format
 
@@ -237,7 +238,9 @@ judging it by eye. Reference lookups anchor every code/convention call.
 {anchors}
 - **`reference_db` / `figure_db`** search the WHOLE library, so a provision or
   chart in any reference is still reachable. Read chart values off the actual
-  figure (via `figure_search` + `read_reference_figure`), never from memory.
+  figure (via `figure_search` + `read_reference_figure`) where the hit says it
+  can be read, otherwise say the chart could not be read here; never from
+  memory.
 
 {_REVIEW_OUTPUT_FORMAT}
 
@@ -379,20 +382,26 @@ FOUNDATIONS_REVIEWER_PREAMBLE = _reviewer_preamble(
         "Your direct tools are scoped to the foundations domain: the ANALYSIS "
         "modules bearing_capacity, settlement, axial_pile, drilled_shaft, "
         "pile_group, lateral_pile, wave_equation, downdrag, ground_improvement, "
-        "plus the foundation REFERENCE modules (dm7, gec6, gec8, gec9, gec10, "
-        "gec12, gec13, micropile, ufc_expansive, and reference_db / figure_db)."),
+        "plus the foundation REFERENCE modules (dm7, gec6, em_1905, gec8, gec9, "
+        "gec10, gec12, gec13, micropile, ufc_expansive, and reference_db / "
+        "figure_db)."),
     checklist=FOUNDATIONS_CHECKLIST,
     anchors="""\
-- **`dm7`** — NAVFAC DM7: bearing capacity, settlement, deep-foundation design,
-  soil property correlations.
+- **`dm7`** — DM 7.1 / 7.2 (UFS 3-220-10, UFC 3-220-20): bearing capacity,
+  settlement, deep-foundation design, soil property correlations.
 - **`gec6`** — shallow foundations (Vesic bearing, Hough settlement).
+- **`em_1905`** — USACE EM 1110-1-1905 (2025), shallow foundations on soils:
+  bearing capacity (Tables 5-2 to 5-5, Eqs. 5-1 to 5-36) and settlement
+  (stress distribution, consolidation, Schmertmann, Burland and Burbidge,
+  time rate; Eqs. 6-1 to 6-13 and 7-1 to 7-47), in US units.
 - **`gec8`** — CFA (continuous flight auger) pile design.
 - **`gec9`** — laterally loaded piles (p-multipliers, lateral resistance).
 - **`gec10`** — drilled shafts (α/β/rock socket, N*c end bearing).
 - **`gec12`** — driven piles (Nordlund, β, static methods, resistance factors).
 - **`gec13`** — ground modification (aggregate columns, PVDs, deep mixing).
 - **`micropile`** — micropile bond stress / structural capacity.
-- **`ufc_expansive`** — foundations on expansive soils (heave, pier design).""",
+- **`ufc_expansive`** — foundations on expansive soils (swell potential, active
+  zone, heave prediction, Table 6-1 foundation systems).""",
     error_examples=(
         "a bearing wedge that ignores the water table, a settlement method used "
         "on the wrong soil, a drag load added to capacity like a structural load"),
@@ -492,7 +501,7 @@ EARTH_RETENTION_REVIEWER_PREAMBLE = _reviewer_preamble(
         "reference_db / figure_db)."),
     checklist=EARTH_RETENTION_CHECKLIST,
     anchors="""\
-- **`dm7`** — NAVFAC DM7.2: excavations and retained cuts (Ch 2), rigid
+- **`dm7`** — DM 7.2 (UFC 3-220-20): excavations and retained cuts (Ch 2), rigid
   retaining structures and their earth pressures (Ch 4), Rankine/Coulomb
   coefficients and the log-spiral passive charts (Figs 4-12, 4-13).
 - **`gec4`** — ground anchors (bond stress, load transfer, corrosion, testing).
@@ -607,8 +616,9 @@ SLOPE_FEM_REVIEWER_PREAMBLE = _reviewer_preamble(
         "reference_db / figure_db)."),
     checklist=SLOPE_FEM_CHECKLIST,
     anchors="""\
-- **`dm7`** — NAVFAC DM7: slope stability (DM7.1 Ch 7), shear strength, seepage and the
-  general soil mechanics behind the FEM constitutive inputs.
+- **`dm7`** — DM 7.1 / 7.2 (UFS 3-220-10, UFC 3-220-20): slope stability
+  (DM 7.1 Ch 7), shear strength, seepage and the general soil mechanics
+  behind the FEM constitutive inputs.
 - **`gec7`** — soil nail walls: the library's soil-nail reference (bond / pullout
   for nailed slopes). (There is no standalone slope-stability GEC; gec5 is site
   characterization, not soil-nail, so it is deliberately not in scope.)

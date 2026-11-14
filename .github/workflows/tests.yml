@@ -9,8 +9,18 @@ on:
     # own concurrency group, so a ci/ run never cancels master's.
     branches: [master, "ci/**"]
     # A commit that touches only notes (BACKLOG, HANDOFF, plans, docs) does
-    # not start the suite; a commit with any code in it still does.
-    paths-ignore: ["**.md", "module_work/**", "docs/**"]
+    # not start the suite; a commit with any code in it still does. The
+    # generated user manual is the exception under docs/: a test in the
+    # suite checks that it is current, so a commit that only rebuilds it
+    # starts the suite too (2026-11-13: a manual rebuilt against the wrong
+    # reference library failed master, and the commit that repaired it
+    # could start no run). Later patterns override earlier ones.
+    paths:
+      - "**"
+      - "!**.md"
+      - "!module_work/**"
+      - "!docs/**"
+      - "docs/user_manual/**"
   pull_request:
     branches: [master]
   workflow_dispatch:

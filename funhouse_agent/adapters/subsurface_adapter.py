@@ -1051,7 +1051,10 @@ def _run_compute_trend(params: dict) -> dict:
 #: Each overburden correction spt_correction offers, as a choice names it.
 _CN_TEXT = {
     "liao_whitman": ("Liao & Whitman (1986), C_N = (100 kPa / sigma'v)^0.5, "
-                     "at most 1.7 (overburden_method 'liao_whitman')"),
+                     "at most 2.0 as GEC-6 Fig. 5-18 (p. 90) draws it "
+                     "(overburden_method 'liao_whitman'; the cap binds "
+                     "below sigma'v = 25 kPa, and was 1.7, after Youd et "
+                     "al. 2001, before GM-310)"),
     "peck": ("Peck et al. (1974), C_N = 0.77 log10(20 / sigma'v in tsf), at "
              "most 2.0 (overburden_method 'peck')"),
     "iso": ("EN ISO 22476-3, C_N = (98 kPa / sigma'v)^0.5, at most 2.0 "
@@ -1089,7 +1092,10 @@ def _run_spt_correction(params: dict) -> dict:
                how_given(method, "liao_whitman", name="overburden_method"),
                basis=("GEC-12 (Vol I p. 108) gives Peck et al. (1974), Eq. 5-3, as "
                       "the recommended correction in AASHTO specifications, "
-                      "and Liao & Whitman, Eq. 5-4, as an alternate"),
+                      "and Liao & Whitman, Eq. 5-4, as an alternate; GEC-6 "
+                      "Fig. 5-18 (p. 90) draws Liao & Whitman's to '2.0 "
+                      "max.'. The liquefaction tools keep the correction "
+                      "their own procedures print"),
                alternatives=[t for m, t in _CN_TEXT.items() if m != method]),
     ]
     return out
@@ -1149,7 +1155,7 @@ METHOD_INFO = {
             "rod_length_m": {"type": "float", "required": False, "default": 10.0, "description": "Rod length (m); sets CR band (0.75 below 3 m up to 1.0 beyond 10 m; Youd et al. 2001 Table 2)."},
             "borehole_diameter_mm": {"type": "float", "required": False, "default": 100.0, "description": "Borehole diameter (mm); CB = 1.0/1.05/1.15 (Youd et al. 2001 Table 2)."},
             "sampler_correction": {"type": "float", "required": False, "default": 1.0, "description": "CS: 1.0 standard sampler, 1.1-1.3 without liners (Youd et al. 2001 Table 2)."},
-            "overburden_method": {"type": "str", "required": False, "default": "liao_whitman", "allowed_values": ["liao_whitman", "peck", "iso"], "description": "C_N: 'liao_whitman' (100 kPa/sigma'v)^0.5, at most 1.7 (Youd et al. 2001); 'peck' 0.77 log10(20/sigma'v in tsf), at most 2.0, the correction GEC-12 (Eq. 5-3) and NHI-06-088 (Eq 3-3) give as AASHTO's; 'iso' EN ISO 22476-3, (98 kPa/sigma'v)^0.5, at most 2.0."},
+            "overburden_method": {"type": "str", "required": False, "default": "liao_whitman", "allowed_values": ["liao_whitman", "peck", "iso"], "description": "C_N: 'liao_whitman' (100 kPa/sigma'v)^0.5, at most 2.0 as GEC-6 Fig. 5-18 (p. 90) draws it (the cap binds below sigma'v = 25 kPa; it was 1.7, after Youd et al. 2001, a paper the reference library does not hold); 'peck' 0.77 log10(20/sigma'v in tsf), at most 2.0, the correction GEC-12 (Eq. 5-3) and NHI-06-088 (Eq 3-3) give as AASHTO's; 'iso' EN ISO 22476-3, (98 kPa/sigma'v)^0.5, at most 2.0."},
         },
         "returns": {"N60": "Energy-corrected blow count.", "N1_60": "Fully corrected (N1)60.", "CN": "Overburden factor.", "choices": "The energy ratio and overburden correction used, with the alternatives."},
     },
@@ -1219,7 +1225,7 @@ METHOD_INFO = {
         "returns": {
             "plot_type": "Type of plot.",
             "trend_results": "Only present when show_trend is on: the fitted trend(s), one dict per fit (per soil class when group_trends_by is given).",
-            "skipped": "Only present when something was left out: the investigations (or points) not drawn, each with the reason.",
+            "skipped": "Only present when something was left out: the investigations (or points) not drawn, and a trend line that was asked for and not fitted (fewer than 2 points) or not drawn, each with the reason.",
             "n_data_points": "Number of data points plotted.",
             "n_investigations": "Number of investigations shown.",
         },
@@ -1305,17 +1311,21 @@ METHOD_INFO = {
         "brief": "Fit linear or log-linear depth-value trend with statistics (R-squared, COV).",
         "parameters": {
             "depths": {"type": "array", "required": True, "description": "Depth values (m)."},
-            "values": {"type": "array", "required": True, "description": "Measurement values."},
-            "trend_type": {"type": "str", "required": False, "default": "linear", "allowed_values": ["linear", "log_linear"], "description": "Trend type."},
+            "values": {"type": "array", "required": True, "description": "Measurement values, one per depth. Fewer than 2 points (log_linear: fewer than 2 with depth > 0 and value > 0) is refused: there is no line to fit."},
+            "trend_type": {"type": "str", "required": False, "default": "linear", "allowed_values": ["linear", "log_linear"], "description": "Trend type. log_linear fits ln(value) against ln(depth), so a point at depth <= 0 or with a value <= 0 cannot enter it: such points are left out and counted in n_dropped."},
             "parameter": {"type": "str", "required": False, "default": "", "description": "Parameter name for labeling."},
             "group_label": {"type": "str", "required": False, "default": "", "description": "Group label (e.g., USCS class)."},
         },
         "returns": {
+            "n_points": "Number of points the fit used.",
+            "n_dropped": "Points given and left out of the fit: a null (missing) depth or value, and for log_linear a depth <= 0 or value <= 0. The notes say how many of each.",
+            "fitted": "True (a result is returned only when a line was fitted).",
             "slope": "Regression slope.",
             "intercept": "Regression intercept.",
-            "r_squared": "Coefficient of determination.",
-            "std_residual": "Standard deviation of residuals.",
-            "cov": "Coefficient of variation.",
+            "r_squared": "Coefficient of determination (1 by construction when only 2 points were used).",
+            "std_residual": "Standard deviation of residuals; null when the fit used exactly 2 points (not defined).",
+            "cov": "Coefficient of variation; null when the fit used exactly 2 points.",
+            "notes": "Only when there is something to say: points left out, or a 2-point fit.",
         },
     },
     # -----------------------------------------------------------------------
@@ -1335,10 +1345,12 @@ METHOD_INFO = {
             "final_depth_m": "Final penetration depth (m).",
             "gwl_m": "Groundwater level (m below surface) or null.",
             "depth_m": "Depth array (m).",
-            "q_c_kPa": "Cone tip resistance array (kPa).",
-            "f_s_kPa": "Sleeve friction array (kPa).",
-            "u_2_kPa": "Pore pressure u2 array (kPa).",
-            "Rf_pct": "Friction ratio array (%).",
+            "q_c_kPa": "Cone tip resistance array (kPa). A reading the file does not have (a GEF void value) is null: never 0 and never interpolated from its neighbours.",
+            "f_s_kPa": "Sleeve friction array (kPa), null where missing.",
+            "u_2_kPa": "Pore pressure u2 array (kPa), null where missing.",
+            "Rf_pct": "Friction ratio array (%), null where missing or where q_c or f_s is.",
+            "missing_values": "Count of missing readings per column: {q_c_kPa, f_s_kPa, u_2_kPa, Rf_pct} for the columns the file has. Report it; a tool given a null reading (liquefaction) refuses it, so leave those depths out and say so.",
+            "warnings": "Only when a reading is missing: the counts in words.",
         },
     },
     "parse_bore": {

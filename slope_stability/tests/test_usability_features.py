@@ -23,7 +23,8 @@ from slope_stability.results import SlopeStabilityResult
 def _simple_geom(**kw):
     layer_keys = {'phi', 'c_prime', 'gamma', 'ru', 'cu', 'analysis_mode', 'gamma_sat'}
     layers_kw = {k: v for k, v in kw.items() if k in layer_keys}
-    geom_keys = {'gwt_points', 'kh', 'tension_crack_depth', 'tension_crack_water_depth'}
+    geom_keys = {'gwt_points', 'kh', 'tension_crack_depth',
+                 'tension_crack_water_depth', 'tension_crack_model'}
     geom_kw = {k: v for k, v in kw.items() if k in geom_keys}
     layer = SlopeSoilLayer(
         'Fill', 10, -5,
@@ -335,11 +336,18 @@ class TestCombined:
 class TestTensionCrack:
 
     def test_reduces_fos(self):
-        """Tension crack should reduce FOS by removing resistance."""
+        """A crack no deeper than the tension reduces the FOS (GM-140 step
+        4: the surface ends at the crack, EM 1110-2-1902 2-2f(3), p. 2-6).
+        The 'strength' option, which keeps the cracked soil as weight
+        without strength, reduces it at any depth."""
         fos_dry = analyze_slope(_simple_geom(), 20, 15, 16).FOS
         fos_crack = analyze_slope(
-            _simple_geom(tension_crack_depth=3.0), 20, 15, 16).FOS
+            _simple_geom(tension_crack_depth=1.0), 20, 15, 16).FOS
         assert fos_crack < fos_dry
+        fos_strength = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0,
+                         tension_crack_model="strength"), 20, 15, 16).FOS
+        assert fos_strength < fos_dry
 
     def test_zero_depth_no_effect(self):
         """Zero crack depth = no change."""
@@ -367,8 +375,13 @@ class TestTensionCrack:
         assert fos_full < fos_half
 
     def test_slices_marked_in_crack(self):
-        """Slices in crack zone should have c=0, phi=0."""
-        geom = _simple_geom(tension_crack_depth=3.0)
+        """With the 'strength' option the slices in the crack zone have
+        c=0, phi=0; by default they are left out (GM-140 step 4)."""
+        r = analyze_slope(_simple_geom(tension_crack_depth=3.0), 20, 15, 16,
+                          include_slice_data=True)
+        assert not any(s.in_tension_crack for s in r.slice_data)
+        geom = _simple_geom(tension_crack_depth=3.0,
+                            tension_crack_model="strength")
         r = analyze_slope(geom, 20, 15, 16, include_slice_data=True)
         cracked = [s for s in r.slice_data if s.in_tension_crack]
         assert len(cracked) > 0
@@ -454,11 +467,14 @@ class TestTensionCrack:
         assert r.FOS > 0
 
     def test_monotonic_with_depth(self):
-        """Deeper crack should give lower FOS."""
+        """With the 'strength' option a deeper crack gives a lower FOS.
+        (By default the surface ends at the crack, and the FOS has a
+        minimum in depth: EM 1110-2-1902 2-2f(4), p. 2-6.)"""
         fos_prev = float('inf')
         for depth in [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]:
             fos = analyze_slope(
-                _simple_geom(tension_crack_depth=depth), 20, 15, 16).FOS
+                _simple_geom(tension_crack_depth=depth,
+                             tension_crack_model="strength"), 20, 15, 16).FOS
             assert fos <= fos_prev + 0.01, \
                 f"FOS should decrease with deeper crack: depth={depth}"
             fos_prev = fos

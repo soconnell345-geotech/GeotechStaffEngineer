@@ -39,6 +39,21 @@ _GWT_COLOR = '#1f6fbf'
 _THRUST_COLOR = '#9333ea'
 
 
+def _thrust_label(result) -> str:
+    """The legend entry of the line of thrust. The line is drawn clipped to
+    the sliding mass; where the solved line left the mass (the
+    ``thrust_outside`` finding of the printed acceptability checks, EM
+    1110-2-1902 C-10a) the legend says so and at how many slice sides
+    (GM-140 step 3, D50)."""
+    for f in getattr(result, "acceptability", None) or []:
+        if f.get("check") == "thrust_outside":
+            n = len(f.get("sides") or [])
+            return (f"Line of thrust (drawn clipped: the solved line is "
+                    f"outside the sliding mass at {n} slice side"
+                    f"{'s' if n != 1 else ''})")
+    return "Line of thrust"
+
+
 def _get_plt():
     from geotech_common.plotting import get_pyplot
     return get_pyplot()
@@ -286,8 +301,17 @@ def plot_cross_section(result, geom, show_slices=True,
         z_en = geom.ground_elevation_at(result.x_entry)
         z_ex = geom.ground_elevation_at(result.x_exit)
         x_crk = result.x_entry if z_en >= z_ex else result.x_exit
+        rec = getattr(result, "tension_crack", None) or {}
+        side = rec.get("side")
+        if side in ("entry", "exit"):           # the end it was solved at
+            x_crk = result.x_entry if side == "entry" else result.x_exit
         z_top_crk = geom.ground_elevation_at(x_crk)
         z_bot_crk = z_top_crk - result.tension_crack_depth
+        if rec.get("x_m") is not None:
+            # where the crack is: where the slices end (step 4 review, D3)
+            x_crk = rec["x_m"]
+            z_top_crk = geom.ground_elevation_at(x_crk)
+            z_bot_crk = rec.get("base_z_m", z_bot_crk)
         ax.plot([x_crk, x_crk], [z_bot_crk, z_top_crk], '-',
                 color='#7c2d12', linewidth=2.2, zorder=8,
                 label=f'Tension crack ({result.tension_crack_depth:.1f} m)')
@@ -301,7 +325,7 @@ def plot_cross_section(result, geom, show_slices=True,
         tx = [p[0] for p in result.thrust_line]
         tz = [p[1] for p in result.thrust_line]
         ax.plot(tx, tz, '-.', color=_THRUST_COLOR, linewidth=1.6,
-                zorder=8, label='Line of thrust')
+                zorder=8, label=_thrust_label(result))
 
     if show_reinforcement:
         _draw_reinforcement(ax, geom, result)
@@ -548,7 +572,7 @@ def plot_interslice_forces(result, geom=None, figsize=(9.5, 7)):
         tx = [p[0] for p in result.thrust_line]
         tz = [p[1] for p in result.thrust_line]
         ax2.plot(tx, tz, '-.', color=_THRUST_COLOR, linewidth=1.8,
-                 label='Line of thrust', zorder=8)
+                 label=_thrust_label(result), zorder=8)
     ax2.set_xlabel('x (m)', fontsize=10)
     ax2.set_ylabel('Elevation (m)', fontsize=10)
     ax2.grid(True, alpha=0.25)

@@ -91,6 +91,9 @@ def test_switches_off_leave_the_default_agent_unchanged(monkeypatch):
         got = _built(monkeypatch, reference_mode="anytime",
                      enable_calc_subagent=calc)
         want = build_domain_prompt(ANALYSIS_MODULES, memory_enabled=False)
+        # the consult's lookups block, where the references helper is
+        # built (2026-11-10 reference review, item 5)
+        want += "\n\n" + agent_mod.LOOKUPS_NOTE
         if calc:
             want += "\n\n" + agent_mod._CALC_DELEGATION_NUDGE
         assert got["system_prompt"] == want
@@ -109,6 +112,7 @@ def test_switches_off_leave_the_default_agent_unchanged(monkeypatch):
             # GM-101's budget line is unswitched (it states the budget).
             assert spec["system_prompt"] == (
                 agent_mod._CALC_PREAMBLE + agent_mod._CALC_FRAMING
+                + agent_mod._CALC_WORKED_EXAMPLES
                 + agent_mod._CALC_BUDGET.format(
                     n=agent_mod.DEFAULT_CALC_MAX_MODEL_CALLS))
 

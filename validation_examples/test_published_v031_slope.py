@@ -58,7 +58,10 @@ def _methods(geom, xc, yc, R, ns=50):
 # Surface (ft, L->R): (-70,100),(0,100),(125,150),(200,150) — 2.5:1, 50 ft high.
 # Horizontal material boundary at el 90 ft (sandy clay over a highly-plastic-clay
 # band, base el 85 ft). Water table (-70,100),(0,100),(125,140),(200,140). Dry
-# tension crack (auto, shallow). Sandy clay c'=300 psf/phi'=35/130 pcf; Highly
+# tension crack: the text (p. 203, 57.2) says "a dry tension crack at the
+# surface" and prints no depth, so the module's printed default is used:
+# Rankine's depth with the developed strengths, EM 1110-2-1902 Eq. C-36
+# (tension_crack_depth_basis='rankine'). Sandy clay c'=300 psf/phi'=35/130 pcf; Highly
 # Plastic Clay c'=0/phi'=25/130 pcf. Published Table 57.3 (circular): Spencer
 # 1.422, Bishop 1.417, Janbu-simplified 1.263, Lowe-Karafiath 1.414, Ordinary
 # 1.319 (GOLD-NAIL 1.40).
@@ -80,18 +83,38 @@ _V031_CIRCLE = (10.5, 60.3, 34.3)
 
 
 def test_v031_pockoski_duncan_circular_bishop_spencer():
-    """PASS: the module reproduces Slide2 Table 57.3 (circular) Bishop 1.417 and
-    Spencer 1.422 for the Pockoski & Duncan test slope 3 to <0.3% (1.421 /
-    1.425). Exercises a 2-layer slope (sandy clay over a highly-plastic-clay
-    band) with a water table. Before GM-134 made the circle's layer and
-    water-table crossings slice boundaries it read 1.411 / 1.415 on these 50
-    slices (GLE 1.398, now 1.409), and 1.399 to 1.446 on 25 to 45."""
+    """The same circle WITHOUT the problem's dry crack: the module's own
+    regression values (1.421 / 1.425; GLE 1.409). Exercises a 2-layer slope
+    (sandy clay over a highly-plastic-clay band) with a water table. Before
+    GM-134 made the circle's layer and water-table crossings slice
+    boundaries it read 1.411 / 1.415 on these 50 slices (GLE 1.398), and
+    1.399 to 1.446 on 25 to 45. The printed values are for the problem
+    with its crack: the test below."""
     fos = _methods(_v031_geom(), *_V031_CIRCLE)
-    assert fos["bishop"] == pytest.approx(1.421, abs=0.005)    # ours
-    assert fos["spencer"] == pytest.approx(1.425, abs=0.005)   # ours
-    assert fos["bishop"] == pytest.approx(1.417, rel=0.005)    # Slide2 circular
-    assert fos["spencer"] == pytest.approx(1.422, rel=0.005)   # Slide2 circular
-    assert fos["gle"] == pytest.approx(1.409, abs=0.005)
+    assert fos["bishop"] == pytest.approx(1.421, abs=0.005)    # module's own
+    assert fos["spencer"] == pytest.approx(1.425, abs=0.005)   # module's own
+    assert fos["gle"] == pytest.approx(1.409, abs=0.005)       # module's own
+
+
+def test_v031_with_its_dry_crack_matches_the_printed_circular_values():
+    """The problem as printed: "a dry tension crack at the surface" (Slide2
+    #57, 57.2, p. 203), no depth printed, so the module's printed default
+    is used: Rankine's depth with the developed strengths at each method's
+    own F (EM 1110-2-1902 Eq. C-36, p. C-36), dry. The surface ends at the
+    crack (EM 2-2f(3), p. 2-6). Printed (Table 57.3, circular, p. 205):
+    Bishop 1.417, Spencer 1.422; the module reads 1.4170 / 1.4211 on the
+    same circle (step 4 review, D4)."""
+    g = _v031_geom()
+    g.tension_crack_depth_basis = "rankine"
+    xc, yc, r = _V031_CIRCLE
+    for method, printed in (("bishop", 1.417), ("spencer", 1.422)):
+        res = analyze_slope(g, xc=xc, yc=yc, radius=r, method=method,
+                            n_slices=50)
+        assert res.FOS == pytest.approx(printed, rel=0.005)   # Slide2 p. 205
+        t = res.tension_crack
+        assert t["depth_basis"] == "rankine" and t["water_depth_m"] == 0
+        assert t["side"] == "exit"                 # the crest is at high x
+        assert 0.5 < t["depth_m"] < 3.0
 
 
 # Spencer's critical circle on 30 slices from an independent brute force

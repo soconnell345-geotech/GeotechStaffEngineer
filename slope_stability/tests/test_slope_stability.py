@@ -622,9 +622,12 @@ class TestPublishedBenchmarks:
 
     def test_taylor_undrained_nc(self):
         """With 4 H of level ground beyond the crest and the toe, the default
-        search finds Taylor's base circle: 1.935 at 30 slices, 0.6 % below
+        search finds Taylor's base circle: 1.942 at 30 slices, 0.3 % below
         the converged 1.947 (the slicing's own bias, as on Duncan Ex 1),
-        tangent to the base, out 1.8 H beyond the toe, no warning."""
+        tangent to the base, out 1.9 H beyond the toe, no warning. No crack
+        is asked for, so the reverse-curvature toe circles are discarded
+        (GM-140 step 4 and its review's F1; as first built, one closed by
+        Rankine's crack governed at 1.835)."""
         result = search_critical_surface(self._taylor_45(32.0, 32.0))
         c = result.critical
         assert result.governing_surface == "circular"
@@ -637,10 +640,11 @@ class TestPublishedBenchmarks:
     def test_taylor_short_profile_reads_high_and_warns(self):
         """The profile this test used to draw ends 0.6 H behind the crest and
         1.5 H beyond the toe, short of Taylor's circle: no circle it holds
-        reaches 1.947 (the best, a toe circle closed by a crack, 1.970; a
-        fine grid on the old centre box, 2.04-2.06). The search says the
-        profile's end held it back, with a lower circle past the end, and
-        records that both automatic windows were cut by the model."""
+        reaches 1.947 (2.065, a toe circle centred above the crest; no crack
+        is asked for, so the reverse-curvature ones are discarded, GM-140
+        step 4 and its review's F1). The search says the profile's end held
+        it back, with a lower circle past the end, and records that both
+        automatic windows were cut by the model."""
         result = search_critical_surface(self._taylor_45(5.0, 12.0))
         assert result.critical.FOS > self.TAYLOR_45_D225
         assert any("end of the ground surface" in w for w in result.warnings)
@@ -1170,10 +1174,12 @@ class TestContactStresses:
 # ============================================================================
 
 class TestBishopArtesianClamp:
-    """SS-2 regression: (W - u*b)*tan(phi) is clamped to >= 0 in Bishop's
-    numerator, so artesian/perched pore pressures (u*b > W) cannot
-    contribute NEGATIVE frictional resistance (Fellenius already clamps
-    its effective normal the same way)."""
+    """(W - u*b)*tan(phi) in Bishop's numerator. Bishop (1955) Eq. 13,
+    p. 10 prints the term with no lower limit, and since GM-140 step 3
+    (D21) that is the default: an artesian pore pressure (u*b > W) gives a
+    negative frictional term. Setting it to zero where negative, the SS-2
+    rule the module had before, is the stated option
+    (``methods.negative_term('zero')``)."""
 
     @staticmethod
     def _synthetic_slices(u_extra):
@@ -1200,15 +1206,44 @@ class TestBishopArtesianClamp:
         return slices, slip
 
     def test_artesian_slice_contributes_no_negative_friction(self):
-        """Raising u beyond the u*b = W threshold must not change the
-        Bishop FOS: the frictional term is floored at zero either way.
-        (Pre-v5.1 the extra pore pressure kept reducing the FOS.)"""
+        """Under the 'zero' rule, raising u beyond the u*b = W threshold
+        does not change the Bishop FOS: the frictional term is floored at
+        zero either way (the module's rule before GM-140 step 3)."""
+        from slope_stability.methods import negative_term
         slices_at, slip = self._synthetic_slices(u_extra=0.0)    # u*b = W
         slices_art, _ = self._synthetic_slices(u_extra=100.0)    # u*b >> W
-        fos_at = bishop_fos(slices_at, slip)
-        fos_art = bishop_fos(slices_art, slip)
+        with negative_term("zero"):
+            fos_at = bishop_fos(slices_at, slip)
+            fos_art = bishop_fos(slices_art, slip)
         assert fos_art == pytest.approx(fos_at, rel=1e-9)
         assert fos_art > 0
+
+    def test_artesian_slice_as_printed_lowers_the_fos(self):
+        """Bishop (1955) Eq. 13, p. 10: W - u b as printed, no lower
+        limit. With u b = W the term is zero under either rule; with
+        u b above W the printed term is negative and the FOS is lower by
+        that slice's term over the driving sum at the solved F."""
+        slices_at, slip = self._synthetic_slices(u_extra=0.0)
+        slices_art, _ = self._synthetic_slices(u_extra=100.0)
+        fos_at = bishop_fos(slices_at, slip)
+        fos_art = bishop_fos(slices_art, slip)
+        assert fos_art < fos_at
+        s = slices_art[1]
+        tp = math.tan(math.radians(s.phi))
+        term = (s.weight - s.pore_pressure * s.width) * tp      # -400 tan
+        assert term == pytest.approx(-400.0 * tp)
+        driving = sum(x.weight * (x.x_mid - slip.xc) / slip.radius
+                      for x in slices_art)
+
+        def eq13(F):
+            tot = 0.0
+            for x in slices_art:
+                t = math.tan(math.radians(x.phi))
+                m = math.cos(x.alpha) + math.sin(x.alpha) * t / F
+                tot += (x.c * x.width
+                        + (x.weight - x.pore_pressure * x.width) * t) / m
+            return tot / driving
+        assert eq13(fos_art) == pytest.approx(fos_art, abs=2e-4)
 
     def test_normal_pore_pressure_unchanged(self):
         """Sanity: with u*b < W on every slice the clamp is inactive and

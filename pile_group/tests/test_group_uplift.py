@@ -91,13 +91,15 @@ def test_cohesive_block_by_layers_is_ufc_eq_6_42():
 
 
 @pytest.mark.parametrize("pile_type, n, phi", [
-    ("driven", 2, 0.40), ("driven", 3, 0.50), ("driven", 4, 0.50),
+    ("driven", 2, 0.40), ("driven", 3, 0.40), ("driven", 4, 0.40),
+    ("driven", 5, 0.50),
     ("drilled_shaft", 4, 0.36), ("drilled_shaft", 5, 0.45),
     ("micropile", 6, 0.50), ("cfa", 6, None), ("ddp", 6, None)])
 def test_phi_ug_by_pile_type_and_small_group(pile_type, n, phi):
     """GEC-12 Table 7-1: 0.50; UFC 3-220-20 Table 6-28: 0.50, 0.45, 0.50;
-    small groups 20 % less, below 3 driven piles (GEC-12 p. 225) or 5 of
-    the others (UFC note A); none printed for CFA or DDP."""
+    small groups 20 % less, below 5 piles (UFC note A) for every type
+    since GM-310 (OWN-118; below 3 driven piles, GEC-12 p. 225, before);
+    none printed for CFA or DDP."""
     r = group_uplift_resistance(2.0, 3.0, 10.0, n, "cohesionless",
                                 [(10.0, 9.0)], pile_type=pile_type)
     if phi is None:
@@ -122,9 +124,14 @@ def test_small_group_counts_the_piles_under_the_cap(pile_type, n, group,
     assert r["group_piles"] == group
 
 
-def test_ufc_small_group_reading():
-    assert small_group_reduction(4, "driven") == 1.0
+def test_the_two_small_group_readings():
+    """GM-310 (the call for OWN-118): UFC's fewer than 5 is the default
+    for driven piles too; GEC-12's fewer than 3 is the other reading."""
+    assert small_group_reduction(4, "driven") == 0.8
     assert small_group_reduction(4, "driven", "ufc") == 0.8
+    assert small_group_reduction(4, "driven", "gec12") == 1.0
+    assert small_group_reduction(2, "driven", "gec12") == 0.8
+    assert small_group_reduction(5, "driven") == 1.0
 
 
 def test_the_lesser_governs():

@@ -127,6 +127,18 @@ class MethodSolution:
     fos_uncorrected, f0 : float or None
         Janbu's simplified method: the force-equilibrium F before the f0
         correction, and f0 (``fos`` is the corrected value).
+    fos_bishop, fos_oms : float or None
+        Bishop's simplified method on a circle (GM-140 step 3): Bishop's
+        own converged value, and the Ordinary Method of Slices value for
+        the same circle where the comparison was made
+        (`bishop_against_oms`).
+    oms_taken : bool
+        Bishop's value was below the Ordinary Method of Slices value, so
+        ``fos`` is the Ordinary Method of Slices value (Duncan 1996,
+        p. 580).
+    oms_not_compared : str
+        Why the comparison was not made ('' when it was, or when the method
+        is not Bishop's).
     """
     method: str
     fos: Optional[float]
@@ -137,6 +149,10 @@ class MethodSolution:
     fos_uncorrected: Optional[float] = None
     f0: Optional[float] = None
     kind: str = ""
+    fos_bishop: Optional[float] = None
+    fos_oms: Optional[float] = None
+    oms_taken: bool = False
+    oms_not_compared: str = ""
 
 
 def _usable(fos) -> bool:
@@ -203,7 +219,10 @@ def solve_method(slices: List, slip, method: str,
         if method == "bishop":
             fos = bishop_fos(slices, slip, tol=tol,
                              reinf_forces=reinf_forces)
-            return _number(method, fos)
+            out = _number(method, fos)
+            if out.solved:
+                bishop_against_oms(out, slices, slip, tol, reinf_forces)
+            return out
         if method == "janbu":
             fos, fos_u, f0 = janbu_fos(slices, slip,
                                        tol=min(tol, 1e-4) * 0.1,
@@ -231,6 +250,59 @@ def solve_method(slices: List, slip, method: str,
     return MethodSolution(method=method, fos=None, solved=False,
                           reason=gle_failure_reason(res, err),
                           kind="not_converged")
+
+
+#: Why Bishop's value is not compared with the Ordinary Method of Slices
+#: value on a circle (OWN-102's limit, 2026-11-13).
+OMS_NOT_COMPARED_SUPPORTS = (
+    "supports cross the circle: Duncan, Wright and Brandon (2014, p. 93) "
+    "print no Ordinary Method of Slices equation with known forces")
+OMS_NOT_COMPARED_SEISMIC = (
+    "a seismic coefficient acts: the Ordinary Method of Slices is "
+    "generally not used with seismic loading (Duncan, Wright and Brandon "
+    "2014, p. 93)")
+
+
+def bishop_against_oms(out: MethodSolution, slices: List, slip, tol: float,
+                       reinf_forces=None) -> None:
+    """Set Bishop's solved value on a circle beside the Ordinary Method of
+    Slices value for the same circle, and take the latter where Bishop's is
+    the lower (GM-140 step 3, OWN-102).
+
+    Duncan (1996, p. 580): calculate the Ordinary Method of Slices value
+    for each circle when Bishop's method is used; where Bishop's F is below
+    it, Bishop's solution has numerical problems and the Ordinary Method of
+    Slices value is the better answer.
+
+    The comparison is made only on circles with no supports and no seismic
+    coefficient (the limit the owner added to OWN-102 on 2026-11-13);
+    ``out.oms_not_compared`` says why where it is not. "Below" means below
+    by more than ``tol``, the tolerance Bishop's own iteration is solved
+    to: on a phi = 0 circle the two methods are the same sum (EM
+    1110-2-1902 C-2b, p. C-16) and differ by rounding only.
+    """
+    from slope_stability.methods import fellenius_fos
+    out.fos_bishop = out.fos
+    if reinf_forces:
+        out.oms_not_compared = OMS_NOT_COMPARED_SUPPORTS
+        return
+    if any(s.seismic_force != 0 for s in slices):
+        out.oms_not_compared = OMS_NOT_COMPARED_SEISMIC
+        return
+    try:
+        oms = fellenius_fos(slices, slip)
+    except NoSolution as exc:
+        out.oms_not_compared = ("the Ordinary Method of Slices has no "
+                                f"solution on this circle ({exc.reason})")
+        return
+    if not _usable(oms):
+        out.oms_not_compared = ("the Ordinary Method of Slices gives no "
+                                "usable value on this circle")
+        return
+    out.fos_oms = oms
+    if out.fos < oms - tol:
+        out.oms_taken = True
+        out.fos = oms
 
 
 def _number(method: str, fos) -> MethodSolution:

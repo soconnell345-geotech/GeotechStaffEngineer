@@ -43,11 +43,72 @@ class TestComputeTrend:
         assert result.r_squared == pytest.approx(1.0, abs=0.001)
 
     def test_edge_case_single_point(self):
-        """With n=1, should return zeroed result."""
-        result = compute_trend(np.array([5.0]), np.array([10.0]))
-        assert result.n_points == 1
-        assert result.r_squared == 0.0
-        assert result.slope == 0.0
+        """With fewer than 2 points there is no line: refused, never a
+        result with slope 0 and R-squared 0 (GM-326)."""
+        with pytest.raises(ValueError, match="at least 2 points; 1 given"):
+            compute_trend(np.array([5.0]), np.array([10.0]))
+        with pytest.raises(ValueError, match="at least 2 points; 0 given"):
+            compute_trend(np.array([]), np.array([]))
+
+    def test_unequal_lengths_refused(self):
+        with pytest.raises(ValueError, match="one value per depth"):
+            compute_trend([1.0, 2.0, 3.0], [10.0, 12.0])
+
+    def test_two_points_say_scatter_is_not_defined(self):
+        """A line through 2 points has no scatter: R-squared says nothing
+        about the fit, and the scatter and COV are null with a note."""
+        d = compute_trend([1.0, 3.0], [10.0, 20.0]).to_dict()
+        assert d["n_points"] == 2 and d["fitted"] is True
+        assert d["r_squared"] == 1.0
+        assert d["std_residual"] is None and d["cov"] is None
+        assert "exactly 2 points" in d["notes"][0]
+        assert "says nothing about the fit" in d["notes"][0]
+        # two equal values: R-squared is 0 by the no-variation rule, and
+        # the note no longer claims it is 1 (GM-326 review C1)
+        flat = compute_trend([1.0, 3.0], [10.0, 10.0]).to_dict()
+        assert flat["r_squared"] == 0.0
+        assert "by construction" not in flat["notes"][0]
+
+    def test_log_fit_counts_what_it_dropped(self):
+        """ln(depth) and ln(value) need positive numbers: the points that
+        cannot enter the fit are counted, and n_points is what was used."""
+        depths = [0.0, 1.0, 2.0, 4.0, 8.0, 3.0]
+        values = [5.0, 10.0, 20.0, 40.0, 80.0, -1.0]
+        r = compute_trend(depths, values, trend_type="log_linear")
+        assert r.n_points == 4 and r.n_dropped == 2
+        assert r.slope == pytest.approx(1.0) and r.r_squared == pytest.approx(1.0)
+        d = r.to_dict()
+        assert d["n_points"] == 4 and d["n_dropped"] == 2
+        assert "2 of 6 points left out" in d["notes"][0]
+        assert "2 at depth <= 0 or with a value <= 0" in d["notes"][0]
+        # the same data with nothing to drop reports none
+        clean = compute_trend(depths[1:5], values[1:5],
+                              trend_type="log_linear").to_dict()
+        assert clean["n_dropped"] == 0 and "notes" not in clean
+        # a linear fit drops nothing
+        assert compute_trend(depths, values).n_dropped == 0
+
+    def test_a_missing_reading_is_left_out_and_counted(self):
+        """A null reading (NaN, as a parsed CPT file gives a void) made
+        every fitted number NaN; it is left out of the fit and counted."""
+        nan = float("nan")
+        r = compute_trend([1.0, 2.0, 3.0, 4.0], [10.0, nan, 30.0, 40.0])
+        assert r.n_points == 3 and r.n_dropped == 1
+        assert r.slope == pytest.approx(10.0)
+        assert "1 with a missing" in r.to_dict()["notes"][0]
+        # the agent's route: a JSON null
+        from funhouse_agent.dispatch import call_agent
+        out = call_agent("subsurface", "compute_trend", {
+            "depths": [1.0, 2.0, 3.0, 4.0],
+            "values": [10.0, None, 30.0, 40.0]})
+        assert out["slope"] == 10.0 and out["n_dropped"] == 1
+        with pytest.raises(ValueError, match="1 of the 2 given have both"):
+            compute_trend([1.0, 2.0], [10.0, nan])
+
+    def test_log_fit_with_too_few_positive_points_refused(self):
+        with pytest.raises(ValueError, match="1 of the 3 given qualify"):
+            compute_trend([0.0, 1.0, 2.0], [5.0, 10.0, -3.0],
+                          trend_type="log_linear")
 
     def test_edge_case_two_points(self):
         """With n=2, should fit exactly."""
@@ -99,7 +160,10 @@ class TestComputeGroupedTrends:
         assert len(results) > 0
         for label, trend in results.items():
             assert trend.group_label == label
-            assert trend.n_points > 0
+            # every group had points; an unfitted one used none and counts
+            # them as left out (GM-326 review C2)
+            assert trend.n_points + trend.n_dropped > 0
+            assert trend.n_points > 0 or not trend.fitted
 
     def test_group_by_investigation(self, simple_site):
         results = compute_grouped_trends(simple_site, "N_spt", group_by="investigation")
@@ -107,3 +171,51 @@ class TestComputeGroupedTrends:
         assert "B-2" in results
         assert results["B-1"].n_points == 8
         assert results["B-2"].n_points == 6
+
+
+class TestGroupsThatCannotBeFitted:
+    """A group with too few points is kept and said, never a zero fit."""
+
+    def _site(self):
+        from subsurface_characterization.site_model import (
+            Investigation, PointMeasurement,
+        )
+        return SiteModel(investigations=[
+            Investigation(investigation_id="B-1", measurements=[
+                PointMeasurement(1.0, "N_spt", 5, "field", "SPT"),
+                PointMeasurement(2.0, "N_spt", 9, "field", "SPT"),
+                PointMeasurement(3.0, "N_spt", 13, "field", "SPT")]),
+            Investigation(investigation_id="B-2", measurements=[
+                PointMeasurement(1.5, "N_spt", 7, "field", "SPT")]),
+        ])
+
+    def test_grouped_trends_flag_the_group(self):
+        results = compute_grouped_trends(self._site(), "N_spt",
+                                         group_by="investigation")
+        assert results["B-1"].fitted and results["B-1"].slope == pytest.approx(4.0)
+        lone = results["B-2"]
+        # the fit used no point; the one given is counted as left out, as
+        # the fields are documented (GM-326 review C2)
+        assert lone.fitted is False and lone.n_points == 0
+        assert lone.n_dropped == 1
+        d = lone.to_dict()
+        assert d["slope"] is None and d["r_squared"] is None
+        assert d["cov"] is None and "at least 2 points" in d["notes"][0]
+        assert "not fitted" in lone.summary()
+        with pytest.raises(ValueError, match="No trend was fitted"):
+            lone.predict(2.0)
+
+    def test_the_plot_names_what_it_did_not_fit(self):
+        pytest.importorskip("plotly")
+        from subsurface_characterization.plots_xy import (
+            plot_parameter_vs_depth,
+        )
+        from subsurface_characterization.site_model import (
+            Investigation, PointMeasurement,
+        )
+        one = SiteModel(investigations=[Investigation(
+            investigation_id="B-3", measurements=[
+                PointMeasurement(1.5, "N_spt", 7, "field", "SPT")])])
+        result = plot_parameter_vs_depth(one, "N_spt", show_trend=True)
+        assert not result.trend_results
+        assert "no trend fitted" in result.skipped[-1]

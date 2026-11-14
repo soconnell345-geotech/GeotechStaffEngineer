@@ -11,7 +11,8 @@ only — soil properties must come from the user.
 1. **`discover_layers(filepath)`** — Read DXF, list all layers with entity
    counts, types, sample text, and bounding boxes.
 2. **`parse_dxf_geometry(filepath, layer_mapping, units)`** — Extract
-   coordinates from user-mapped layers, convert units, produce sorted profiles.
+   coordinates from user-mapped layers, convert units (checked against the
+   drawing's own header), produce sorted profiles.
 3. **`build_slope_geometry(parse_result, soil_properties)`** — Assemble
    `SlopeGeometry` with user-supplied soil parameters.
 
@@ -23,7 +24,7 @@ only — soil properties must come from the user.
 | POLYLINE | Surface, boundaries, GWT | 3D polylines also supported. |
 | LINE | Surface (merged), boundaries, **nails** | Individual segments merged for profiles. Each nail = one LINE from head to tip. |
 | SPLINE | Surface, boundaries | Flattened to polyline via `ezdxf.flattening()`. |
-| TEXT / MTEXT | Annotations | Insertion point + text content extracted. |
+| TEXT / MTEXT | Annotations | Insertion point (in metres) + text content extracted. A mapped annotation layer that is not in the drawing is named in warnings. |
 
 ## Layer Name Convention
 
@@ -33,10 +34,57 @@ names and creates a `LayerMapping`.
 
 ## Unit Handling
 
-- DXF `$INSUNITS` header variable provides a hint (detected automatically)
-- User specifies `units=` parameter to confirm
-- All output in SI meters
+Nothing is assumed about the units a drawing is in (GM-327, 2026-11-13;
+`units` used to default to metres and was never compared with the drawing,
+so a drawing in mm came out 1000 times too large).
+
+`parse_dxf_geometry(units=None, ignore_header_units=False)` sets the caller's
+`units` beside the drawing's own `$INSUNITS` header (the value
+`discover_layers` reports as `units_hint`):
+
+| `units` | Header | Result |
+|---|---|---|
+| left out | states m, mm, cm, ft or in | the header's units are used; `units_source` says so |
+| left out | unitless, or a unit not converted (km, miles, ...) | refused: give `units` |
+| given | unitless | the given units |
+| given | the same | the given units |
+| given | different | refused, naming both; with `ignore_header_units=True` the given units are used and a warning names both |
+
+- A header left at a template's value is common (a drawing in feet whose
+  header says inches), which is why the caller can overrule it, and why
+  doing so takes an explicit input.
+- The result carries `units_used`, `units_source` and `header_units`.
+- All output is SI metres: surface, boundaries, water table, nails and the
+  insertion points of text annotations (which were copied in drawing units
+  until GM-327).
 - Supported: m, mm, cm, ft, in
+
+## Soil and nail properties (the agent adapter)
+
+A drawing gives geometry only. `funhouse_agent/adapters/dxf_import_adapter.py`
+(`soil_assignments`, shared with the PDF import adapter) therefore assumes
+no unit weight, strength or stiffness:
+
+| Tool | Refused when left out | Stands in when left out, and listed in `defaults_used` |
+|---|---|---|
+| `build_slope_geometry` | `gamma`; `phi` (drained layer); `cu` (undrained layer) | `c_prime` 0, `analysis_mode` 'drained', `gamma_sat` = the layer's `gamma` |
+| `build_fem_inputs` | `gamma`, `E`, `nu`; `phi` (model mc or hs) | `c` 0, `psi` 0, `model` 'mc' |
+
+- `gamma_sat` left out takes the layer's own `gamma` (`SlopeSoilLayer`'s
+  rule: one unit weight above and below the water table); the output
+  carries it, so it is listed as the value it took.
+- `defaults_used` keys are `soil_properties[<name>].<input>` and
+  `nail_defaults.<input>`. The key is absent when nothing stood in.
+- Nails: a drawing gives each nail's head, length and inclination. The bar
+  diameter (25 mm), drill-hole diameter (150 mm), fy (420 MPa), grout-ground
+  bond stress (100 kPa) and horizontal spacing (1.5 m) that
+  `build_slope_geometry` fills in are `slope_stability.nails.SoilNail`'s own
+  defaults (`converter.NAIL_PROPERTY_DEFAULTS`); each one not given in
+  `nail_defaults` is listed. The bond stress depends on the ground and
+  should be given.
+- The dataclasses `SoilPropertyAssignment` and `FEMSoilPropertyAssignment`
+  still carry field defaults (gamma 18, E 30000, nu 0.3, ...) for a library
+  caller; the agent's route does not use them.
 
 ## Nail Convention
 
@@ -44,7 +92,8 @@ names and creates a `LayerMapping`.
 - Head = leftmost endpoint (closer to slope face)
 - Tip = rightmost endpoint (deeper into slope)
 - Inclination computed from head/tip geometry (degrees below horizontal)
-- User supplies nail defaults (bar diameter, bond stress, etc.) via `nail_defaults` dict
+- User supplies nail properties (bar diameter, bond stress, etc.) via `nail_defaults` dict; see "Soil and nail properties" for what stands in
+- Only LINE entities are read as nails; anything else on the nail layer is counted in the parse result's warnings
 
 ## Layer Stacking
 

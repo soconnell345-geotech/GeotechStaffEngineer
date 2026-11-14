@@ -252,7 +252,8 @@ METHOD_INFO = {
             "area_replacement_ratio": {"type": "float", "required": False, "description": "Area replacement ratio As/A (0.1-0.35 typical). Used to compute spacing when spacing is not given."},
             "pattern": _PATTERN,
             "E_soil": {"type": "float", "required": False, "default": 5000.0, "description": "Surrounding soil modulus (kPa). With settlement_method 'stress_ratio', used only for the composite modulus E_comp = E_soil*[1 + as*(n-1)]; the GEC-13 Fig. 5-21 methods need it given, for E_c/E_s."},
-            "n": {"type": "float", "required": False, "default": 5.0, "description": "Stress concentration ratio sigma_c/sigma_s; sets the improved bearing and, with settlement_method 'stress_ratio', the settlement reduction factor. GEC-13 for stone columns: measured 'between 2.0 and 5.0' (p. 5-31), and 'For preliminary design, a ratio of 2.5 is often conservatively used for stability and bearing resistance calculations' (p. 5-32); for rammed aggregate piers 5 to 10 under flexible embankment loading and 10 under rigid footings (p. 5-43); 'stress concentration ratios range from 4 to 45 for rigid footings' (p. 5-45)."},
+            "n": {"type": "float", "required": False, "description": "Stress concentration ratio sigma_c/sigma_s; sets the improved bearing and, with settlement_method 'stress_ratio', the settlement reduction factor. No default: left out, it is taken by column_type (2.5 for a stone column, 5 for a rammed aggregate pier), and the call is refused, asking for column_type, where neither is given and n is used. GEC-13 for stone columns: measured 'between 2.0 and 5.0' (p. 5-31), and 'For preliminary design, a ratio of 2.5 is often conservatively used for stability and bearing resistance calculations' (p. 5-32); for rammed aggregate piers 5 to 10 under flexible embankment loading and 10 under rigid footings (p. 5-43); 'stress concentration ratios range from 4 to 45 for rigid footings' (p. 5-45)."},
+            "column_type": {"type": "str", "required": False, "allowed_values": ["stone_column", "rammed_aggregate_pier"], "description": "The kind of aggregate column, for the stress concentration ratio n when n is not given: 'stone_column' takes n = 2.5 (GEC-13 p. 5-32: 'For preliminary design, a ratio of 2.5 is often conservatively used for stability and bearing resistance calculations'; 2.0 to 5.0 measured, p. 5-31); 'rammed_aggregate_pier' takes n = 5 (GEC-13 p. 5-43: 5 to 10 under flexible embankment loading, the low end; 10 under rigid footings). Needed when n is left out and n is used (settlement_method 'stress_ratio', or q_unreinforced given). Not used when n is given. The result's choices say which was taken and give the other type's n."},
             "settlement_method": {"type": "str", "required": False, "default": "stress_ratio", "allowed_values": ["stress_ratio", *_BY_MODULI], "description": "How the settlement over the columns is worked out. 'stress_ratio' (default): SRF = 1/[1 + as*(n-1)] from n. The others give the settlement ratio (settlement without columns / with them; GEC-13 p. 5-36 prints it as 'n', which is not the stress ratio n) by E_c/E_s off GEC-13 Fig. 5-21, and need E_column and E_soil: 'weighted_modulus' (curve 2, settlement ratio = 1 + as*(E_c/E_s - 1), any E_c/E_s); 'balaam_rigid' (curves 5b, 5c: E_c/E_s 5 to 10, A/A_c 1.75 to 9); 'balaam_flexible' (curve 5a: E_c/E_s = 10, A/A_c 1.5 to 8.5). GEC-13 p. 5-37: the FHWA (1983) Equilibrium Method, 'roughly equivalent to the Balaam relationships', 'represents an average or lower bound estimate suitable for preliminary analyses'; the Priebe curve (priebe_improvement_factor) 'the upper bound effectiveness'."},
             "E_column": {"type": "float", "required": False, "description": "Aggregate column modulus E_c (kPa), with E_soil, for the settlement_method 'weighted_modulus', 'balaam_rigid' or 'balaam_flexible' (E_c/E_s, GEC-13 Fig. 5-21). Refused with 'stress_ratio', which takes n instead. Alias: column_modulus."},
             "q_unreinforced": {"type": "float", "required": False, "default": 0.0, "description": "Unreinforced bearing capacity (kPa). 0 = not computed."},
@@ -380,7 +381,10 @@ declare_applies_when(METHOD_INFO, {
         "E_column": {"settlement_method": list(_BY_MODULI)},
         # with a Fig. 5-21 method n sets only the improved bearing
         "n": [{"settlement_method": ["stress_ratio"]},
-              {"q_unreinforced": "set"}]}})
+              {"q_unreinforced": "set"}],
+        # GM-310: the column type only stands in for an n not given
+        "column_type": [{"n": "unset", "settlement_method": ["stress_ratio"]},
+                        {"n": "unset", "q_unreinforced": "set"}]}})
 
 # What a left-out input with no default stands for (BACKLOG GM-165): the
 # screening's consolidation time needs cv and Hdr.
@@ -391,7 +395,20 @@ _NO_TIME = ("consolidation time not estimated",
 _NO_SMEAR = ("smear ignored (F_s = 0)",
              "GEC-13 p. 2-35: 'The effects of both soil disturbance and "
              "well resistance are often ignored for typical projects'")
+# GM-310: n has no default; left out, it is the column type's
+_N_BY_TYPE = ("by column_type: 2.5 for 'stone_column', 5 for "
+              "'rammed_aggregate_pier'; refused with neither given where n "
+              "is used",
+              "GEC-13 pp. 5-31, 5-32 (stone columns: 2.0 to 5.0 measured, "
+              "2.5 often conservatively used for preliminary design) and "
+              "p. 5-43 (rammed aggregate piers: 5 to 10)")
+_NO_COLUMN_TYPE = ("no column type named: n is taken as given, and the "
+                   "call is refused where n is used and not given",
+                   "GEC-13 prints the stress concentration ratio by "
+                   "column type (pp. 5-31, 5-32, 5-43), so none is "
+                   "assumed for an unnamed column")
 declare_when_absent(METHOD_INFO, {
+    "aggregate_piers": {"n": _N_BY_TYPE, "column_type": _NO_COLUMN_TYPE},
     "feasibility": {"cv_m2_per_year": _NO_TIME, "Hdr_m": _NO_TIME},
     # GM-291: smear ignored unless a smear ratio is given (GEC-13 p. 2-35)
     **{m: {"smear_ratio": _NO_SMEAR} for m in (

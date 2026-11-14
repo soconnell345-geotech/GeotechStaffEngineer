@@ -330,14 +330,25 @@ def test_weak_layer_search_runs_in_a_sloping_layer(weak_top_polyline):
     not at its flat top_elevation and bottom_elevation: the critical
     surface runs in the weak layer over most of its length. With 8 points
     the two end legs go from the ground to the layer, so five-sevenths of
-    the length is the most that can lie in it."""
+    the length is the most that can lie in it.
+
+    GM-140 step 3 (item 5): the surface looked at is the lowest the search
+    scored that meets the printed acceptability checks. Since the screen
+    on a FOS below 1.5 on a jagged surface was removed, the lowest solved
+    surface of this search is a saw-tooth up and down through the section
+    with tension on its bases and sides and its line of thrust outside
+    the mass (EM 1110-2-1902 C-10a): kept and flagged, not the surface
+    this test is about."""
     from slope_stability.search import search_weak_layer_biased
     res = search_weak_layer_biased(
         _weak_layer_section(weak_top_polyline), x_entry_range=(0.0, 12.0),
         x_exit_range=(30.0, 48.0), n_trials=300, n_points=8, n_slices=20,
         seed=1)
     assert res.critical is not None
-    assert _share_of_base_in_weak_layer(res.critical.slip_points) > 0.5
+    (rec,) = res.trial_flags
+    low = rec["lowest_unflagged"]
+    assert low is not None and low["FOS"] >= res.critical.FOS
+    assert _share_of_base_in_weak_layer(low["points"]) > 0.5
 
 
 def test_weak_layer_search_band_at_x():

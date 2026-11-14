@@ -464,7 +464,7 @@ class TestLogSpiralSource:
         # every wall: the wall friction is the engineer's to confirm (its
         # own choice since GM-242)
         for r in (a, b, eq, ck, fig):
-            assert "for the engineer to confirm" in r.choices[-1]["basis"]
+            assert "Fig. 4-37 step 1 (p. 237)" in r.choices[-1]["basis"]
             assert r.choices[-1]["what"].startswith("Wall friction delta")
 
     def test_full_wall_friction_on_eq_4_12_is_noted(self):
@@ -522,74 +522,89 @@ class TestLogSpiralSource:
 
 
 class TestWallFrictionDefault:
-    """GM-242: a layer's wall friction left out is stated: the clean sand
-    row of the steel sheet pile table (EM 1110-2-2504 Table 3-3, USS Table
-    4, UFC 3-220-20 Table 4-1: 17 deg) on the passive side of the
-    log-spiral method in a layer without cohesion, none on the active side
-    or with cohesion (UFC 3-220-20 Fig. 4-37 step 1, p. 237), and none with
-    Coulomb's; each a judgment the choice states, with the embedment at
-    delta = 0 beside it (the GM-242 review)."""
+    """A layer's wall friction left out is stated. GM-310 (the call for
+    OWN-82, 2026-11-12): none with any method; the steel sheet pile
+    table's rows (EM 1110-2-2504 Table 3-3, USS Table 4, UFC 3-220-20
+    Table 4-1) only where the caller marks the layer, since UFC 3-220-20
+    Fig. 4-37 step 1 (p. 237) includes wall friction on the passive side
+    for clean coarse-grained soils only. GM-242 took the clean sand row,
+    17 deg, on the passive side only, for any layer without cohesion. The
+    choice's clean_sand alternative marks the layer, which applies the
+    row on both sides, so its embedment is not GM-242's. Made-up walls."""
 
     def _sand(self, **kw):
         return [WallSoilLayer(20.0, 18.0, friction_angle=32.0, **kw)]
 
-    def test_log_spiral_takes_the_clean_sand_row_on_the_passive_side(self):
+    def test_log_spiral_takes_none_unless_the_layer_is_marked(self):
         from sheet_pile.cantilever import wall_friction
         from geotech_common.log_spiral import dm7_2_eq_4_12_Kp
         (layer,) = self._sand()
-        assert wall_friction(layer, "passive", "log_spiral") == (
-            17.0, "default_row")
+        assert wall_friction(layer, "passive", "log_spiral") == (0.0, "none")
         assert wall_friction(layer, "active", "log_spiral") == (0.0, "none")
+        (marked,) = self._sand(interface_soil="clean_sand")
+        assert wall_friction(marked, "passive", "log_spiral") == (
+            17.0, "row")
+        (gravel,) = self._sand(interface_soil="clean_gravel")
+        assert wall_friction(gravel, "passive", "log_spiral") == (
+            22.0, "row")
         left_out = analyze_cantilever(4.0, self._sand(),
                                       pressure_method="log_spiral")
         named = analyze_cantilever(4.0,
                                    self._sand(interface_soil="clean_sand"),
                                    pressure_method="log_spiral")
-        # the row named is used on both sides (Coulomb Ka at 17 deg), so it
-        # needs less embedment than the passive-only default
-        assert named.embedment_depth < left_out.embedment_depth
         smooth = analyze_cantilever(4.0, self._sand(wall_friction_deg=0.0),
                                     pressure_method="log_spiral")
-        assert left_out.embedment_depth < 0.8 * smooth.embedment_depth
+        # left out is the smooth wall; the marked layer needs less
+        assert left_out.embedment_depth == smooth.embedment_depth
+        assert named.embedment_depth < 0.8 * left_out.embedment_depth
         friction = left_out.choices[-1]
         assert friction["how"] == "default"
         assert friction["chosen"] == (
-            "layer 1: 17 deg (the clean sand row, taken when the layer "
-            "gives none)")
+            "layer 1: 0 deg (taken when the layer gives none: it is not "
+            "marked clean sand or gravel)")
         assert "Table 3-3 (p. 3-4" in friction["basis"]
         assert "Table 4 (p. 13" in friction["basis"]
         assert "Table 4-2 (p. 4-15" in friction["basis"]
-        # the printed rule, and the judgment the tool adds to it
+        # the printed rule, and what the caller gives to take the row
         assert "Fig. 4-37 step 1 (p. 237)" in friction["basis"]
-        assert "For active or passive pressures in all other soil types, "             "ignore wall friction" in friction["basis"]
-        assert "Judgment, for the engineer to confirm" in friction["basis"]
-        assert "Coulomb" not in friction["basis"].split("Judgment")[0]
+        assert "For active or passive pressures in all other soil types, " \
+            "ignore wall friction" in friction["basis"]
+        assert "mark the layer interface_soil 'clean_sand' (17 deg)" \
+            in friction["basis"]
         alts = friction["alternatives"]
         assert alts[0] == ("delta = 0, a smooth wall (Rankine's Kp): layer 1 "
-                           "delta 0, Kp 3.25; with no wall friction in the "
-                           "layers that gave none, the embedment is "
-                           f"{smooth.embedment_depth:.2f} m")
+                           "delta 0, Kp 3.25")
+        (row,) = [a for a in alts if a.startswith("the clean_sand row")]
         kp17 = dm7_2_eq_4_12_Kp(32.0, 17.0)
-        assert f"Kp {kp17:.3g}" in left_out.choices[0]["basis"]
+        assert f"Kp {kp17:.3g}" in row
+        assert row.endswith("marked interface_soil 'clean_sand', the "
+                            f"embedment is {named.embedment_depth:.2f} m")
+        # a marked layer: nothing left out, no embedment beside it
+        marked_choice = named.choices[-1]
+        assert marked_choice["how"] == "given"
+        assert not any("embedment" in a
+                       for a in marked_choice["alternatives"])
 
     def test_the_probe_sand_cantilever(self):
         """The GM-242 probe: 4 m in sand, phi' 32, water at the excavation
-        level: D0 7.21 m at Rankine's Kp (delta 0, the old default), 5.06
-        m at the clean sand row; D = 1.2 D0 (GM-290)."""
-        layers = self._sand()
-        r = analyze_cantilever(4.0, layers, gwt_depth_active=4.0,
+        level: D0 7.21 m at Rankine's Kp (delta 0: the default before
+        GM-242 and again since GM-310), 5.06 m with the clean sand row on
+        the passive side alone (GM-242's default); D = 1.2 D0 (GM-290)."""
+        r = analyze_cantilever(4.0, self._sand(), gwt_depth_active=4.0,
                                pressure_method="log_spiral")
-        old = analyze_cantilever(4.0, self._sand(wall_friction_deg=0.0),
-                                 gwt_depth_active=4.0,
-                                 pressure_method="log_spiral")
-        assert old.embedment_converged == pytest.approx(7.21, abs=0.01)
-        assert r.embedment_converged == pytest.approx(5.06, abs=0.01)
+        assert r.embedment_converged == pytest.approx(7.21, abs=0.01)
         assert r.embedment_depth == pytest.approx(
             1.2 * r.embedment_converged)
+        marked = analyze_cantilever(
+            4.0, self._sand(interface_soil="clean_sand"),
+            gwt_depth_active=4.0, pressure_method="log_spiral")
+        # the row on both sides: a little less than GM-242's 5.06 m
+        assert 4.0 < marked.embedment_converged < 5.06
 
     def test_cap_cohesion_and_coulomb(self):
         from sheet_pile.cantilever import wall_friction
-        loose = WallSoilLayer(5.0, 18.0, friction_angle=15.0)
+        loose = WallSoilLayer(5.0, 18.0, friction_angle=15.0,
+                              interface_soil="clean_sand")
         assert wall_friction(loose, "passive", "log_spiral")[0] == 15.0
         clay = WallSoilLayer(5.0, 18.0, friction_angle=20.0, cohesion=10.0)
         assert wall_friction(clay, "passive", "log_spiral") == (0.0, "none")
@@ -608,27 +623,30 @@ class TestWallFrictionDefault:
         assert "not the Coulomb method" in friction["basis"]
         assert "Judgment, for the engineer to confirm" in friction["basis"]
         assert "Fig. 4-37" not in friction["basis"]
-        # no layer took the clean sand row, so no embedment at delta = 0
-        assert "embedment" not in friction["alternatives"][0]
+        # Coulomb's: no embedment at the clean sand row beside it
+        assert not any("embedment" in a for a in friction["alternatives"])
         assert analyze_cantilever(4.0, self._sand()).choices == []
 
-    def test_anchored_gives_the_embedment_at_delta_0(self):
-        """The GM-242 review: the anchored wall's wall friction choice
-        gives the embedment with no wall friction where it was left out,
-        and it is the embedment of that wall."""
+    def test_anchored_gives_the_embedment_with_the_layers_marked(self):
+        """The anchored wall's wall friction choice gives the embedment
+        with the layers that named none marked clean sand, and it is the
+        embedment of that wall."""
         left_out = analyze_anchored(6.0, 1.5, self._sand(),
                                     pressure_method="log_spiral")
         smooth = analyze_anchored(6.0, 1.5,
                                   self._sand(wall_friction_deg=0.0),
                                   pressure_method="log_spiral")
-        assert left_out.embedment_depth < smooth.embedment_depth
-        alt = left_out.choices[-1]["alternatives"][0]
-        assert alt.endswith(
-            f"the embedment is {smooth.embedment_depth:.2f} m")
+        assert left_out.embedment_depth == smooth.embedment_depth
         given = analyze_anchored(6.0, 1.5,
                                  self._sand(interface_soil="clean_sand"),
                                  pressure_method="log_spiral")
-        assert "embedment" not in given.choices[-1]["alternatives"][0]
+        assert given.embedment_depth < left_out.embedment_depth
+        (row,) = [a for a in left_out.choices[-1]["alternatives"]
+                  if a.startswith("the clean_sand row")]
+        assert row.endswith(
+            f"the embedment is {given.embedment_depth:.2f} m")
+        assert not any("embedment" in a
+                       for a in given.choices[-1]["alternatives"])
 
     def test_interface_soil_is_checked(self):
         with pytest.raises(ValueError, match="interface_soil must be one of"):
