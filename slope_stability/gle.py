@@ -113,6 +113,34 @@ _LAMBDA_CLOSED = 1e-12
 #: forces on the mass; a sign change of the closing force across a pole of
 #: the slice equations is far above it and is not a state.
 _CLOSES = 1e-7
+#: Where a step of the lambda scan meets no state, the step is bisected
+#: until the last lambda with a state and the first without are closer
+#: than this (`_GLESystem.first_crossing`; GM-344 fix round 2). A
+#: resolution of where the branch ends, not a setting of the method.
+_BRANCH_END_TOL = 1e-4
+
+#: Where ONE surface is analysed (`single_surface`, which `analyze_slope`
+#: turns on around its solves) and no crossing is met upward from
+#: lambda = 0, the branch is also scanned DOWNWARD from 0 to the lower
+#: bound of ``lambda_bounds`` (-1.5, D29's former range), and the first
+#: crossing met there is named in the no-number reason with its flags. It
+#: is never reported: below lambda = 0 the interslice shear acts against
+#: the sense the sliding gives it (the orchestrator's ruling 2, GM-344).
+#: Off by default, so never inside a search's trials (run time).
+_SCAN_BELOW: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_gle_scan_below", default=False)
+
+
+@contextlib.contextmanager
+def single_surface():
+    """Run a block in which every Spencer, Morgenstern-Price and GLE
+    solve with no crossing upward from lambda = 0 also scans below 0 for
+    its reason (`_SCAN_BELOW`). `analyze_slope` uses it; no search does."""
+    token = _SCAN_BELOW.set(True)
+    try:
+        yield
+    finally:
+        _SCAN_BELOW.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -1021,19 +1049,29 @@ class _GLESystem:
 
         Scans lambda upward from ``lam0`` in steps of 0.1 to ``hi_b``
         (the bound itself is tried too: fifteen steps of 0.1 overshoot 1.5
-        by a rounding error). The scan stops at the first lambda at which
-        the branch has no state: the branch ends there, and with no
-        crossing met before it there is no number (``self.branch_end``
-        holds the last lambda with a state and the first without). Before
-        (GM-60), that lambda was stepped over, and the next state found
-        could lie on another branch with the same pole signature, which
-        ruling 2 excludes (the review's question 4). Lambda below ``lam0``
-        is not scanned: there
+        by a rounding error). The scan stops where the branch has no
+        state: the branch ends there, and with no crossing met before it
+        there is no number. Where a step meets no state, the step is
+        bisected between the last lambda with a state and that lambda,
+        each trial state found from the branch's last state (its F and
+        side, as the steps are), until the two lambdas are less than
+        1e-4 apart (`_BRANCH_END_TOL`); every state found on the way is
+        tested as a step's state is (agreement, then a sign change of the
+        net moment against the state before it, refined by `refine`), so
+        a crossing inside the last step before the branch ends is found
+        (fix round 2: two trial surfaces of ACADS 1(a)'s search lost
+        theirs there). ``self.branch_end`` holds the narrowed pair, the
+        last lambda with a state and the first without. Before (GM-60),
+        that lambda was stepped over, and the next state found could lie
+        on another branch with the same pole signature, which ruling 2
+        excludes (the review's question 4). Lambda below ``lam0`` is not
+        scanned for the root: there
         the interslice shear acts against the sense the sliding gives it,
         and the crossings found there on made-up and benchmark surfaces
         were all states with bases and sides in tension (before, the scan
         went down too, after or before going up; ``lo_b`` is kept in the
-        signature and not used).
+        signature and not used here: `crossing_below` scans down, for the
+        reason only).
 
         A crossing whose state has no net driving moment or no net
         driving force is not taken (``self.undriven`` counts them): a
@@ -1042,43 +1080,89 @@ class _GLESystem:
         GM-140 step 2 for every method, `solution.NoSolution` kind
         'no_driving'; the lagged iteration this scan replaces could not
         take a step from such a state)."""
-        jumps: List[float] = []
-        no_state: List[float] = []
         self.undriven = 0
         self.branch_end = None
         if self.agrees(st0):
             if st0[8]:
-                return (lam0, st0), jumps, no_state
+                return (lam0, st0), [], []
             self.undriven += 1
-        b_tol = 1e-9
-        for step in (0.1,):
-            lam_try = lam0
-            prev_lam, prev = lam0, st0
-            for _ in range(40):
-                lam_try += step
-                if lam_try > hi_b + b_tol or lam_try < lo_b - b_tol:
-                    break
-                st = self._state(lam_try, prev[1], prev[7])
-                if st is None:
-                    # the branch from lam0 ends here: no number
-                    no_state.append(lam_try)
-                    self.branch_end = (prev_lam, lam_try)
-                    break
-                if self.agrees(st):
-                    if st[8]:
-                        return (lam_try, st), jumps, no_state
-                    self.undriven += 1
-                elif prev[6] * st[6] < 0:
-                    lam_c, st_c = self.refine(prev_lam, prev, lam_try, st)
-                    if st_c is not None and st_c[8]:
-                        return (lam_c, st_c), jumps, no_state
-                    if st_c is not None:
-                        self.undriven += 1
-                    else:
-                        jumps.append(lam_c)
-                prev_lam, prev = lam_try, st
+        found, jumps, no_state, self.branch_end, undriven = self._scan(
+            lam0, st0, hi_b, 0.1)
+        self.undriven += undriven
         no_state.sort(key=abs)
-        return None, jumps, no_state
+        return found, jumps, no_state
+
+    def crossing_below(self, st0, lo_b: float):
+        """The first crossing met DOWNWARD from the state ``st0`` at
+        lambda = 0, on its branch of solutions, to ``lo_b``: (lambda,
+        state) or None. The steps of 0.1, the end of the branch narrowed
+        to 1e-4 and the test of each state are `first_crossing`'s. Never
+        a factor of safety (ruling 2: below lambda = 0 the interslice
+        shear acts against the sense the sliding gives it); `gle_fos`
+        names it in the no-number reason, on a single surface only
+        (`single_surface`; fix round 2)."""
+        return self._scan(0.0, st0, lo_b, -0.1)[0]
+
+    def _scan(self, lam0: float, st0, bound: float, step: float):
+        """The scan of `first_crossing` (``step`` 0.1) and
+        `crossing_below` (``step`` -0.1) from ``st0`` at ``lam0`` to
+        ``bound``: (the crossing (lambda, state) or None, the lambdas of
+        the jumps met, the lambdas at which the branch has no state, the
+        branch end (last lambda with a state, first without; None where
+        the scan met a crossing or reached ``bound``), the number of
+        crossings met with no net driving moment or force)."""
+        jumps: List[float] = []
+        no_state: List[float] = []
+        undriven = [0]
+
+        def test(lam, st, prev_lam, prev):
+            # a state of the branch, against the one before it
+            if self.agrees(st):
+                if st[8]:
+                    return (lam, st)
+                undriven[0] += 1
+            elif prev[6] * st[6] < 0:
+                lam_c, st_c = self.refine(prev_lam, prev, lam, st)
+                if st_c is not None and st_c[8]:
+                    return (lam_c, st_c)
+                if st_c is not None:
+                    undriven[0] += 1
+                else:
+                    jumps.append(lam_c)
+            return None
+
+        b_tol = 1e-9
+        lam_try = lam0
+        prev_lam, prev = lam0, st0
+        for _ in range(40):
+            lam_try += step
+            if (lam_try > bound + b_tol if step > 0
+                    else lam_try < bound - b_tol):
+                break
+            st = self._state(lam_try, prev[1], prev[7])
+            if st is not None:
+                hit = test(lam_try, st, prev_lam, prev)
+                if hit is not None:
+                    return hit, jumps, no_state, None, undriven[0]
+                prev_lam, prev = lam_try, st
+                continue
+            # The branch ends inside this step: narrow the end, following
+            # the branch from its last state, and test each state met.
+            gone = lam_try
+            while abs(gone - prev_lam) >= _BRANCH_END_TOL:
+                mid = 0.5 * (prev_lam + gone)
+                st = self._state(mid, prev[1], prev[7])
+                if st is None:
+                    gone = mid
+                    continue
+                hit = test(mid, st, prev_lam, prev)
+                if hit is not None:
+                    return hit, jumps, no_state, None, undriven[0]
+                prev_lam, prev = mid, st
+            # no crossing on the branch from lam0 before it ends
+            no_state.append(gone)
+            return None, jumps, no_state, (prev_lam, gone), undriven[0]
+        return None, jumps, no_state, None, undriven[0]
 
     def _solve_marched(self, lam: float, f0: float,
                        above_poles: bool = True):
@@ -1177,6 +1261,55 @@ def _assign_reinforcement(ns, reinf_forces, mirrored):
     return out
 
 
+def _numbered(nums: List[int]) -> str:
+    """'3, 4 and 7'."""
+    s = [str(k) for k in nums]
+    return s[0] if len(s) == 1 else ", ".join(s[:-1]) + " and " + s[-1]
+
+
+def _below_zero_text(sys_: "_GLESystem", found, mirrored: bool) -> str:
+    """The reason's words for the crossing met below lambda = 0 on a
+    single surface (`_GLESystem.crossing_below`): its F and lambda, the
+    slices with a base in tension and the slice sides in tension (the
+    zeros of `acceptability`'s ``base_tension`` and ``side_tension``
+    findings), and the least denominator of a slice's own two equations
+    (`GLEResult.slice_denominator`), numbered as the slices are given."""
+    lam, st = found
+    ns = sys_.ns
+    n = len(ns)
+    F, E, N, tps = st[1], st[2], st[4], st[5]
+
+    def slice_no(i):
+        return n - i if mirrored else i + 1
+
+    def side_no(j):                 # side j lies between slices j, j + 1
+        return n - j if mirrored else j
+
+    n_ref = max((abs(v) for v in N), default=0.0)
+    bases = sorted(slice_no(i) for i, s in enumerate(ns)
+                   if N[i] - s.u * s.length < -1e-9 * max(n_ref, 1.0))
+    e_ref = max((abs(e) for e in E), default=0.0)
+    sides = sorted(side_no(j) for j in range(1, n)
+                   if E[j] < -max(1e-6, 1e-3 * e_ref))
+    den = []
+    for i, s in enumerate(ns):
+        t = math.atan(lam * sys_.fb[i + 1]) if i + 1 < n else 0.0
+        den.append(math.cos(s.alpha - t)
+                   + math.sin(s.alpha - t) * tps[i] / F)
+    k = min(range(n), key=den.__getitem__)
+    return (f"; below lambda = 0 the same branch meets a crossing, at "
+            f"lambda = {lam:.4f} with F = {F:.4f}, where "
+            f"{len(bases)} slice base(s)"
+            + (f" (slice {_numbered(bases)})" if bases else "")
+            + f" and {len(sides)} slice side(s)"
+            + (f" (side {_numbered(sides)})" if sides else "")
+            + f" are in tension and the least denominator of a slice's own "
+            f"equations, cos(alpha - theta) + sin(alpha - theta) tan(phi') "
+            f"/ F, is {den[k]:.4f} on slice {slice_no(k)}: it is not "
+            f"reported, because below lambda = 0 the interslice shear acts "
+            f"against the sense the sliding gives it")
+
+
 def gle_fos(slices: List[Slice],
             slip,
             f_interslice: str = "half_sine",
@@ -1209,7 +1342,11 @@ def gle_fos(slices: List[Slice],
         Range for lambda. Default (-1.5, 1.5). The scan runs from
         lambda = 0 (or the lowest lambda above it that has a state) up
         to the upper bound, on the branch of solutions that starts there,
-        and stops where that branch ends; the lower bound is not used
+        and stops where that branch ends (narrowed to 1e-4 in lambda).
+        The lower bound is used only where one surface is analysed
+        (`single_surface`, `analyze_slope`) and no crossing is met
+        upward: the branch is scanned down from 0 to it and the first
+        crossing met there is named in the reason, never reported
         (GM-344; D29's former range was scanned both ways).
     reinf_forces : list of ReinforcementForce, optional
         Resolved reinforcement crossings (see
@@ -1319,8 +1456,8 @@ def gle_fos(slices: List[Slice],
         w += (f"; the scan went upward from lambda = {lam0:g} on the "
               f"branch of solutions that starts there"
               + (f" and stopped where that branch ends, between lambda = "
-                 f"{end[0]:.1f} and {end[1]:.1f} (no state at "
-                 f"{end[1]:.1f})" if end else
+                 f"{end[0]:.4f} and {end[1]:.4f} (no state at "
+                 f"{end[1]:.4f})" if end else
                  f" to lambda = {hi_b:g}"))
         # EM 1110-2-1902 C-10c (p. C-36): with cohesion at the crest the
         # normal and side forces there are often negative, and such
@@ -1352,6 +1489,14 @@ def gle_fos(slices: List[Slice],
             w += ("; F_m - F_f changes sign by a jump between two "
                   "branches of solutions (not a crossing) at lambda = "
                   + ", ".join(f"{j:.4f}" for j in result.jumps))
+        # One surface analysed (`single_surface`): the branch from
+        # lambda = 0 scanned DOWN too, and a crossing met there named with
+        # its flags, not reported (fix round 2, the orchestrator's
+        # ruling 2). Never in a search's trials: off by default.
+        if lam0 == 0.0 and _SCAN_BELOW.get():
+            below = sys_.crossing_below(st0, lo_b)
+            if below is not None:
+                w += _below_zero_text(sys_, below, mirrored)
         result.warnings.append(w)
         return result
 

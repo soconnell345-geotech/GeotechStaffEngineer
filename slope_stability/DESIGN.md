@@ -993,6 +993,22 @@ both equations:
   could lie on another branch with the same pole signature, which ruling 2
   excludes. No pinned value moved with it (the test files run in the fix
   round pass with their pins unchanged).
+- Fix round 2: where a step of 0.1 meets no state, the step is bisected
+  between the last lambda with a state and that lambda, each trial state
+  found from the branch's last state (its F and side), until the two are
+  less than 1e-4 apart (`gle._BRANCH_END_TOL`); each state met on the way
+  is tested as a step's state is (agreement, then a sign change of R
+  against the state before it, refined). `branch_end` holds the narrowed
+  pair and the reason prints it to 4 decimals. Before, a crossing inside
+  the last step before the branch ended was lost: on trials 97 and 16 of
+  ACADS 1(a)'s 200-trial Spencer search (seed 42) the review's script
+  found 13.9859 at 23.25 deg and 8.0514 at 5.9556 deg just short of the
+  end, and the module gave no number; it now reads them (both roots of
+  the second computation's equations). The search's value (1.0916) does
+  not move; run through `search_critical_surface` it leaves 49 trials
+  without a solution in place of the review's 55, and
+  `test_choices`' short search 83 in place of 84 (9.49 stands). Same rule
+  under both `base_in_tension` settings (one scan).
 
 **Which root (the orchestrator's ruling 2; a call, OWN-143).** The slice
 equations are singular at F = tan(phi') tan(theta_i - alpha) for slice i
@@ -1014,11 +1030,28 @@ have many roots with slices below their poles at very low F.
 -1.5 to 1.5, and the old scan went both ways from 0. Under ruling 2 the
 range is 0 to 1.5, upward from lambda = 0 on the branch that starts there,
 and the scan stops where that branch ends; `lambda_bounds`' lower bound is
-not used. Other form: where no crossing is met upward, a scan downward from
-0 (D29's former range). Not built: on the review's cases the crossings below
+used only by the scan below 0 for the reason (next lines). Other form: where
+no crossing is met upward, the first crossing met downward from 0 (D29's
+former range) reported. Not built: on the review's cases the crossings below
 0 had bases in tension and slice denominators of 0.0004 to 0.0077 (EM
 1110-2-1902 C-10b states, whose factors of safety the EM calls not
-meaningful). What the change does: ACADS 1(a)'s 200-trial random Spencer
+meaningful). Fix round 2 (the orchestrator's ruling 2, last clause): where
+ONE surface is analysed (`analyze_slope`, through the context
+`gle.single_surface`) and no crossing is met upward, the branch from
+lambda = 0 is scanned DOWN to -1.5 with the same steps and end rule; a
+crossing met there is named in the no-number reason with its F, lambda and
+flags (the slices with a base in tension, the sides in tension, the least
+slice denominator and its slice), and the reason says it is not reported
+because below lambda = 0 the interslice shear acts against the sense the
+sliding gives it. Never inside a search's trials (run time): off by default
+in `gle_fos`, held in a context variable, with no new input. A search's
+governing surface is solved again (`report_acceptability`,
+`m_alpha_confirmation`), but those solves print no reason, so they make no
+such scan either. Step 2's fill circle at 30 kPa by Morgenstern-Price
+(half-sine), as printed, names lambda -0.0342, F 1.6089 (the crest slice's
+base and six sides in tension; least denominator 0.4352, on the crest
+slice); Spencer meets none below 0 on that circle at 30 or 38 kPa (its
+branch from 0 ends near lambda -0.33 and -0.29). What the change does: ACADS 1(a)'s 200-trial random Spencer
 search 0.633 (flagged) to 1.092 (printed 1.00); a made-up short search
 (`test_choices`) 0.462 to 9.49; Spencer has no solution on the steep-exit
 polyline of `test_acceptability` and on the DE surfaces of `test_m_alpha`

@@ -42,7 +42,7 @@ from slope_stability.results import (
 
 from slope_stability.gle import (  # noqa: E402
     BASE_TENSION_RULES, base_tension, base_tension_in_force,
-    check_base_tension, ROOT_CHOICE,
+    check_base_tension, ROOT_CHOICE, single_surface,
 )
 
 #: The methods solved by the GLE system (``gle._GLESystem``), which the
@@ -365,8 +365,12 @@ def analyze_slope(geom: SlopeGeometry,
 
     def _sol(m):
         if m not in sols:
-            sols[m] = solve_method(slices, slip, m, f_interslice, tol,
-                                   reinf_forces)
+            # one surface: a side-force method with no crossing upward
+            # from lambda = 0 names the first crossing below 0 in its
+            # reason (GM-344 fix round 2; never in a search's trials)
+            with single_surface():
+                sols[m] = solve_method(slices, slip, m, f_interslice, tol,
+                                       reinf_forces)
         return sols[m]
 
     def _missing(m, field=""):

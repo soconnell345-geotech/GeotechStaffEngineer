@@ -214,7 +214,10 @@ def test_the_scan_stops_where_its_branch_ends(own, monkeypatch):
     not step over that lambda to whatever state with the same pole
     signature lies beyond (before, it did: GM-60). Made here by taking
     away every state from lambda 0.45 to 0.55 on the r_u case, whose
-    crossing on that branch is at lambda 0.495."""
+    crossing on that branch is at lambda 0.495. Fix round 2: the step
+    from 0.4 (a state) to 0.5 (none) is bisected until the two are less
+    than 1e-4 apart, so the reason says the branch ends between 0.4499
+    and 0.4500 (it said between 0.4 and 0.5)."""
     real = gle._GLESystem._state
     asked = []
 
@@ -230,10 +233,11 @@ def test_the_scan_stops_where_its_branch_ends(own, monkeypatch):
     assert not res.converged
     assert max(asked) <= 0.5 + 1e-9         # nothing beyond the end
     (w,) = [w for w in res.warnings if w.startswith("no F_m = F_f crossing")]
-    assert ("stopped where that branch ends, between lambda = 0.4 and 0.5 "
-            "(no state at 0.5)") in w
+    assert ("stopped where that branch ends, between lambda = 0.4499 and "
+            "0.4500 (no state at 0.4500)") in w
     from slope_stability.solution import gle_failure_reason
-    assert "between lambda = 0.4 and 0.5" in gle_failure_reason(res, None)
+    assert "between lambda = 0.4499 and 0.4500" in gle_failure_reason(
+        res, None)
 
 
 # ---------------------------------------------------------------------------
@@ -579,3 +583,155 @@ def test_a_search_says_the_rule_and_which_root():
                                     n_slices=12, toe_circles=False,
                                     infinite_slope=False, refine=False)
     assert not any("base in tension" in c["what"] for c in res_b.choices)
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2: the end of the branch narrowed (F1); a crossing below 0
+# named where one surface is analysed (F2)
+# ---------------------------------------------------------------------------
+
+def _acads1a():
+    """ACADS 1(a) (the benchmark's geometry and soil, as
+    `test_acceptability` builds it for its 200-trial Spencer search)."""
+    return SlopeGeometry(
+        surface_points=[(20.0, 25.0), (30.0, 25.0), (50.0, 35.0),
+                        (70.0, 35.0)],
+        soil_layers=[SlopeSoilLayer(name="soil", top_elevation=35.0,
+                                    bottom_elevation=20.0, gamma=20.0,
+                                    phi=19.6, c_prime=3.0)])
+
+
+#: Three trial surfaces of ACADS 1(a)'s 200-trial random Spencer search
+#: (seed 42, 6 points; windows 20 to 32 and 46 to 68), as the search
+#: generates them.
+ACADS1A_TRIALS = {
+    97: [(29.968772226687243, 25.0),
+         (33.556334532794764, 21.340723589200287),
+         (37.14389683890228, 26.312533799125266),
+         (40.7314591450098, 25.762745740430244),
+         (44.31902145111732, 25.28547516430836),
+         (47.90658375722484, 33.95329187861242)],
+    16: [(31.95345656288116, 25.97672828144058),
+         (37.090868368741134, 21.062515645791105),
+         (42.2282801746011, 22.43438636297264),
+         (47.36569198046107, 33.04720275165329),
+         (52.50310378632105, 25.130616348317467),
+         (57.64051559218102, 35.0)],
+    167: [(26.53359033778574, 25.0),
+          (34.729379399817596, 24.666657230912183),
+          (42.92516846184945, 27.054315780732026),
+          (51.120957523881316, 32.03248869190597),
+          (59.31674658591317, 32.91192365186557),
+          (67.51253564794503, 35.0)],
+}
+
+
+def _trial(i):
+    slip = PolylineSlipSurface(points=ACADS1A_TRIALS[i])
+    return slip, build_slices(_acads1a(), slip, 25)
+
+
+@pytest.mark.parametrize("trial, f_root, theta",
+                         [(97, 13.9859, 23.2500), (16, 8.0514, 5.9556)])
+@pytest.mark.parametrize("rule", BASE_TENSION_RULES)
+def test_a_crossing_in_the_last_step_before_the_branch_ends_is_found(
+        own, trial, f_root, theta, rule):
+    """Fix round 2 (F1). On trials 97 and 16 of ACADS 1(a)'s search the
+    branch from lambda = 0 ends just past a crossing. The scan went in
+    one step from the last lambda with a state (0.4; 0.1) to one without
+    (0.5; 0.2) and never looked between, so Spencer had no number. That
+    step is now bisected to 1e-4, each state tested as the steps' are:
+    Spencer reads the review's script's roots, 13.9859 at 23.25 deg and
+    8.0514 at 5.9556 deg, under both settings (no base is in tension
+    there), each a root of the second computation's equations."""
+    slip, slices = _trial(trial)
+    with base_tension(rule):
+        sol = solve_method(slices, slip, "spencer")
+    assert sol.solved
+    assert sol.fos == pytest.approx(f_root, rel=1e-3)
+    assert sol.param == pytest.approx(theta, abs=0.01)
+    d = own.from_module(slices)
+    device = rule == "no_friction"
+    near = own._newton(d, sol.fos, math.radians(sol.param), device)
+    assert near is not None
+    assert own.is_root(d, near[0], near[1], device)
+    assert sol.fos == pytest.approx(near[0], rel=1e-3)
+    assert own.is_root(d, sol.fos, math.radians(sol.param), device,
+                       rel=1e-6)
+
+
+def test_trial_167_still_has_no_number():
+    """Fix round 2 (F1). On trial 167 the review's script finds no
+    crossing on the branch from theta = 0 (to 60 deg; its roots there are
+    at F 0.02 to 0.16, with bases in tension and slices below their
+    poles): no number, under both settings, the scan having gone to
+    1.5."""
+    slip, slices = _trial(167)
+    for rule in BASE_TENSION_RULES:
+        with base_tension(rule):
+            sol = solve_method(slices, slip, "spencer")
+        assert not sol.solved
+        assert "that starts there to lambda = 1.5" in sol.reason
+
+
+def test_a_crossing_below_0_is_named_where_one_surface_is_analysed():
+    """Fix round 2 (F2; the orchestrator's ruling 2, last clause). Step
+    2's fill circle at 30 kPa by Morgenstern-Price (half-sine), as
+    printed: no crossing upward from lambda = 0 to 1.5. Analysed as one
+    surface, the branch from lambda = 0 is scanned down to -1.5 too (the
+    step and end rule of the upward scan); it meets a crossing at lambda
+    -0.0342, F 1.6089, the crest slice's base and six sides in tension,
+    which the reason names with its flags and does not report. Spencer on
+    the same circle meets none below 0 (its branch from 0 ends near
+    lambda -0.33) and names none. The made-up planar case has its
+    crossing upward, so nothing is scanned below 0 there."""
+    kw = dict(xc=9.5, yc=11.0, radius=11.2, n_slices=30)
+    res = analyze_slope(_fill_slope(30.0), method="morgenstern_price", **kw)
+    assert res.FOS is None
+    (w,) = [w for w in res.warnings if "no equilibrium solution" in w]
+    assert ("below lambda = 0 the same branch meets a crossing, at lambda "
+            "= -0.0342 with F = 1.6089, where 1 slice base(s) (slice 30) "
+            "and 6 slice side(s) (side 24, 25, 26, 27, 28 and 29) are in "
+            "tension") in w
+    assert "/ F, is 0.4352 on slice 30" in w
+    assert ("it is not reported, because below lambda = 0 the interslice "
+            "shear acts against the sense the sliding gives it") in w
+    sp = analyze_slope(_fill_slope(30.0), method="spencer", **kw)
+    (w,) = [w for w in sp.warnings if "no equilibrium solution" in w]
+    assert sp.FOS is None and "below lambda = 0" not in w
+    # off by default in the solver a search's trials go through
+    slip = CircularSlipSurface(9.5, 11.0, 11.2)
+    slices = build_slices(_fill_slope(30.0), slip, 30)
+    sol = solve_method(slices, slip, "morgenstern_price")
+    assert not sol.solved and "below lambda = 0" not in sol.reason
+    with gle.single_surface():
+        sol = solve_method(slices, slip, "morgenstern_price")
+    assert "at lambda = -0.0342 with F = 1.6089" in sol.reason
+
+
+def test_a_search_makes_no_scan_below_0(monkeypatch):
+    """Fix round 2 (F2): never inside a search's trials (run time).
+    ACADS 1(a)'s 200-trial random Spencer search leaves trials without a
+    solution; the scan below 0 is made on none of them, and the search's
+    value stands (1.0916). Trial 167 analysed alone (no number) is
+    scanned once."""
+    calls = []
+    real = gle._GLESystem.crossing_below
+
+    def counted(self, *a, **k):
+        calls.append(1)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(gle._GLESystem, "crossing_below", counted)
+    r = search_critical_surface(
+        _acads1a(), x_entry_range=(20.0, 32.0), x_exit_range=(46.0, 68.0),
+        surface_type="noncircular", n_trials=200, n_points=6, n_slices=25,
+        seed=42, method="spencer")
+    assert r.critical.FOS == pytest.approx(1.0916, abs=5e-4)
+    assert r.no_solution[0]["not_converged"] > 0
+    assert calls == []
+    one = analyze_slope(_acads1a(), method="spencer", n_slices=25,
+                        slip_surface=PolylineSlipSurface(
+                            points=ACADS1A_TRIALS[167]))
+    assert one.FOS is None
+    assert len(calls) == 1

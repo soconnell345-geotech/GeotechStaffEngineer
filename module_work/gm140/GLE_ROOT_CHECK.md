@@ -651,27 +651,27 @@ now holds the root (`test_spencer_on_taylors_arc_is_a_root_near_taylor`).
 kept as the script's roots, not what the solver reports.
 
 **The table** (`review\gle\fix_table.py`; baseline = the circle-end branch's
-`slope_stability`, extracted alone; both settings on the branch):
+`slope_stability`, extracted alone; both settings on the branch; "After round 2": the same script on fix round 2's tree, both settings, `review\gle\fix_table_round2.json`):
 
-| Case | Baseline | Branch, as printed | Branch, option | Change | Printed, page | Cause |
-|---|---|---|---|---|---|---|
-| Probe r_u, Spencer | 1.0887 (thrust) | 0.9182, `low_m_alpha` slice 1 (0.0176) | 0.9182, same | -15.7 % | closed form 0.6704 | baseline not a root (ruling 1); R6 finding |
-| Probe r_u, M-P half-sine | 0.6779 (lambda 0.750) | 0.6779 (0.747) | 0.6779 | 0.00 % | 0.6704: +1.12 % | |
-| Fill circle 10 kPa | 0.9698 | 0.9620 | 0.9688 | -0.81 % | made up | ruling 3 |
-| Fill circle 20 kPa | 1.3070 | 1.2877 | none | -1.48 % | made up | ruling 3; option: no root (review) |
-| Fill circle 28 kPa | 1.5772 | 1.5481 | none | -1.85 % | made up | as above |
-| Fill circle 30 / 38 kPa | 1.6449 / 1.9172 | none | none | | made up | no root on the branch (R7) |
-| F&K B1 dry, Spencer / M-P | 2.0745 / 2.0764 | 2.0712 / 2.0708 | 2.0744 / 2.0767 | -0.16 / -0.27 % | 2.073 / 2.076 | ruling 3 |
-| F&K B1 r_u 0.25, Spencer / M-P | 1.7633 / 1.7651 | 1.7567 / 1.7560 | 1.7629 / 1.7653 | -0.37 / -0.51 % | 1.761 / 1.764 | ruling 3 |
-| ACADS 4 family, Spencer / M-P | 0.7532 / 0.7225 | 0.7480 / 0.7157 | 0.7495 / 0.7222 | -0.69 / -0.94 % | 0.760 / GLE 0.720, Table 9.4 p. 52 | ruling 3 |
-| V-042 FOSM, Spencer | 1.3493 | 1.3346 | 1.3482 | -1.09 % | 1.334 by Bishop, pp. 137-139 | ruling 3 |
-| V-043 DE seed 1 | 1.2337 | 1.2374 | 1.2374 | +0.30 % | 1.188, pp. 147-150 | search path (strict xfail) |
-| ACADS 1(a) 200-trial Spencer search | 0.6332 | 1.0916 | 1.0916 | +72 % | 1.00 | no crossing below lambda 0 (R15) |
-| Taylor's arc, Spencer / M-P | none / none | 0.8515 / none | 0.8515 / none | | 0.8511, Fig. 6-14 p. 6-27 | merge (ruling 2's scan on the arc) |
-| Vertical cut, default Spencer search | 0.8632 | 0.8513 | (not run) | -1.38 % | 0.8511: +0.02 % | merge |
-| EM example, Bishop 12 slices, stages | 2.1925 / 1.5137 / 1.4384 | same | same | 0 | 2.20 / 1.52 / 1.44, pp. G-15, G-18, G-20 | |
-| #95, force 19.4 deg, 103 ft pool | 1.3379 | 1.3379 | 1.3379 | 0 | 1.35, p. G-15 | |
-| EM example, Spencer 50 slices, stages | 2.19983 / 1.51281 / 1.43412 | 2.19982 / 1.51281 / 1.43413 | same | <0.001 % | as above | |
+| Case | Baseline | Branch, as printed | Branch, option | After round 2 | Change | Printed, page | Cause |
+|---|---|---|---|---|---|---|---|
+| Probe r_u, Spencer | 1.0887 (thrust) | 0.9182, `low_m_alpha` slice 1 (0.0176) | 0.9182, same | same, both settings | -15.7 % | closed form 0.6704 | baseline not a root (ruling 1); R6 finding |
+| Probe r_u, M-P half-sine | 0.6779 (lambda 0.750) | 0.6779 (0.747) | 0.6779 | same | 0.00 % | 0.6704: +1.12 % | |
+| Fill circle 10 kPa | 0.9698 | 0.9620 | 0.9688 | same F; the option's flags no longer include `low_m_alpha` (round 1's exemption, b0ce78b, made after its table) | -0.81 % | made up | ruling 3 |
+| Fill circle 20 kPa | 1.3070 | 1.2877 | none | same | -1.48 % | made up | ruling 3; option: no root (review) |
+| Fill circle 28 kPa | 1.5772 | 1.5481 | none | same | -1.85 % | made up | as above |
+| Fill circle 30 / 38 kPa | 1.6449 / 1.9172 | none | none | none / none; Spencer meets no crossing below 0 (F2) | | made up | no root on the branch (R7) |
+| F&K B1 dry, Spencer / M-P | 2.0745 / 2.0764 | 2.0712 / 2.0708 | 2.0744 / 2.0767 | same | -0.16 / -0.27 % | 2.073 / 2.076 | ruling 3 |
+| F&K B1 r_u 0.25, Spencer / M-P | 1.7633 / 1.7651 | 1.7567 / 1.7560 | 1.7629 / 1.7653 | same | -0.37 / -0.51 % | 1.761 / 1.764 | ruling 3 |
+| ACADS 4 family, Spencer / M-P | 0.7532 / 0.7225 | 0.7480 / 0.7157 | 0.7495 / 0.7222 | same | -0.69 / -0.94 % | 0.760 / GLE 0.720, Table 9.4 p. 52 | ruling 3 |
+| V-042 FOSM, Spencer | 1.3493 | 1.3346 | 1.3482 | same | -1.09 % | 1.334 by Bishop, pp. 137-139 | ruling 3 |
+| V-043 DE seed 1 | 1.2337 | 1.2374 | 1.2374 | same | +0.30 % | 1.188, pp. 147-150 | search path (strict xfail) |
+| ACADS 1(a) 200-trial Spencer search | 0.6332 | 1.0916 | 1.0916 | 1.0916, same; 6 of the 55 trials without a solution now solve, F 8.05 to 39.12 (F1) | +72 % | 1.00 | no crossing below lambda 0 (R15) |
+| Taylor's arc, Spencer / M-P | none / none | 0.8515 / none | 0.8515 / none | same | | 0.8511, Fig. 6-14 p. 6-27 | merge (ruling 2's scan on the arc) |
+| Vertical cut, default Spencer search | 0.8632 | 0.8513 | (not run) | same | -1.38 % | 0.8511: +0.02 % | merge |
+| EM example, Bishop 12 slices, stages | 2.1925 / 1.5137 / 1.4384 | same | same | same | 0 | 2.20 / 1.52 / 1.44, pp. G-15, G-18, G-20 | |
+| #95, force 19.4 deg, 103 ft pool | 1.3379 | 1.3379 | 1.3379 | same | 0 | 1.35, p. G-15 | |
+| EM example, Spencer 50 slices, stages | 2.19983 / 1.51281 / 1.43412 | 2.19982 / 1.51281 / 1.43413 | same | same | <0.001 % | as above | |
 
 **Other pinned values that moved on this branch** (`git diff
 fix/gm140-circle-ends-review...HEAD` on test files and `VALIDATION.md`; no
@@ -708,3 +708,86 @@ after the fixes, which moved no value it pins). The manual rebuilt by its
 generator (`check_manual.py --rebuild --write`, then `check_manual.py`,
 exit 0), geotech-references at e1bbc5b. The full suites are left to the
 lead's GitHub run.
+
+**Fix round 2 (2026-11-14; the lead's brief, two items).**
+
+- **F1. A crossing in the last step before the branch ends.** The scan
+  (`_GLESystem._scan`, which `first_crossing` and `crossing_below` share):
+  where a step of 0.1 meets no state, the step is bisected between the last
+  lambda with a state and that lambda, each trial state found from the
+  branch's last state (its F and side), until the two are less than 1e-4
+  apart (`gle._BRANCH_END_TOL`); each state met on the way is tested as a
+  step's state is (agreement, then a sign change of R against the state
+  before it, refined by `refine`). `branch_end` holds the narrowed pair and
+  the reason prints it to 4 decimals. One scan for both `base_in_tension`
+  settings. On ACADS 1(a)'s 200-trial Spencer search (seed 42, 25 slices)
+  trial 97 now reads 13.98592 at 23.2500 deg (lambda 0.4296; the review's
+  script: 13.9859 at 23.25 deg) and trial 16 8.05148 at 5.9556 deg (lambda
+  0.1043; the script: 8.0514 at 5.9556 deg), under both settings, each a
+  root of the second computation's equations (its Newton step from the
+  module's F and theta lands within 5e-6 of that F, relative; the residuals at the
+  module's own values are below 1e-6 of their scales). Trial 167 still has
+  no number (the scan goes to 1.5). Of the review's 55 trials without a
+  solution, 6 now solve (16, 73, 97, 150, 172, 187; F 8.05 to 39.12, each a
+  root of the second computation) and 49 stay without one; the search's
+  value 1.0916 does not move. Tests:
+  `test_a_crossing_in_the_last_step_before_the_branch_ends_is_found` (both
+  trials, both settings), `test_trial_167_still_has_no_number`;
+  `test_the_scan_stops_where_its_branch_ends` now reads "between lambda =
+  0.4499 and 0.4500 (no state at 0.4500)".
+- **F2. The orchestrator's ruling 2, last clause.** Where ONE surface is
+  analysed (`analyze_slope` solves through the context
+  `gle.single_surface`; a context variable, no new input) and a side-force
+  method meets no crossing upward, the branch from lambda = 0 is scanned
+  DOWN to -1.5 (`lambda_bounds`' lower bound, D29's former range) with the
+  same steps and end rule (`_GLESystem.crossing_below`). A crossing met
+  there is named in the no-number reason: F, lambda, the slices with a base
+  in tension, the sides in tension, the least slice denominator and its
+  slice, and that it is not reported because below lambda = 0 the
+  interslice shear acts against the sense the sliding gives it. Off by
+  default in `gle_fos`, so never in a search's trials. A search's
+  governing surface is solved again (`report_acceptability`,
+  `m_alpha_confirmation`), but neither solve prints a reason (the first
+  returns where there is no solution, the second records "no_solution"
+  without words), so no scan is made there either. Cases (probe
+  `review\gle\fix2_probe.py`): step 2's fill circle at 30 kPa by
+  Morgenstern-Price (half-sine), as printed, names lambda -0.0342, F 1.6089,
+  the crest slice 30's base and sides 24 to 29 in tension, least
+  denominator 0.4352 on slice 30; with the option, and at 38 kPa under
+  both settings, Morgenstern-Price meets none below 0. Spencer on that
+  circle at 30 and 38 kPa meets none below 0 (its branch from 0 ends near
+  lambda -0.328 and -0.295 as printed, -0.202 with the option). The
+  made-up planar case has its crossings upward (Spencer 0.9182,
+  Morgenstern-Price 0.6779), so nothing is scanned below 0 there. The
+  search: ACADS 1(a)'s 200-trial Spencer search leaves 49 trials without a
+  solution and makes no scan below 0 (calls counted: 0); trial 167
+  analysed alone makes one. Tests:
+  `test_a_crossing_below_0_is_named_where_one_surface_is_analysed`,
+  `test_a_search_makes_no_scan_below_0`. Recorded in `DESIGN.md` (D29, the
+  lambda range).
+- **Pins moved** (`git diff e44a89c -- '*test*' slope_stability/
+  VALIDATION.md`): `test_choices::test_a_short_search_reports_its_flagged_
+  surface`, 84 to 83 trials without a solution (F1: a crossing in the last
+  step before its branch ends found; 9.49 stands);
+  `test_the_scan_stops_where_its_branch_ends`, the reason's "0.4 and 0.5"
+  to "0.4499 and 0.4500" (F1). `VALIDATION.md` unchanged; no printed
+  benchmark moved (the table's column).
+- **Run time.** The default circular Spencer search on ACADS 1(a)
+  (`search_critical_surface(acads1a, method="spencer")`), first search in
+  its process: 6.4 s on e44a89c, 6.2 s after (0.98383, the same circle).
+  Run again later in the same process after round 2 it took 9.3 s and
+  10.1 s (that position was not timed on e44a89c).
+- **Tests run in fix round 2** (single files, pytest's exit code, all 0):
+  `test_gle_root` (33), `test_choices` (7), `test_acceptability` (23),
+  `test_search_robustness` (28), `test_validation` (20, 30 min),
+  `test_rapid_drawdown` (17), `test_rapid_drawdown_em_appendix_g` (23),
+  `funhouse_agent/tests/test_slope_stability_adapter` (94),
+  `funhouse_agent/deep/tests/test_wave1_geotech` (20), and, beside the
+  brief's list, `test_gle` (25), `test_circle_ends` (15),
+  `test_own_solution_or_no_number` (27, 1 xfail), `test_m_alpha` (18);
+  the reason's words
+  changed, so in full: `funhouse_agent/tests/test_top_level_params` (53),
+  `test_defaults_used` (881 passed, 21 skipped, 30 min),
+  `test_gm179_unused_inputs` (20), `test_calc_package_tool_parity` (190).
+  The manual: `check_manual.py` exit 0 (OK, not moved; geotech-references
+  at e1bbc5b), so no rebuild.

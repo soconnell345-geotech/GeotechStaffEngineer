@@ -102,7 +102,7 @@ def test_a_short_search_reports_its_flagged_surface():
 
     GM-344: the surface it reported at 0.462, flagged four ways, was a
     crossing at a negative lambda, which the scan no longer looks for;
-    Spencer's method now has no solution on 84 of its 100 trials (said in
+    Spencer's method now has no solution on 83 of its 100 trials (said in
     ``no_solution`` and a warning), and the lowest it solves reads 9.49,
     with no flag. A search this short on this slope finds nothing
     useful, and says so."""
@@ -112,7 +112,9 @@ def test_a_short_search_reports_its_flagged_surface():
     assert r.critical.FOS == pytest.approx(9.493, abs=0.01)
     assert r.critical_flags == []
     assert r.lowest_unflagged is None
-    assert r.no_solution[0]["not_converged"] == 84
+    # GM-344 fix round 2: 84 -> 83, a crossing in the last step before
+    # its branch ends found (the step is narrowed to 1e-4); 9.49 stands
+    assert r.no_solution[0]["not_converged"] == 83
     assert any("without a solution" in w for w in r.warnings)
     c = _by_what(r)
     assert c["surface families scored"]["chosen"] == "noncircular"
