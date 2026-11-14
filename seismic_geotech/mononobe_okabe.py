@@ -377,12 +377,14 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
 def passive_delta_choice(phi_deg: float, delta_p_deg: float,
                          given: bool) -> dict:
     """The wall friction behind KPE (GM-293), as a ``choices`` entry: the
-    passive delta given, else 0.4 phi, the most UFC 3-220-20 Fig. 4-8
-    (p. 187) allows a planar (Coulomb) passive wedge. FHWA NHI-06-089
-    p. 10-19 finds a planar passive wedge unreliable above phi'/3, the
-    alternative offered; its p. 10-17 maximum, phi / 2, goes with the
-    log-spiral charts (pp. 10-19, 10-20). Until GM-293's review the
-    default was phi / 2."""
+    passive delta given, else phi / 3 (GM-310, the call for OWN-114 of
+    2026-11-12): FHWA NHI-06-089 p. 10-19 finds a planar passive wedge
+    unreliable above phi'/3, the lower of the two printed limits and so
+    the lower passive resistance. UFC 3-220-20 Fig. 4-8 (p. 187) allows a
+    planar (Coulomb) passive wedge up to 0.4 phi, the alternative offered
+    (the default from GM-293's review until GM-310; phi / 2 before that).
+    NHI-06-089's p. 10-17 maximum, phi / 2, goes with the log-spiral
+    charts (pp. 10-19, 10-20)."""
     from geotech_common.choices import DEFAULT, choice, how_given
     basis = ("a planar-wedge passive coefficient is \"unconservative for "
              "delta/phi' > 0.4 and, therefore, should not be used\" there "
@@ -395,11 +397,13 @@ def passive_delta_choice(phi_deg: float, delta_p_deg: float,
                       basis)
     return choice(
         "wall friction delta for KPE",
-        f"{delta_p_deg:.1f} deg (0.4 phi)", DEFAULT,
-        "the most UFC 3-220-20 Fig. 4-8 allows a planar passive wedge; "
-        + basis,
-        [f"delta = phi / 3 = {phi_deg / 3.0:.1f} deg (FHWA NHI-06-089 "
-         f"p. 10-19)",
+        f"{delta_p_deg:.1f} deg (phi / 3)", DEFAULT,
+        "the most FHWA NHI-06-089 p. 10-19 finds a planar passive wedge "
+        "reliable for, and the lower of the two printed limits, so the "
+        "lower passive resistance; " + basis,
+        [f"delta_passive = 0.4 phi = {0.4 * phi_deg:.1f} deg, the most UFC "
+         f"3-220-20 Fig. 4-8 (p. 187) allows a planar passive wedge: a "
+         f"higher KPE",
          "a log-spiral passive coefficient (UFC 3-220-20 pp. 189-190; "
          "NHI-06-089 Figs. 10-9 and 10-10), which takes up to phi / 2 "
          "(NHI-06-089 p. 10-17)"])
@@ -417,7 +421,8 @@ def passive_delta_warning(phi_deg: float, delta_p_deg: float):
             f"coefficient unconservative above delta/phi' = 0.4 and says it "
             f"should not be used there; FHWA NHI-06-089 p. 10-19 finds it "
             f"unreliable above phi'/3. Give delta_passive at most "
-            f"{0.4 * phi_deg:.1f} deg ({phi_deg / 3.0:.1f} by NHI-06-089), "
+            f"{0.4 * phi_deg:.1f} deg ({phi_deg / 3.0:.1f} by NHI-06-089, "
+            f"the value taken when none is given), "
             f"or use a log-spiral passive coefficient (UFC 3-220-20 pp. "
             f"189-190).")
 

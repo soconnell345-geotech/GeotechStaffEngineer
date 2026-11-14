@@ -91,11 +91,15 @@ def test_where_the_F_star_takes_no_Cu_a_given_Cu_is_checked_by_note_i(
     """GEC-11 Table 3-6 note (i) (p. 3-17) accepts every empirical F* in
     the table, strips, grids and sheets alike, only for Cu >= 4: a Cu
     given with a grid or a geosynthetic leaves its F* as it was and is
-    checked against the note, not refused (GM-246 review)."""
+    checked against the note (GM-246 review); below 4 with no tested F*
+    it is refused whatever the reinforcement (GM-310, OWN-85)."""
     left_out = analyze_mse_wall(_geom(), 20.0, 34.0, reinforcement)
     # left out, nothing is said about it
     assert not [c for c in left_out.choices if "Cu_backfill" in c["what"]]
-    for Cu, within in ((5.0, True), (2.5, False)):
+    with pytest.raises(ValueError, match="F_star_tested"):
+        analyze_mse_wall(_geom(), 20.0, 34.0, reinforcement,
+                         Cu_backfill=2.5)
+    for Cu, within in ((5.0, True),):
         r = analyze_mse_wall(_geom(), 20.0, 34.0, reinforcement,
                              Cu_backfill=Cu)
         assert [lv["F_star"] for lv in r.internal_results] == \
@@ -155,14 +159,31 @@ def test_the_choice_states_the_printed_default_and_the_other_reading():
     assert "Table 3-1 for MSE walls is used and Cu >= 4" in given["basis"]
 
 
-def test_a_Cu_below_4_is_computed_and_flagged():
+def test_a_Cu_below_4_with_no_tested_F_star_is_refused():
     """GEC-11 Table 3-6 note (i) (p. 3-17): the empirical F* holds for
     Table 3-1 fill with Cu >= 4; 'For fill outside these limits, tests
-    must be run'."""
-    c = _choice(analyze_mse_wall(_geom(), 20.0, 34.0,
-                                 _STRIP, Cu_backfill=2.5))
-    assert c["chosen"].startswith("F* 1.60 at the top of the wall (Cu 2.5)")
-    assert "tests must be run" in c["chosen"]
+    must be run'. GM-310 (the call for OWN-85): refused, asking for
+    F_star_tested; before it the F* was computed (1.60 at the top at Cu
+    2.5) and flagged. Made-up wall."""
+    with pytest.raises(ValueError) as e:
+        analyze_mse_wall(_geom(), 20.0, 34.0, _STRIP, Cu_backfill=2.5)
+    msg = str(e.value)
+    assert msg.startswith("Cu_backfill 2.5 is below 4")
+    assert "Give F_star_tested" in msg and "tests must be run" in msg
+    assert "Table 3-6 note (i) (p. 3-17)" in msg
+    with pytest.raises(ValueError, match="Give F_star_tested"):
+        check_internal_stability(_geom(), 20.0, 34.0, _STRIP,
+                                 Cu_backfill=3.99)
+    # with the tested F* the wall runs, and the choice says what the Cu
+    # bears on and that no empirical F* is worked out beside it
+    r = analyze_mse_wall(_geom(), 20.0, 34.0, _STRIP, Cu_backfill=2.5,
+                         F_star_tested=1.2)
+    assert all(lv["F_star"] == 1.2 for lv in r.internal_results)
+    (c,) = [c for c in r.choices if "(F_star_tested)" in c["what"]]
+    assert "below 4, outside the fill" in c["chosen"]
+    assert "not worked out here: at Cu below 4" in c["alternatives"][0]
+    # Cu 4 itself is within the note
+    assert analyze_mse_wall(_geom(), 20.0, 34.0, _STRIP, Cu_backfill=4.0)
 
 
 def test_a_grid_with_no_bar_geometry_is_refused():
@@ -200,7 +221,6 @@ def test_the_calc_steps_show_the_Cu_and_the_F_star_curve():
     assert ("C_u = 4 (not given: GEC-11 p. 3-20 says to assume C_u = 4"
             in s.substitution)
     assert "note (i)" not in s.substitution
-    assert "tests must be run" in step(2.5).substitution
     assert s.result_value.startswith("1.80") and "0.675" in s.result_value
     assert s.reference == "GEC-11 Vol I Eqs. 3-4, 3-5 (p. 3-20)"
     assert step(7.0).substitution.startswith("C_u = 7: F* = 2.00 at z = 0")

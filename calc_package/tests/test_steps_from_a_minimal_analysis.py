@@ -87,7 +87,8 @@ def _wall():
 CASES = {
     "aggregate_piers": lambda: _gi("aggregate_piers",
                                    "analyze_aggregate_piers",
-                                   column_diameter=0.76, spacing=2.0),
+                                   column_diameter=0.76, spacing=2.0,
+                                   column_type="stone_column"),
     "wick_drains": lambda: _gi("wick_drains", "analyze_wick_drains",
                                spacing=1.5, ch=3.0, cv=1.0, Hdr=5.0,
                                time=1.0),

@@ -28,7 +28,7 @@ def _run(fc, qu=360 * KSF, socket=None, diameter=6 * FT, layers=None):
     shaft = DrillShaft(diameter=diameter, length=10 * FT, concrete_fc=fc,
                        socket_diameter=socket)
     soil = ShaftSoilProfile(layers=layers or [
-        ShaftSoilLayer(5.0, "rock", 24.0, qu=qu)])
+        ShaftSoilLayer(5.0, "rock", 24.0, qu=qu, RQD=100.0)])
     return DrillShaftAnalysis(shaft=shaft, soil=soil).compute()
 
 
@@ -91,7 +91,7 @@ def test_not_checked_without_fc():
 
 def test_base_in_soil_has_no_check():
     """p. 10-25 and p. 12-8 speak of a base on rock only."""
-    layers = [ShaftSoilLayer(2.0, "rock", 24.0, qu=5000.0),
+    layers = [ShaftSoilLayer(2.0, "rock", 24.0, qu=5000.0, RQD=100.0),
               ShaftSoilLayer(10.0, "cohesive", 19.0, cu=150.0)]
     shaft = DrillShaft(diameter=1.0, length=6.0, concrete_fc=28000.0)
     r = DrillShaftAnalysis(shaft=shaft,

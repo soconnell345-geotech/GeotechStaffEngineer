@@ -348,7 +348,7 @@ class TestFullAnalysis:
         soil = ShaftSoilProfile(layers=[
             ShaftSoilLayer(5, "cohesionless", 18.0, phi=32, N60=20),
             ShaftSoilLayer(10, "cohesive", 17.0, cu=80),
-            ShaftSoilLayer(5, "rock", 22.0, qu=5000),
+            ShaftSoilLayer(5, "rock", 22.0, qu=5000, RQD=100.0),
         ])
         return shaft, soil
 
