@@ -21,7 +21,7 @@ The rule text: "Update the list in the same step as your next tool call, not in 
 
 Before and after (made-up): unset, the bullet ends "Skip it for a single question." With the switch on it ends "Skip it for a single question. Update the list in the same step as your next tool call, not in a step of its own: every step ...".
 
-Count definition: a step is one non-vision `model_end` of an agent; its tool calls are that agent's `tool_start` records before its next `model_end`. It is a to-do-only step when it asked for exactly one call and that call is `write_todos`. The denominator is every step's `usage.input_tokens` in the record (helpers included).
+Count definition: a step is one non-vision `model_end`. Since the follow-up commit each `model_end` carries `tool_names` (new, `activity_log._tool_names`: the names of the calls the model asked for, in order), and a step is to-do-only exactly when `tool_names == ["write_todos"]`; no pairing. A record saved before the field falls back to pairing the step with the `tool_start` records the same agent writes before its next `model_end`; on such records helpers of one type that ran at the same time share an agent name (`activity_log._agent_of` returns the `subagent_type`), so their steps can be miscounted. The denominator is every step's `usage.input_tokens` in the record (helpers included).
 
 ## How the texts sit together (item 4), switch on
 
@@ -37,7 +37,7 @@ The page can change its own rule and the helper's prompt. It cannot change the t
 
 ## Tests
 
-New `packages/aec-document-review/tests/test_dr43_todos_with_calls.py` (10 tests, all fail on master: the module under test does not exist there): switch declared like the others; unset prompts byte-identical (page and helper) and the master bullet present; set, the rule is in the page's prompt (with and without memory) and the helper's; the helper's spec uses the builder; the built page agent is sent the rule only when set; a `write_todos` step beside a look runs and is recorded; the runner's count on a made-up record (primary, helper, a vision side call, a step beside another call); no usage counts steps and no tokens; RESULTS.md and results.json for every arm, `·` for an old run.
+New `packages/aec-document-review/tests/test_dr43_todos_with_calls.py` (13 tests, all fail on master: the module under test does not exist there): switch declared like the others; unset prompts byte-identical (page and helper) and the master bullet present; set, the rule is in the page's prompt (with and without memory) and the helper's; the helper's spec uses the builder; the built page agent is sent the rule only when set; a `write_todos` step beside a look runs and is recorded; the runner's count on a made-up record (primary, helper, a vision side call, a step beside another call); no usage counts steps and no tokens; RESULTS.md and results.json for every arm, `·` for an old run.
 
 Edited (each makes an assertion untrue otherwise): `packages/aec-document-review/tests/test_review_switches_offline.py` and `funhouse_agent/deep/tests/test_review_switches_offline.py` (arm table names `todos_with_calls`), `funhouse_agent/deep/tests/test_judgment_calls.py` (reader table).
 
@@ -45,6 +45,8 @@ Runs, PowerShell, Windows, packages resolved inside the worktree (printed `__fil
 
 - from `packages/aec-document-review`: `test_dr43_todos_with_calls`, `test_review_switches_offline`, `test_review_show_me_offline`, `test_review_eval_offline`, `test_review_harness_offline`, `test_review_fingerprints`, `test_inf75_results_counts`, `test_review_prompt_rules`, `test_dr46_reader_boundary_offline`, `test_review_page_vocabulary_offline`: 173 passed, 2 skipped, exit 0.
 - from the root: `funhouse_agent/deep/tests/test_review_switches_offline.py`, `test_judgment_calls.py`, `funhouse_agent/review_eval/tests/test_review_eval_offline.py`, `webapp/tests/test_page_fingerprints.py`, `test_public_text.py`, `test_review_freeze.py`: 146 passed, 6 failed. The 6 failures (5 in `test_judgment_calls.py`, `test_app_fingerprint_unchanged[geotech_default]`) fail the same on master 6e2b94c in this worktree (checked by stashing my changes): `geotech-references` is not checked out there, so `read_reference_table` and the references helper's text are absent from the geotech build. Environmental, not this change. Nothing re-recorded. Document Review's fingerprint test passes unchanged.
+
+Follow-up (lead's review): `activity_log.py` `model_end.tool_names`; `todo_only_steps` uses it, pairing only as the fallback. New tests: two same-type helpers interleaved are counted right; an old record is still paired; a `model_end` carries `tool_names`. Reruns: DR folder (the files above plus `test_record_ev06`, `test_record_ev14`, `test_core`) 277 passed, 2 skipped, exit 0; root (`webapp/tests/test_activity_log.py`, `test_activity_cache_tokens.py`, GSE review_eval and switches tests, `test_public_text.py`) 128 passed, exit 0. Fingerprint tests were in the DR run (pass); the GSE fingerprint file was not rerun (no prompt or tool changed; it is the same as before).
 
 ## Fingerprints
 
@@ -71,4 +73,4 @@ None for testers: off unless set. If the owner turns it on, the page asks the mo
 
 ## Noted, not fixed
 
-- Parallel helpers with the same agent label share one open step in the count; rare, and it only moves the count slightly.
+- Old records without `tool_names`: see the count definition (concurrent same-type helpers can be miscounted).

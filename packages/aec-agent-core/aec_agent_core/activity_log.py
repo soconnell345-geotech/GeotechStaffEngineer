@@ -73,6 +73,11 @@ carries ``usage``: ``input_tokens``, ``output_tokens``, ``cache_read`` and
 ``calls``. Records written before then have neither, and every reader treats
 a missing count as unknown.
 
+Since 2026-11-14 (BACKLOG DR-43) each ``model_end`` also keeps
+``tool_names``: the names of the tool calls the model asked for, in order,
+so a step's calls need no pairing with the ``tool_start`` records after it
+(helpers of one type that run together write under one agent name).
+
 Since 2026-10-21 (BACKLOG EV-06, EV-19) the record also says:
 
 * on ``turn_end``: ``graph_steps``, the highest LangGraph step the
@@ -711,6 +716,23 @@ def _n_tool_calls(response: Any) -> int:
         return n
     except Exception:                                  # noqa: BLE001
         return 0
+
+
+def _tool_names(response: Any) -> list:
+    """The names of the tool calls the model asked for, in order (``[]`` for
+    none or where they cannot be read)."""
+    try:
+        out: list = []
+        for row in getattr(response, "generations", None) or []:
+            for g in row or []:
+                msg = getattr(g, "message", None)
+                for call in getattr(msg, "tool_calls", None) or []:
+                    name = (call.get("name") if isinstance(call, dict)
+                            else getattr(call, "name", None))
+                    out.append(str(name))
+        return out
+    except Exception:                                  # noqa: BLE001
+        return []
 
 
 def _tool_messages(obj: Any) -> list:
@@ -1402,6 +1424,7 @@ class ActivityLogger(BaseCallbackHandler):
                                         if parent_run_id else None),
                       "usage": usage,
                       "n_tool_calls": _n_tool_calls(response),
+                      "tool_names": _tool_names(response),
                       "duration_s": (round(self._clock() - t_start, 3)
                                      if t_start is not None else None)}
             source = self._sources.pop(rid, None)

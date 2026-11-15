@@ -209,6 +209,54 @@ def test_a_record_with_no_tool_names_or_usage_counts_nothing():
     assert got["todo_only_steps"] == 1 and got["todo_only_input_share"] is None
 
 
+def _named(agent, names, tokens):
+    return {"agent": agent, "event": "model_end", "n_tool_calls": len(names),
+            "tool_names": names, "usage": {"input_tokens": tokens}}
+
+
+def test_two_helpers_of_one_type_running_together_are_counted_right():
+    """Their records interleave under one agent name; ``tool_names`` needs
+    no pairing, so each helper's to-do-only step is its own."""
+    records = [
+        _named("general-purpose", ["write_todos"], 100),
+        _named("general-purpose", ["write_todos"], 200),
+        _tool("general-purpose", "write_todos"),
+        _named("general-purpose", ["read_document"], 300),
+        _tool("general-purpose", "write_todos"),
+        _tool("general-purpose", "read_document"),
+        _named("general-purpose", ["write_todos", "read_document"], 400),
+        _named("general-purpose", [], 500),
+    ]
+    got = todo_only_steps(records)
+    assert got["todo_only_steps"] == 2
+    assert got["todo_only_input_tokens"] == 300
+    assert got["model_input_tokens"] == 1500
+
+
+def test_an_old_record_without_tool_names_is_still_paired():
+    assert "tool_names" not in MADE_UP[0]
+    assert todo_only_steps(MADE_UP)["todo_only_steps"] == 3
+
+
+def test_a_model_end_carries_the_names_of_the_calls_it_asked_for(tmp_path):
+    import uuid
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+    log = activity_log.ActivityLogger(str(tmp_path))
+    for calls in ([("write_todos", "c1"), ("read_document", "c2")], []):
+        rid = uuid.uuid4()
+        log.on_chat_model_start({"kwargs": {"model": "m"}}, [[]], run_id=rid)
+        msg = AIMessage(content="", tool_calls=[
+            {"name": n, "args": {}, "id": i} for n, i in calls])
+        log.on_llm_end(LLMResult(generations=[[ChatGeneration(message=msg)]]),
+                       run_id=rid)
+    ends = [r for r in activity_log.load(str(tmp_path))
+            if r["event"] == "model_end"]
+    assert ends[0]["tool_names"] == ["write_todos", "read_document"]
+    assert ends[0]["n_tool_calls"] == 2
+    assert ends[1]["tool_names"] == []
+
+
 def _arm_row(md, arm):
     rows = [ln for ln in md.splitlines() if ln.startswith("|")]
     header = [c.strip() for c in rows[0].strip("|").split("|")]

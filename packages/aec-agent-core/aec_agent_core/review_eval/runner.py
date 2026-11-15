@@ -288,15 +288,19 @@ def todo_only_steps(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     (BACKLOG DR-43 part 2; brief 7: 13 % of input tokens on one model and
     25 % on another, because each step sends the whole conversation again).
 
-    A step is one ``model_end`` of an agent (a vision side call is not a
-    step); its tool calls are the ``tool_start`` records the same agent
-    writes before its next ``model_end``. A step counts when it asked for
-    exactly one tool call and that call is ``write_todos``. Returns
-    ``todo_only_steps``, ``todo_only_input_tokens``, ``model_input_tokens``
-    (every step's ``usage.input_tokens``, the denominator) and
-    ``todo_only_input_share`` (None when the record holds no input tokens).
-    A record without usage counts the steps and no tokens."""
-    steps: Dict[Any, Dict[str, Any]] = {}     # agent -> its open step
+    A step is one ``model_end`` (a vision side call is not a step). Where
+    the ``model_end`` carries ``tool_names`` (since 2026-11-14), it is a
+    to-do-only step exactly when that list is ``["write_todos"]``. A record
+    saved before the field falls back to pairing: the step's calls are the
+    ``tool_start`` records the same ``agent`` writes before its next
+    ``model_end``. Helpers of one type that ran at the same time share an
+    agent name, so on such old records their steps can be miscounted.
+    Returns ``todo_only_steps``, ``todo_only_input_tokens``,
+    ``model_input_tokens`` (every step's ``usage.input_tokens``, the
+    denominator) and ``todo_only_input_share`` (None when the record holds
+    no input tokens). A record without usage counts the steps and no
+    tokens."""
+    steps: Dict[Any, Dict[str, Any]] = {}     # agent -> its open old step
     done: List[Dict[str, Any]] = []
     for rec in records:
         ev = rec.get("event")
@@ -304,17 +308,21 @@ def todo_only_steps(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         if ev == "model_end" and not rec.get("vision"):
             if agent in steps:
                 done.append(steps.pop(agent))
-            usage = rec.get("usage") or {}
-            tokens = usage.get("input_tokens")
-            steps[agent] = {"n": rec.get("n_tool_calls"), "names": [],
-                            "tokens": tokens if isinstance(
-                                tokens, (int, float)) else 0}
+            tokens = (rec.get("usage") or {}).get("input_tokens")
+            tokens = tokens if isinstance(tokens, (int, float)) else 0
+            names = rec.get("tool_names")
+            if isinstance(names, list):
+                done.append({"only": names == ["write_todos"],
+                             "tokens": tokens})
+            else:
+                steps[agent] = {"n": rec.get("n_tool_calls"), "names": [],
+                                "tokens": tokens}
         elif ev == "tool_start" and agent in steps:
             steps[agent]["names"].append(rec.get("name"))
     done.extend(steps.values())
     only = [s for s in done
-            if s["n"] == 1 and s["names"][:1] == ["write_todos"]
-            and len(s["names"]) == 1]
+            if s.get("only") or (s.get("n") == 1
+                                 and s.get("names") == ["write_todos"])]
     total = sum(s["tokens"] for s in done)
     todo_tokens = sum(s["tokens"] for s in only)
     return {"todo_only_steps": len(only),
