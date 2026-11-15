@@ -118,7 +118,8 @@ def _review_reader_subagent(primary_tools,
     to be shown (``show_me``, BACKLOG DR-38); the helper holds the primary's
     looking tools, so it needs its own.
     """
-    from aec_document_review.review_prompt import DOCUMENT_REVIEW_READER_PROMPT
+    from aec_document_review.review_prompt import (
+        build_document_review_reader_prompt)
     from aec_document_review.review_agent import (
         READER_EXHAUSTED, READER_MAX_MODEL_CALLS, READER_NUDGE, READER_TOOLS)
     # the sheet tools read and write nothing: the helper has them where the
@@ -130,7 +131,7 @@ def _review_reader_subagent(primary_tools,
     return {
         "name": READER_NAME,
         "description": REVIEW_READER_DESCRIPTION,
-        "system_prompt": DOCUMENT_REVIEW_READER_PROMPT,
+        "system_prompt": build_document_review_reader_prompt(),
         "tools": [t for t in primary_tools
                   if getattr(t, "name", None) in wanted],
         "middleware": [*([show_images] if show_images is not None else []),
