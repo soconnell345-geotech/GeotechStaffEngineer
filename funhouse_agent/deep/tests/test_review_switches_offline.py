@@ -217,6 +217,9 @@ def test_the_arms_are_the_baseline_and_one_change_each():
         # PL-37 / DR-07 planlens' sheet index and callout check, pinned in
         # aec_document_review/tests/test_review_sheet_tools_offline.py
         "sheet_tools": {A.SHEET_TOOLS_ENV: "1"},
+        # DR-43 part 2 to-do updates beside the next call, pinned in
+        # aec_document_review/tests/test_dr43_todos_with_calls.py
+        "todos_with_calls": {A.TODOS_WITH_CALLS_ENV: "1"},
     }
 
 

@@ -212,16 +212,48 @@ says.
 """ + _REVIEW_HOW_YOU_READ + "\n" + _REVIEW_SOURCES
 
 
+#: Added to the page's to-do rule, and to the reading helper's prompt, when
+#: ``GEOTECH_REVIEW_TODOS_WITH_CALLS`` is set (DR-43 part 2). It says what a
+#: step costs, for any model.
+TODOS_WITH_CALLS_RULE = (
+    "Update the list in the same step as your next tool call, not in a step"
+    " of its own: every step sends the whole conversation again, so a step"
+    " that only updates the list costs as much as one that does work.")
+
+_TODO_RULE_END = "Skip it for a single question."
+
+
+def _todos_with_calls() -> bool:
+    from aec_agent_core import review_flags
+    return review_flags.todos_with_calls()
+
+
+def build_document_review_reader_prompt() -> str:
+    """The reading helper's prompt: :data:`DOCUMENT_REVIEW_READER_PROMPT`,
+    and with ``GEOTECH_REVIEW_TODOS_WITH_CALLS`` set one more line for the
+    to-do list the helper has (deepagents gives every helper the tool)."""
+    prompt = DOCUMENT_REVIEW_READER_PROMPT
+    if _todos_with_calls():
+        prompt = (prompt + "\nIf you keep a to-do list with `write_todos`: "
+                  + TODOS_WITH_CALLS_RULE + "\n")
+    return prompt
+
+
 def build_document_review_prompt(*, memory_enabled: bool = False) -> str:
     """The document-review page's system prompt (see
     :data:`DOCUMENT_REVIEW_PROMPT`), plus the memory note when the agent is
     built with a store."""
     prompt = DOCUMENT_REVIEW_PROMPT
+    if _todos_with_calls():
+        assert prompt.count(_TODO_RULE_END) == 1
+        prompt = prompt.replace(
+            _TODO_RULE_END, _TODO_RULE_END + " " + TODOS_WITH_CALLS_RULE)
     if memory_enabled:
         prompt = prompt + "\n\n## Memory\n\n" + MEMORY_SECTION
     return prompt
 
 
-__all__ = ["build_document_review_prompt", "DOCUMENT_REVIEW_PROMPT",
+__all__ = ["build_document_review_prompt", "build_document_review_reader_prompt",
+           "TODOS_WITH_CALLS_RULE", "DOCUMENT_REVIEW_PROMPT",
            "DOCUMENT_REVIEW_READER_PROMPT",
            "MEMORY_SECTION"]
