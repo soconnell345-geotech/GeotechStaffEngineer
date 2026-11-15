@@ -4700,6 +4700,64 @@
           }
         ],
         "multi": true
+      },
+      {
+        "label": "43. The noncircular search as built and reviewed (GM-140 step 7a, merged 74a3027, 2026-11-15), twelve calls (1 to 7 the build's, 8 to 11 the orchestrator's rulings on the review, 12 its call at the merge): (1) the toe limit is the larger of EM Eq. C-32's passive inclination (p. C-34) and the start's own exit, so a start already steeper than C-32 can still be refined (the orchestrator kept it on review); (2) under automatic windows the refinement's trials take the module's span floor (D22, not in print) as half the slope's height, not the automatic windows' span; (3) the wedges' ends on the ground are bounded only by windows the caller gives (call 5); (4) the starting increment is 0.10 x the ground's relief in the windows; (5) 11 vertices, 21 base-end positions per wedge end and 3 passes of F, set before any benchmark was run; (6) a circle start is refined as the 11-vertex polyline of its slice bases on 10 slices; (7) the record keeps no run time, so a result repeats (the time budget's record still gives the seconds); (8) inside the refinement, and for every start scored as it stands, the span floor is the lesser of the module's floor and the start's own span; the samplers keep step 3's screen; (9) the final increment is the lesser of the fraction (10 %, `refine_fraction`) of the thinnest stratum and a quarter of the starting increment, which is never raised to meet it (EM 4-2e(2)(b), p. 4-7, prints a maximum only); (10) every start is scored as it stands before it is refined, and its minimum is the lower of the two, labelled; a circle start as it stands is the polyline of its slice bases on the search's `n_slices`; (11) the wedge stage halves the best wedge's two ends down to the final increment, the inclinations fixed at EM C-1g(2)'s (pp. C-8 to C-10), and the stage alone (`refine=False`) says so in a warning; (12) over a firm base the refined default is reported as found: on Taylor's D = 2 profile (Duncan's Example 1) differential evolution reads 0.6632 against Taylor's chart 0.706 (-6.1 %) and the critical circle 0.7044, on a surface along the firm base with base and side tension and the thrust outside (lowest unflagged 1.469), outside the 5 % band the test held on master; it is the headline with its flags, `lowest_unflagged` and the warning (step 3; call 6, no shape rule), and the band stays on the sampler alone (`refine=False`, 0.6796).",
+        "options": [
+          {
+            "label": "Let all twelve stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) Both limits apart: no exit steeper than C-32 and none steeper than the start's",
+            "effect": "A start already steeper than C-32 at the toe cannot be refined at all."
+          },
+          {
+            "label": "(2) The automatic windows' span as the floor",
+            "effect": "B14's wedge and every short start are refused."
+          },
+          {
+            "label": "(3) Automatic windows bound the wedges too",
+            "effect": "A wedge outside them (a bench beyond the toe window) is never tried."
+          },
+          {
+            "label": "(4) Another starting increment",
+            "effect": "None is printed; a smaller one runs fewer levels and finds less from a far start."
+          },
+          {
+            "label": "(5) Other counts",
+            "effect": "None is printed; more vertices or positions cost run time roughly in proportion."
+          },
+          {
+            "label": "(6) Refine the circle's polyline on the search's n_slices itself",
+            "effect": "About three times the cost; with points closer than the increment a one-point shift is only a kink, so it mostly stands still."
+          },
+          {
+            "label": "(7) Keep the run time in the record",
+            "effect": "Two runs of the same case give records that differ."
+          },
+          {
+            "label": "(8) The module's floor for every trial",
+            "effect": "B14's critical circle (4.66 m span) is never a start: 1.276 against the circle's 0.882."
+          },
+          {
+            "label": "(9) Exactly the fraction of the thinnest stratum",
+            "effect": "In thick strata one level only (1.5 m steps on ACADS 1(a), 2.44 m on Duncan's Example 1), and a start from a circle can end above it."
+          },
+          {
+            "label": "(10) Only the refined value of each start",
+            "effect": "A start the refinement cannot improve, or the time budget leaves, has no value."
+          },
+          {
+            "label": "(11) An inclination band about C-1g(2)'s values (EM Fig. C-7b)",
+            "effect": "One more searched dimension and its run time; ACADS 4's stage alone could reach Table 9.4 and the declared family (GM-354, Later)."
+          },
+          {
+            "label": "(12) Hold the refined default to the chart's band over a firm base",
+            "effect": "A lower flagged surface along a firm base is treated as inadmissible until step 7b's impenetrable layer exists; Taylor's D = 2 profile would report about 0.68 again."
+          }
+        ],
+        "multi": true
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
