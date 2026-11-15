@@ -797,7 +797,8 @@ class SearchResult:
         p. C-10): the final increment with the thinnest stratum it is
         taken from (EM 4-2e(2)(b), p. 4-7), the starting increment, the
         vertex count, one wedge per layer, the starts left unrefined by
-        the time budget, the surfaces scored and the run time. Empty for
+        the time budget and the surfaces scored (no run time, so a result
+        does not change from run to run). Empty for
         other searches.
     governing_surface : str
         Which kind of surface governs ``critical`` (set by

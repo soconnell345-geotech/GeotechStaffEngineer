@@ -576,8 +576,8 @@ method rule and a caller's `fos_fn` hold.
   headline is the lowest. `refinement`: the increments with the stratum,
   the wedges, the starts the time budget left (`unrefined`; GM-123: the
   refinement is a stage with `_REFINE_SHARE` of the time, and a stop is
-  recorded as a stage of `search_ranges.time_budget`), the surfaces scored
-  and the run time. A circular search lists its grid minima in
+  recorded as a stage of `search_ranges.time_budget`) and the surfaces
+  scored (no run time: a result does not change from run to run). A circular search lists its grid minima in
   `local_minima` (whether the walk started from each, and why not: the
   run-time caps or the budget); no circular value changes.
 - *Choices*: `search_refine.refinement_choices`.

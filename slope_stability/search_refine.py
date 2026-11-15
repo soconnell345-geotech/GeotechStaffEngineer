@@ -551,7 +551,7 @@ def refinement_stage(geom, *, score: Callable, flags_of: Callable,
     start, lowest first: start, F_start, FOS, points, flags, refined,
     levels, n_scored), circle_starts (the note where there are none),
     unrefined (starts the time budget left), best (points, FOS, start),
-    n_scored, time_s}."""
+    n_scored}."""
     t0 = time.perf_counter()
     (e_lo, e_hi), (x_lo, x_hi) = windows
     lo, hi = min(e_lo, x_lo), max(e_hi, x_hi)
@@ -658,7 +658,8 @@ def refinement_stage(geom, *, score: Callable, flags_of: Callable,
     rec["local_minima"] = scored + [m for m in minima if m["FOS"] is None]
     rec["best"] = scored[0] if scored else None
     rec["n_scored"] = n_scored
-    rec["time_s"] = round(time.perf_counter() - t0, 2)
+    # (no run time in the record, so a result does not change from run to
+    # run; a search cut short has it in search_ranges['time_budget'])
     return rec
 
 
