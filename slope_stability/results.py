@@ -782,6 +782,23 @@ class SearchResult:
         {"FOS", "method", "points"}]}``; pooled by
         ``report_views.lowest_surfaces``. Set by
         ``search_critical_surface``; empty otherwise.
+    local_minima : list of dict
+        The separate local minima the search found, lowest first (GM-140
+        step 7a; EM 1110-2-1902 4-2d(2), p. 4-2, and 4-2e(1)(b), pp. 4-3
+        and 4-6). A centre grid: each grid minimum's centre, radius and
+        grid FOS, whether the refinement walk started from it, and why
+        not where the run-time caps (GM-123) left it (a record: no
+        circular value changes). A noncircular search: each start's
+        refined minimum (``start``, ``F_start``, ``FOS``, ``points``,
+        ``flags``, ``refined``); the headline is the lowest. In
+        ``to_dict()`` only when not empty.
+    refinement : dict
+        A noncircular search's refinement (GM-140 step 7a; EM C-1g(3),
+        p. C-10): the final increment with the thinnest stratum it is
+        taken from (EM 4-2e(2)(b), p. 4-7), the starting increment, the
+        vertex count, one wedge per layer, the starts left unrefined by
+        the time budget, the surfaces scored and the run time. Empty for
+        other searches.
     governing_surface : str
         Which kind of surface governs ``critical`` (set by
         ``search_critical_surface``): 'circular' / 'noncircular' (the main
@@ -941,6 +958,8 @@ class SearchResult:
     family_surfaces: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     family_lowest: Dict[str, List[Dict[str, Any]]] = field(
         default_factory=dict)
+    local_minima: List[Dict[str, Any]] = field(default_factory=list)
+    refinement: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def n_no_solution(self) -> int:
@@ -1188,6 +1207,10 @@ class SearchResult:
             d["screen_unsolved"] = dict(self.screen_unsolved)
         if self.circle_check:
             d["circle_check"] = dict(self.circle_check)
+        if self.local_minima:
+            d["local_minima"] = [dict(m) for m in self.local_minima]
+        if self.refinement:
+            d["refinement"] = dict(self.refinement)
         # what the print asks a search's output to show (GM-140 step 10):
         # the contours of the minimum FOS over the centres and whether the
         # lowest closes inside the grid (D46), and the ten lowest surfaces

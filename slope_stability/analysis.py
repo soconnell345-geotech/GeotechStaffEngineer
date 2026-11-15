@@ -1006,6 +1006,8 @@ def search_critical_surface(
     base_in_tension: str = "as_printed",
     f_interslice: str = "half_sine",
     circle_check: bool = True,
+    refine_fraction: Optional[float] = None,
+    seed_surface=None,
 ) -> SearchResult:
     """Search for the critical slip surface (minimum FOS).
 
@@ -1136,8 +1138,29 @@ def search_critical_surface(
         Score shallow planar surfaces on faces of cohesionless soil.
         Default True.
     refine : bool
-        Refine the lowest centres of the circular grid by a local compass
-        search on the centre (circular only). Default True.
+        Circular: refine the lowest centres of the circular grid by a local
+        compass search on the centre. Noncircular searches (GM-140 step
+        7a): refine every start one point at a time, all others held,
+        until no shift lowers F (EM 1110-2-1902 C-1g(3), p. C-10, Fig.
+        C-8); the starts are the search's own best surface, each locally
+        critical circle of the circular search run for ``circle_check``,
+        a wedge along each layer within the search's depth (EM C-1f(2),
+        C-1g(2)) and ``seed_surface``; the lowest is reported and each
+        start's minimum is listed in ``local_minima`` (EM 4-2d(2), p.
+        4-2). The refinement is a stage of the time budget; a stopped one
+        names the starts it left unrefined. False: no shifts (the
+        weak-layer search is then its wedge stage alone, Slide2's search
+        without optimisation). Default True.
+    refine_fraction : float or None
+        Noncircular refinement: the final shift increment as a fraction
+        of the thinnest stratum within the windows (EM 4-2e(2)(b), p. 4-7:
+        no more than 10 to 25 percent). None (default): 0.10, the
+        module's call; at most 0.25.
+    seed_surface : list of (x, z) or PolylineSlipSurface, optional
+        Noncircular searches: a surface of the caller's, one more start
+        of the refinement (EM 4-2e(2), p. 4-7: the initial surface should
+        match the estimated critical surface); differential evolution
+        also seeds its population with it.
     time_budget_s : float or None
         Time budget of the whole search, in seconds (GM-123). Default None,
         no limit, so a library search never depends on the machine's
@@ -1441,6 +1464,14 @@ def search_critical_surface(
             negative_friction_term=negative_friction_term,
             f_interslice=f_interslice,
             circle_check=circle_check if noncircular_kind else None)
+        if noncircular_kind:
+            # the noncircular refinement (GM-140 step 7a)
+            from slope_stability.search_refine import refinement_choices
+            result.choices += refinement_choices(
+                result.refinement if result.refinement.get(
+                    "final_increment") else None,
+                given=refine is not True,
+                fraction_given=refine_fraction is not None)
         # The pore pressure every trial surface's bases took (GM-140 step
         # 5a), said once, by the search.
         from slope_stability.pore_pressure import add_water_statements
@@ -1473,9 +1504,25 @@ def search_critical_surface(
             # found first (GM-140 step 6): one of this search's trials.
             circle = (_critical_circle(scored_main[0]) if circle_check
                       else None)
+            from slope_stability.search_refine import circle_starts_of
+            if seed_surface is not None and not hasattr(seed_surface,
+                                                         "points"):
+                seed_surface = PolylineSlipSurface(
+                    points=[(float(x), float(z)) for x, z in seed_surface])
+            refine_kw = dict(
+                refine=refine, refine_fraction=refine_fraction,
+                seed_surface=seed_surface,
+                windows_given=(not windows_auto[0], not windows_auto[1]),
+                circle_starts=circle_starts_of(circle) if circle_check
+                else None,
+                circle_note=(
+                    "no circle starts: no circular search was run "
+                    "(circle_check=False)" if not circle_check else
+                    "no circle starts: the circular search run for "
+                    "circle_check found no circle"))
             result = _main_search(lambda m: _search_noncircular_kind(
                 geom, surface_type, x_entry_range, x_exit_range, nx, ny,
-                n_slices, tol, n_trials, n_points, seed, m))
+                n_slices, tol, n_trials, n_points, seed, m, **refine_kw))
             if not circle_check:
                 result.circle_check = {
                     "checked": False,
@@ -1525,8 +1572,9 @@ def search_critical_surface(
 
 def _search_noncircular_kind(geom, surface_type, x_entry_range, x_exit_range,
                              nx, ny, n_slices, tol, n_trials, n_points, seed,
-                             noncirc_method) -> SearchResult:
-    """Dispatch the noncircular search types of `search_critical_surface`."""
+                             noncirc_method, **refine_kw) -> SearchResult:
+    """Dispatch the noncircular search types of `search_critical_surface`
+    (``refine_kw``: the refinement's options, GM-140 step 7a)."""
     if surface_type == "noncircular":
         return search_noncircular(
             geom,
@@ -1538,6 +1586,7 @@ def _search_noncircular_kind(geom, surface_type, x_entry_range, x_exit_range,
             tol=tol,
             seed=seed,
             method=noncirc_method,
+            **refine_kw,
         )
 
     if surface_type == "noncircular_de":
@@ -1550,6 +1599,7 @@ def _search_noncircular_kind(geom, surface_type, x_entry_range, x_exit_range,
             n_slices=n_slices,
             tol=tol,
             seed=seed,
+            **refine_kw,
         )
 
     if surface_type == "pso":
@@ -1564,6 +1614,7 @@ def _search_noncircular_kind(geom, surface_type, x_entry_range, x_exit_range,
             tol=tol,
             seed=seed,
             method=noncirc_method,
+            **refine_kw,
         )
 
     # weak_layer
@@ -1577,6 +1628,7 @@ def _search_noncircular_kind(geom, surface_type, x_entry_range, x_exit_range,
         tol=tol,
         seed=seed,
         method=noncirc_method,
+        **refine_kw,
     )
 
 

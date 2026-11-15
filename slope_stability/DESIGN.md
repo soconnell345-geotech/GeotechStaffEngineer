@@ -520,9 +520,67 @@ guard (`test_a_state_at_one_slicing_only_is_refused`).
   named (GM-140 step 6; Spencer's method where a method for circles only
   is named). The particle swarm and the weak-layer search do the same;
   before step 6 both always used Spencer's method.
+- Since GM-140 step 7a every noncircular search ends with the refinement
+  of several starts (next section but one).
 - Returns best (minimum FOS) surface found. Through
   `search_critical_surface` the critical circle of a circular search by the
   same method is one of the trials ("One method across the search" below).
+
+### The noncircular search finished as printed (GM-140 step 7a, 2026-11-15)
+
+`search_refine.py`; `search._refines_noncircular` puts the stage at the end
+of `search_noncircular`, `search_de`, `search_pso` and
+`search_weak_layer_biased` (and so of `search_critical_surface` and the
+drawdown search's noncircular kinds, which pass their `fos_fn`). Each start
+is scored by the search's own `_compute_fos`, so step 3's checks, step 6's
+method rule and a caller's `fos_fn` hold.
+
+- *Starts* (EM 1110-2-1902 4-2e(1)(b), pp. 4-3 and 4-6; 4-2e(2), p. 4-7;
+  C-1g(4), p. C-11; FHWA NHI-06-088 p. 6-22): the kind's own best surface;
+  each locally critical circle of the circular search
+  `search_critical_surface` runs for `circle_check` (its grid minima,
+  `SearchResult.local_minima`, and the toe and above-toe families' critical
+  circles), as the polyline of its slice-base points on ten slices; a wedge
+  along each layer; the caller's `seed_surface`. With `circle_check=False`
+  there are no circle starts and the record says so.
+- *Wedges* (EM C-1f(2), p. C-6; C-1g(2), pp. C-8 to C-10; FHWA pp. 6-43 to
+  6-44): every layer holding ground within the windows' span and the
+  search's depth; the central block on the layer's mid-line
+  (`_layer_band_at`), its ends at 21 positions each over the span; the wedge
+  on the toe side at 45 - phi'_D/2, the other at 45 + phi'_D/2,
+  tan phi'_D = tan phi'/F, phi' of the material just above the base end, F
+  = 1 first and then the F each pass gave (3 passes at most). The random
+  aiming of the weak-layer search and its weight 1/(c + 50 tan phi), which
+  had no print, are gone; `search_weak_layer_biased` is the wedge stage
+  (`refine=False`: Slide2's search without optimisation) and its
+  `n_trials`, `n_points` and `seed` no longer change the result.
+- *Refinement* (EM C-1g(3), p. C-10, Fig. C-8): interior points up and
+  down, ends along the ground, one point at a time, the better of two
+  shifts taken where F falls by more than the solver's tolerance; passes
+  repeat until none does; the increment halves from 0.10 x the ground's
+  relief in the windows down to the final increment, 0.10 x the least
+  vertical thickness of the thinnest stratum (EM 4-2e(2)(b), p. 4-7;
+  `refine_fraction`, at most 0.25). Starts get points on their longest
+  segments up to 11 vertices (the surface unchanged).
+- *Restrictions.* No end crosses a crest from its start or moves from one
+  face group onto another (EM 4-2e(1)(a), p. 4-3). No shift makes the toe
+  segment steeper than EM Eq. C-32's 45 - phi'/2 (exit material) or, where
+  the start's own exit is steeper, than the start's (EM 4-2e(2)(a), p. 4-7;
+  call 4). Automatic windows bound only the samplers: the shifts and the
+  wedge ends are free of them, and they do not anchor the span screen of
+  the refinement's trials (`_noncircular_admissible` then takes half the
+  slope's height); windows the caller gives bound everything (call 5,
+  confirmed by the owner 2026-11-15). No shape rule (call 6).
+- *Report* (EM 4-2d(2), p. 4-2): `local_minima`, each start's minimum
+  lowest first with F before and after, the surface and its flags; the
+  headline is the lowest. `refinement`: the increments with the stratum,
+  the wedges, the starts the time budget left (`unrefined`; GM-123: the
+  refinement is a stage with `_REFINE_SHARE` of the time, and a stop is
+  recorded as a stage of `search_ranges.time_budget`), the surfaces scored
+  and the run time. A circular search lists its grid minima in
+  `local_minima` (whether the walk started from each, and why not: the
+  run-time caps or the budget); no circular value changes.
+- *Choices*: `search_refine.refinement_choices`.
 
 ### Supplementary families: toe circles and the infinite slope (GM-13, GM-14)
 `search_critical_surface` scores two more surface families after the main

@@ -2310,10 +2310,13 @@ def grid_search(geom: SlopeGeometry,
                 best_yc = yc
                 best_r = r_opt
 
+    refined_at: Dict[Tuple[int, int], tuple] = {}    # GM-140 step 7a
+    refine_ran = [False]
     if refine and best_fos < _FOS_MAX and _time_up():
         _record_not_run("the refinement of the lowest grid centres")
     # Local refinement of the lowest grid centres (GM-87)
     if refine and best_fos < _FOS_MAX and not _time_up():
+        refine_ran[0] = True
         steps = ((x_hi - x_lo) / max(nx - 1, 1) / 2.0,
                  (y_hi - y_lo) / max(ny - 1, 1) / 2.0)
         bounds = ((min(x_lo, x_hi), max(x_lo, x_hi)),
@@ -2399,6 +2402,7 @@ def grid_search(geom: SlopeGeometry,
                 elif f < best_fos:          # Bishop's circle, reported
                     grid_fos.append({"xc": round(xc, 2), "yc": round(yc, 2),
                                      "R": round(r, 2), "FOS": round(f, 4)})
+            refined_at[(ix, iy)] = (f, xc, yc, r)
             if f < best_fos:
                 best_fos, best_xc, best_yc, best_r = f, xc, yc, r
 
@@ -2434,6 +2438,12 @@ def grid_search(geom: SlopeGeometry,
         warnings=[window_note] if window_note else [],
         centre_grid={"x_range": (x_lo, x_hi), "y_range": (y_lo, y_hi),
                      "nx": nx, "ny": ny},
+        local_minima=_grid_minima_record(
+            lattice, nx, ny, refined_at, refine=refine,
+            refine_ran=refine_ran[0], screened=scan != method,
+            n_starts=(_REFINE_STARTS if fos_fn is None
+                      else _REFINE_FOS_FN[0]),
+            within=_REFINE_WITHIN),
     )
 
 
@@ -2445,6 +2455,178 @@ NOT_CHECKED_AGAINST_CIRCLE = {
     "checked": False,
     "note": ("the noncircular minimum was not checked against a circle: no "
              "circular search ran with this search")}
+
+
+def _grid_minima_record(*args, **kwargs):
+    from slope_stability.search_refine import grid_minima_record
+    return grid_minima_record(*args, **kwargs)
+
+
+# ── The noncircular refinement (GM-140 step 7a) ──────────────────────────
+#
+# Every noncircular search (random polylines, differential evolution, the
+# particle swarm, the weak-layer search) finishes the way EM 1110-2-1902
+# describes one: several independent starts (its own best surface, each
+# locally critical circle of the circular search run for circle_check, a
+# wedge along each layer, the caller's surface), each moved one point at a
+# time until no shift lowers F and the shifts are small against the
+# thinnest stratum (EM C-1g(3), p. C-10; 4-2e(2)(b), p. 4-7). The lowest
+# is reported and every start's minimum is listed (EM 4-2d(2), p. 4-2).
+# `search_refine` holds the pieces; `_refines_noncircular` puts the stage
+# at the end of each search. With ``refine=False`` nothing is shifted;
+# the weak-layer search is then its wedge stage alone.
+
+#: The options every noncircular search takes for its refinement.
+_REFINE_OPTIONS = {"refine": True, "refine_fraction": None,
+                   "circle_starts": None, "circle_note": None,
+                   "windows_given": (True, True), "seed_surface": None}
+
+
+def _polyline_result(geom, pts, fos, method, n_slices, tol, fos_fn):
+    """The ``SlopeStabilityResult`` of a polyline a search reports."""
+    slip = PolylineSlipSurface(points=list(pts))
+    x_entry, x_exit = slip.find_entry_exit(geom)
+    slices = build_slices(
+        _report_geometry(geom, slip, method, n_slices, tol, fos_fn),
+        slip, n_slices)
+    return SlopeStabilityResult(
+        FOS=fos, method=_polyline_label(method, fos_fn), xc=0.0, yc=0.0,
+        radius=0.0, x_entry=x_entry, x_exit=x_exit, n_slices=len(slices),
+        has_seismic=geom.kh > 0, kh=geom.kh, slip_points=list(slip.points))
+
+
+def _refines_noncircular(kind: str):
+    """Run the refinement stage (`search_refine.refinement_stage`) at the
+    end of a noncircular search of ``kind``: its sampler under
+    ``1 - _REFINE_SHARE`` of the time left, then every start refined with
+    the search's own scorer (`_compute_fos`, so the printed checks, the
+    method rule and a ``fos_fn`` hold). Adds the keyword options of
+    `_REFINE_OPTIONS` to the search's signature."""
+    def deco(fn):
+        sig = inspect.signature(fn)
+        own_seed = "seed_surface" in sig.parameters
+        extra = [inspect.Parameter(k, inspect.Parameter.KEYWORD_ONLY,
+                                   default=v)
+                 for k, v in _REFINE_OPTIONS.items()
+                 if not (k == "seed_surface" and own_seed)]
+        new_sig = sig.replace(parameters=list(sig.parameters.values())
+                              + extra)
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            opts = {k: kwargs.pop(k, v) for k, v in _REFINE_OPTIONS.items()
+                    if not (k == "seed_surface" and own_seed)}
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            a = bound.arguments
+            if own_seed:
+                opts["seed_surface"] = a.get("seed_surface")
+            refine = bool(opts["refine"])
+            if not refine and kind != "weak_layer":
+                result = fn(*args, **kwargs)
+                result.refinement = {"refined": False}
+                return result
+            with _stage_share(1.0 - _REFINE_SHARE if refine else 1.0):
+                result = fn(*args, **kwargs)
+            _run_refinement(result, a, opts, kind)
+            return result
+
+        wrapper.__signature__ = new_sig
+        return wrapper
+    return deco
+
+
+def _run_refinement(result: SearchResult, a, opts, kind: str) -> None:
+    """The refinement stage of `_refines_noncircular` on ``result``."""
+    from slope_stability.search_refine import (
+        refinement_stage, FINAL_FRACTION)
+    geom = a["geom"]
+    method, n_slices, tol = a["method"], a["n_slices"], a["tol"]
+    fos_fn = a.get("fos_fn")
+    windows = (tuple(a["x_entry_range"]), tuple(a["x_exit_range"]))
+    given = tuple(opts["windows_given"])
+    # Call 5 (OWN-143 part 42, confirmed 2026-11-15): automatic windows
+    # bound only the samplers, so they do not anchor the span screen of
+    # the refinement's trials either (`_noncircular_admissible` then takes
+    # half the slope's height).
+    window_span = _window_span(*windows) if all(given) else None
+    reject_stats = _new_reject_stats()
+    seen: Dict[tuple, tuple] = {}
+
+    def score(pts):
+        key = tuple((float(x), float(z)) for x, z in pts)
+        if key in seen:
+            return seen[key][0]
+        info: Dict[str, Any] = {}
+        try:
+            slip = PolylineSlipSurface(points=list(key))
+            f = _compute_fos(geom, slip, method, n_slices, tol=tol,
+                             window_span=window_span,
+                             reject_stats=reject_stats, fos_fn=fos_fn,
+                             info=info)
+        except (ValueError, ZeroDivisionError, RuntimeError, IndexError):
+            f = _FOS_MAX
+        seen[key] = (f, list(info.get("flags") or []))
+        return f
+
+    def flags_of(pts):
+        key = tuple((float(x), float(z)) for x, z in pts)
+        if key not in seen:
+            score(pts)
+        return seen[key][1]
+
+    def record_stop(n_done, n_of, t0, left):
+        _record_stop("noncircular refinement", n_done, n_of, "starts", t0,
+                     "the starts refined first, in order",
+                     "starts left unrefined: " + "; ".join(left))
+
+    own = (result.critical.slip_points
+           if result.critical is not None and result.critical.slip_points
+           else None)
+    fraction = opts["refine_fraction"]
+    rec = refinement_stage(
+        geom, score=score, flags_of=flags_of, own_best=own,
+        windows=windows, windows_given=given,
+        circle_starts=opts["circle_starts"],
+        circle_note=(opts["circle_note"] or
+                     "no circular search ran with this search, so there "
+                     "are no circle starts"),
+        seed_surface=(None if opts["seed_surface"] is None else
+                      getattr(opts["seed_surface"], "points",
+                              opts["seed_surface"])),
+        wedges=True, refine=bool(opts["refine"]),
+        final_fraction=FINAL_FRACTION if fraction is None else fraction,
+        tol=tol, time_up=_time_up, record_stop=record_stop,
+        own_label=f"the {kind.replace('_', ' ')} search's own best surface",
+        wedge_only=(kind == "weak_layer" and not opts["refine"]))
+    rec["fraction_given"] = fraction is not None
+    result.n_surfaces_evaluated += rec["n_scored"]
+    result.n_rejected_geometry += reject_stats["geometry"]
+    result.n_rejected_nonconverged += reject_stats["nonconverged"]
+    result.n_rejected_jagged += reject_stats["jagged"]
+    for name, r in (reject_stats.get("screens") or {}).items():
+        have = result.screen_refusals.setdefault(
+            name, {"n": 0, "n_flagged": r.get("n_flagged")})
+        have["n"] += r["n"]
+        if r.get("n_flagged") is not None:
+            have["n_flagged"] = (have.get("n_flagged") or 0) + r["n_flagged"]
+    for m in rec["local_minima"]:
+        if m.get("points"):
+            result.trial_surfaces.append({
+                "FOS": m["FOS"], "points": list(m["points"]),
+                "from": m["start"]})
+    best = rec.get("best")
+    if best is not None and (result.critical is None
+                             or best["FOS"] < result.critical.FOS - 1e-9):
+        try:
+            result.critical = _polyline_result(
+                geom, best["points"], best["FOS"], method, n_slices, tol,
+                fos_fn)
+        except ValueError:
+            pass
+    result.local_minima = rec.pop("local_minima")
+    rec["best"] = None if best is None else best["start"]
+    result.refinement = rec
 
 
 def _polyline_label(method: str, fos_fn) -> str:
@@ -2460,6 +2642,7 @@ def _polyline_label(method: str, fos_fn) -> str:
 @_counts_refusals
 @counts_reverse_discards
 @_applies_interslice
+@_refines_noncircular("noncircular")
 def search_noncircular(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2628,6 +2811,7 @@ def search_noncircular(
 @_counts_refusals
 @counts_reverse_discards
 @_applies_interslice
+@_refines_noncircular("pso")
 def search_pso(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2897,6 +3081,7 @@ def _layer_band_at(geom: SlopeGeometry, layer, x: float):
 @_counts_refusals
 @counts_reverse_discards
 @_applies_interslice
+@_refines_noncircular("weak_layer")
 def search_weak_layer_biased(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2909,191 +3094,47 @@ def search_weak_layer_biased(
     method: str = "spencer",
     f_interslice: Optional[str] = None,
 ) -> SearchResult:
-    """Weak-layer biased random search inspired by SSAP's SNIFF algorithm.
+    """The weak-layer search: a wedge along each layer (GM-140 step 7a).
 
-    Biases random surface generation toward passing through soil layers
-    with the lowest shear strength. Surfaces are weighted to preferentially
-    route through weak zones. Every surface is scored by ``method``
-    (default Spencer's method; before GM-140 step 6 always Spencer's,
-    whatever was named), with ``f_interslice`` for Morgenstern-Price and
-    GLE (None: the function in force). Bishop's simplified method and the
-    Ordinary Method of Slices, which are for circles, are scored by
-    Spencer's method here.
+    EM 1110-2-1902 C-1f(2), p. C-6: a wedge suits a long linear segment
+    through weak material bounded by stronger material; C-1g(2), pp. C-8
+    to C-10, Fig. C-7b: the wedge search varies the two ends of the
+    central block's base, the active wedge at 45 + phi'_D/2 and the
+    passive at 45 - phi'_D/2, tan phi'_D = tan phi'/F; FHWA NHI-06-088
+    pp. 6-43 to 6-44: try several positions of the wedges. Every layer
+    within the search's depth gets one (`search_refine.wedge_starts`):
+    the central block on the layer's mid-line, its ends at
+    ``search_refine.WEDGE_POSITIONS`` positions each over the windows.
+    This replaces the random aiming at a layer chosen by the weight
+    1/(c + 50 tan phi), which had no print (before step 7a: Borselli's
+    SNIFF idea, SSAP2010).
 
-    Parameters
-    ----------
-    geom : SlopeGeometry
-        Slope definition.
-    x_entry_range : (float, float)
-        Allowed entry x-coordinate range.
-    x_exit_range : (float, float)
-        Allowed exit x-coordinate range.
-    n_trials : int
-        Number of random trial surfaces. Default 500.
-    n_points : int
-        Number of polyline vertices. Default 5.
-    n_slices : int
-        Number of slices per analysis.
-    tol : float
-        FOS convergence tolerance.
-    seed : int, optional
-        Random seed for reproducibility.
+    With ``refine`` (default True) the lowest wedge of each layer, each
+    locally critical circle given (``circle_starts``; the circular search
+    `search_critical_surface` runs for circle_check) and a
+    ``seed_surface`` are each refined one point at a time (EM C-1g(3),
+    p. C-10; `search_refine.refine_polyline`) and the lowest is reported,
+    every start's minimum listed in ``local_minima``. With
+    ``refine=False`` the wedge stage alone is the result: Slide2's search
+    without optimisation. ``n_trials``, ``n_points`` and ``seed`` are
+    kept in the signature and no longer change the result.
+
+    Every surface is scored by ``method`` (default Spencer's method), with
+    ``f_interslice`` for Morgenstern-Price and GLE (None: the function in
+    force). Bishop's simplified method and the Ordinary Method of Slices,
+    which are for circles, are scored by Spencer's method here.
 
     Returns
     -------
     SearchResult
-
-    References
-    ----------
-    Borselli (2002) — SNIFF Random Search concept (SSAP2010)
     """
-    if seed is not None:
-        random.seed(seed)
-
-    min_layer_bot = min(L.bottom_elevation for L in geom.soil_layers)
-    window_span = _window_span(x_entry_range, x_exit_range)
-    reject_stats = _new_reject_stats()
-
-    # Compute weakness score for each layer: inverse of shear strength
-    layer_weakness = []
-    for layer in geom.soil_layers:
-        c, phi = layer.shear_strength_params
-        strength = c + 50.0 * math.tan(math.radians(phi))
-        if strength <= 0:
-            strength = 0.1
-        layer_weakness.append(1.0 / strength)
-
-    total_weakness = sum(layer_weakness)
-    if total_weakness > 0:
-        layer_weights = [lw / total_weakness for lw in layer_weakness]
-    else:
-        layer_weights = [1.0 / len(geom.soil_layers)] * len(geom.soil_layers)
-
-    best_fos = _FOS_MAX
-    best_slip = None
-    n_evaluated = 0
-    grid_fos = []
-    trial_surfaces = []
-
-    t_start = time.perf_counter()
-    for k in range(n_trials):
-        if best_fos < _FOS_MAX and _time_up():    # GM-123
-            _record_stop("weak-layer search", k, n_trials,
-                         "random trial surfaces", t_start,
-                         "the trials are random over both windows",
-                         f"{n_trials - k} trials")
-            break
-        x_entry = random.uniform(*x_entry_range)
-        x_exit = random.uniform(*x_exit_range)
-        if x_exit <= x_entry + 1.0:
-            continue
-
-        z_entry = geom.ground_elevation_at(x_entry)
-        z_exit = geom.ground_elevation_at(x_exit)
-
-        n_interior = max(n_points - 2, 1)
-        points = [(x_entry, z_entry)]
-
-        target_idx = _weighted_choice(layer_weights)
-        target_layer = geom.soil_layers[target_idx]
-
-        for j in range(n_interior):
-            frac = (j + 1) / (n_interior + 1)
-            x_pt = x_entry + frac * (x_exit - x_entry)
-            z_ground = geom.ground_elevation_at(x_pt)
-
-            # Aimed at the target layer where it is at this x (GM-140 step
-            # 1: one material per point), not at its flat elevations. Where
-            # the layer holds no ground at x the point is placed as the
-            # points not aimed at a layer are.
-            band = (_layer_band_at(geom, target_layer, x_pt)
-                    if random.random() < 0.7 else None)
-            if band is not None:
-                z_band_bot, z_band_top = band
-                layer_mid = (z_band_top + z_band_bot) / 2.0
-                thickness = z_band_top - z_band_bot
-                noise = random.gauss(0, max(thickness / 4.0, 0.1))
-                z_pt = layer_mid + noise
-                z_pt = max(min_layer_bot, min(z_ground - 0.3, z_pt))
-            else:
-                max_depth = z_ground - min_layer_bot
-                if max_depth <= 0:
-                    max_depth = 1.0
-                depth = random.uniform(0.5, max_depth * 0.9)
-                z_pt = z_ground - depth
-
-            points.append((x_pt, z_pt))
-
-        points.append((x_exit, z_exit))
-
-        try:
-            slip = PolylineSlipSurface(points=points)
-            fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
-                               window_span=window_span,
-                               reject_stats=reject_stats)
-            n_evaluated += 1
-
-            grid_fos.append({
-                "xc": round(points[len(points) // 2][0], 2),
-                "yc": round(points[len(points) // 2][1], 2),
-                "R": 0.0,
-                "FOS": round(fos, 4),
-            })
-            if fos < 900:
-                trial_surfaces.append({
-                    "FOS": round(fos, 4),
-                    "points": [(round(px, 3), round(pz, 3))
-                               for px, pz in points],
-                })
-
-            if fos < best_fos:
-                best_fos = fos
-                best_slip = slip
-        except (ValueError, ZeroDivisionError, RuntimeError):
-            continue
-
-    critical = None
-    if best_fos < _FOS_MAX and best_slip is not None:
-        try:
-            x_entry, x_exit = best_slip.find_entry_exit(geom)
-            slices = build_slices(
-                _report_geometry(geom, best_slip, method, n_slices, tol, None),
-                best_slip, n_slices)
-            critical = SlopeStabilityResult(
-                FOS=best_fos,
-                method=_polyline_label(method, None),
-                xc=0.0,
-                yc=0.0,
-                radius=0.0,
-                x_entry=x_entry,
-                x_exit=x_exit,
-                n_slices=len(slices),
-                has_seismic=geom.kh > 0,
-                kh=geom.kh,
-                slip_points=list(best_slip.points),
-            )
-        except ValueError:
-            pass
-
     return SearchResult(
-        critical=critical,
-        n_surfaces_evaluated=n_evaluated,
-        grid_fos=grid_fos,
-        trial_surfaces=trial_surfaces,
+        critical=None,
+        n_surfaces_evaluated=0,
+        grid_fos=[],
+        trial_surfaces=[],
         circle_check=dict(NOT_CHECKED_AGAINST_CIRCLE),
-        **_rejection_kwargs(reject_stats, n_evaluated),
     )
-
-
-def _weighted_choice(weights):
-    """Weighted random selection, returns index."""
-    r = random.random()
-    cumulative = 0.0
-    for i, w in enumerate(weights):
-        cumulative += w
-        if r <= cumulative:
-            return i
-    return len(weights) - 1
 
 
 # ── Entry/Exit Region Search ─────────────────────────────────────────────
@@ -3395,6 +3436,7 @@ def search_entry_exit(
 @_counts_refusals
 @counts_reverse_discards
 @_applies_interslice
+@_refines_noncircular("noncircular_de")
 def search_de(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -3530,7 +3572,7 @@ def search_de(
         seed_res = search_noncircular(
             geom, x_entry_range, x_exit_range, n_trials=n_seed_trials,
             n_points=n_points, n_slices=n_slices, tol=tol, seed=seed,
-            method=method, fos_fn=fos_fn,
+            method=method, fos_fn=fos_fn, refine=False,
         )
         if seed_res.critical is not None and seed_res.critical.slip_points:
             seed_crit = seed_res.critical
