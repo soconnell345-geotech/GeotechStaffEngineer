@@ -52,7 +52,7 @@ ACADS 4 (Slide2 problem #9, V-028), weak-layer search, Spencer, Table 9.2's load
 
 Scripts: `module_work/gm140/step4_section11.py`, unchanged (every pinned test of the validation set), and `module_work/gm140/step7a_section11.py` (new; this step's noncircular rows). Both were run on a checkout of master 7a5bb26 (before) and on this branch (after). The run times are from one development container; the two trees ran one after the other.
 
-**The pinned validation set (`step4_section11.py`):** see section 6 for the counts. The only pinned values that move are the noncircular ones below. Every circular benchmark (B1 to B10, B12, B13, B16 to B18 and the circular parts of the others) holds on both trees.
+**The pinned validation set (`step4_section11.py`):** master 391 passed / 1 skipped / 3 xfailed; branch 392 passed / 1 skipped / 4 xfailed, no line MOVED (V-028's one strict xfail became one pass and two strict xfails). The only pinned values that move are the noncircular ones below. Every circular benchmark (B1 to B10, B12, B13, B16 to B18 and the circular parts of the others) holds on both trees.
 
 | Benchmark (all Spencer unless named) | before | after | printed | what moved it |
 |---|---|---|---|---|
@@ -87,8 +87,8 @@ Run times (s), before -> after: ACADS 4 weak-layer 9.5 -> 4.3 (refine=False) and
 
 Run by pytest's exit code (`-n 4`):
 
-- `slope_stability/tests` (all), before the fixes: 9 failed / 976 passed / 17 skipped / 1 xfailed. Each failure was a test of a sampler's own mechanics or a value the refinement moves. After the fixes, the 9 plus the new `test_search_refine.py` (13): all pass. Re-run of the whole folder: see the final line below.
-- `slope_stability/tests/test_search_refine.py` (new, 13 tests): passes. The tests were written after the code (this file says so). Each uses the step's new API (`refine`, `local_minima`, `refinement`), so on master they cannot run.
+- `slope_stability/tests` (all), before the fixes: 9 failed / 976 passed / 17 skipped / 1 xfailed. Each failure was a test of a sampler's own mechanics or a value the refinement moves. On the final tree: **999 passed / 17 skipped / 1 xfailed / 0 failed**.
+- `slope_stability/tests/test_search_refine.py` (new, 14 tests): passes. The tests were written after the code (this file says so). Each uses the step's new API (`refine`, `local_minima`, `refinement`), so on master they cannot run.
 - The `validation_examples/test_published_*` files that import slope_stability and the `calc_package`, `funhouse_agent`, `reliability`, `fem2d`, `geotech_common`, `report_ingest`, `dxf_import` and `geo_project` test files that name slope_stability: 3 failed (V-043, re-pinned against print below) / 2241 passed / 4 xfailed; then V-043's file 11 passed.
 - `funhouse_agent/tests/test_defaults_used.py -k slope` (and the probe tables): pass after the weak-layer settings row and the new probe (the probe found a missing import in `seed_surface`'s list form, fixed).
 - `webapp/tests/test_page_fingerprints.py`: 13 passed (the pages' fingerprints do not cover these descriptions; nothing to re-record).
