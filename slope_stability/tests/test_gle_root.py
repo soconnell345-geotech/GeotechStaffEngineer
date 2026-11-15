@@ -713,7 +713,8 @@ def test_a_search_makes_no_scan_below_0(monkeypatch):
     """Fix round 2 (F2): never inside a search's trials (run time).
     ACADS 1(a)'s 200-trial random Spencer search leaves trials without a
     solution; the scan below 0 is made on none of them, and the lowest of
-    its own polylines stands (1.0916). Trial 167 analysed alone (no
+    its own polylines stands (1.0916 before GM-140 step 7a, 0.9862 refined).
+    Trial 167 analysed alone (no
     number) is scanned once."""
     calls = []
     real = gle._GLESystem.crossing_below
@@ -736,8 +737,11 @@ def test_a_search_makes_no_scan_below_0(monkeypatch):
     assert r.critical.FOS == pytest.approx(0.9844, abs=5e-4)
     assert r.critical.FOS <= 0.9838 * 1.002
     assert r.circle_check["circle"]["FOS"] == pytest.approx(0.9838, abs=5e-4)
+    # GM-140 step 7a: the search's own minimum 1.0916 -> 0.9862 (its
+    # refined starts; the critical circle's start, on ten slices, reads
+    # 0.9862); printed 1.00 (ACADS 1(a), Giam and Donald 1989), -1.4 %
     assert r.circle_check["noncircular_minimum"] == pytest.approx(
-        1.0916, abs=5e-4)
+        0.9862, abs=5e-4)
     assert r.circle_check["governs"] is True
     assert r.no_solution[0]["not_converged"] > 0
     assert calls == []

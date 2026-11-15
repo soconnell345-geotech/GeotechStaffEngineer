@@ -46,7 +46,7 @@ def _weak_layer_slope():
                            gamma=19.0, phi=30.0, c_prime=12.0)])
 
 
-_WINDOWS = dict(x_entry_range=(5.0, 25.0), x_exit_range=(40.0, 65.0))
+_WINDOWS = dict(x_entry_range=(5.0, 32.0), x_exit_range=(40.0, 65.0))
 
 
 @pytest.fixture(scope="module")
@@ -78,7 +78,7 @@ def test_wedge_stage_reaches_a_wedge_family_declared_before_scoring(
             if p0 is None or p1 is None:
                 continue
             pts = [p0] + [(x, 1.5) for x in xs if xa <= x <= xb] + [p1]
-            if not (5.0 <= p0[0] <= 25.0 and 40.0 <= p1[0] <= 65.0):
+            if not (5.0 <= p0[0] <= 32.0 and 40.0 <= p1[0] <= 65.0):
                 continue
             f = _compute_fos(g, PolylineSlipSurface(points=pts), "spencer",
                              30, window_span=_span())

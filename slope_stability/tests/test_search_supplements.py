@@ -174,7 +174,10 @@ def test_profile_end_check_covers_noncircular_surfaces():
     assert w[0].startswith("The critical surface ends near")
     f = float(re.search(r"gives FOS ([0-9.]+)", w[0]).group(1))
     assert f < 0.99 * res.critical.FOS
-    assert f == pytest.approx(2.252, abs=0.03)
+    # GM-140 step 7a: 2.252 -> 2.221, the circle through the ends of the
+    # refined surface (made-up slope, nothing printed; the profile-end
+    # circle of the circular search is 2.237)
+    assert f == pytest.approx(2.221, abs=0.03)
 
 
 def test_toe_circles_honour_given_windows():

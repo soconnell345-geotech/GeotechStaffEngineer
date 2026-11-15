@@ -1468,10 +1468,8 @@ def search_critical_surface(
             # the noncircular refinement (GM-140 step 7a)
             from slope_stability.search_refine import refinement_choices
             result.choices += refinement_choices(
-                result.refinement if result.refinement.get(
-                    "final_increment") else None,
-                given=refine is not True,
-                fraction_given=refine_fraction is not None)
+                result.refinement, refine=refine,
+                fraction=refine_fraction)
         # The pore pressure every trial surface's bases took (GM-140 step
         # 5a), said once, by the search.
         from slope_stability.pore_pressure import add_water_statements

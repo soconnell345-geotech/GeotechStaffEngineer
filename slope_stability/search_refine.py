@@ -662,110 +662,99 @@ def refinement_stage(geom, *, score: Callable, flags_of: Callable,
     return rec
 
 
-def refinement_choices(rec: Optional[Dict[str, Any]], *, given: bool,
-                       fraction_given: bool) -> List[Dict[str, Any]]:
+def refinement_choices(rec: Optional[Dict[str, Any]], *, refine: bool,
+                       fraction: Optional[float]) -> List[Dict[str, Any]]:
     """The ``choices`` entries of a noncircular search's refinement (GM-140
-    step 7a): the refinement itself, the final increment, the starts, the
-    wedges, the toe restriction, the windows and the shape."""
-    out = [{
-        "choice": "noncircular refinement",
-        "value": "on" if rec and rec.get("refined") else "off",
-        "source": "given" if given else "default",
-        "basis": ("EM 1110-2-1902 C-1g(3), p. C-10, Fig. C-8 (Celestino and "
-                  "Duncan 1981): hold all points but one, shift that point "
-                  "a small distance in two directions, move the surface, "
-                  "repeat until F stops falling and the moves are minimal; "
-                  "C-1g(4), p. C-11, and 4-2e(1)(b), pp. 4-3 and 4-6: "
-                  "independently started searches, compared"),
-        "alternatives": ("refine=False: no shifts; the starts are scored "
-                         "as they are (the weak-layer search: the wedge "
-                         "stage alone, Slide2's search without "
-                         "optimisation)")}]
-    if not rec:
+    step 7a): the refinement itself, the final increment, the starting
+    increment and vertices, the starts, the wedges, the toe restriction,
+    the windows and the shape."""
+    from geotech_common.choices import choice, how_given
+    out = [choice(
+        "noncircular refinement", "on" if refine else "off",
+        how_given(refine, True, name="refine"),
+        "EM 1110-2-1902 C-1g(3), p. C-10, Fig. C-8 (Celestino and Duncan "
+        "1981): hold all points but one, shift that point a small distance "
+        "in two directions, move the surface, repeat until F stops falling "
+        "and the moves are minimal; C-1g(4), p. C-11, and 4-2e(1)(b), pp. "
+        "4-3 and 4-6: independently started searches, compared",
+        ["off (refine=False): no shifts; the starts are scored as they are "
+         "(the weak-layer search: the wedge stage alone, Slide2's search "
+         "without optimisation)" if refine else "on (refine=True)"])]
+    if not rec or not rec.get("final_increment"):
         return out
     fi = rec["final_increment"]
-    out.append({
-        "choice": "final shift increment",
-        "value": (f"{fi['increment']} m = {fi['fraction']:g} x the "
-                  f"thinnest stratum ({fi['stratum']}, {fi['thickness']} m "
-                  f"least vertical thickness within the windows)"),
-        "source": "given" if fraction_given else "default",
-        "basis": fi["basis"],
-        "alternatives": ("refine_fraction up to 0.25 (the print's upper "
-                         "end); the default 0.10 is the module's call "
-                         "(accuracy first; it meets both ends of the "
-                         "printed range)")})
-    out.append({
-        "choice": "noncircular refinement: starting increment and vertices",
-        "value": (f"start {rec['start_increment']} m (0.10 x the ground's "
-                  f"relief in the windows), halved to the final increment; "
-                  f"{rec['n_vertices']} vertices"),
-        "source": "module",
-        "basis": ("not in print: the module's call (EM C-1g(3) gives the "
-                  "method, not the increments or the vertex count)"),
-        "alternatives": "other starting increments and vertex counts"})
-    out.append({
-        "choice": "noncircular refinement: starts",
-        "value": ("the search's own best surface; each locally critical "
-                  "circle of the circular search run for circle_check "
-                  "(its grid minima and the toe and above-toe families' "
-                  "critical circles); a wedge along each layer within "
-                  "the search's depth; the caller's seed_surface"),
-        "source": "module",
-        "basis": ("EM 4-2e(2), p. 4-7: the initial surface should match "
-                  "the estimated critical surface; 4-2e(1)(b), pp. 4-3 "
-                  "and 4-6, and C-1g(4), p. C-11: separate searches; FHWA "
-                  "NHI-06-088 p. 6-22"),
-        "alternatives": "circle_check=False: no circle starts"})
-    out.append({
-        "choice": "wedge starts",
-        "value": (f"one per layer within the search's depth; the central "
-                  f"block on the layer's mid-line, its ends at "
-                  f"{WEDGE_POSITIONS} positions each over the windows; "
-                  f"wedges at 45 +/- phi'_D/2 on the trial's F (F = 1 "
-                  f"first, then the F each pass gave, {WEDGE_F_PASSES} "
-                  f"passes at most), phi' of the material just above the "
-                  f"base end"),
-        "source": "module",
-        "basis": ("EM 1110-2-1902 C-1f(2), p. C-6; C-1g(2), pp. C-8 to "
-                  "C-10, Fig. C-7b; FHWA NHI-06-088 pp. 6-43 to 6-44. "
-                  "Which layers, how many positions and how F is updated "
-                  "are the module's calls"),
-        "alternatives": ("only layers weaker than the one above (FHWA p. "
-                         "6-33), compared at a normal stress no print "
-                         "gives")})
-    out.append({
-        "choice": "noncircular refinement: the toe",
-        "value": ("no shift makes the toe-end segment steeper than EM Eq. "
-                  "C-32's passive inclination, 45 - phi'/2 with the exit "
-                  "material's phi', nor, where the start's own exit is "
-                  "steeper, steeper than the start's exit"),
-        "source": "module",
-        "basis": ("EM 4-2e(2)(a), p. 4-7, asks for the orientation at the "
-                  "toe to be restricted and prints no limit for a search; "
-                  "EM C-10b, p. C-34, Eq. C-32 gives the passive "
-                  "inclination: the limit is the module's call"),
-        "alternatives": ("no restriction, leaving the printed checks to "
-                         "flag a steep exit")})
-    out.append({
-        "choice": "noncircular refinement: windows and faces",
-        "value": ("automatic windows bound only the samplers; the shifts "
-                  "are free along the ground on the start's side; windows "
-                  "the caller gives bound everything; no end crosses a "
-                  "crest from its start or moves onto another face group"),
-        "source": "module",
-        "basis": ("EM 4-2e(1)(a), p. 4-3: the search must not jump from "
-                  "one face to another. The windows: confirmed by the "
-                  "owner, 2026-11-15 (OWN-143 part 42, call 5)"),
-        "alternatives": "automatic windows also bound the shifts"})
-    out.append({
-        "choice": "noncircular refinement: shape",
-        "value": ("no shape rule: the printed acceptability checks judge "
-                  "the surface"),
-        "source": "module",
-        "basis": ("no shape rule found in print (EM p. 4-7 prints the toe "
-                  "and increment rules only)"),
-        "alternatives": "a concave-up shape as the module's own rule"})
+    out.append(choice(
+        "final shift increment of the noncircular refinement",
+        f"{fi['increment']} m = {fi['fraction']:g} x the thinnest stratum "
+        f"({fi['stratum']}, {fi['thickness']} m least vertical thickness "
+        f"within the windows)",
+        how_given(fraction, None, name="refine_fraction"), fi["basis"],
+        ["refine_fraction up to 0.25, the print's upper end (the default "
+         "0.10 is the module's call: accuracy first, and it meets both ends "
+         "of the printed range)"]))
+    out.append(choice(
+        "starting increment and vertices of the noncircular refinement",
+        f"start {rec['start_increment']} m (0.10 x the ground's relief in "
+        f"the windows), halved to the final increment; "
+        f"{rec['n_vertices']} vertices",
+        "module",
+        "not in print: EM C-1g(3) gives the method, not the increments or "
+        "the vertex count", ["other starting increments and vertex counts"]))
+    out.append(choice(
+        "starts of the noncircular refinement",
+        "the search's own best surface; each locally critical circle of "
+        "the circular search run for circle_check (its grid minima and the "
+        "toe and above-toe families' critical circles); a wedge along each "
+        "layer within the search's depth; the caller's seed_surface",
+        "module",
+        "EM 4-2e(2), p. 4-7: the initial surface should match the estimated "
+        "critical surface; 4-2e(1)(b), pp. 4-3 and 4-6, and C-1g(4), p. "
+        "C-11: separate searches; FHWA NHI-06-088 p. 6-22",
+        ["circle_check=False: no circle starts"]))
+    out.append(choice(
+        "wedge starts",
+        f"one per layer within the search's depth; the central block on "
+        f"the layer's mid-line, its ends at {WEDGE_POSITIONS} positions "
+        f"each over the windows; wedges at 45 +/- phi'_D/2 on the trial's "
+        f"F (F = 1 first, then the F each pass gave, {WEDGE_F_PASSES} "
+        f"passes at most), phi' of the material just above the base end",
+        "module",
+        "EM 1110-2-1902 C-1f(2), p. C-6; C-1g(2), pp. C-8 to C-10, Fig. "
+        "C-7b; FHWA NHI-06-088 pp. 6-43 to 6-44. Which layers, how many "
+        "positions and how F is updated are the module's calls",
+        ["only layers weaker than the one above (FHWA p. 6-33), compared "
+         "at a normal stress no print gives"]))
+    out.append(choice(
+        "toe of the noncircular refinement",
+        "no shift makes the toe-end segment steeper than EM Eq. C-32's "
+        "passive inclination, 45 - phi'/2 with the exit material's phi', "
+        "nor, where the start's own exit is steeper, steeper than the "
+        "start's exit",
+        "module",
+        "EM 4-2e(2)(a), p. 4-7, asks for the orientation at the toe to be "
+        "restricted and prints no limit for a search; EM C-10b, p. C-34, "
+        "Eq. C-32 gives the passive inclination: the limit is the module's "
+        "call",
+        ["no restriction, leaving the printed checks to flag a steep "
+         "exit"]))
+    out.append(choice(
+        "windows and faces of the noncircular refinement",
+        "automatic windows bound only the samplers; the shifts and the "
+        "wedge ends are free along the ground on the start's side; windows "
+        "the caller gives bound everything; no end crosses a crest from "
+        "its start or moves onto another face group",
+        "module",
+        "EM 4-2e(1)(a), p. 4-3: the search must not jump from one face to "
+        "another. The windows: confirmed by the owner, 2026-11-15 (OWN-143 "
+        "part 42, call 5)",
+        ["automatic windows also bound the shifts"]))
+    out.append(choice(
+        "shape of a refined noncircular surface",
+        "no shape rule: the printed acceptability checks judge the surface",
+        "module",
+        "no shape rule found in print (EM p. 4-7 prints the toe and "
+        "increment rules only)",
+        ["a concave-up shape as the module's own rule"]))
     return out
 
 

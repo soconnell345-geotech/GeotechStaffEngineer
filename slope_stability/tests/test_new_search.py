@@ -213,7 +213,10 @@ class TestWeakLayerBiased:
             n_trials=50,
             seed=42,
         )
-        assert len(result.grid_fos) > 0
+        # GM-140 step 7a: a wedge along each layer, no random trials
+        assert result.grid_fos == []
+        assert [w["layer"] for w in result.refinement["wedges"]]
+        assert result.local_minima
 
     def test_via_search_critical_surface(self):
         geom = _two_layer_slope()
