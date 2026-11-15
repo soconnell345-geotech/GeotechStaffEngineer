@@ -1586,6 +1586,9 @@ _NO_CASE = {
         "the drawdown's pool levels set the water",
     "slope_stability|search_rapid_drawdown|pore_pressure_points":
         "the drawdown's pool levels set the water",
+    "slope_stability|search_critical_surface|seed_surface":
+        "a start the call adds to the refinement (GM-140 step 7a): left "
+        "out, there is none",
     "calc_package|slope_report_package|variables":
         "the reliability annex the call adds",
 }

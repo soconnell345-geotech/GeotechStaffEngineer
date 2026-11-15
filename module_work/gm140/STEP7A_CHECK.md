@@ -118,3 +118,103 @@ Tests changed and why:
 ## 8. Release note
 
 Every noncircular search (random, differential evolution, particle swarm and weak-layer) now finishes as EM 1110-2-1902 C-1g(3) describes. It refines several starts one point at a time down to a final shift of 10 % of the thinnest stratum: its own best surface, the locally critical circles of the circular check search, a wedge along each layer, and a surface you give (`seed_surface`). It reports the lowest and lists every start's minimum (`local_minima`). Noncircular factors of safety fall, often substantially: ACADS 4's weak-layer search reads 0.697 against Slide2's 0.707 (it read 0.830), and V-043's noncircular search reads 1.183 from every seed against Slide2's 1.188 (1.194). The weak-layer search is now a wedge search along each layer, with no random trials, so `n_trials`, `n_points` and `seed` no longer change it. `refine=False` restores the sampler alone (for the weak-layer search, the wedge stage alone). Run times grow by about 1 to 2 times. Circular searches are unchanged; they now list their separate grid minima.
+
+## 9. Fix round after review
+
+Branch `fix/gm140-step7a-review` (from 2c87e4a), master 6e2b94c merged first (04c5f6e; PL-42's notes and app merge, no slope file). An independent review passed the build with defects (D1 to D10); the orchestrator's rulings (R1 to R4 and the calls) are binding. Where this section differs from sections 2 to 7, this section holds. Every new constant was decided before a benchmark was run with it.
+
+**What changed, and where.**
+
+| Item | What | Where |
+|---|---|---|
+| D1 | A circle start whose F is None (a walk with no solution, a node valued by the Bishop screen) is no value: kept, sorted last, no crash under a time budget | `search_refine.circle_starts_of` |
+| D3, ruling 9(b) | Every start is scored as it stands before it is refined; its minimum is the lower of the two, labelled (`minimum`: "as it stands" or "refined"); a start the budget leaves unrefined keeps its value. A stop of the wedge stage is recorded as a stage of `search_ranges.time_budget` and in the warning, naming the layers and positions not built | `search_refine.refinement_stage`, `wedge_starts`; `search._run_refinement` |
+| D5 | `search_rapid_drawdown` passes `refine`, `refine_fraction` and the windows given to its noncircular kinds; its `choices` carry `refinement_choices`; the adapter's drawdown tool takes `refine` and `refine_fraction` (applies_when, defaults_used, the manual's row, the probe `#noncircular_refine_off`) | `rapid_drawdown._drawdown_search`; `funhouse_agent/adapters/slope_stability.py`; `method_probes.json` |
+| D6 | The wedge's central block on the mid-line between the layer's bottom and the lesser of its top and the ground; a layer with no wedge says why | `search_refine._wedge_mid`, `wedge_starts` |
+| D8 | `refine_fraction` declares `"default": 0.1`; `seed` no longer applies to the weak-layer search | adapter |
+| D9 | V-043: the 2,000-trial random headline no more than the circle (or DE's lowest + 0.002), the same seed run twice the same; the bound against DE restored from -0.002 to -1e-9 | `test_published_v043_slope_reinforced.py` |
+| D10 | The run-time text re-measured after the rulings (below) | adapter, `refine` |
+| Ruling 8 | Inside the refinement, and for every start as it stands, the span floor is the lesser of the module's floor (D22) and the start's own span; the samplers keep step 3's screen | `search.module_span_floor`, `start_span_floor`, `_noncircular_admissible(span_floor=)` |
+| Ruling 9(a) | Final increment = min(fraction x thinnest stratum, starting increment / 4), the starting increment never raised; `choices` states it as the module's call (EM 4-2e(2)(b) prints a maximum only) | `refinement_stage`; `refinement_choices` |
+| Ruling 9(b) | A circle start as it stands is the polyline of its slice bases on the search's `n_slices`; the refinement keeps the 11-vertex polyline; each circle start reports `F_circle`, `F_start`, `F_refine_start`, `F_refined` | `refinement_stage`; `search.circle_start` |
+| Ruling 10 | The best wedge's two ends halved, one at a time, inclinations fixed, from half the spacing down to the final increment; a result of the wedge stage alone says its inclinations are fixed and that it is not a minimum over them | `wedge_starts`; `search.WEDGE_STAGE_ALONE` |
+| Ruling 11 | The toe limit max(Eq. C-32, the start's exit), unchanged | (none) |
+| Ruling 12 | DESIGN.md "Calls made" for step 7a: the seven calls of section 5 and rulings 8 to 11, each with both forms | `slope_stability/DESIGN.md` |
+
+**The probe.** The reviewer's `probe.py`, run once on the fixed tree (074d569); its only change: the record keeps the fixed code's new keys (`F_circle`, `F_refine_start`, `F_refined`, `minimum`; the wedges' `ends`, `why`). Times are from this laptop: master's and the review branch's from the review's runs (2026-11-14; their output files were written 11 minutes apart, so the two runs overlapped and their times may read high), the fixed tree's from one run alone (2026-11-15).
+
+Check (a): all 18 circular cases identical on master, the review's branch and the fixed tree to 6 decimals, with the same centre, radius and ends.
+
+| Case (Spencer) | master | review | fixed | flags (fixed) | lowest unflagged | time master / review / fixed (s) |
+|---|---|---|---|---|---|---|
+| V-028 weak layer, wedge stage (refine=False) | 0.8301 | 0.8043 | 0.7759 | base_tension, side_tension, thrust_outside | 1.4552 | 26.8 / 11.7 / 13.2 |
+| V-028 weak layer, refined | 0.8301 | 0.6971 | 0.6961 | as above | 1.4552 | 26.8 / 37.6 / 41.1 |
+| V-028 random, 700 trials, seed 3 | 0.9773 | 0.6971 | 0.6961 | as above | 1.4552 | 34.2 / 65.9 / 70.5 |
+| V-028 DE, seeds 1 / 2 / 3 | 0.8204 / 0.8223 / 0.8202 | 0.6942 / 0.6956 / 0.6971 | 0.6942 / 0.6956 / 0.6961 | as above | 1.4552 | 16.5-19.4 / 48.0-53.8 / 51.3-56.4 |
+| V-043 DE, seeds 1 to 3 | 1.1941 | 1.1831 | 1.1801 | none | | 15.9-16.6 / 30.0-30.4 / 35.6-36.7 |
+| V-043 random, 2000 trials, seeds 1 to 5 | 1.1941 | 1.1831 | 1.1801 | none | | 37.1-39.6 / 51.1-52.9 / 57.9-60.9 |
+| ACADS 1(a) random, 200 trials, seed 42 | 0.9844 | 0.9844 | 0.9844 | side_tension | 0.9859 | 8.7 / 9.6 / 16.0 |
+| B14 random, default windows, seed 1 | 6.3656 | 1.2762 | 0.8827 | base_tension, side_tension, thrust_outside | 2.3921 | 27.4 / 47.8 / 53.2 |
+| B14 DE, directed (25.5-28 / 29-40), seed 1 | 0.8966 | 0.8846 | 0.8827 | as above | 1.8335 | 24.8 / 27.0 / 38.3 |
+| Duncan Ex. 1, D = 2, DE seed 1 | 0.6796 | 0.6791 | 0.6632 | as above | 1.4688 | 15.3 / 18.0 / 35.0 |
+| Duncan Ex. 1, D = 2, random seeds 1 / 2 / 3 | 0.7086 | 0.6824 / 0.6869 / 0.6869 | 0.6632 | as above | 1.4688 | 15.7-15.9 / 18.3-18.8 / 35.7-38.9 |
+
+Every fixed value is at or below master's. ACADS 4: the wedge stage 0.7759 against Table 9.4's 0.760 (+2.1 %; its strict xfail removed), still above the declared family's 0.748; refined 0.6961 against Table 9.5's 0.707 (-1.5 %). V-043: 1.1801 from every DE and random seed, below 1.1831 (the review's) and the circle (1.1859); printed 1.188 (-0.7 %). Starts: 131 checked, none above itself as it stands; 8 not scored as they stand (V-043's toe circle in each run: "the start could not be built as a polyline").
+
+Circle starts against their circle (one row per case; the other runs of a case give the same):
+
+| Case | start | F circle | as it stands (`n_slices`) | 11-vertex start | refined | minimum |
+|---|---|---|---|---|---|---|
+| ACADS 1(a) | critical circle | 0.9838 | 0.9844 | 0.9862 | 0.9859 | 0.9844 as it stands |
+| B14 random / DE | critical circle | 0.8822 | 0.8827 | 0.8846 | 0.8846 | 0.8827 as it stands |
+| V-043 | critical circle | 1.1859 | 1.1941 | 1.2025 | 1.1801 | 1.1801 refined |
+| V-028 | critical circle | 0.9765 | 0.9773 | 0.9842 | 0.7321 | 0.7321 refined |
+| Duncan Ex. 1, D = 2 | critical circle | 0.7044 | 0.7086 | 0.7094 | 0.6632 | 0.6632 refined |
+
+The headline above the circle's own F (ruling 9's list), each said in the result with both values ("The noncircular search's lowest surface (FOS 0.8827) is above the critical circle's value by the same method (Spencer, FOS 0.8822 as a circle, 0.8827 as the polyline of its 30 slice bases; circle_check). Every start, that polyline among them, was scored as it stands and refined one point at a time (EM 1110-2-1902 C-1g(3), p. C-10), and none reached below the circle: report the circle's value beside this one."): ACADS 1(a) +0.0006 (0.9844 against 0.9838); B14 random +0.0005 and B14 DE +0.0005 (0.8827 against 0.8822).
+
+Run time (D10): worst 70.5 s (V-028 random); fixed against master, noncircular 1.6 to 2.5 times, noncircular_de 1.5 to 3.2 times, the weak-layer search 1.5 times refined and 0.5 times as the wedge stage. The adapter's `refine` text carries these.
+
+**The review's three failing paths, re-run.**
+- V-043, `noncircular_de`, `time_budget_s=6`: no error; 1.1941 (the critical circle's start as it stands); `search_ranges.time_budget` records the stops of differential evolution, the wedge stage (the positions not built along fill and softclay) and the refinement, and `local_minima` lists eight starts "not refined: the time budget (GM-123); its value is the start's as it stands".
+- V-028 weak layer, `refine=False`, `time_budget_s=0.5`: the wedge stage's stop is recorded (0 of 63 low-end positions; the circular check spent the budget) and named in the warning, each layer saying why it has no wedge; the wedge-stage statement is given.
+- V-041 #98, `search_rapid_drawdown(..., surface_type="noncircular", refine=False)`: 0.9771 in 2.7 s, the sampler alone (`refinement` {"refined": false}, choices "off"); refined: 0.8438 in 26.6 s.
+
+**Other values that moved (made-up slopes, nothing printed; each lower).**
+- `test_search_supplements::test_profile_end_check_covers_noncircular_surfaces` (`_toe_geom`): refined, the search reads 2.138 (flagged) on a surface ending at the left end, and no circle past the end is 1 % lower, so the clipped-range statement is given instead; the profile-end check is tested on the sampler alone (2.479; the circle past the end 2.219).
+- `test_search_supplements::test_infinite_slope_mirrored_and_noncircular_search` (`_fill_geom`, mirrored): the circular search's own critical circle, a shallow slide on the face (0.942), is a start as it stands under ruling 8 and reads below the planar family (0.944), so the noncircular search governs and the result names the infinite-slope mechanism, as where a circle governs; the sampler alone still leaves the planar family governing.
+- Duncan Ex. 1, D = 2: 0.6632 (flagged; lowest unflagged 1.4688), 6 % below Taylor's 0.706: the critical circle's start refined along the firm base, 7b's composite mechanism (section 7), reported with its flags.
+
+**Section 7, after the fix round.** B14 now reaches its circle (0.8827 against 0.8822, said with both values). ACADS 4's wedge stage is within 3 % of Table 9.4 but above the declared family (fixed inclinations; an inclination band is the other form, not built). The coarse final increment on thick strata is closed by ruling 9(a).
+
+**Description sizes** (`describe_method`, the deep agent's 16,000-character cap): `search_critical_surface` 15,953 returned (shortened; its full document 38,771, as on the review's branch); `search_rapid_drawdown` 15,475 returned (shortened; full 20,831, the two new parameters +1,119 characters of METHOD_INFO); `rapid_drawdown_fos` 15,823, whole and unchanged.
+
+**Tests** (one file at a time, no `-n`, by pytest's exit code; this laptop):
+
+| File | Result | Exit |
+|---|---|---|
+| `slope_stability/tests/test_search_refine.py` | 24 passed | 0 |
+| `slope_stability/tests/test_new_search.py` | 19 passed | 0 |
+| `slope_stability/tests/test_ground_crossings.py` | 21 passed | 0 |
+| `slope_stability/tests/test_search_supplements.py` | 18 passed | 0 |
+| `slope_stability/tests/test_gle_root.py` | 33 passed | 0 |
+| `slope_stability/tests/test_rapid_drawdown.py` | 17 passed | 0 |
+| `slope_stability/tests/test_choices.py` | 7 passed | 0 |
+| `validation_examples/test_published_v028_e8.py` | 10 passed, 1 xfailed (the family, strict, reason corrected) | 0 |
+| `validation_examples/test_published_v028_slope.py` | 3 passed | 0 |
+| `validation_examples/test_published_v043_slope_reinforced.py` | 11 passed | 0 |
+| `funhouse_agent/tests/test_defaults_used.py` (in full) | 906 passed, 24 skipped | 0 |
+| `funhouse_agent/tests/test_top_level_params.py` | 53 passed | 0 |
+| `funhouse_agent/tests/test_gm179_unused_inputs.py` | 20 passed | 0 |
+| `funhouse_agent/tests/test_allowed_values.py` | 322 passed | 0 |
+| `funhouse_agent/tests/test_probe_warnings.py` | 8 passed | 0 |
+| `funhouse_agent/tests/test_render_tables.py` | 17 passed | 0 |
+| `funhouse_agent/tests/test_calc_package_figure_layout.py` | 15 passed | 0 |
+| `funhouse_agent/tests/test_gm140_step10_package_inputs.py` | 17 passed | 0 |
+| `funhouse_agent/tests/test_fem2d_mesh_study_adapter.py` | 6 passed | 0 |
+| `funhouse_agent/deep/tests/test_wave1_geotech.py` (in full) | 20 passed | 0 |
+| `module_work/doc10/check_manual.py --rebuild --write`, then `check_manual.py` | OK | 0, 0 |
+| `webapp/tests/test_user_manual_current.py` | 1 passed | 0 |
+| `webapp/tests/test_public_text.py` (before each commit) | 5 passed | 0 |
+
+Tests changed in the fix round: `test_search_refine.py` (D1 on made-up records; D3, the wedge stage's stop; D5, the drawdown's refine=False; D6, a wedge for the upper layer and why for a layer without one; ruling 8, a start shorter than the floor and the B14 pair; ruling 9(a), the quarter rule and a thick stratum halving at least twice; ruling 9(b), tests (i) and (ii); ruling 10, the halved ends and the wedge-stage statement); `test_gle_root.py` (ACADS 1(a): the search's own minimum 0.9862 -> 0.9844, the circle start as it stands; governs False and the sentence with both values); `test_published_v028_e8.py`; `test_published_v043_slope_reinforced.py`; `test_search_supplements.py` (the two made-up cases above); `test_defaults_used.py` (`seed_surface`'s absence is no case: a start the call adds); `method_probes.json` (the drawdown probe `#noncircular_refine_off`, without windows: with every window given the search-ranges choice is written "given" by the module, `search_supplements` about l. 2787, a call outside the refinement, left as it is and noted for the lead).
