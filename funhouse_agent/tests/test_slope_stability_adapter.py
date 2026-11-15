@@ -46,7 +46,10 @@ def test_a_flagged_headline_never_comes_alone():
     and the lowest with no flag is higher (1.096). (The headline was 1.092
     when measured, 0.633 until GM-344; since GM-140 step 6 it is 0.984,
     the critical circle as a polyline, one of the search's trials, which
-    carries a tensile interslice force and no other flag.)
+    carries a tensile interslice force and no other flag; since step 7a's
+    fix round that polyline is one of the search's own starts, scored as
+    it stands, so it stays the headline and the circle trial no longer
+    governs.)
     Neither alone is safe, so the tool result gives the headline, its
     flags, the lowest surface with no flag and the option that refuses
     flagged surfaces, as fields and in its one-sentence summary."""
@@ -63,9 +66,12 @@ def test_a_flagged_headline_never_comes_alone():
     low = r["lowest_unflagged"]["FOS"]
     assert {"side_tension"} <= set(flags)
     assert low > fos
-    # GM-140 step 6: the minimum is checked against the critical circle
-    assert r["circle_check"]["governs"] is True
-    assert r["circle_check"]["noncircular_minimum"] > fos
+    # GM-140 step 6: the minimum is checked against the critical circle;
+    # step 7a's fix round (ruling 9(b)): the circle's polyline is the
+    # search's own start, so its own minimum is the headline
+    assert r["circle_check"]["governs"] is False
+    assert r["circle_check"]["noncircular_minimum"] == pytest.approx(
+        fos, abs=1e-4)
     assert "low_m_alpha='refuse'" in r["refuse_option"]
     s = r["summary"]
     assert s.endswith(".") and ". " not in s          # one sentence

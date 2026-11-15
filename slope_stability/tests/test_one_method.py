@@ -582,11 +582,14 @@ def test_a_noncircular_minimum_is_checked_against_the_circle():
     fix round took EM 1110-2-1902 4-2e(2), p. 4-7, off as its basis: the
     page asks only that the initial surface be at the estimated critical
     position). Before, 30 random polylines reported their own minimum
-    alone."""
+    alone. Since GM-140 step 7a's fix round (ruling 9(b)) a refined
+    search scores that polyline as one of its own starts, so the check
+    is shown on the sampler alone (refine=False) and the refined search
+    beside it."""
     kw = dict(method="spencer", n_slices=25)
     circle = _search(_fill(), infinite_slope=False, **kw)
     res = _search(_fill(), surface_type="noncircular", n_trials=30, seed=7,
-                  infinite_slope=False, **kw)
+                  infinite_slope=False, refine=False, **kw)
     cc = res.circle_check
     assert cc["checked"] is True
     assert cc["circle"]["FOS"] == pytest.approx(circle.critical.FOS,
@@ -605,6 +608,18 @@ def test_a_noncircular_minimum_is_checked_against_the_circle():
     chosen = {c["what"]: c for c in res.choices}
     assert chosen["noncircular minimum checked against the critical "
                   "circle"]["chosen"] is True
+    # Refined (the default): the circle's polyline is a start scored as it
+    # stands, so the circle trial no longer governs; the headline is no
+    # more than that polyline, and where it stays above the circle's own
+    # value the result says so with both values (step 6's rule)
+    ref = _search(_fill(), surface_type="noncircular", n_trials=30, seed=7,
+                  infinite_slope=False, **kw)
+    assert ref.circle_check["governs"] is False
+    assert ref.critical.FOS <= ref.circle_check["FOS_as_polyline"] + 1e-9
+    assert ref.critical.FOS > circle.critical.FOS
+    said = [w for w in ref.warnings if "above the critical circle" in w]
+    assert said and f"{circle.critical.FOS:.4f}" in said[0]
+    assert f"{ref.critical.FOS:.4f}" in said[0]
 
 
 def test_a_search_that_ran_no_circle_says_it_was_not_checked():
