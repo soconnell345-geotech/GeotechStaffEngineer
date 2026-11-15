@@ -283,6 +283,47 @@ def _asked_to_be_shown(args: Any) -> bool:
     return value is True
 
 
+def todo_only_steps(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Steps whose only tool call is ``write_todos``, and what they cost
+    (BACKLOG DR-43 part 2; brief 7: 13 % of input tokens on one model and
+    25 % on another, because each step sends the whole conversation again).
+
+    A step is one ``model_end`` of an agent (a vision side call is not a
+    step); its tool calls are the ``tool_start`` records the same agent
+    writes before its next ``model_end``. A step counts when it asked for
+    exactly one tool call and that call is ``write_todos``. Returns
+    ``todo_only_steps``, ``todo_only_input_tokens``, ``model_input_tokens``
+    (every step's ``usage.input_tokens``, the denominator) and
+    ``todo_only_input_share`` (None when the record holds no input tokens).
+    A record without usage counts the steps and no tokens."""
+    steps: Dict[Any, Dict[str, Any]] = {}     # agent -> its open step
+    done: List[Dict[str, Any]] = []
+    for rec in records:
+        ev = rec.get("event")
+        agent = rec.get("agent")
+        if ev == "model_end" and not rec.get("vision"):
+            if agent in steps:
+                done.append(steps.pop(agent))
+            usage = rec.get("usage") or {}
+            tokens = usage.get("input_tokens")
+            steps[agent] = {"n": rec.get("n_tool_calls"), "names": [],
+                            "tokens": tokens if isinstance(
+                                tokens, (int, float)) else 0}
+        elif ev == "tool_start" and agent in steps:
+            steps[agent]["names"].append(rec.get("name"))
+    done.extend(steps.values())
+    only = [s for s in done
+            if s["n"] == 1 and s["names"][:1] == ["write_todos"]
+            and len(s["names"]) == 1]
+    total = sum(s["tokens"] for s in done)
+    todo_tokens = sum(s["tokens"] for s in only)
+    return {"todo_only_steps": len(only),
+            "todo_only_input_tokens": todo_tokens,
+            "model_input_tokens": total,
+            "todo_only_input_share": (round(todo_tokens / total, 4)
+                                      if total else None)}
+
+
 def record_counts(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     """What the results table counts off a run's record besides its model
     and tool calls (BACKLOG INF-75; Foundry brief 7 read "failed calls 0"
@@ -302,6 +343,9 @@ def record_counts(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     * ``model_calls_unended``: ``model_start`` records with neither a
       ``model_end`` nor a ``model_error``. Readable off any record, old
       ones included, where the timeout events are not.
+    * ``todo_only_steps``, ``todo_only_input_tokens``,
+      ``model_input_tokens``, ``todo_only_input_share``: see
+      :func:`todo_only_steps` (DR-43 part 2);
     * ``show_me_looks``: tool calls made with ``show_me`` set true. An arm
       that offers the argument and never uses it reads 0, and is not a
       measurement of it (brief 7: 0 of 70 runs).
@@ -347,7 +391,9 @@ def record_counts(records: List[Dict[str, Any]]) -> Dict[str, Any]:
             unmatched[key] -= 1
             continue
         no_tool += 1
-    return {"side_call_timeouts": timeouts, "side_calls_not_read": not_read,
+    todos = todo_only_steps(records)
+    return {**todos,
+            "side_call_timeouts": timeouts, "side_calls_not_read": not_read,
             "side_call_late_ends": late,
             "tool_calls_refused": raised + no_tool + unknown,
             "tool_calls_refused_by": {"raised": raised,
@@ -720,6 +766,19 @@ def _recorded(rs: Sequence[Dict[str, Any]], key: str) -> str:
     return str(sum(got)) if got else "·"
 
 
+def _todo_share(rs: Sequence[Dict[str, Any]]) -> str:
+    """An arm's to-do-only steps' share of its input tokens: their tokens
+    over all steps' tokens, summed over the runs that hold both; ``·`` when
+    no run does."""
+    got = [r for r in rs
+           if isinstance(r.get("todo_only_input_tokens"), (int, float))
+           and isinstance(r.get("model_input_tokens"), (int, float))]
+    total = sum(r["model_input_tokens"] for r in got)
+    if not total:
+        return "·"
+    return f"{100.0 * sum(r['todo_only_input_tokens'] for r in got) / total:.1f} %"
+
+
 def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
               tasks: Sequence[Task], meta: Dict[str, Any]) -> str:
     """RESULTS.md: per-arm totals, by category and document type, per task,
@@ -745,11 +804,14 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
     # no run of the arm recorded the count (a run saved before it existed).
     # "show_me looks" are tool calls made with show_me set true: 0 on an
     # arm that offers the argument means the arm did not measure it.
+    # "to-do-only steps" are steps whose only tool call is write_todos, with
+    # their share of the arm's input tokens (DR-43 part 2).
     lines.append("| arm | tasks passed | checks passed | model calls | tool "
                  "calls | tokens (in/out) | minutes | errors | failed calls "
                  "| step caps | side-call timeouts | refused tool calls "
-                 "| show_me looks |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+                 "| show_me looks | to-do-only steps | their share of input "
+                 "tokens |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for arm in arms:
         rs = [r for r in runs.get(arm, {}).values() if not r.get("skipped")]
         tp = sum(1 for r in rs if (r.get("score") or {}).get("passed"))
@@ -767,7 +829,9 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
                      f"{ti:,}/{to:,} | {mins:.1f} | {errs} | {failed} | "
                      f"{caps} | {_recorded(rs, 'side_call_timeouts')} | "
                      f"{_recorded(rs, 'tool_calls_refused')} | "
-                     f"{_recorded(rs, 'show_me_looks')} |")
+                     f"{_recorded(rs, 'show_me_looks')} | "
+                     f"{_recorded(rs, 'todo_only_steps')} | "
+                     f"{_todo_share(rs)} |")
     for title, key in (("By category", "category"),
                        ("By document type", "doc_type"),
                        ("By app page", "page")):
