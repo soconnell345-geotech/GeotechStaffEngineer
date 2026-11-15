@@ -334,8 +334,10 @@ the lowest (DESIGN.md "Supplementary families"). Tests:
 | V-032 (Slide2 #61) entry/exit 10x10, Bishop | 1.320 | 1.315 | Slide2 1.366 / Baker 1.35 (see below) | toe circle |
 | V-029 grid wiring check (6x6 grid, given windows) | 1.209 | 1.130 | (wiring test, 0.5-2.5) | toe circle |
 
-The planar surfaces are real LE surfaces scored by Janbu's simplified method (force
-equilibrium, as the infinite slope is). Against the closed form
+The planar surfaces are real LE surfaces. The values below are Janbu's simplified
+method's (force equilibrium, as the infinite slope is), which scored them in every
+search until GM-140 step 6; since then the method named scores them (B26 has every
+method's column). Against the closed form
 F = tan phi' (cos b - kh sin b - ru/cos b)/(sin b + kh cos b):
 
 | Face | Load | Planar (30 slices) | Closed form | Diff |
@@ -957,7 +959,7 @@ unflagged surface beside it:
 | Duncan's Example 4 by Janbu, 30 slices | 1.203 (78 circles left out) | 0.843 flagged; 1.215 unflagged; 1.203 with `low_m_alpha='refuse'` | none in hand for Janbu |
 | A made-up pore-pressure grid on the ACADS 5 slope (V-029's demonstration), Bishop | 1.247 | 1.175, the frictional term as printed where u b exceeds W; 1.247 with `negative_friction_term='zero'` | none |
 | The agent suite's PPG-1 (a hydrostatic grid on a made-up slope, one circle), Bishop | 1.223 | 1.101, the same; the answer key keeps 1.223 as its alternative | none |
-| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.092 | 0.633 flagged; 1.096 unflagged | 1.00 |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.092 | 0.633 flagged; 1.096 unflagged | 1.00 for the circle (Spencer 0.9838 on it); 1.092 is a 200-trial sample's minimum |
 | Weak layer over rock, DE directed | no surface | 0.612 flagged; no scored trial unflagged | none |
 
 The last two follow from removing the noncircular screens on a jagged surface
@@ -1006,6 +1008,347 @@ probe `step3fix/probe6.py` of the fix round, run once on each):
 | Taylor 45 deg, D = 2.25, default search | 1.9419 | 1.9419 | none | - | reverse_curvature_no_crack 38; reverse_curvature_no_crack 38 | 0 of 3270 | 1.947 (Taylor's chart, FHWA NHI-06-088 Fig. 6-15, p. 6-28) |
 | ACADS 1(a), random noncircular, 200 trials, Spencer | 1.0915 | 0.6332 | base_tension, side_tension, thrust_outside | 1.0959 | 0; 0 | 108 of 144 (side_tension 73, thrust_outside 106, base_tension 1) | 1.00 (Giam and Donald 1989; Slide2 Verification #1) |
 | ACADS 4, weak-layer search, 700 trials, Spencer | 0.8301 | 0.8301 | side_tension, thrust_outside | 1.6666 | 0; 0 | 288 of 344 (base_tension 124, side_tension 257, thrust_outside 268) | 0.760 (Slide2 manual p. 52) |
+
+## B-5a — Pore pressure as printed (GM-140 step 5a, 2026-11-13)
+
+One function gives every slice base its pore pressure (DESIGN.md, "Pore
+pressure as printed"). Record: `module_work/gm140/STEP5A_CHECK.md`, with the
+whole of the validation set before and after
+(`module_work/gm140/step5a_section11.py`: of 37,043 factors of safety the
+pinned tests compute, 116 move).
+
+**The correction, against print.** FHWA NHI-06-088 Sec. 6.3 (pp. 6-7 to 6-8,
+Eqs. 6-6 to 6-10): an infinite slope with seepage parallel to it and the
+water table at the surface has u = γw h cos² β on the plane and, for c' = 0,
+FS = (γ'/γsat) tan φ' / tan β. Made-up values: β = 26.57° (2H:1V), φ' = 34°,
+γsat = 19.5 kN/m³; a plane 390 m long and 0.5 m deep, 60 slices.
+
+| Reading of the line at the ground surface | OMS | Janbu | Spencer | M-P | Closed form |
+|---|---|---|---|---|---|
+| `water_line_kind='water_table'` (Eq. 6-16) | 0.6704 | 0.6709 | 0.6710 | 0.6706 | 0.6704 (FHWA Eq. 6-10, p. 6-8) |
+| `'piezometric'` (default; the full head) | 0.5007 | 0.5012 | 0.5014 | 0.5009 | 0.5007 (the same statics with u = γw h) |
+| before this step (full head, with the pond thrust read off the slice's middle) | 0.8599 | 1.1025 | 1.1032 | none | 0.5007 |
+
+The last row is the defect found on the way: a sloping water line at the
+ground read as a pool at each slice's lower side (`slices._pond_thrust`).
+The review accepted the fix as a declared departure (DESIGN.md, "The
+pond's thrust on a slice") and it is pinned as arithmetic on the review's
+case, c' = 5 kPa and a plane 2 m deep: closed form 0.8212, OMS 0.8238
+(the same statics over the plane and its two end stretches, the frictional
+term as printed where it is negative on the steep head stretch, B22's
+D21; 0.8253 with `negative_friction_term='zero'`), before 0.9140 (0.9124
+on master since step 3) (`TestPondThrust`).
+
+The infinite-slope check of a search reports the closed form with the
+water at the surface for the reading used (`seepage_reading`): 0.5007
+under `'piezometric'` and 0.6704 under `'water_table'` for the face above
+(`test_the_planar_check_follows_the_reading`); a drawdown search keeps
+(γ'/γ) tan φ' / tan β.
+
+**What moves in the pinned set with the default** (the uncorrected head):
+only the pond's edge as a slice boundary, the pond thrust where a line is
+at or under the ground, and ru in a layered column. No total-stress layer
+in the set has φ > 0 at its base, so D4 moves no factor of safety.
+
+| Benchmark | Before | After | Printed | What moved it |
+|---|---|---|---|---|
+| F&K (1977) circle, ru = 0.25: OMS / Bishop / Spencer / M-P | 1.6067 / 1.7590 / 1.7633 / 1.7651 | the same | 1.607 / 1.766 / 1.761 / 1.764 | nothing: one soil, so ru × the overburden is ru γ h |
+| F&K composite surface, ru = 0.25: Spencer / M-P | 1.1381 / 1.1322 | the same | 1.118 / 1.118 | nothing: both soils 120 pcf |
+| V-031 (Slide2 #57) circle, 50 slices: Bishop / Spencer / GLE | 1.4205 / 1.4247 / 1.4091 | 1.4204 / 1.4246 / 1.4090 | 1.417 / 1.422 | the pond thrust, not the edge: without the edge the value is the same, with the old thrust it is the before value (the step 5a review) |
+| V-031 Spencer search | 1.4174 | 1.4172 | 1.422 | the pond thrust, as on the circle (the search was not rerun with each part undone) |
+| V-044 (Slide2 #70) submerged: Bishop / Spencer / M-P | 1.5974 / 1.5962 / 1.5933 | the same | 1.603 / 1.599 / 1.599 | nothing: the pond covers the whole surface |
+| V-029 pore-pressure grid against the line | 1.7630 / 1.7625 | the same | (not pinned to print) | nothing: the grid governs the base |
+| V-028 (ACADS 4), a piezometric surface | 1.0095 (kept surface), 0.8301 (search) | the same | referee 0.78 | nothing: a piezometric line is not corrected |
+| V-037 (#95) Corps, seepage stage 1 | 1.3392 | 1.3393 | 1.347 | the pond's edge |
+| V-038 (#96) DWW: flat / seepage / 'gle' flat / 'gle' seepage | 1.2349 / 1.2733 / 1.3061 / 1.3699 | 1.2351 / 1.2733 / 1.3064 / 1.3698 | 1.443 | the pond's edge |
+| V-041 (#98) search: Corps / DWW / LK | 0.8362 / 0.9350 / 0.9739 | 0.8364 / 0.9351 / 0.9742 | 0.931 / 1.039 / 1.075 | the pond's edge |
+| V-052 Pilarcitos, assumed 2.5:1: Corps / LK | 0.7861 / 1.3473 | 0.7866 / 1.3488 | 0.823 / 1.047 | the pond's edge; the search ends on a neighbouring circle |
+| V-052 assumed 3:1: LK / DWW | 1.5429 / 1.5416 | 1.5426 / 1.5441 | (1.047 / 1.043 on the real dam) | the same; DWW now 0.1 % above LK, a strict xfail until the merge with step 9 (below) |
+| V-052b true section: Corps / DWW | 0.7218 / 1.2633 | 0.7223 / 1.2652 | 0.823 / 1.043 | the pond's edge |
+| Duncan Ex. 6 (submerged toe), searches | 1.5419 / 1.7977 / 1.6098 | 1.5418 / 1.7976 / 1.6097 | book not in hand | the pond's edge |
+
+The drawdown rows above were measured before the merge with step 9,
+which re-derived every stage from EM 1110-2-1902 Appendix G; B7 gives
+their values since. What step 5a moves against master after that merge
+is in `module_work/gm140/STEP5A_CHECK.md`, section 11 (ruling 5's table).
+
+- **V-052, 3:1, DWW against LK (a strict xfail until the merge with
+  step 9).** The test asserts Corps < DWW < LK on three assumed sections.
+  Before step 9 the two searches on the 3:1 section ended on different
+  circles, DWW 1.5441 on (41.605, 44.623, R 33.510) above LK 1.5426 on
+  (40.416, 44.623, R 33.995): at LK's centre the 20-slice drawdown FOS
+  jumped 1.6 % between R = 33.998 and 33.999 m, where the base angle of
+  the slice just past the circle's lowest point crossed |sin 2α| = 0.05
+  and the K_c rule then in use switched from the at-rest ratio
+  1/(1 − sin φ') to K_f (no slice boundary and no edge moved). Step 9
+  takes K_c from σ'c and τc by Eq. G-11 (p. G-7), held between 1 and
+  K_f, with no switch on the base angle. Merged with it (the final fix
+  round's re-check), LK at that centre reads 1.1581 to 1.1585 over
+  R = 33.985 to 34.005 m, smooth to 0.03 % (the toe end of the circle
+  passing the drawn-down pool's edge, x = 33.8328), and the searches give
+  Corps 0.9141 < DWW 1.1415 < LK 1.1454 (master 0.9131 / 1.1406 /
+  1.1453). The ordering holds; the strict xfail passed and is off.
+
+## B23 — Where a circle ends (GM-343; GM-140 after step 3, 2026-11-13)
+
+A circle that meets the ground at more than two points is split there and
+each arc below the ground is a trial surface of its own, scored by a
+search where it lies inside the entry / exit windows (the others are
+counted, `arcs_outside_windows`); the toe circles end at the toe
+(DESIGN.md "Where a circle ends"). Fix round after the review (merged
+with step 5a): the before / after table against master with step 5a is
+in the check file, "Fix round after review"; the merge moved no value of
+this step. Measured before and after
+with `module_work/gm140/circle_ends_section11.py`; the whole of section 11
+is in `module_work/gm140/CIRCLE_ENDS_CHECK.md`.
+
+| Case | Before | After | Print |
+|---|---|---|---|
+| Vertical 5 m cut, cu 20 kPa, 18 kN/m3: default search, Bishop / Ordinary Method of Slices | 0.9353 | 0.8514 (a toe circle) | Taylor, Ns 3.83: 0.8511 (+0.03 %) |
+| the same, Janbu (corrected) | 1.1250 | 0.9137 | (Taylor's number is a moment solution) |
+| the same, Spencer / Morgenstern-Price | 0.9626 | 0.8632 | 0.8511 (+1.4 %); neither has a solution on Taylor's own arc |
+| Taylor's circle, centre (13.02, 10.96) through the toe, Bishop, 30 / 120 slices | 2.676 / 2.682 (read from x 6.04, under the floor) | 0.8514 / 0.8515, the arc from the toe; the arc under the floor has no driving moment | 0.8514 by hand |
+| the same to two decimals (R 13.00, 7 mm under the toe), ended at the toe by its two ends | a circle took no ends | 0.8503 | 0.8514 (-0.1 %) |
+| the same given without ends | 2.677 | 2.677, one surface (two crossings), with the corner it passes under named | - |
+| Circles leaving the face 2 % / 5 % of H above the toe | refused as two masses | 0.869 / 0.897 | - |
+| Cut over rock (w10), circle (10, 39.5) R 40, Bishop / Spencer | refused as two masses | 7.355 / 7.387, the slope's arc; the lens under the floor has no factor of safety | - |
+| w10 default search, Bishop | 0.9379 (86 circles refused) | 0.9379 (407 circles split) | - |
+| V-043 geosynthetic force to raise the pinned sand circle to 1.35 (Spencer) | 40.9 kN/m | 45.2 kN/m | 44-45 (circular). The pin is one of the two outcomes of a tie, not this step's rule: the geosynthetic meets the slip surface on a slice boundary (x 8.388) and changes slice within 1e-8 m of the arc's ends; the base read 40.88 kN/m at R and 45.22 at R + 1e-8 m. The exit is now x = 22 exactly, on the 45.22 side. The tie is for step 8 (a stated rule for a crossing on a slice boundary, or a cut at the crossing), then a re-pin |
+| Windows given that leave the toe out (entry 0 to 4, toe at 5) | 1.3164, a "toe circle" carried 1 m under the floor in front of the toe | 1.3198, the main search's circle; no toe circle lies in the window | - |
+
+Every pinned benchmark whose circles meet the ground at two points reads as
+before (the check file lists them).
+
+## B24 — The GLE solver: a root, or no number (GM-140, GM-344, 2026-11-14)
+
+Record: `module_work/gm140/GLE_ROOT_CHECK.md`. Tests:
+`slope_stability/tests/test_gle_root.py`. A second computation of Spencer's
+two equations, written apart from `gle.py`:
+`module_work/gm140/gle_root_spencer_script.py`.
+
+**A made-up thin planar slide** (2H:1V face, c' = 0, phi' = 34 deg, r_u =
+(gamma_w / gamma) cos^2(beta), a plane 2 m below the face with a 2 m ramp at
+each end, 60 slices). FHWA NHI-06-088 Eq. 6-10 (p. 6-8) gives 0.6704 for the
+infinite slope; dry, tan(phi') / tan(beta) = 1.349.
+
+| | Before | Now | Second computation |
+|---|---|---|---|
+| Spencer, r_u | 1.0887 at 31.13 deg (0.8901 at 25.41 deg from gle_fos at its default tol), reported as converged; not a root | 0.9182 at 26.319 deg, flagged `low_m_alpha` on slice 1 (its own denominator 0.0176) | a root: 0.9182 at 26.319 deg |
+| Spencer, dry | 1.3779 at 25.41 deg | 1.3805 at 26.365 deg | a root: 1.3805 at 26.365 deg |
+| Morgenstern-Price (half-sine), r_u | 0.6779 | 0.6779 | |
+
+Spencer's equations have three roots on the wet case (0.6505 at 26.20 deg
+and 0.6674 at 56.96 deg, each with the toe slice in tension, and 0.9182).
+The branch that starts at lambda = 0 ends at 0.9182, where the toe wedge
+(its base inclined against the sliding) is all but locked by the inclined
+side force: 37 % above the closed form. That is Spencer's method on this
+surface, not the infinite slope; Morgenstern-Price, whose side shear
+vanishes at the ends, reads 0.678 (+1.1 %). Since the fix round 0.9182 is
+never reported without a finding: the toe slice's own denominator,
+cos(alpha - theta) + sin(alpha - theta) tan(phi') / F, is 0.0176, below
+Whitman and Bailey's 0.2 (1967, p. 487), and the finding cites EM
+1110-2-1902 C-10b (p. C-34, a steep exit) and names its remedies. Dry, the
+2.3 % above the closed form is the toe ramp's passive wedge.
+
+The record of master on the wet case said 0.6065 at 18.00 deg; master
+9c73795 and 3d553a8 both read 1.0887 at 31.13 deg with these inputs
+(analyze_slope, solve_method, gle_fos at tol 1e-5; 30 to 120 slices alike),
+and 0.8901 at 25.41 deg from gle_fos at its default tol 1e-4. No tree
+giving 0.6065 was found; the record is corrected (the review's defect 4).
+
+**An ordinary circle with its crest slice in tension** (made up: c' 10,
+phi' 25, r_u 0.25): 1.3742 at 17.891 deg as printed, 1.3756 at 17.836 deg
+with the slice taken frictionless (`base_in_tension='no_friction'`); the
+second computation's roots are the same.
+
+**The published set** (`step2_section11.py`, `step3_section11.py`, before
+and after, both settings; the table is in the record's section 5). Slide2
+#85 and #86, ACADS 1(a), V-043's circles and V-031's search do not move to
+four figures. V-031, V-044, V-039 and V-042 move by 0.01 to 1.1 % (the
+friction term as printed on bases in tension; with the option they are
+within 0.001 of before). ACADS 4's declared family moves away from print by
+0.005 (Spencer 0.7532 to 0.7480; referee 0.78) and 0.007 (Morgenstern-Price
+0.7225 to 0.7157; Slide2 0.720), inside the pinned tolerances. ACADS 1(a)'s
+random noncircular search reads 1.092 in place of 0.633 flagged: the minimum of a 200-trial
+random polyline sample, a pin on the search's repeatability, not a benchmark value.
+ACADS 1(a)'s benchmark is the circle: Spencer 0.9838 against the printed 1.00 (Bishop
+0.9849); GM-140 step 6 brings the noncircular search to the circle. V-043's differential evolution from seed 1 ends at 1.237 in
+place of 1.234 (printed 1.188): a strict xfail, not re-pinned.
+
+**Printed benchmarks that move under the default** (ruling 3: the
+equations as printed on a base in tension; the lead's call R14 keeps it).
+No pin was moved and no tolerance widened. "Before" is the circle-end
+branch (the half-applied device); the option is
+`base_in_tension='no_friction'`.
+
+| Benchmark | Before | As printed (default) | With the option | Printed |
+|---|---|---|---|---|
+| F&K B1 dry, Spencer (50 slices) | 2.0745 | 2.0712 (-0.16 %) | 2.0744 | 2.073 (Fredlund and Krahn 1977) |
+| F&K B1 dry, Morgenstern-Price | 2.0764 | 2.0708 (-0.27 %) | 2.0767 | 2.076 |
+| F&K B1 r_u 0.25, Spencer | 1.7633 | 1.7567 (-0.37 %) | 1.7629 | 1.761 |
+| F&K B1 r_u 0.25, Morgenstern-Price | 1.7651 | 1.7560 (-0.51 %) | 1.7653 | 1.764 |
+| ACADS 4 declared family, lowest, Spencer | 0.7532 | 0.7480 (-0.69 %) | 0.7495 | 0.760 (Slide2 #9, Table 9.4, p. 52) |
+| ACADS 4 declared family, lowest, Morgenstern-Price | 0.7225 | 0.7157 (-0.94 %) | 0.7222 | 0.720 by GLE (the same) |
+| V-042, FOSM by Spencer, F at the means | 1.3493 | 1.3346 (-1.09 %) | 1.3482 | Hassan and Wolff 1.334 (by Bishop) |
+| V-043 sand, DE seed 1, Spencer | 1.2337 | 1.2374 (+0.30 %) | 1.2374 | 1.188 (Slide2), 1.192 (Tandjiria) |
+
+Each moves because the friction term is now as printed on the bases in
+tension; with the option each is within 0.1 % of before, except V-043's
+seed 1, which is a different search path (trial surfaces whose only
+crossing lay at a negative lambda now have no solution). The F&K and
+ACADS 4 pins (1.5 % and 3 %) still hold; V-043's three-seed pin is a strict
+xfail in place.
+
+**The vertical cut by Spencer.** Taylor's circle ended at the toe (60
+slices): no solution before (no lambda gave an equilibrium state), 0.8515
+at 48.03 deg now (Taylor's chart, FHWA NHI-06-088 Fig. 6-14, p. 6-27:
+3.83 cu / (gamma H) = 0.8511; +0.04 %; flagged for a base and sides in
+tension, phi = 0). The default Spencer search: 0.8632 before, 0.8513 now
+(+0.02 %). Morgenstern-Price
+still has no solution on that arc.
+
+**Rapid drawdown** (the review's defect 5). `rapid_drawdown_fos` takes
+`base_in_tension`, so every stage's solve follows it. The force-equilibrium
+stage solve at a fixed side-force inclination (`fixed_inclination_solution`,
+the Modified Swedish Method of EM C-4) asks for the branch above every pole
+by name (it had been getting it as the new default unasked) and reports
+S = (c' l + N' tan(phi')) / F with the tan(phi') each slice's solve used, in
+place of max(N', 0). No drawdown factor of safety moves with it: #95 by
+force equilibrium at 19.4 deg on the 103 ft pool 1.3379 (the EM's 1.35,
+p. G-15); the EM example by Bishop on the manual's 12 slices
+2.1925 / 1.5137 / 1.4384 (printed 2.20 / 1.52 / 1.44, pp. G-15, G-18,
+G-20). By Spencer on 50 slices the solver moves the stages by under
+0.001 %: 2.19983 / 1.51281 / 1.43412 before, 2.19982 / 1.51281 / 1.43413
+now.
+
+**Cohesive circles.** Where the crest is in tension and F_f is above F_m at
+lambda = 0, the two do not cross for lambda from 0 to 1.5 and there is no
+Spencer solution, where the half-applied device read a number (a made-up
+fill slope at c' = 30 and 38 kPa: 1.645 and 1.917 before, none now under
+either setting). The review's own script finds no crossing on the branch
+from lambda = 0 either, for lambda from 0 to 1.5 (its only roots there lie
+at negative theta, with slice denominators below 0.01), so the no number
+stands as the method's own behaviour (the orchestrator's R7). The reason
+says the scan went upward from lambda = 0 on that branch, and names EM
+1110-2-1902 C-10c (p. C-36) and its remedy, a tension crack
+(`tension_crack_depth`). At 10, 20 and 28 kPa as printed the branch reads
+0.9620, 1.2877 and 1.5481 (before 0.9698, 1.3070, 1.5772), each the
+review's script's root to 0.000 %.
+
+## B25 — Supports as printed (GM-140 step 8, 2026-11-14)
+
+`slope_stability/tests/test_supports_step8.py`; rows measured by
+`module_work/gm140/step8_section11.py` on master and on the branch.
+
+Two printed benchmarks added, from Duncan, Wright and Brandon (2014),
+chapter 8:
+
+| Benchmark | Module | Printed |
+|-----------|--------|---------|
+| Fig. 8.1 (pp. 160 to 161): 20 ft slope at 2V:1H, phi = 0, c = 500 psf, gamma = 100 pcf, one horizontal force of 10,000 lb/ft 10 ft above the toe; Bishop, circles tangent to the firm layer at the toe's level. Method A | 2.218 (+1.3 %), on the circle with its centre at the crest's level (xc 0.90 m, R 6.116 m), exiting 0.06 m above the toe | 2.19, "within 1 or 2 %" |
+| Same, Method B | 1.722 (+0.1 %), circle xc 0.50 m, R 7.316 m, exiting 0.02 m above the toe | 1.72 |
+| Fig. 8.4 (pp. 164 to 165; Slide2 #86): 24 ft fill on rock at 1.25H:1V, c' = 0, phi' = 37 deg, six layers 4 ft apart, 20 ft long, 800 lb/ft falling to zero over the last 4 ft; Spencer, circles, searched with the toe window `x_entry_range` 0 to 4 ft (and `x_exit_range` 30 to 75 ft), an input that differs from the figure (below). Method A | 1.607 (-0.8 %); Bishop 1.613 | 1.62 |
+| Same, the same windows, Method B | 1.448 (-0.8 %); Bishop 1.452 | 1.46 |
+
+Fig. 8.4's toe window is an input of the module's test, not of the
+figure: the search keeps only circles that leave the ground within 4 ft
+of the toe (Slide2 #86's "global failure" window,
+`test_search_reinforcement.py`). Without it the minimum is a shallow face
+slide that crosses no layer, at about 0.94 (the infinite slope's closed
+form, tan 37 deg / 0.8 = 0.942), not the circles the figure's values are
+for.
+
+Fig. 8.1's Method A minimum lies at the limit before reverse curvature:
+circles tangent to the firm layer with their centre below the crest's level
+are discarded (step 4), and the factor of safety is still falling there.
+The brief's hand check of the moment equation gives 2.21 on that circle.
+
+What the rule moves in the pinned set:
+
+| Benchmark | Before | After | Printed |
+|-----------|--------|-------|---------|
+| V-043 geosynthetic force to raise the pinned sand circle to 1.35 (Spencer), at R - 1e-8 m, R, R + 1e-8 m | 40.88, 45.22, 45.22 kN/m | 45.22 at each | 44 to 45 (Slide2 Verification #39, manual pp. 147 to 150) |
+| V-040 micro-pile row, Ordinary Method of Slices, active / passive | 1.1946 / 1.1758 (the module's own form) | no number (no printed form with known forces) | none for this method |
+| V-040 Bishop active / passive; Spencer active / passive | 1.2232 / 1.2034; 1.2240 / 1.2039 | unchanged by this step. After the merge with GM-344 Spencer reads 1.2226 / 1.2026 (-0.11 %): the as-printed default for a base in tension (`base_in_tension='no_friction'` gives 1.2240 / 1.2039); V-040 without the pile moves alike, 1.1136 to 1.1123 | 1.193 |
+| #86 five tiebacks: Bishop, Spencer, GLE | 1.6131, 1.6065, 1.6069 | unchanged | Slide2 1.629, 1.620, 1.622 |
+| #85 one support, active: Bishop, Spencer, GLE searches | 1.508, 1.5505, 1.5726 | unchanged | 1.531, 1.884, 1.575 |
+| #85 passive, Bishop | 1.3157 | unchanged | 1.324 |
+| #85's circles above the toe (a family that does not govern): Bishop candidate; arcs with no net driving moment | 1.8195; 207 | 1.819; 141 | - |
+
+The last row: a tieback is now counted only on the arc of a split circle
+that it crosses, between that arc's two ends; before, its head was tested
+against the whole circle, so it was also counted on another arc of the
+same circle.
+
+V-043's force is the outcome of a stated rule now (a support on a slice
+boundary acts on the slice that holds the part of it inside the sliding
+mass); the other side would give 40.88. V-056 and V-057 (GEC 11's MSE
+examples) do not use this module's supports and are unchanged.
+
+## B26 — One method across the search (GM-140 step 6, 2026-11-14)
+
+Record: `module_work/gm140/STEP6_CHECK.md`. Tests:
+`slope_stability/tests/test_one_method.py`. Measured by
+`module_work/gm140/step6_section11.py` on master 2d3c1a9 and on the branch
+(with `step2_section11.py`, `step3_section11.py` and
+`circle_ends_section11.py` unchanged for their own rows).
+
+**The planar family by every method** (30 slices; the family's six planes;
+closed form F = tan phi' (cos b - kh sin b - ru/cos b)/(sin b + kh cos b),
+Duncan, Wright and Brandon 2014, Ch. 14). Every method that applies to a
+plane solves all six planes of every family measured (GM-56).
+
+| Face | Load | Closed form | Janbu | Spencer | M-P / GLE, half-sine | Solved |
+|------|------|------------:|------:|--------:|---------------------:|:------:|
+| #86, 1.25H:1V, phi' 37 | dry | 0.9419 | 0.9430 (+0.11 %) | 0.9442 (+0.24 %) | 0.9427 (+0.08 %) | 6 of 6 |
+| #86 | ru 0.2 | 0.6330 | 0.6338 (+0.13 %) | 0.6366 (+0.57 %) | 0.6336 (+0.10 %) | 6 of 6 |
+| #86 | kh 0.1 | 0.7703 | 0.7712 (+0.12 %) | 0.7730 (+0.35 %) | 0.7710 (+0.09 %) | 6 of 6 |
+| Duncan Ex. 3 geometry, 2H:1V, phi' 40 | dry | 1.6782 | 1.6804 (+0.13 %) | 1.6824 (+0.25 %) | 1.6798 (+0.10 %) | 6 of 6 |
+| Duncan Ex. 3 | kh 0.15 | 1.1941 | 1.1959 (+0.15 %) | 1.1987 (+0.38 %) | 1.1955 (+0.11 %) | 6 of 6 |
+| Duncan Ex. 4, sand face 3H:1V, phi' 38 | dry | 2.3439 | 2.3471 (+0.14 %) | 2.3494 (+0.24 %) | 2.3463 (+0.11 %) | 6 of 6 |
+
+The planes are now scored by the method named. Bishop's simplified method
+and the Ordinary Method of Slices named: Spencer's column, reported apart.
+(Before, a search scored them by Janbu's column whatever was named; the
+Ordinary Method of Slices on a plane with kh read +8.2 % and +8.8 %.)
+
+**Searches** (module before -> now; printed).
+
+| Case | Before | Now | Printed | What moved it |
+|------|-------:|----:|--------:|---------------|
+| #86 without supports, c' = 0, Bishop: headline | 0.942 (circular) | 0.942 | tan 37 / tan 38.66 = 0.942 | not moved |
+| the same: planar family | 0.9430 (Janbu) | 0.9442 (Spencer, apart) | 0.9419 | the planes by Spencer's method, Bishop's being for circles |
+| #86 without supports, Bishop, circles kept off the face | 0.9430, labelled Janbu | 0.9442, Spencer; `method_used`; Bishop's own lowest 0.9515 (toe circle) beside it | 0.9419 | the same |
+| #86 without supports, Spencer, the same windows | 0.9430 (Janbu) | 0.9442 (Spencer) | 0.9419 | the planes by the method named |
+| #86 without supports, Morgenstern-Price: planar family | 0.9430 (Janbu) | 0.9427 | 0.9419 | the same |
+| #86, five tiebacks, Bishop / Spencer / GLE | 1.6131 / 1.6065 / 1.6070 | the same | 1.629 / 1.620 / 1.622 (D&W 1.61) | not moved (the face's planes, held by the tiebacks, are counted under Spencer or GLE, no longer Janbu) |
+| #85, one support, active: Bishop / Spencer / GLE | as STEP3 and the circle-ends record | the same | 1.531 / 1.884 / 1.575 | not moved |
+| #85 without its support, Spencer, 6 x 6 | 1.0468 (toe circle) | 0.9110 by Bishop's simplified method (circle above the toe), stated; Spencer's own lowest 1.0468 beside it; of 2 circles re-scored from the screen's lowest below 0.911, 2 have no Spencer solution (lowest 0.9095; 116 circles scored by the screen below 0.911 in all). As first built: 1.0330 by Janbu's simplified method | no printed value (Bishop 0.9095 on this section) | item 4: Spencer's method solved none of the circles above the toe (142 without a solution); on circles Bishop's simplified method stands in before Janbu's (the fix round, the ruling on the review's D1: Janbu's 1.0330 was 10 % above Bishop's 0.937 on its own circle); item 5: the lower value governs, both stated |
+| V-054 steep phi = 0 slope, Bishop, 40 slices | 2.346 (toe circle) | 2.346 | 2.16 (FLAC 2.18) | not moved |
+| V-054, Spencer, 40 slices (`test_search_supplements._toe_geom()`, no crack asked for; `step6_section11.py`, `test_one_method.py::test_the_v054_spencer_row_reproduces`) | 2.4448 | 2.4448, with `screen_unsolved`: of the 12 circles re-scored from the screen's lowest below it, 12 have no Spencer solution, down to 2.3464 (508 circles scored by the screen below it in all) | 2.16 | the value is not moved; the report is new. With Rankine's crack asked for the search reads 2.0861 (the review), another setup |
+| V-043 sand, Spencer, default circular | 1.1859 | 1.1859 (planar family 1.2575 -> 1.2591) | Slide2 1.209 (circle) | the planes by Spencer's method |
+| V-043 sand, DE, seeds 1 to 3, Spencer | 1.237 / 1.234 / 1.233 | 1.194 from each (the critical circle, 1.186, as the polyline of its 30 slice bases); the evolution's own polylines 1.237 / 1.234 / 1.233 in `circle_check` | Slide2 1.188, Tandjiria 1.192 | the critical circle is one of the trials; the strict xfail of GM-117 passes and its mark is removed |
+| ACADS 1(a), random noncircular, 200 trials, Spencer | 1.0916 | 0.9844 (circle 0.9838; its polyline of 25 slice bases +0.06 %); own polylines 1.0916 in `circle_check` | 1.00 (Spencer 0.9838 on the circle; Slide2 0.986) | the critical circle is one of the trials |
+| the same, Morgenstern-Price / Janbu named | 1.0794 / 1.0357 | 0.9844 / 0.9832 | 1.00 | the same |
+| ACADS 1(a), particle swarm, Morgenstern-Price named | 0.9931, by Spencer | 0.9844 (own polylines 0.9917, by Morgenstern-Price) | 1.00 | the method named scores the swarm; the circle is a trial |
+| ACADS 1(a), DE, Spencer | 0.9907 | 0.9844 | 1.00 | the circle is a trial |
+| V-028 ACADS 4, weak-layer search, Spencer | 0.8301 | 0.8301 (the circle, 0.9765, is above it) | 0.760 | not moved (the strict xfail at 3 % stays: step 7) |
+| B14 weak layer over rock, Spencer | 0.8822 | 0.8822 | none | not moved |
+| Duncan Ex. 4, Bishop / Spencer | 1.2709 / 1.2584 | the same (planar family 2.3471 -> 2.3494) | closed form 2.3439 for the face | the planes by Spencer's method |
+| V-035 / V-036 (Slide2 #79, #81) | closed form (`infinite_slope_fos`) | the same | referee 1.44, 1.15 | no search in these tests |
+
+**Fix round after the review (2026-11-14).** Measured again after the merge
+with step 8 (B25) and after the fixes (the merge check, its table in
+STEP6_CHECK.md, "Fix round after review"): Figs. 8.1 and 8.4,
+#85 and #86 with supports by Spencer and by Morgenstern-Price, V-028,
+B14, V-054 by Bishop, V-043's force at R and R +- 1e-8 m and V-040 read
+as before to the digits printed; the one row that moves is #85 without
+its support (above: Bishop's simplified method stands in on circles before
+Janbu's). A circle check's circular search now takes the caller's `nx` and
+`ny`; with the defaults (10 x 10) nothing moves.
+
+Every other row of section 11 measured by the four scripts is unchanged to
+the digits printed (the list is in STEP6_CHECK.md).
 
 ## Notes / known deviations
 

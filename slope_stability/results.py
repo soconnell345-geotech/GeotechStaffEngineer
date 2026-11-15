@@ -231,6 +231,11 @@ class SlopeStabilityResult:
     FOS_janbu_uncorrected: Optional[float] = None
     janbu_f0: Optional[float] = None
     reinforcements: Optional[List[Dict[str, Any]]] = None
+    #: Supports that cross the surface and count nothing (GM-140 step 8;
+    #: ``supports.resolve_supports``): a pull that assists the sliding
+    #: taken as slack (OWN-59), or no capacity at the crossing. Each
+    #: ``{"kind", "index", "x_m", "z_m", "T_kN_per_m", "reason"}``.
+    supports_not_counted: Optional[List[Dict[str, Any]]] = None
     n_slices: int = 0
     has_seismic: bool = False
     kh: float = 0.0
@@ -244,11 +249,25 @@ class SlopeStabilityResult:
     # side and model, where it is, and for a Rankine depth the F it was
     # taken at. None without a crack.
     tension_crack: Optional[Dict[str, Any]] = None
+    # Which arc of its circle the surface is (GM-343, "Where a circle
+    # ends"; ``slip_surface.describe_arc``): 'x_start', 'x_end', 'index'
+    # (1-based, in x order), 'n_arcs', 'arcs', 'description', and, where
+    # the circle was given without its ends and bounds several arcs,
+    # 'governs' (how this arc was chosen), 'others' (each other arc with
+    # its factor of safety, or why it has none) and 'not_scored' (the
+    # count of those, by reason). None for a circle with one arc given
+    # without its ends, and for a noncircular surface.
+    arc: Optional[Dict[str, Any]] = None
     method_solved: bool = True
     method_used: Optional[str] = ""
     methods_without_solution: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     layer_overlaps: List[Dict[str, Any]] = field(default_factory=list)
+    #: What the pore pressure on the slice bases was taken as (GM-140 step
+    #: 5a; ``pore_pressure.water_statements``, ``geotech_common.choices``):
+    #: the reading of a sloping water line, a pore-pressure grid, ru in a
+    #: layered column, none on total-stress layers. Empty when none applies.
+    choices: List[Dict[str, Any]] = field(default_factory=list)
     acceptability: List[Dict[str, Any]] = field(default_factory=list)
     thrust_line_unclipped: Optional[List[Tuple[float, float]]] = None
 
@@ -318,6 +337,10 @@ class SlopeStabilityResult:
             lines.append(f"  Reinforcement:    {len(self.reinforcements)} "
                          f"element(s) crossing, total "
                          f"{sum(r['T_kN_per_m'] for r in self.reinforcements):.1f} kN/m")
+        if self.supports_not_counted:
+            lines.append(f"  Not counted:      "
+                         f"{len(self.supports_not_counted)} support(s) "
+                         f"crossing the surface (see WARNING)")
         if self.tension_crack_depth > 0:
             lines.append(f"  Tension crack:    {self.tension_crack_depth:.2f} m deep")
             if self.tension_crack_water_depth > 0:
@@ -352,6 +375,9 @@ class SlopeStabilityResult:
                          + (f"  (f0={self.janbu_f0:.3f})" if self.janbu_f0 else ""))
         for o in self.layer_overlaps:
             lines.append(f"  LAYERS: {o['statement']}")
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
         for w in self.warnings:
             lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
@@ -423,6 +449,8 @@ class SlopeStabilityResult:
             d["tension_crack_water_depth_m"] = round(self.tension_crack_water_depth, 2)
             if self.tension_crack:
                 d["tension_crack"] = dict(self.tension_crack)
+        if self.arc:
+            d["arc"] = dict(self.arc)
         if self.slip_points is not None:
             d["slip_points"] = [
                 (round(x, 3), round(z, 3)) for x, z in self.slip_points
@@ -450,6 +478,8 @@ class SlopeStabilityResult:
             d["n_reinforcements_active"] = len(self.reinforcements)
             d["total_reinforcement_kN_per_m"] = round(
                 sum(r["T_kN_per_m"] for r in self.reinforcements), 2)
+        if self.supports_not_counted:
+            d["supports_not_counted"] = self.supports_not_counted
         if self.slice_data is not None:
             d["slice_data"] = [s.to_dict() for s in self.slice_data]
         if self.thrust_line is not None:
@@ -460,6 +490,8 @@ class SlopeStabilityResult:
             d["methods_without_solution"] = list(self.methods_without_solution)
         if self.layer_overlaps:
             d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         if self.acceptability:
             # the printed acceptability checks (GM-140 step 3)
             d["flags"] = self.flags
@@ -645,12 +677,31 @@ class SearchResult:
         artifact). Zero for circular searches. A majority-rejected search also
         emits a ``warnings.warn`` — see ``search._rejection_kwargs``.
     n_rejected_ground_crossings : int
-        Trial surfaces, circular or not, the search refused because they
-        are below the ground over more than one stretch: they leave the
-        ground and come back into it, so the soil above them is not one
-        sliding mass (GM-122, ``slip_surface.GroundCrossingError``). A
-        search that runs others (``search_critical_surface``) counts theirs
-        and its supplementary families' too.
+        Noncircular trial surfaces the search refused because they are
+        below the ground over more than one stretch: they leave the ground
+        and come back into it, so the soil above them is not one sliding
+        mass (GM-122, ``slip_surface.GroundCrossingError``). A search that
+        runs others (``search_critical_surface``) counts theirs and its
+        supplementary families' too. (A circle is not refused for it:
+        ``circles_split``.)
+    circles_split : dict
+        Trial circles that meet the ground at more than two points
+        (GM-343, "Where a circle ends"): ``{arcs: circles}``, the number of
+        such circles by the number of arcs below the ground each gave.
+        Each arc inside the search's entry / exit windows was scored as a
+        trial surface of its own, and the circle's score is its lowest
+        arc's; an arc with no driving moment, or one the method has no
+        solution on, is counted in ``no_solution`` under its reason. Counted
+        as ``n_rejected_ground_crossings`` is. ``critical.arc`` says which
+        arc the governing surface is.
+    arcs_outside_windows : dict
+        The arcs of those split circles that lie outside the entry / exit
+        windows (given, or the main family's automatic ones) and so were
+        not scored (GM-343 review): ``{family: arcs}``, the families named
+        as in ``no_solution``; counted per trial evaluation, as
+        ``circles_split``. Empty where no window left an arc out. The
+        toe-circle and circle-above-the-toe families score only the arc
+        that ends at the toe or face point and count nothing here.
     n_rejected_m_alpha : int
         Trial surfaces, circular or not, the search left out because m_alpha
         = cos(a) (1 + tan(a) tan(phi) / F) fell below 0.2 on a slice at the
@@ -711,6 +762,26 @@ class SearchResult:
         (UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as a
         result of non-convergence. The engineer should be able to identify
         when convergence issues are present.").
+    centre_grid : dict
+        The circle-centre grid of a grid search (GM-140 step 10, D46):
+        ``{"x_range", "y_range", "nx", "ny"}``; each of its centres in
+        ``grid_fos`` carries ``node`` = (ix, iy). Empty for other searches.
+        ``slope_stability.report_views.centre_contours`` contours the
+        minimum FOS over it (FHWA NHI-06-088 Fig. 6-13, p. 6-23).
+    family_surfaces : dict
+        Each family's reported (lowest) surface, by family (GM-140 step
+        10, D47): ``{"FOS", "method", "xc", "yc", "radius"}`` for a circle
+        or ``{"FOS", "method", "points"}`` for a plane or polyline; for
+        the ordered list of the lowest surfaces
+        (``report_views.lowest_surfaces``, FHWA NHI-06-088 p. 6-49).
+    family_lowest : dict
+        Each family's ten lowest scored surfaces, in order, by the method
+        that scored the family (a screen's values left out), one per
+        surface to 0.01 m (GM-140 step 10's fix round, D2):
+        ``{family: [{"FOS", "method", "xc", "yc", "radius"[, "arc"]} or
+        {"FOS", "method", "points"}]}``; pooled by
+        ``report_views.lowest_surfaces``. Set by
+        ``search_critical_surface``; empty otherwise.
     governing_surface : str
         Which kind of surface governs ``critical`` (set by
         ``search_critical_surface``): 'circular' / 'noncircular' (the main
@@ -737,8 +808,11 @@ class SearchResult:
     infinite_slope_checks : list of dict
         One entry per stretch of slope face where cohesionless soil is at
         the surface: x range, slope angle beta, layer, phi', the dry
-        closed-form tan(phi')/tan(beta) and the FOS of the shallow planar
-        surfaces evaluated there (None if not evaluated, with a note).
+        closed-form tan(phi')/tan(beta), the closed form with the water at
+        the surface for the reading used (``FOS_seepage_closed_form``,
+        named by ``seepage_reading``: 'piezometric', 'water_table' or
+        'rapid_drawdown') and the FOS of the shallow planar surfaces
+        evaluated there (None if not evaluated, with a note).
     search_ranges : dict
         The entry / exit windows and centre ranges the main search used
         (x_entry_range, x_exit_range, and x_range / y_range for a centre
@@ -772,6 +846,44 @@ class SearchResult:
         how its ranges were set (pointing at ``search_ranges``,
         ``governing_location`` and ``refused_lowest`` where the result has
         them), its time budget and any Bishop screen (GM-123).
+    named_method, f_interslice : str
+        The method the search was asked for and the interslice function of
+        Morgenstern-Price and GLE (GM-140 step 6; ``f_interslice`` None for
+        a method that has none; Spencer's method is 'constant'). Empty when
+        a search was called directly (grid_search etc.).
+    candidate_methods : list of dict
+        What scored each family in ``candidates`` (GM-140 step 6; EM
+        1110-2-1902 4-3b(9)(a), p. 4-8: state the method used): one record
+        per family and scoring method, ``{"family", "method",
+        "f_interslice", "FOS", "named", "reason"}``. ``named`` is True
+        where the family was scored by the method named; where it was not
+        (Bishop's simplified method and the Ordinary Method of Slices do
+        not apply to a plane or a polyline; or the method solved none of
+        the family's surfaces), ``method`` is the one that did (Spencer's
+        method, or Janbu's simplified method where Spencer's solved none)
+        and ``reason`` says why. ``screen`` names a screen by another
+        method used to pick the surfaces (the value reported is always the
+        scoring method's own on the surface reported).
+    method_used : str
+        '' when the governing surface was scored by the method named;
+        otherwise the method that scored it, with ``warnings`` saying so
+        and ``named_method_lowest`` giving the named method's own lowest
+        value (``{"method", "f_interslice", "FOS", "family"}``, ``FOS``
+        None with a ``note`` when the named method scored no family).
+    screen_unsolved : dict
+        Surfaces a screen by another method scored below the minimum
+        reported and the named method had no solution on (UFC 3-220-10
+        p. 362): ``{"n", "k", "N", "lowest_screen_FOS", "by_family"}``,
+        ``n`` of the ``k`` circles re-scored from the screen's lowest
+        having no solution by the method, of ``N`` circles the screen
+        scored below the minimum in all (the step 6 review's D2); empty
+        when there is none. ``warnings`` says so.
+    circle_check : dict
+        A noncircular search's minimum against the critical circle by the
+        same method (GM-140 step 6): ``checked``, the ``circle``,
+        ``FOS_as_polyline``, ``noncircular_minimum``, ``governs`` and
+        ``note``; ``checked`` False with the reason where no circular
+        search ran. Empty for a circular search.
     families_scored : list of str
         The surface families that gave an admissible surface (those in
         ``candidates``; GM-125): the main search's kind, ``toe_circle``,
@@ -787,6 +899,8 @@ class SearchResult:
     n_rejected_nonconverged: int = 0
     n_rejected_jagged: int = 0
     n_rejected_ground_crossings: int = 0
+    circles_split: Dict[int, int] = field(default_factory=dict)
+    arcs_outside_windows: Dict[str, int] = field(default_factory=dict)
     n_rejected_m_alpha: int = 0
     # Surfaces the crack rule refused (GM-140 step 4 and its review's D5),
     # by reason (``cracks.REFUSAL_TEXT``): {reason: {'n', 'what',
@@ -811,6 +925,22 @@ class SearchResult:
     critical_flags: List[str] = field(default_factory=list)
     lowest_unflagged: Optional[Dict[str, Any]] = None
     screen_refusals: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # One method across the search (GM-140 step 6): the method and
+    # interslice function named, what scored each family, the method that
+    # scored the governing surface when it is not the one named, the named
+    # method's own lowest value, the screen values of surfaces the named
+    # method could not solve, and a noncircular minimum against the circle.
+    named_method: str = ""
+    f_interslice: Optional[str] = None
+    candidate_methods: List[Dict[str, Any]] = field(default_factory=list)
+    method_used: str = ""
+    named_method_lowest: Optional[Dict[str, Any]] = None
+    screen_unsolved: Dict[str, Any] = field(default_factory=dict)
+    circle_check: Dict[str, Any] = field(default_factory=dict)
+    centre_grid: Dict[str, Any] = field(default_factory=dict)
+    family_surfaces: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    family_lowest: Dict[str, List[Dict[str, Any]]] = field(
+        default_factory=dict)
 
     @property
     def n_no_solution(self) -> int:
@@ -830,6 +960,20 @@ class SearchResult:
             lines.append(f"  Refused, not one sliding mass (leave the ground "
                          f"and come back into it): "
                          f"{self.n_rejected_ground_crossings}")
+        if self.circles_split:
+            n = sum(self.circles_split.values())
+            by = ", ".join(f"{k} with {a} arcs"
+                           for a, k in sorted(self.circles_split.items()))
+            lines.append(f"  Circles meeting the ground at more than two "
+                         f"points, split there and each arc inside the "
+                         f"windows scored as a trial surface of its own: "
+                         f"{n} ({by})")
+        if self.arcs_outside_windows:
+            n_out = sum(self.arcs_outside_windows.values())
+            by_f = ", ".join(f"{f}: {k}" for f, k
+                             in self.arcs_outside_windows.items())
+            lines.append(f"  Arcs of those circles outside the windows, not "
+                         f"scored: {n_out} ({by_f})")
         if self.n_rejected_m_alpha:
             lines.append(f"  Left out, m_alpha < 0.2 on a slice "
                          f"(low_m_alpha='refuse'): "
@@ -861,6 +1005,10 @@ class SearchResult:
                                 else "")
                              + (f" ({r['below_0_05']} solved below 0.05)"
                                 if r.get("below_0_05") else "")
+                             + (f" ({r['with_supports']} crossed by "
+                                f"supports: the Ordinary Method of Slices "
+                                f"has no printed form with known forces)"
+                                if r.get("with_supports") else "")
                              for r in self.no_solution)
                          + ")")
         if self.critical:
@@ -881,9 +1029,53 @@ class SearchResult:
             from slope_stability.search_supplements import describe_surface_kind
             lines.append(f"  Governing surface: "
                          f"{describe_surface_kind(self.governing_surface)}")
+            by = {}
+            for rec in self.candidate_methods:
+                # the method that scored each family (GM-140 step 6)
+                name = rec["method"] + (
+                    f", {rec['f_interslice']}" if rec.get("f_interslice")
+                    and rec["method"] in ("morgenstern_price", "gle")
+                    else "")
+                by.setdefault(rec["family"], []).append(
+                    name + ("" if rec.get("named")
+                            else ", not the method named"))
             for kind, fos in self.candidates.items():
                 lines.append(f"    {describe_surface_kind(kind):<48s} "
-                             f"{fos:.3f}")
+                             f"{fos:.3f}"
+                             + (f"  ({'; '.join(by[kind])})"
+                                if kind in by else ""))
+            if self.method_used:
+                low = self.named_method_lowest or {}
+                lines.append(
+                    f"  Scored by {self.method_used}, not the method named "
+                    f"({self.named_method}); lowest by the method named: "
+                    + (f"{low['FOS']:.3f}" if low.get("FOS") is not None
+                       else "none"))
+            cc = self.circle_check
+            if cc.get("checked") and cc.get("circle"):
+                lines.append(
+                    f"  Critical circle by the same method: "
+                    f"{cc['circle']['FOS']:.3f}"
+                    + (f" (as a polyline {cc['FOS_as_polyline']:.3f})"
+                       if cc.get("FOS_as_polyline") is not None else ""))
+            elif cc:
+                lines.append("  Not checked against a circle")
+            if self.screen_unsolved:
+                su = self.screen_unsolved
+                lines.append(
+                    f"  Screen values below the minimum on surfaces the "
+                    f"method could not solve: {su['n']} of {su.get('k')} "
+                    f"re-scored ({su.get('N')} scored by the screen), "
+                    f"lowest {su['lowest_screen_FOS']:.3f}")
+        from slope_stability.report_views import (centre_contours,
+                                                  lowest_surfaces)
+        contours = centre_contours(self)
+        if contours is not None:
+            lines.append(f"  Centre grid: {contours['statement']}")
+        lowest = lowest_surfaces(self)
+        if lowest:
+            lines.append(f"  The {len(lowest)} lowest surfaces: "
+                         + ", ".join(f"{s['FOS']:.3f}" for s in lowest))
         gl = self.governing_location
         if gl.get("layers"):
             lines.append(f"  Governing surface: x {gl['x_entry']:.2f} to "
@@ -952,6 +1144,13 @@ class SearchResult:
                 "ground_crossings": self.n_rejected_ground_crossings,
                 "m_alpha": self.n_rejected_m_alpha,
             }
+        if self.circles_split:
+            # circles split where they meet the ground (GM-343)
+            d["circles_split"] = {str(a): n for a, n
+                                  in sorted(self.circles_split.items())}
+        if self.arcs_outside_windows:
+            # their arcs outside the windows, not scored, by family
+            d["arcs_outside_windows"] = dict(self.arcs_outside_windows)
         if self.no_solution:
             # trials the method has no solution on, by family and method
             d["no_solution"] = [dict(r) for r in self.no_solution]
@@ -975,6 +1174,32 @@ class SearchResult:
         if self.governing_surface:
             d["governing_surface"] = self.governing_surface
             d["candidates"] = dict(self.candidates)
+        if self.named_method:
+            d["named_method"] = self.named_method
+            d["f_interslice"] = self.f_interslice
+        if self.candidate_methods:
+            d["candidate_methods"] = [dict(c) for c in
+                                      self.candidate_methods]
+        if self.method_used:
+            d["method_used"] = self.method_used
+        if self.named_method_lowest:
+            d["named_method_lowest"] = dict(self.named_method_lowest)
+        if self.screen_unsolved:
+            d["screen_unsolved"] = dict(self.screen_unsolved)
+        if self.circle_check:
+            d["circle_check"] = dict(self.circle_check)
+        # what the print asks a search's output to show (GM-140 step 10):
+        # the contours of the minimum FOS over the centres and whether the
+        # lowest closes inside the grid (D46), and the ten lowest surfaces
+        # in order (D47)
+        from slope_stability.report_views import (centre_contours,
+                                                  lowest_surfaces)
+        contours = centre_contours(self)
+        if contours is not None:
+            d["centre_contours"] = contours
+        lowest = lowest_surfaces(self)
+        if lowest:
+            d["lowest_surfaces"] = lowest
         if self.infinite_slope_checks:
             d["infinite_slope_checks"] = [dict(c) for c in
                                           self.infinite_slope_checks]

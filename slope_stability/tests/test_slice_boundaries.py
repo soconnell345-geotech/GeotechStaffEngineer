@@ -97,7 +97,9 @@ def test_a_corner_close_to_another_boundary_is_kept():
     assert math.degrees(first.alpha) == pytest.approx(-90.0, abs=0.1)
     fos = [analyze_slope(geom, slip_surface=slip, method="spencer",
                          n_slices=n).FOS for n in (30, 60)]
-    assert fos == pytest.approx([2.521] * 2, abs=0.002)
+    # GM-344: 2.521 -> 2.525, the friction term as printed on the bases in
+    # tension (made-up surface, nothing printed)
+    assert fos == pytest.approx([2.525] * 2, abs=0.002)
 
 
 def test_a_corner_at_an_end_is_that_end():

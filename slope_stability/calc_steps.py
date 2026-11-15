@@ -177,6 +177,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     geom = analysis["geom"]
     sections = []
 
+    # The slice table first: the engineer checks slice weights, strengths
+    # and pore pressures at the bottoms of slices (EM 1110-2-1902 4-2d(2),
+    # p. 4-2; GM-140 step 10).
+    if result.slice_data:
+        sections.append(_slice_table_section(result))
+
     sections.append(_geometry_section(geom))
     sections.append(_slip_surface_section(result))
     sections.append(_method_section(result, analysis))
@@ -201,9 +207,6 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     comparison = _comparison_section(result, analysis)
     if comparison is not None:
         sections.append(comparison)
-
-    if result.slice_data:
-        sections.append(_slice_table_section(result))
 
     search = analysis.get("search")
     if search is not None:
@@ -303,6 +306,20 @@ def _geometry_section(geom) -> CalcSection:
             rows=gwt_rows,
             notes="GWT above the ground surface is treated as ponded "
                   "water (external hydrostatic load).",
+        ))
+
+    # What the pore pressure on the slice bases was taken as (GM-140 step
+    # 5a): the reading of a sloping water line, a pore-pressure grid, ru
+    # in a layered column, none on total-stress layers, each with its print.
+    from slope_stability.pore_pressure import water_statements
+    from geotech_common.choices import plain
+    water_choices, _ = water_statements(geom)
+    if water_choices:
+        items.append(TableData(
+            title="Pore Pressure on the Slice Bases",
+            headers=["What", "Used", "Basis"],
+            rows=[[plain(c["what"]), plain(str(c["chosen"])),
+                   plain(c.get("basis", ""))] for c in water_choices],
         ))
 
     return CalcSection(title="Slope Geometry & Soil Properties",
@@ -634,6 +651,30 @@ def _reinforcement_section(result, geom):
                      "surface — the layout contributes no stabilizing "
                      "force to the reported FOS.")
 
+    # Supports that cross the surface and count nothing, and what the
+    # supports were taken as: Method A or B and the measure of force, the
+    # direction, the pullout (GM-140 step 8), each with its print.
+    not_counted = getattr(result, "supports_not_counted", None) or []
+    if not_counted:
+        items.append(TableData(
+            title="Supports Crossing the Surface That Count Nothing",
+            headers=["Type", "#", "Crossing (x, z) (m)", "T (kN/m)", "Why"],
+            rows=[[r["kind"].capitalize(), str(r["index"] + 1),
+                   f"({r['x_m']:.1f}, {r['z_m']:.1f})",
+                   f"{r['T_kN_per_m']:.1f}", r["reason"]]
+                  for r in not_counted],
+        ))
+    from slope_stability.supports import support_statements
+    from geotech_common.choices import plain
+    said, _ = support_statements(geom)
+    if said:
+        items.append(TableData(
+            title="How the Supports Enter the Analysis",
+            headers=["What", "Used", "Basis"],
+            rows=[[plain(c["what"]), plain(str(c["chosen"])),
+                   plain(c.get("basis", ""))] for c in said],
+        ))
+
     return CalcSection(title="Reinforcement", items=items)
 
 
@@ -651,14 +692,24 @@ def _acceptability_section(result):
         if f.get("slices"):
             where = "slices " + ", ".join(
                 str(s["slice"]) for s in f["slices"])
+            if f["check"] == "low_m_alpha" and f.get("denominator"):
+                # the denominator the check read (GM-140 step 10, item 12)
+                where += ("; denominator: m_alpha = cos(a) + sin(a) "
+                          "tan(phi') / F" if f["denominator"] == "m_alpha"
+                          else "; denominator: cos(a - theta) + "
+                               "sin(a - theta) tan(phi') / F, theta the "
+                               "side force's inclination")
         elif f.get("sides"):
             where = "slice sides " + ", ".join(
                 str(s["side"]) for s in f["sides"])
+        source = f.get("source", "")
+        if f["check"] == "low_m_alpha" and f.get("remedies"):
+            source += "; EM 1110-2-1902 C-10b, pp. C-34 to C-36"
         rows.append([
             CHECK_TEXT.get(f["check"], "Bishop's value against the "
                            "Ordinary Method of Slices value"),
             "not met" if f.get("flag") else "noted",
-            where, f["text"], f.get("source", "")])
+            where, f["text"], source])
     return CalcSection(title="Printed Acceptability Checks", items=[
         TableData(
             title="Findings on the Analyzed Surface",
@@ -763,6 +814,14 @@ def _no_solution_detail(result, name: str) -> str:
             if "no net driving moment or force" in w:
                 return ("no number: the surface has no net driving moment "
                         "or force (see Warnings)")
+            if "supports cross this surface" in w:
+                # the Ordinary Method of Slices with supports (GM-140 step
+                # 8; step 10, item 12): left out, with its reason
+                return ("left out of the comparison: supports cross the "
+                        "surface, and no reference held prints the "
+                        "Ordinary Method of Slices with known forces "
+                        "(Duncan, Wright and Brandon 2014, p. 93; see "
+                        "Warnings)")
             return ("no number: the method does not converge on this "
                     "surface (see Warnings)")
     return ("no number: the method has no solution on this surface "
@@ -866,7 +925,10 @@ def _search_section(search) -> CalcSection:
                              f"moment or force)" if rec.get("no_driving")
                              else "")
             + (f" ({rec['below_0_05']} solved below 0.05)"
-               if rec.get("below_0_05") else "")])
+               if rec.get("below_0_05") else "")
+            + (f" ({rec['with_supports']} crossed by supports: the "
+               f"Ordinary Method of Slices has no printed form with known "
+               f"forces)" if rec.get("with_supports") else "")])
     # Scored surfaces left out for m_alpha < 0.2 on a slice (GM-127)
     n_rej_ma = getattr(search, "n_rejected_m_alpha", 0)
     if n_rej_ma:
@@ -923,9 +985,56 @@ def _search_section(search) -> CalcSection:
     if governing:
         from slope_stability.search_supplements import describe_surface_kind
         rows.append(["Governing surface", describe_surface_kind(governing)])
+        # The method that scored each family, beside its minimum (GM-140
+        # step 6; EM 1110-2-1902 4-3b(9)(a), p. 4-8: state the method).
+        from slope_stability.solution import METHOD_TEXT
+        by_family = {}
+        for rec in getattr(search, "candidate_methods", None) or []:
+            name = METHOD_TEXT.get(rec["method"], rec["method"])
+            if rec.get("f_interslice") and rec["method"] in (
+                    "morgenstern_price", "gle"):
+                name += f", {rec['f_interslice']} function"
+            if not rec.get("named"):
+                name += ", not the method named"
+            by_family.setdefault(rec["family"], []).append(name)
         for kind, fos in getattr(search, "candidates", {}).items():
+            by = "; ".join(by_family.get(kind, []))
             rows.append([f"  — minimum, {describe_surface_kind(kind)}",
-                         f"{fos:.3f}"])
+                         f"{fos:.3f}" + (f" ({by})" if by else "")])
+        used = getattr(search, "method_used", "")
+        if used:
+            low = getattr(search, "named_method_lowest", None) or {}
+            rows.append([
+                "Method that scored the governing surface",
+                f"{METHOD_TEXT.get(used, used)}, not the method named"])
+            rows.append([
+                "Lowest value by the method named",
+                (f"{low['FOS']:.3f} "
+                 f"({describe_surface_kind(low.get('family', ''))})"
+                 if low.get("FOS") is not None
+                 else low.get("note", "none"))])
+        cc = getattr(search, "circle_check", None) or {}
+        if cc:
+            if cc.get("checked") and cc.get("circle"):
+                poly = cc.get("FOS_as_polyline")
+                own = cc.get("noncircular_minimum")
+                rows.append([
+                    "Checked against the critical circle",
+                    f"circle {cc['circle']['FOS']:.3f}; as a polyline "
+                    + ("not scored" if poly is None else f"{poly:.3f}")
+                    + "; the search's own lowest polyline "
+                    + ("none" if own is None else f"{own:.3f}")])
+            else:
+                rows.append(["Checked against the critical circle",
+                             cc.get("note", "not checked")])
+        su = getattr(search, "screen_unsolved", None) or {}
+        if su:
+            rows.append([
+                "Screen values below the minimum, not solved by the method",
+                f"{su['n']} of {su.get('k')} circle(s) re-scored from the "
+                f"screen's lowest; {su.get('N')} scored by the screen below "
+                f"the minimum in all; lowest screen value "
+                f"{su['lowest_screen_FOS']:.3f}"])
     search_notes = ("The trial-surface map in the Figures section shows "
                     "every evaluated surface colored by FOS.")
     if n_rejected:
@@ -961,6 +1070,55 @@ def _search_section(search) -> CalcSection:
         notes=search_notes,
     ))
 
+    # The method each family was scored with, stand-ins and their reasons,
+    # and what the search could not solve (GM-140 steps 6 and 10)
+    scored = _family_methods_table(search)
+    if scored is not None:
+        items.append(scored)
+
+    # The contours of the minimum FOS over the centres, and whether the
+    # lowest closes inside the grid (D46), and the ten lowest surfaces in
+    # order (D47) (GM-140 step 10)
+    from slope_stability.report_views import (
+        centre_contours, contour_levels, lowest_surfaces,
+        lowest_surfaces_rows, LOWEST_SOURCE)
+    contours = centre_contours(search)
+    if contours is not None:
+        rows = [["Centres in the grid",
+                 f"{contours['n_centres']} ({len(contours['x'])} x "
+                 f"{len(contours['y'])})"],
+                [f"Centres with a FOS by {contours['method_text']}",
+                 str(contours["n_by_method"])]]
+        if contours["basis"] == "screen":
+            rows.append([f"Centres with a FOS by {contours['values_by']}",
+                         str(contours["n_scored"])])
+        rows += [["Values contoured", contours["values_by"]],
+                 ["Lowest contour closes inside the grid",
+                  {True: "yes", False: "no"}.get(contours["closed"],
+                                                 "cannot be judged")],
+                 ["Statement", contours["statement"]]]
+        items.append(TableData(
+            title="Minimum FOS over the Circle Centres",
+            headers=["Item", "Value"],
+            rows=rows,
+            notes=(f"The contours, by {contours['values_by']}, are drawn "
+                   f"in the figure '{CONTOUR_FIGURE_TITLE}'."
+                   if contour_levels(contours) else ""),
+        ))
+    lowest = lowest_surfaces(search)
+    if lowest:
+        items.append(TableData(
+            title=f"The {len(lowest)} Lowest Surfaces",
+            headers=["Rank", "FOS", "Family", "Method", "Geometry"],
+            rows=lowest_surfaces_rows(lowest),
+            notes=(f"In order of factor of safety ({LOWEST_SOURCE}), over "
+                   "every family's ten lowest scored surfaces, each by the "
+                   "method that scored its family; values a screen alone "
+                   "gave are not listed, and a surface is listed once "
+                   "(the same to 0.01 m). The geometry is as scored; the "
+                   "result's lowest_surfaces gives it to 0.0001 m."),
+        ))
+
     checks = getattr(search, "infinite_slope_checks", None) or []
     if checks:
         items.append(TableData(
@@ -994,6 +1152,102 @@ def _search_section(search) -> CalcSection:
         ))
 
     return CalcSection(title="Critical Surface Search", items=items)
+
+
+def _family_methods_table(search):
+    """The method and interslice function that scored each family beside
+    its minimum, with a stand-in's reason (circles: Spencer's method, then
+    Bishop's simplified method, then Janbu's simplified method; planes and
+    polylines: Spencer's, then Janbu's), Janbu's f0 where Janbu's method
+    stands in, the method named against the method used, the surfaces the
+    method could not solve below the minimum (UFC 3-220-10 p. 362), the
+    check against the critical circle, and an Ordinary Method of Slices
+    search crossed by supports (GM-140 step 6, as the result words it;
+    step 10, item 11). None when the search records no family."""
+    from slope_stability.search_supplements import describe_surface_kind
+    from slope_stability.solution import METHOD_TEXT
+    recs = list(getattr(search, "candidate_methods", None) or [])
+    if not recs:
+        return None
+    named = getattr(search, "named_method", "") or ""
+    rows = []
+    for rec in recs:
+        fam = describe_surface_kind(rec["family"])
+        method = METHOD_TEXT.get(rec["method"], rec["method"])
+        f_int = (rec.get("f_interslice") or "") if rec["method"] in (
+            "spencer", "morgenstern_price", "gle") else ""
+        if rec.get("named"):
+            label = "the method named"
+        else:
+            label = f"stand-in for {METHOD_TEXT.get(named, named)}: " \
+                    f"{rec.get('reason', '')}"
+        if rec.get("screen"):
+            label += (f"; circles picked by a screen with "
+                      f"{METHOD_TEXT.get(rec['screen'], rec['screen'])}")
+        if rec["method"] == "janbu" and not rec.get("named"):
+            if rec.get("janbu_f0") is not None:
+                label += (f"; Janbu's correction factor f0 = "
+                          f"{rec['janbu_f0']:.3f} applied, not found in "
+                          f"print (the account's D28); uncorrected FOS "
+                          f"{rec['FOS_uncorrected']:.3f}")
+            else:
+                label += ("; Janbu's correction factor f0 applied, not "
+                          "found in print (the account's D28)")
+        rows.append([fam, f"{rec['FOS']:.3f}", method, f_int, label])
+    notes = []
+    used = getattr(search, "method_used", "")
+    if used:
+        low = getattr(search, "named_method_lowest", None) or {}
+        notes.append(
+            f"method_named: {METHOD_TEXT.get(named, named)}; method_used "
+            f"(the governing surface): {METHOD_TEXT.get(used, used)}; "
+            f"named_method_lowest: "
+            + (f"{low['FOS']:.3f} ({describe_surface_kind(low.get('family', ''))})"
+               if low.get("FOS") is not None else low.get("note", "none"))
+            + ".")
+    su = getattr(search, "screen_unsolved", None) or {}
+    if su:
+        crit = getattr(search, "critical", None)
+        notes.append(
+            f"Of the {su.get('k')} circle(s) re-scored from the screen's "
+            f"lowest, {su['n']} have no solution by "
+            f"{METHOD_TEXT.get(named, named)}; the screen scored "
+            f"{su.get('N')} circle(s) below the reported minimum"
+            + (f" ({crit.FOS:.3f})" if crit is not None
+               and crit.FOS is not None else "")
+            + f" in all, the lowest screen value "
+              f"{su['lowest_screen_FOS']:.3f} (UFC 3-220-10 p. 362).")
+    cc = getattr(search, "circle_check", None) or {}
+    if cc:
+        if cc.get("checked") and cc.get("circle"):
+            poly = cc.get("FOS_as_polyline")
+            notes.append(
+                f"The critical circle by the same method "
+                f"({cc['circle']['FOS']:.3f} as a circle) was scored as a "
+                f"trial: "
+                + ("not scored as a polyline" if poly is None else
+                   f"{poly:.3f} as the polyline of its slice bases")
+                + ".")
+        else:
+            notes.append("Not checked against a circle"
+                         + (f": {cc['note']}" if cc.get("note") else "")
+                         + ".")
+    for rec in getattr(search, "no_solution", None) or []:
+        if rec.get("with_supports") and rec.get("method") == "fellenius":
+            notes.append(
+                f"The Ordinary Method of Slices was refused on "
+                f"{rec['with_supports']} surface(s) of the "
+                f"{describe_surface_kind(rec['family'])} family crossed by "
+                f"supports, with nothing standing in: it has no printed "
+                f"form with known forces (Duncan, Wright and Brandon 2014, "
+                f"p. 93).")
+    return TableData(
+        title="The Method Each Family Was Scored With",
+        headers=["Family", "Minimum FOS", "Method", "Interslice function",
+                 "Named or stand-in"],
+        rows=rows,
+        notes=" ".join(notes),
+    )
 
 
 def _probabilistic_section(analysis):
@@ -1113,6 +1367,46 @@ def _probabilistic_section(analysis):
 # Figures
 # ---------------------------------------------------------------------------
 
+#: The title of the figure of the contours and the lowest surfaces, and
+#: of that figure where no contour can be drawn (GM-140 step 10's fix
+#: round, D5).
+CONTOUR_FIGURE_TITLE = ("Minimum FOS over the Circle Centres and the "
+                        "Lowest Surfaces")
+LOWEST_FIGURE_TITLE = "The Lowest Surfaces"
+
+
+def contour_figure_text(search) -> tuple:
+    """(title, caption) of the figure of the contours of the minimum FOS
+    over the centres and the lowest surfaces: titled for the contours only
+    where one is drawn, and otherwise for the lowest surfaces, the caption
+    saying why no contour is drawn (GM-140 step 10's fix round, D5)."""
+    from slope_stability.report_views import (
+        centre_contours, contour_levels, lowest_surfaces, no_contour_reason)
+    try:
+        cc = centre_contours(search)
+    except (KeyError, TypeError, ValueError):
+        cc = None
+    n = len(lowest_surfaces(search))
+    which = (f"the {n} lowest surfaces" if n > 1
+             else "the lowest surface" if n else "")
+    if contour_levels(cc):
+        caption = (f"Contours of the minimum FOS over the circle centres, "
+                   f"by {cc['values_by']} (FHWA NHI-06-088 Fig. 6-13, "
+                   f"p. 6-23), with the lowest grid centre and the critical "
+                   f"centre marked"
+                   + (f", and {which} (FHWA NHI-06-088 p. 6-49)" if n
+                      else "") + ". " + cc["verdict_text"])
+        if cc.get("named_lowest"):
+            caption += (f" The lowest surface by {cc['method_text']} is "
+                        f"drawn dashed.")
+        return CONTOUR_FIGURE_TITLE, caption
+    caption = (f"{which[0].upper()}{which[1:]} (FHWA NHI-06-088 p. 6-49), "
+               f"the lowest in red. " if n else "")
+    caption += (f"No contour of the minimum FOS over the circle centres is "
+                f"drawn: {no_contour_reason(cc)}.")
+    return LOWEST_FIGURE_TITLE, caption
+
+
 def get_figures(result, analysis) -> List[FigureData]:
     """Generate SLOPE/W-style figures for the slope calc package.
 
@@ -1172,6 +1466,9 @@ def get_figures(result, analysis) -> List[FigureData]:
              f"Critical surface search: "
              f"{search.n_surfaces_evaluated} trial surfaces colored "
              f"by FOS; critical surface highlighted.")
+        _title, _caption = contour_figure_text(search)
+        _add(lambda: _plots.plot_centre_contours(search, geom),
+             _title, _caption)
 
     if result.slice_data:
         _add(lambda: _plots.plot_slice_forces(result),

@@ -156,12 +156,12 @@
         }
        },
        {
-        "description": "12e04b70c3d3ff72",
+        "description": "004720eaa923a760",
         "middleware": [
          {
           "class": "ModelCallBudgetMiddleware",
           "exhausted_message": "4641897fe135c099",
-          "final_turn_nudge": "e625a87495615e33",
+          "final_turn_nudge": "c2b049a688244aeb",
           "low_budget_note": "51c76e8ddedef43c",
           "run_limit": 14,
           "warn_remaining": 0
@@ -205,7 +205,7 @@
          }
         ],
         "name": "general-purpose",
-        "system_prompt": "94ac4edf7c074b92",
+        "system_prompt": "9cdb122f1284721c",
         "tool_order": [
          "list_files",
          "read_text_file",
@@ -418,7 +418,7 @@
        {
         "class": "ModelCallBudgetMiddleware",
         "exhausted_message": "4641897fe135c099",
-        "final_turn_nudge": "e625a87495615e33",
+        "final_turn_nudge": "c2b049a688244aeb",
         "low_budget_note": "51c76e8ddedef43c",
         "run_limit": 14,
         "warn_remaining": 0

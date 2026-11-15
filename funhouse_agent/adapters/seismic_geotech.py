@@ -346,7 +346,7 @@ METHOD_INFO = {
             "S1": {"type": "float", "required": False, "description": "1-second spectral acceleration."},
             "pga": {"type": "float", "required": False, "description": "Mapped peak ground acceleration (g). If provided with Ss/S1, also returns Fpga (read against PGA, GEC-12 Table 7-27) and As = Fpga PGA (GEC-12 Eq. 7-78)."},
         },
-        "returns": {"site_class": "AASHTO site class A-E (Table 7-26: 1524 / 762 / 365.76 / 182.88 m/s, N-bar 50 / 15, su-bar 95.76 / 47.88 kPa, the printed ft/s and ksf converted exactly; Site Class F and the soft-clay rule for E are not checked).", "Fa": "Short-period coefficient.", "Fv": "Long-period coefficient.", "Fpga": "Zero-period coefficient; null without pga.", "As_g": "Fpga PGA, with pga."},
+        "returns": {"site_class": "AASHTO site class A-E (Table 7-26: 1524 / 762 / 365.76 / 182.88 m/s, N-bar 50 / 15, su-bar 95.76 / 47.88 kPa, the printed ft/s and ksf converted exactly; Site Class F and the soft-clay rule for E are not checked).", "Fa": "Short-period coefficient, with Ss and S1.", "Fv": "Long-period coefficient, with Ss and S1.", "Fpga": "Zero-period coefficient, with Ss and S1; null without pga.", "As_g": "Fpga PGA, with pga."},
     },
     "seismic_earth_pressure": {
         "category": "Seismic Earth Pressure",

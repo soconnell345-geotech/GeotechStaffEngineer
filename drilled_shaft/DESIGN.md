@@ -23,9 +23,11 @@ alpha method (clay), beta method (sand), and rock socket design.
 
 ## Public API
 ```python
-analyze_drilled_shaft(shaft, soil_profile, ...) -> DrillShaftResult
-analyze_capacity_vs_depth(shaft, soil_profile, depths, ...) -> list
-get_resistance_factors(method, condition) -> dict
+# exports of drilled_shaft/__init__.py
+DrillShaft, ShaftSoilLayer, ShaftSoilProfile
+DrillShaftAnalysis(shaft, soil, factor_of_safety=2.5, ...)
+    # .compute() -> DrillShaftResult; .capacity_vs_depth(...)
+DrillShaftResult
 ```
 
 ## Key Notes

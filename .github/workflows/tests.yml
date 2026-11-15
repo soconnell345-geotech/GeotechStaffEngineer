@@ -106,7 +106,20 @@ jobs:
         # and rebalances, so a few multi-minute slope and FEM tests do not
         # leave the other workers idle at the end. The root conftest gives
         # each worker its own temp dir.
-        run: pytest -n auto --dist worksteal -q --tb=short --durations=20
+        # The output also goes to a file, for the next step; pipefail keeps
+        # pytest's exit code the step's.
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -n auto --dist worksteal -q --tb=short --durations=20 2>&1 | tee "$RUNNER_TEMP/pytest.log"
+
+      - name: Name the failed tests
+        # A job's log needs a signed-in reader; its annotations do not. After
+        # a failed step this prints the failed tests as error annotations:
+        # GET /repos/<owner>/<repo>/check-runs/<job id>/annotations (the job
+        # ids from /actions/runs/<run id>/jobs). See the script's first lines.
+        if: failure()
+        run: python .github/scripts/name_failed_tests.py "$RUNNER_TEMP/pytest.log"
 
   wheels:
     # The app split's step 10 (INF-32): build the geotech-staff-engineer and
@@ -372,7 +385,11 @@ jobs:
         # prompts must say the pynite tool is absent here. Slow-marked tests
         # are left to the main job: about 4 minutes on four workers on the
         # laptop.
+        # The output also goes to a file, for the next step; pipefail keeps
+        # pytest's exit code the step's.
+        shell: bash
         run: >-
+          set -o pipefail;
           pytest -n auto --dist worksteal -q --tb=short --durations=10
           -m "not slow"
           soe downdrag fem2d liquepy_agent pystra_agent pystrata_agent
@@ -383,3 +400,12 @@ jobs:
           funhouse_agent/tests/test_reviewers.py
           funhouse_agent/tests/test_eval_suite_v54.py
           validation_examples/test_published_v001_v005.py
+          2>&1 | tee "$RUNNER_TEMP/pytest.log"
+
+      - name: Name the failed tests
+        # A job's log needs a signed-in reader; its annotations do not. After
+        # a failed step this prints the failed tests as error annotations:
+        # GET /repos/<owner>/<repo>/check-runs/<job id>/annotations (the job
+        # ids from /actions/runs/<run id>/jobs). See the script's first lines.
+        if: failure()
+        run: python .github/scripts/name_failed_tests.py "$RUNNER_TEMP/pytest.log"

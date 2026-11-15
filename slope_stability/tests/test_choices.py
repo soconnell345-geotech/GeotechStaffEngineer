@@ -27,9 +27,14 @@ def test_circular_search_names_what_it_did_not_try():
     assert c["search"]["chosen"] == \
         "circular, entry and exit windows ('entry_exit')"
     assert c["search"]["how"] == "given"
-    assert c["FOS method of the search"] == {
-        "what": "FOS method of the search", "chosen": "bishop",
-        "how": "default"}
+    method = c["FOS method of the search"]
+    assert method["chosen"] == "bishop" and method["how"] == "default"
+    # GM-140 step 6: every family is scored by the method named
+    assert "4-3b(9)(a), p. 4-8" in method["basis"]
+    assert "(candidate_methods)" in method["basis"]
+    assert "families scored by another method than the one named" not in c
+    assert all(rec["method"] == "bishop" and rec["named"]
+               for rec in r.candidate_methods)
     fam = c["surface families scored"]
     # c' = 10 everywhere: no planar surface, and the entry says so (GM-125)
     assert fam["chosen"] == ("circular, toe circle, circle passing above "
@@ -56,8 +61,16 @@ def test_noncircular_bishop_is_scored_with_spencer():
                                 n_trials=20, seed=1,
                                 x_entry_range=(0, 6), x_exit_range=(14, 20))
     c = _by_what(r)
+    # GM-140 step 6: the choice names the method asked for; the family
+    # Bishop's simplified method cannot score is named apart, with the
+    # method that scored it and why
     method = c["FOS method of the search"]
-    assert method["chosen"] == "spencer" and method["how"] == "module"
+    assert method["chosen"] == "bishop" and method["how"] == "default"
+    apart = c["families scored by another method than the one named"]
+    assert apart["how"] == "module"
+    assert apart["chosen"].startswith("noncircular: Spencer's method")
+    assert "centre of a circle (Bishop 1955, p. 10)" in apart["chosen"]
+    assert r.method_used == "spencer"
     assert "not tried: toe circle, by a circular search" in \
         c["surface families scored"]["alternatives"]
     assert c["search ranges"] == {**c["search ranges"], "chosen": "given",
@@ -97,18 +110,25 @@ def test_a_short_search_reports_its_flagged_surface():
     """A short noncircular search (100 trials) with automatic windows on
     the live-run slope. The moment-axis screen used to refuse every
     surface it solved, so it reported none; since GM-140 step 3 removed
-    that screen the lowest solved surface is reported, flagged with what
-    it does not meet, and the result says no scored surface is without a
-    flag (module's own value; nothing printed for this slope)."""
+    that screen the lowest solved surface is reported with what it does
+    not meet (module's own value; nothing printed for this slope).
+
+    GM-344: the surface it reported at 0.462, flagged four ways, was a
+    crossing at a negative lambda, which the scan no longer looks for;
+    Spencer's method now has no solution on 83 of its 100 trials (said in
+    ``no_solution`` and a warning), and the lowest it solves reads 9.49,
+    with no flag. A search this short on this slope finds nothing
+    useful, and says so."""
     r = search_critical_surface(_w10(), surface_type="noncircular",
                                 n_trials=100, seed=1, n_slices=30)
-    assert r.critical.FOS == pytest.approx(0.462, abs=0.005)
-    assert r.critical_flags == ["low_m_alpha", "base_tension",
-                                "side_tension", "thrust_outside"]
-    assert r.lowest_unflagged["FOS"] is None
-    assert "is without a flag" in r.lowest_unflagged["note"]
-    assert any("does not meet 4 of the printed acceptability checks" in w
-               for w in r.warnings)
+    # GM-344: 0.462 (flagged) -> 9.49; made-up slope, nothing printed
+    assert r.critical.FOS == pytest.approx(9.493, abs=0.01)
+    assert r.critical_flags == []
+    assert r.lowest_unflagged is None
+    # GM-344 fix round 2: 84 -> 83, a crossing in the last step before
+    # its branch ends found (the step is narrowed to 1e-4); 9.49 stands
+    assert r.no_solution[0]["not_converged"] == 83
+    assert any("without a solution" in w for w in r.warnings)
     c = _by_what(r)
     assert c["surface families scored"]["chosen"] == "noncircular"
     assert r.families_scored == ["noncircular"]
@@ -155,9 +175,14 @@ def test_families_cut_off_by_the_windows_given_say_so():
     r = search_critical_surface(_geom(), x_entry_range=(0, 4),
                                 x_exit_range=(14, 20))
     fam = _by_what(r)["surface families scored"]
-    assert fam["chosen"] == "circular, toe circle"
+    # GM-343: a toe circle ends at the toe (x = 5), outside the entry
+    # window given (0 to 4), so none is scored. (Before, a "toe circle"
+    # was carried on under the level ground in front of the toe and
+    # entered at x 3.99, inside the window.)
+    assert fam["chosen"] == "circular"
     assert ("circle passing above the toe: none scored, none within the "
             "windows and ranges given") in fam["basis"]
     assert r.families_not_scored == {
+        "toe_circle": "none within the windows and ranges given",
         "circle_above_toe": "none within the windows and ranges given",
         "infinite_slope": "no face of c' = 0 soil"}

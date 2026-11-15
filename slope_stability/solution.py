@@ -27,9 +27,10 @@ What "no solution" covers:
 * Janbu's simplified method: no state of horizontal force equilibrium with
   horizontal interslice forces (the iteration cannot take a step, or does
   not settle).
-* Spencer, Morgenstern-Price and GLE: no lambda in range at which the
-  moment and force factors of safety agree within the solver's tolerance
-  (``gle.gle_fos``: ``converged`` False).
+* Spencer, Morgenstern-Price and GLE: no lambda in range at which one
+  state meets both the moment and the force equation (``gle.gle_fos``:
+  ``converged`` False). A change of order of the two factors of safety
+  between two branches of solutions is a jump, not a crossing (GM-344).
 
 No approximate solver stands in for a method anywhere (the old approximate
 Spencer and Morgenstern-Price solvers are removed), and the solvers'
@@ -55,7 +56,41 @@ METHOD_TEXT = {
 }
 
 #: Why a method has no solution on a surface (`NoSolution.kind`).
-NO_SOLUTION_KINDS = ("not_converged", "no_driving")
+NO_SOLUTION_KINDS = ("not_converged", "no_driving", "with_supports")
+
+#: Why the Ordinary Method of Slices gives no number where supports cross
+#: the surface (GM-140 step 8; the lead's call, STEP8_CHECK.md; the
+#: orchestrator's Q1 of the fix round: GEC 7's wedge is not this method).
+OMS_NO_FORM = (
+    "no reference held prints the Ordinary Method of Slices with known "
+    "forces (Duncan, Wright and Brandon 2014, p. 93: no such equation is "
+    "given; Bishop's simplified method with known forces is their Eq. "
+    "6.78). FHWA GEC 7 Eqs. 5.6 to 5.9 (pp. 118 to 120), found, are not "
+    "taken: they are one planar wedge's force balance (the nail's T sin "
+    "beta in the normal force, T cos beta off the driving force), and the "
+    "Ordinary Method of Slices on a circle is a moment equation")
+#: The methods that take known forces (Eq. 6.78 and the complete-
+#: equilibrium methods).
+OMS_USE_INSTEAD = (
+    "Use Bishop's simplified method on a circle, or Spencer's, "
+    "Morgenstern-Price's or Janbu's, which take the support forces as "
+    "known forces")
+OMS_WITH_SUPPORTS = (
+    "supports cross this surface, and " + OMS_NO_FORM + ". "
+    + OMS_USE_INSTEAD)
+
+
+def oms_search_refusal(n_crossed: int, by_family: str) -> str:
+    """Why a search by the Ordinary Method of Slices reports no surface
+    where supports cross any trial surface (the orchestrator's Q2, GM-140
+    step 8 fix round): the minimum over the surfaces no support crosses is
+    not the slope's minimum."""
+    return (
+        f"The search by the Ordinary Method of Slices is refused: supports "
+        f"cross {n_crossed} of its trial surfaces ({by_family}), and "
+        f"{OMS_NO_FORM}. The lowest factor of safety of the surfaces no "
+        f"support crosses is not the slope's minimum, so no critical "
+        f"surface and no factor of safety are reported. {OMS_USE_INSTEAD}.")
 
 #: The internal marker of the solvers and the searches' "not scored" score.
 #: Not a factor of safety (`solve_method` never returns it).
@@ -332,10 +367,17 @@ def gle_failure_reason(res, err) -> str:
         return "no solution"
     for w in res.warnings:
         if w.startswith("no F_m = F_f crossing"):
-            return ("no lambda from -1.5 to 1.5 gives moment and force "
-                    "factors of safety that agree")
+            # gle_fos adds, after a ';', how the scan went (upward from
+            # lambda = 0 on the branch that starts there, to 1.5 or to
+            # where that branch ends), each lambda at which the two
+            # factors changed order by a jump, and EM C-10c where the
+            # starting state has tension on a slice with cohesion (GM-344)
+            more = w.partition(";")[2].strip()
+            return ("no lambda from 0 to 1.5 gives moment and force "
+                    "factors of safety that agree"
+                    + (f" ({more})" if more else ""))
         if w.startswith("no equilibrium state at any lambda"):
-            return "no lambda from -1.5 to 1.5 gives an equilibrium state"
+            return "no lambda from 0 to 1.5 gives an equilibrium state"
         if w.startswith("F_m - F_f residual"):
             # gle_fos: "F_m - F_f residual {:.2e} at lambda={:.3f}"
             parts = w.replace("=", " ").split()

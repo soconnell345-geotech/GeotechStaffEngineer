@@ -15,6 +15,7 @@ from slope_stability.analysis import (
 )
 from slope_stability.search import SEARCH_TIME_BUDGET_S, TIME_BUDGET_MAX_S
 from slope_stability.methods import M_ALPHA_RULES, NEGATIVE_TERM_RULES
+from slope_stability.gle import BASE_TENSION_RULES
 from slope_stability.search import LOW_M_ALPHA_ACTIONS
 from slope_stability.search_supplements import headline_report
 
@@ -30,6 +31,11 @@ _CRACK_SIDES = ["crest", "entry", "exit"]
 _CRACK_MODELS = ["truncation", "strength"]
 _CRACK_DEPTH_BASES = ["given", "rankine", "min_fos"]
 _REVERSE_CURVATURE = ["tension_crack", "discard"]
+_WATER_LINE_KINDS = ["piezometric", "water_table"]
+_ASSISTING_SUPPORT = ["slack", "as_given"]
+_FORCE_DIRECTIONS = ["along_reinforcement", "along_slip_surface"]
+_PILE_FORCE_DIRECTIONS = ["horizontal", "along_slip_surface"]
+_PULLOUT_BASES = ["dwb2014", "gec11", "given", "not_checked"]
 
 
 # Top-level geometry params consumed by _build_geometry, and the trial-surface
@@ -41,8 +47,10 @@ _GEOM_PARAMS = (
     "tension_crack_depth", "tension_crack_water_depth",
     "tension_crack_side", "tension_crack_model", "pore_pressure_points",
     "surcharges", "reverse_curvature", "tension_crack_depth_basis",
+    "water_line_kind", "assisting_support",
 )
-_SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points")
+_SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points", "arc_x_start",
+                   "arc_x_end")
 
 
 #: The most time a slope search may be given through the agent (GM-123): a
@@ -86,6 +94,13 @@ def _check_choice(value, allowed, *, name: str, method: str):
         raise ValueError(
             f"{method}: invalid {name} '{value}'. Allowed: {allowed}.")
     return value
+
+
+def _force_direction(d: dict, kind: str, method: str) -> str:
+    """A support's ``force_direction``, checked (GM-140 step 8)."""
+    return _check_choice(d.get("force_direction", "along_reinforcement"),
+                         _FORCE_DIRECTIONS,
+                         name=f"{kind}[].force_direction", method=method)
 
 
 def _support_convention(d: dict, kind: str, method: str) -> str:
@@ -213,6 +228,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     reverse_curvature = _check_choice(
         params.get("reverse_curvature", "tension_crack"), _REVERSE_CURVATURE,
         name="reverse_curvature", method=method)
+    water_line_kind = _check_choice(
+        params.get("water_line_kind", "piezometric"), _WATER_LINE_KINDS,
+        name="water_line_kind", method=method)
     crack_model = _check_choice(params.get("tension_crack_model",
                                            "truncation"),
                                 _CRACK_MODELS, name="tension_crack_model",
@@ -251,6 +269,8 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 bond_stress=d.get("bond_stress", 100.0),
                 spacing_h=d.get("spacing_h", 1.5),
                 support_convention=_support_convention(d, "nails", method),
+                facing_capacity=d.get("facing_capacity"),
+                force_direction=_force_direction(d, "nails", method),
             ))
     anchors = None
     if params.get("anchors"):
@@ -266,6 +286,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 T_allow=d["T_allow"],
                 inclination=d.get("inclination", 15.0),
                 support_convention=_support_convention(d, "anchors", method),
+                force_direction=_force_direction(d, "anchors", method),
             ))
     geosynthetics = None
     if params.get("geosynthetics"):
@@ -281,6 +302,21 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 x_start=d.get("x_start"), x_end=d.get("x_end"),
                 support_convention=_support_convention(d, "geosynthetics",
                                                        method),
+                F_star=d.get("F_star"), alpha=d.get("alpha"),
+                pullout_factor=d.get("pullout_factor"),
+                pullout_basis=(None if d.get("pullout_basis") is None else
+                               _check_choice(
+                                   d["pullout_basis"], _PULLOUT_BASES,
+                                   name="geosynthetics[].pullout_basis",
+                                   method=method)),
+                development_length=d.get("development_length"),
+                anchored_end=(None if d.get("anchored_end") is None else
+                              _check_choice(
+                                  d["anchored_end"], ["start", "end"],
+                                  name="geosynthetics[].anchored_end",
+                                  method=method)),
+                coverage_ratio=d.get("coverage_ratio", 1.0),
+                force_direction=_force_direction(d, "geosynthetics", method),
             ))
 
     stabilizing_piles = None
@@ -298,7 +334,11 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 z_toe=d.get("z_toe"), ito_matsui=d.get("ito_matsui", False),
                 diameter=d.get("diameter"), c=d.get("c"), phi=d.get("phi"),
                 gamma=d.get("gamma"),
-                force_direction=d.get("force_direction", "horizontal"),
+                force_direction=_check_choice(
+                    d.get("force_direction", "horizontal"),
+                    _PILE_FORCE_DIRECTIONS,
+                    name="stabilizing_piles[].force_direction",
+                    method=method),
                 support_convention=d.get("support_convention", "active"),
             ))
 
@@ -317,13 +357,44 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         tension_crack_depth_basis=crack_basis,
         reverse_curvature=reverse_curvature,
         pore_pressure_points=pore_pressure_points, surcharges=surcharges,
+        water_line_kind=water_line_kind,
+        assisting_support=_check_choice(
+            params.get("assisting_support", "slack"), _ASSISTING_SUPPORT,
+            name="assisting_support", method=method),
     )
+
+
+def _with_water_statements(out: dict, geom) -> dict:
+    """``out`` with what the pore pressure on the slice bases was taken as
+    (GM-140 step 5a; ``slope_stability.pore_pressure.water_statements``),
+    for the results that do not carry it themselves (the yield
+    acceleration, FOSM and Monte Carlo): the reading of a sloping water
+    line, ru in a layered column and total-stress layers in ``choices``,
+    and their warnings in ``warnings``."""
+    from slope_stability.pore_pressure import water_statements
+    choices, notes = water_statements(geom)
+    if choices:
+        out["choices"] = list(out.get("choices") or []) + choices
+    if notes:
+        out["warnings"] = list(out.get("warnings") or []) + notes
+    return out
 
 
 def _slip_surface_from(params: dict):
     if params.get("slip_points") is not None:
         from slope_stability.slip_surface import PolylineSlipSurface
         return PolylineSlipSurface(points=[tuple(pt) for pt in params["slip_points"]])
+    a, b = params.get("arc_x_start"), params.get("arc_x_end")
+    if a is not None or b is not None:
+        # the two ends of the arc the circle stands for (GM-343)
+        if a is None or b is None or any(
+                params.get(k) is None for k in ("xc", "yc", "radius")):
+            raise ValueError(
+                "arc_x_start and arc_x_end name one arc of a circle: give "
+                "both, with xc, yc and radius.")
+        from slope_stability.slip_surface import CircularSlipSurface
+        return CircularSlipSurface(params["xc"], params["yc"],
+                                   params["radius"], a, b)
     return None
 
 
@@ -333,7 +404,7 @@ def _run_analyze_slope(params: dict) -> dict:
         _GEOM_PARAMS + _SURFACE_PARAMS + (
             "method", "f_interslice", "n_slices", "tol",
             "include_slice_data", "compare_methods", "m_alpha_rule",
-            "negative_friction_term"),
+            "negative_friction_term", "base_in_tension"),
         method="analyze_slope")
     geom = _build_geometry(params, method="analyze_slope")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
@@ -354,6 +425,10 @@ def _run_analyze_slope(params: dict) -> dict:
         negative_friction_term=_check_choice(
             params.get("negative_friction_term", "as_printed"),
             NEGATIVE_TERM_RULES, name="negative_friction_term",
+            method="analyze_slope"),
+        base_in_tension=_check_choice(
+            params.get("base_in_tension", "as_printed"),
+            BASE_TENSION_RULES, name="base_in_tension",
             method="analyze_slope"),
     )
     return result.to_dict()
@@ -384,7 +459,8 @@ def _run_search_critical_surface(params: dict) -> dict:
             "surface_type", "method", "x_range", "y_range", "x_entry_range",
             "x_exit_range", "nx", "ny", "n_trials", "n_points", "n_slices",
             "tol", "seed", "time_budget_s", "bishop_screen", "m_alpha_rule",
-            "low_m_alpha", "negative_friction_term"),
+            "low_m_alpha", "negative_friction_term", "base_in_tension",
+            "f_interslice", "circle_check"),
         method="search_critical_surface")
     geom = _build_geometry(params, method="search_critical_surface")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
@@ -418,6 +494,14 @@ def _run_search_critical_surface(params: dict) -> dict:
             params.get("negative_friction_term", "as_printed"),
             NEGATIVE_TERM_RULES, name="negative_friction_term",
             method="search_critical_surface"),
+        base_in_tension=_check_choice(
+            params.get("base_in_tension", "as_printed"),
+            BASE_TENSION_RULES, name="base_in_tension",
+            method="search_critical_surface"),
+        f_interslice=_check_choice(
+            params.get("f_interslice", "half_sine"), _F_INTERSLICE,
+            name="f_interslice", method="search_critical_surface"),
+        circle_check=bool(params.get("circle_check", True)),
     )
     budget_is_default(result.choices, params)
     out = result.to_dict()
@@ -448,7 +532,7 @@ def _run_fosm(params: dict) -> dict:
         tol=params.get("tol", 1e-4),
         correlations=params.get("correlations"),
     )
-    return result.to_dict()
+    return _with_water_statements(result.to_dict(), geom)
 
 
 def _run_monte_carlo(params: dict) -> dict:
@@ -476,7 +560,7 @@ def _run_monte_carlo(params: dict) -> dict:
                        if params.get("research_surface") else None),
         correlations=params.get("correlations"),
     )
-    return result.to_dict()
+    return _with_water_statements(result.to_dict(), geom)
 
 
 def _run_infinite_slope(params: dict) -> dict:
@@ -500,6 +584,16 @@ def _run_infinite_slope(params: dict) -> dict:
     return result.to_dict()
 
 
+#: Module defaults a run uses under a name the method does not declare,
+#: listed in its defaults_used by dispatch (GM-132's slope part, GM-140 step
+#: 10): rapid drawdown checks m_alpha < 0.2 on the slices with phi' > 0
+#: (``m_alpha_rule`` 'frictional', the default of analyze_slope and the
+#: search), which its tools do not take as an input.
+MODULE_DEFAULTS = {
+    "rapid_drawdown_fos": {"m_alpha_rule": "frictional"},
+    "search_rapid_drawdown": {"m_alpha_rule": "frictional"},
+}
+
 _RD_METHODS = ["corps_2stage", "duncan_3stage", "lowe_karafiath"]
 _RD_SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de"]
 
@@ -511,7 +605,7 @@ def _run_rapid_drawdown(params: dict) -> dict:
         _GEOM_PARAMS + _SURFACE_PARAMS + (
             "drawdown_from_elevation", "drawdown_to_elevation", "method",
             "f_interslice", "n_slices", "tol", "stage1_phreatic_points",
-            "drawdown_phreatic_points"),
+            "drawdown_phreatic_points", "base_in_tension"),
         method="rapid_drawdown_fos")
     geom = _build_geometry(params, method="rapid_drawdown_fos")
     require_params(params, ["drawdown_from_elevation", "drawdown_to_elevation"],
@@ -528,6 +622,10 @@ def _run_rapid_drawdown(params: dict) -> dict:
         n_slices=params.get("n_slices", 50), tol=params.get("tol", 1e-4),
         stage1_phreatic_points=params.get("stage1_phreatic_points"),
         drawdown_phreatic_points=params.get("drawdown_phreatic_points"),
+        base_in_tension=_check_choice(
+            params.get("base_in_tension", "as_printed"),
+            BASE_TENSION_RULES, name="base_in_tension",
+            method="rapid_drawdown_fos"),
     )
     return result.to_dict()
 
@@ -595,7 +693,7 @@ def _run_yield_acceleration(params: dict) -> dict:
         radius=params.get("radius"), slip_surface=_slip_surface_from(params),
         method=method, n_slices=params.get("n_slices", 50),
         tol=params.get("tol", 1e-4), kh_max=params.get("kh_max", 2.0))
-    return result.to_dict()
+    return _with_water_statements(result.to_dict(), geom)
 
 
 def _run_newmark_displacement(params: dict) -> dict:
@@ -653,7 +751,8 @@ METHOD_REGISTRY = {
 _GEOMETRY_PARAMS = {
     "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,y], ...] array (x increasing)."},
     "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru optional; bottom_boundary_points and top_boundary_points ([[x,z],...], sorted by x) optional, a sloping bottom or top in place of the flat elevation}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D) or 'anisotropic' (undrained su varies with the slice-base inclination alpha; fields su_active [kPa, ACTIVE/crest zone, alpha>=+45deg], su_dss [direct simple shear, alpha=0], su_passive [PASSIVE/toe zone, alpha<=-45deg] — su_active>=su_dss>=su_passive for K>1 clays; Casagrande-Carrillo sin(2alpha) interpolation; standard toe-at-low-x slope). For rapid_drawdown_fos and search_rapid_drawdown, a layer that does not drain freely also takes the total-stress R envelope R_c (kPa) and R_phi (deg), from which the strength of soil consolidated at K_c = 1 is derived by EM 1110-2-1902 Eqs. G-5 and G-6, or that envelope as measured, R_d (kPa) and R_psi (deg): tau_ff = R_d + sigma'_c tan(R_psi) (not for 'corps_2stage', which needs R_c and R_phi); a layer with neither R_phi nor R_psi is free-draining. One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
-    "gwt_points": {"type": "array", "required": False, "description": "Groundwater table [[x,y],...]. If above the ground surface, ponded water is auto-detected (water weight + horizontal hydrostatic thrust applied as external loads)."},
+    "gwt_points": {"type": "array", "required": False, "description": "Water line [[x,z],...]: by default a piezometric line (the pore pressure at a slice base is gamma_w x the full vertical depth below it; see water_line_kind). If above the ground surface, ponded water is auto-detected (water weight + horizontal hydrostatic thrust applied as external loads). No pore pressure is subtracted on the base of a slice in a total-stress layer (analysis_mode 'undrained', 'shansep', 'anisotropic'; EM 1110-2-1902 2-2c)."},
+    "water_line_kind": {"type": "str", "required": False, "default": "piezometric", "allowed_values": _WATER_LINE_KINDS, "description": "What gwt_points is. 'piezometric' (default): a piezometric line (measured heads); u = gamma_w x the full vertical depth below it, never corrected. 'water_table': a water table with seepage parallel to it; u = h_w gamma_w cos^2(alpha_w), alpha_w the slope of the line above each slice base (FHWA NHI-06-088 Eq. 6-16, p. 6-14; UFC 3-220-10 Sec. 7-5.1), not applied where the line is above the ground (ponded water). The two differ only under a sloping line; the uncorrected head gives the lower factor of safety. The result's choices names the reading used."},
     "kh": {"type": "float", "required": False, "default": 0.0, "description": "Horizontal pseudo-static seismic coefficient (acts on soil weight only)."},
     "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Vertical surcharge (kPa). A single loaded zone; use 'surcharges' for several distinct loaded areas."},
     "surcharge_x_range": {"type": "array", "required": False, "description": "[x_start, x_end] extent of the single 'surcharge'."},
@@ -665,18 +764,21 @@ _GEOMETRY_PARAMS = {
     "tension_crack_model": {"type": "str", "required": False, "default": "truncation", "allowed_values": _CRACK_MODELS, "description": "What the crack does: 'truncation' (default, as printed) ends the slip surface at the bottom of the crack, leaves out the soil upslope of it and ends the slices at a vertical boundary there (EM 1110-2-1902 2-2f(3), p. 2-6; C-10c, p. C-36; Slide v6 Tutorial 16); 'strength' keeps the cracked soil as driving weight without strength (the default before GM-140; no printed source; a lower factor of safety)."},
     "reverse_curvature": {"type": "str", "required": False, "default": "tension_crack", "allowed_values": _REVERSE_CURVATURE, "description": "A circle whose centre is below the ground at its upper end would turn back over itself (reverse curvature). The tension crack is a condition of the analysis, set by the engineer (tension_crack_depth, or tension_crack_depth_basis 'rankine' / 'min_fos'), and the same on every trial surface: a circle's shape never switches it on. 'tension_crack' (default): with a crack asked for, such a circle is closed by that crack where its overhang lies within the crack's depth and discarded where it runs deeper; with no crack asked for, every such circle is discarded (not an admissible surface; naming a crack admits those within its depth). 'discard': every such circle is discarded. A search counts the surfaces the crack rule refuses by reason and locates them (crack_refused); a discarded circle given to a single-surface method gets no factor of safety (an error saying why). A circle overhanging at its lower end is always discarded."},
     "pore_pressure_points": {"type": "array", "required": False, "description": "Discrete pore-pressure field as [[x, z, u], ...] triples (u in kPa) -- a flow-net / TIN sampling. When given, the base pore pressure at each slice is interpolated from this field (linear on the Delaunay triangulation, nearest-node fallback outside the hull, suction clamped to 0), OVERRIDING the gwt_points piezometric line and per-layer ru. The ponded-water buttress still comes from gwt_points, so set BOTH for a reservoir over a flow-net field."},
-    "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5, support_convention}]. Capacity = min(pullout behind slip surface, bar tensile)/spacing_h (FHWA GEC-7)."},
-    "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15, support_convention}]. Full T_allow applied when the bond zone crosses the slip surface."},
-    "geosynthetics": {"type": "array", "required": False, "description": "Horizontal geosynthetic layers: [{elevation, T_allow kN/m required; x_start, x_end, support_convention optional}]. Every support (nails, anchors, geosynthetics, piles) acts at the base of the slice it crosses (Wright & Duncan 1991). support_convention: 'active' (default; Duncan & Wright Method A / Slide2 Active: the force is not divided by F and reduces the driving side -- give the ALLOWABLE force) or 'passive' (Method B / Slide2 Passive: divided by F with the soil strength -- give the ULTIMATE force; lower FOS for the same force). All methods."},
-    "stabilizing_piles": {"type": "array", "required": False, "description": "Single-row stabilizing/micro piles crossing the slope (Ito & Matsui 1975 or a specified shear): [{x required; spacing m=1.0 (D1); z_head, z_toe optional}]. Set the resistance EITHER by shear_capacity (kN per pile; per-metre force = shear_capacity/spacing) OR ito_matsui=true with diameter (m; D2=spacing-diameter) and optional c/phi/gamma (default: soil layer) giving the Ito-Matsui plastic lateral force integrated from head to slip surface. force_direction 'horizontal' (default) or 'normal'. support_convention 'active' (default) or 'passive' as for geosynthetics. Stabilizing force at the slip crossing."},
-    "reinforcement_force": {"type": "float", "required": False, "default": 0.0, "description": "Single equivalent horizontal reinforcement force (kN/m). Simpler alternative to nails/anchors."},
-    "reinforcement_elevation": {"type": "float", "required": False, "description": "Elevation of the equivalent reinforcement force (m)."},
+    "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5, support_convention, facing_capacity kN per nail, force_direction}]. Load at the slip surface = the least of the pullout of the length behind the surface, the bar and, when facing_capacity is given, the facing with the pullout of the length in front of the surface, / spacing_h (FHWA GEC 7 Eq. 5.2, p. 105). With no facing_capacity that front term is not checked and the result says so. The bar, the bond and the facing are taken in the measure of support_convention (allowable when 'active', ultimate when 'passive')."},
+    "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15, support_convention, force_direction}]. Full T_allow applied when the bond zone crosses the slip surface."},
+    "geosynthetics": {"type": "array", "required": False, "description": "Horizontal geosynthetic layers: [{elevation, T_allow kN/m required; x_start, x_end, support_convention, F_star, alpha, pullout_factor, pullout_basis, development_length, anchored_end, coverage_ratio, force_direction optional}]. Every support (nails, anchors, geosynthetics, piles) is a known force where it crosses the slip surface, acting on the slice whose base it crosses (on a slice boundary: the slice holding the part of the support inside the sliding mass). support_convention: 'active' (default; Duncan, Wright and Brandon 2014 Method A, Eqs. 8.1 and 8.2: the force is not divided by F and reduces the driving side -- give the ALLOWABLE force) or 'passive' (Method B, Eqs. 8.3 and 8.4: divided by F with the soil strength -- give the ULTIMATE force; lower FOS for the same force). Bishop's simplified method takes the forces by Eq. 6.78 (the moment, and the vertical component in the slice's vertical equilibrium); the Ordinary Method of Slices gives no number where a support crosses the surface (no reference prints it with known forces), and a search by it is refused when a support crosses any trial surface. force_direction: 'along_reinforcement' (default: the support's own orientation) or 'along_slip_surface' (Sec. 8.6). Pullout: the force a layer carries at a crossing is the lesser of T_allow and its pullout resistance. Give F_star and alpha (the pullout resistance factor and the scale effect factor of the fill and the product; no default) and, for an active layer or any 'gec11' layer, pullout_factor (what the pullout is divided by; no default: the book's Table 8.4 prints 1.3, 1.5 and 2.0): pullout_basis 'dwb2014' (default with F_star and alpha) takes 2 alpha F* gamma z integrated from each end of the layer (the book's Eqs. 8.8 and 8.9; ends x_start / x_end, else where the layer meets the ground or the model's edge); 'gec11' takes it behind the surface only, on the effective stress, times coverage_ratio, and counts nothing with less than 1 m behind the surface (GEC 11 Eq. 9-9 and p. 9-14; divided by its factor under Method A and B alike, 1.5 for granular and 2 for cohesive soils, p. 9-5). Or give development_length (m): the force rises linearly from zero at an end to T_allow over that length. anchored_end 'start' (the -x end) or 'end': an end fixed to a facing, no pullout measured from it. With none of these the pullout is NOT checked (the full T_allow at every crossing) and the result says so. All methods."},
+    "stabilizing_piles": {"type": "array", "required": False, "description": "Single-row stabilizing/micro piles crossing the slope (Ito & Matsui 1975 or a specified shear): [{x required; spacing m=1.0 (D1); z_head, z_toe optional}]. Set the resistance EITHER by shear_capacity (kN per pile; per-metre force = shear_capacity/spacing) OR ito_matsui=true with diameter (m; D2=spacing-diameter) and optional c/phi/gamma (default: soil layer) giving the Ito-Matsui plastic lateral force integrated from head to slip surface. force_direction 'horizontal' (default: the pile's shear, against the sliding) or 'along_slip_surface' (parallel to the slip surface at the crossing); 'normal' is no longer offered (no reference prints it). support_convention 'active' (default) or 'passive' as for geosynthetics. Stabilizing force at the slip crossing."},
+    "assisting_support": {"type": "str", "required": False, "default": "slack", "allowed_values": _ASSISTING_SUPPORT, "description": "A support whose pull would assist the sliding (its force's component along the slip surface where it crosses points down the slope: a steep nail crossing the steep upper part of a surface, or the toe-side crossing of a layer the surface crosses twice). 'slack' (default): it counts nothing on that surface and the result names it (supports_not_counted). 'as_given': its force is applied as it stands. The owner's call (OWN-59); no reference prints one."},
+    "reinforcement_force": {"type": "float", "required": False, "default": 0.0, "description": "Single equivalent horizontal reinforcement force (kN/m), an allowable force (Method A) acting at reinforcement_elevation, which must be given with it (a force with no elevation is refused). Simpler alternative to nails/anchors; its pullout is not checked."},
+    "reinforcement_elevation": {"type": "float", "required": False, "description": "Elevation of the equivalent reinforcement force (m). Required with reinforcement_force."},
 }
 
 _SURFACE_SPEC_PARAMS = {
     "xc": {"type": "float", "required": False, "description": "Circle center x (m). Required for circular."},
     "yc": {"type": "float", "required": False, "description": "Circle center y (m). Required for circular."},
-    "radius": {"type": "float", "required": False, "description": "Circle radius (m). Required for circular."},
+    "radius": {"type": "float", "required": False, "description": "Circle radius (m). Required for circular. A circle that meets the ground at more than two points is split there: each arc below the ground is analysed as a slip surface of its own and the result is the lowest, named in arc (the module's rule; no reference prints one). An arc with no net driving moment has no factor of safety."},
+    "arc_x_start": {"type": "float", "required": False, "description": "With arc_x_end: the x (m) of the two ends of the one arc of the circle to analyse, as a result's arc.x_start and arc.x_end give them (use them to analyse a search's governing surface again). Each must be a point where that arc meets the ground, or a ground corner it passes under by less than 1 % of its greatest depth (a toe circle written to a few decimals). Left out, a circle with one arc below the ground is that arc, and one with several is analysed arc by arc."},
+    "arc_x_end": {"type": "float", "required": False, "description": "The arc's higher-x end (m); see arc_x_start."},
     "slip_points": {"type": "array", "required": False, "description": "Polyline slip surface [[x,y],...] for noncircular. Use instead of xc/yc/radius."},
 }
 
@@ -686,6 +788,54 @@ _VARIABLES_PARAM = {
 
 _CORRELATIONS_PARAM = {
     "correlations": {"type": "array", "required": False, "description": "Optional correlated scalar pairs: [['c_prime','phi',-0.5], ...] (or [{'var1','var2','rho'}]). Each references two SCALAR variable keys from 'variables' (optionally scoped ':LayerName') and a correlation rho in [-1,1]. FOSM adds the Taylor cross-term 2*rho*(dF1/2)*(dF2/2); Monte Carlo draws the pair from a bivariate normal. Omit for independent variables (default). A c'-phi' negative correlation typically lowers the FOS variance."},
+}
+
+
+# rapid_drawdown_fos's doc must fit the deep agent's reference budget (16,000
+# characters; test_wave1_geotech): these shared inputs point to analyze_slope's
+# full text instead of repeating it there.
+_SEE_ANALYZE_SLOPE = {
+    _k: {**_GEOMETRY_PARAMS[_k], "description": (
+        "As in analyze_slope (describe_method analyze_slope gives the full "
+        "text): " + _s)}
+    for _k, _s in (
+        ("reverse_curvature", "how a circle that turns back over itself is "
+         "treated; a tension crack is a condition of the analysis, the same "
+         "on every trial surface."),
+        ("tension_crack_depth_basis", "'given' (tension_crack_depth), "
+         "'rankine' (EM 1110-2-1902 Eq. C-36, p. C-36) or 'min_fos'."),
+        ("tension_crack_model", "'truncation' (default, as printed: EM "
+         "1110-2-1902 2-2f(3), p. 2-6; C-10c, p. C-36) or 'strength'."),
+        ("geosynthetics", "horizontal layers [{elevation, T_allow kN/m; "
+         "x_start, x_end, support_convention optional}] with the pullout "
+         "inputs as in analyze_slope (F_star, alpha, pullout_factor, "
+         "pullout_basis, development_length, anchored_end), each acting at "
+         "the base of the slice it crosses; with no pullout input the "
+         "pullout is not checked and the result says so."),
+        ("stabilizing_piles", "a single row [{x; spacing; z_head, z_toe "
+         "optional}], resisting by shear_capacity or by ito_matsui=true with "
+         "diameter."),
+        ("nails", "soil nails [{x_head, z_head, length; inclination, "
+         "bar_diameter, drill_hole_diameter, fy, bond_stress, spacing_h, "
+         "support_convention, facing_capacity, force_direction optional}]; "
+         "the load at the slip surface by FHWA GEC 7 Eq. 5.2."),
+        ("assisting_support", "'slack' (default: a support whose pull would "
+         "assist the sliding counts nothing, named in the result) or "
+         "'as_given' (OWN-59)."),
+        ("reinforcement_force", "one horizontal allowable force (kN/m) at "
+         "reinforcement_elevation, which must be given with it; its pullout "
+         "is not checked."),
+        ("pore_pressure_points", "[[x, z, u], ...] (u kPa): the base pore "
+         "pressures interpolated from this field, overriding gwt_points and "
+         "ru."),
+        ("surcharges", "zones [{pressure kPa, x_start, x_end}, ...], summed "
+         "on top of 'surcharge'."),
+        ("gwt_points", "the water line [[x,z],...], a piezometric line by "
+         "default (water_line_kind); ponded water above the ground is "
+         "detected; no pore pressure on the bases in total-stress layers."),
+        ("tension_crack_side", "'crest' (default: the end where the ground "
+         "is higher), 'entry' (low x) or 'exit' (high x)."),
+    )
 }
 
 METHOD_INFO = {
@@ -702,8 +852,9 @@ METHOD_INFO = {
             "compare_methods": {"type": "bool", "required": False, "default": False, "description": "Also report FOS for every method on this surface."},
             "m_alpha_rule": {"type": "str", "required": False, "default": "frictional", "allowed_values": ["frictional", "every_slice"], "description": "Which slices the m_alpha < 0.2 check looks at (Whitman and Bailey 1967, p. 487). 'frictional': slices with phi' > 0; on a phi' = 0 slice m_alpha = cos(a) does not depend on F and the strength does not depend on the normal force (the module's own reasoning, no printed source). 'every_slice': every slice."},
             "negative_friction_term": {"type": "str", "required": False, "default": "as_printed", "allowed_values": list(NEGATIVE_TERM_RULES), "description": "Bishop's simplified method and the Ordinary Method of Slices on a slice where the pore-water force on the base exceeds the slice's weight. 'as_printed' (default): the frictional term W - u b (Bishop 1955 Eq. 13, p. 10) or W cos(alpha) - u l (Eq. 9) is used as printed, negative. 'zero': it is set to zero there, the module's rule before GM-140 step 3, with no printed source. Either way the result names the slices (acceptability, check 'negative_frictional_term'), as Whitman and Bailey (1967, p. 487) ask."},
+            "base_in_tension": {"type": "str", "required": False, "default": "as_printed", "allowed_values": list(BASE_TENSION_RULES), "description": "Spencer, Morgenstern-Price, GLE and Janbu's simplified method on a slice whose effective normal force N' comes out negative (a base in tension). 'as_printed' (default): the slice's equations are used unchanged, the friction term N' tan(phi') negative there (Spencer 1967, pp. 14 to 15, and Morgenstern and Price 1965, p. 85, print no rule for it). 'no_friction': such a slice is taken frictionless in every equation, the module's own device, not found in print. Either way the result names the slices (acceptability, check 'base_tension'), as EM 1110-2-1902 C-10a asks. Spencer, Morgenstern-Price and GLE report a factor of safety only where one state meets both the moment and the force equation; where those equations have more than one solution it is the first met from lambda = 0 on the branch of solutions that starts there, and where they have none there is no number."},
         },
-        "returns": {"FOS": "Factor of safety: the method's own converged solution on this surface. Null when the method has none there (see method_solved and warnings): nothing stands in for the method. One exception, stated in method_used: with method 'bishop' on a circle with no supports and no seismic coefficient, where Bishop's value is below the Ordinary Method of Slices value for the same circle, FOS is the Ordinary Method of Slices value (Duncan 1996, p. 580); FOS_bishop then holds Bishop's own value and FOS_fellenius the Ordinary Method of Slices value.", "flags": "The printed acceptability checks this surface does not meet (present when acceptability is): low_m_alpha, bishop_below_oms, negative_frictional_term, base_tension, side_tension, thrust_outside. The surface is analysed whatever they find; report the flags to the user with the factor of safety.", "acceptability": "The findings of the printed acceptability checks (present when there are any), each {check, flag, source, text, and the slices or slice sides with their values}: m_alpha below 0.2 on a slice (Whitman and Bailey 1967, p. 487); Bishop's value against the Ordinary Method of Slices value for the circle (Duncan 1996, p. 580; with supports or a seismic coefficient the comparison is not made and the finding says why); a negative frictional term (Bishop 1955 Eqs. 9 and 13); and for spencer / morgenstern_price / gle a negative effective normal force on a slice base, a tensile interslice force on a slice side, and the line of thrust outside the sliding mass (EM 1110-2-1902 C-10a, pp. C-33 to C-34).", "method": "Method requested.", "method_solved": "False when the method has no solution on this surface: Spencer/Morgenstern-Price/GLE find no lambda at which the moment and force factors of safety agree, Bishop's or Janbu's iteration does not converge, or the surface has no driving moment or force. FOS is then null and warnings says why. Report that there is no factor of safety by this method on this surface; do not give another method's value as its own.", "method_used": "What produced FOS: the method itself; the Ordinary Method of Slices value where Bishop's was below it (see FOS); or null when the method has no solution.", "methods_without_solution": "Methods (the one asked for, or compare_methods values) with no solution here; their FOS is null.", "warnings": "What the engineer must check on this surface: no equilibrium solution, the tension crack it was solved with (a reverse-curvature circle closed by one says so), supports Bishop/OMS count little of (with Spencer's FOS on the circle), and each printed acceptability check not met (with EM 1110-2-1902 C-10b's remedies for a steep exit; none is applied). Report these to the user.", "tension_crack": "The crack the surface was solved with (present when there is one): depth_m and depth_basis (given / rankine / min_fos), side, model, where it is (x_m, where the surface reaches the crack's bottom and the slices end; ground_z_m the ground there; base_z_m the crack's bottom), water_depth_m; for a Rankine depth the F it was taken at and whether it stopped at the bottom of its soil; for a scanned depth the depths tried; reverse_curvature and overhang_depth_m when it closes a reverse-curvature circle.", "lambda_mp": "Interslice scaling (M-P/GLE).", "theta_spencer_deg": "Spencer interslice angle.", "FOS_janbu_corrected": "Janbu f0-corrected FOS.", "slice_data": "Per-slice force table (include_slice_data=true).", "thrust_line": "Line of thrust [[x,z],...] (rigorous methods + include_slice_data), clipped to the sliding mass for display; the acceptability finding 'thrust_outside' says where the solved line left the mass.", "layer_overlaps": "Where a layer loses ground to one listed before it (present when any does): layer, held_by, x_from, x_to, max_overlap_m, statement."},
+        "returns": {"arc": "Present when the circle meets the ground at more than two points, or its arc's ends were given: which arc of the circle this result is ({x_start, x_end, index, n_arcs, arcs, description}) and, where the arcs were each analysed, governs, others (each other arc with its value, or not_scored and the reason) and not_scored (the count by reason: no_driving, not_converged, refused). Tell the user which arc the result is.", "FOS": "Factor of safety: the method's own converged solution on this surface. Null when the method has none there (see method_solved and warnings): nothing stands in for the method. One exception, stated in method_used: with method 'bishop' on a circle with no supports and no seismic coefficient, where Bishop's value is below the Ordinary Method of Slices value for the same circle, FOS is the Ordinary Method of Slices value (Duncan 1996, p. 580); FOS_bishop then holds Bishop's own value and FOS_fellenius the Ordinary Method of Slices value.", "flags": "The printed acceptability checks this surface does not meet (present when acceptability is): low_m_alpha, bishop_below_oms, negative_frictional_term, base_tension, side_tension, thrust_outside. The surface is analysed whatever they find; report the flags to the user with the factor of safety.", "acceptability": "The findings of the printed acceptability checks (present when there are any), each {check, flag, source, text, and the slices or slice sides with their values}: m_alpha below 0.2 on a slice (Whitman and Bailey 1967, p. 487); Bishop's value against the Ordinary Method of Slices value for the circle (Duncan 1996, p. 580; with supports or a seismic coefficient the comparison is not made and the finding says why); a negative frictional term (Bishop 1955 Eqs. 9 and 13); and for spencer / morgenstern_price / gle a negative effective normal force on a slice base, a tensile interslice force on a slice side, and the line of thrust outside the sliding mass (EM 1110-2-1902 C-10a, pp. C-33 to C-34).", "method": "Method requested.", "method_solved": "False when the method has no solution on this surface: Spencer/Morgenstern-Price/GLE find no lambda at which the moment and force factors of safety agree, Bishop's or Janbu's iteration does not converge, or the surface has no driving moment or force. FOS is then null and warnings says why. Report that there is no factor of safety by this method on this surface; do not give another method's value as its own.", "method_used": "What produced FOS: the method itself; the Ordinary Method of Slices value where Bishop's was below it (see FOS); or null when the method has no solution.", "methods_without_solution": "Methods (the one asked for, or compare_methods values) with no solution here; their FOS is null.", "warnings": "What the engineer must check on this surface: no equilibrium solution, the tension crack it was solved with (a reverse-curvature circle closed by one says so), supports Bishop/OMS count little of (with Spencer's FOS on the circle), and each printed acceptability check not met (with EM 1110-2-1902 C-10b's remedies for a steep exit; none is applied). Report these to the user.", "tension_crack": "The crack the surface was solved with (present when there is one): depth_m and depth_basis (given / rankine / min_fos), side, model, where it is (x_m, where the surface reaches the crack's bottom and the slices end; ground_z_m the ground there; base_z_m the crack's bottom), water_depth_m; for a Rankine depth the F it was taken at and whether it stopped at the bottom of its soil; for a scanned depth the depths tried; reverse_curvature and overhang_depth_m when it closes a reverse-curvature circle.", "lambda_mp": "Interslice scaling (M-P/GLE).", "theta_spencer_deg": "Spencer interslice angle.", "FOS_janbu_corrected": "Janbu f0-corrected FOS.", "slice_data": "Per-slice force table (include_slice_data=true).", "thrust_line": "Line of thrust [[x,z],...] (rigorous methods + include_slice_data), clipped to the sliding mass for display; the acceptability finding 'thrust_outside' says where the solved line left the mass.", "layer_overlaps": "Where a layer loses ground to one listed before it (present when any does): layer, held_by, x_from, x_to, max_overlap_m, statement."},
     },
     "compare_methods_table": {
         "category": "Slope Stability",
@@ -738,6 +889,7 @@ METHOD_INFO = {
         "parameters": {
             **_GEOMETRY_PARAMS,
             **_SURFACE_SPEC_PARAMS,
+            **_SEE_ANALYZE_SLOPE,
             "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
             "drawdown_to_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation AFTER drawdown (m); must be below drawdown_from_elevation."},
             "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (the improved procedure, EM G-3: the answer is the third stage's factor of safety, or the second's where no slice's drained strength is lower), 'lowe_karafiath' (the same first and second stages without the drained check: the answer is the second stage's, so never below duncan_3stage), or 'corps_2stage' (the Corps 1970 procedure, EM G-2: the lower of the R envelope with R_c and R_phi as entered and the effective-stress envelope; no third stage). The manual's own example of the 1970 procedure was computed by the Modified Swedish Method at a fixed side-force inclination (3.49, then 1.35); Spencer's method, used here, gives 1.24 on it, and the result says so."},
@@ -745,8 +897,9 @@ METHOD_INFO = {
             "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices."},
             "stage1_phreatic_points": {"type": "array", "required": False, "description": "The seepage (phreatic) line BEFORE drawdown, [[x,z],...], for the first stage's pore pressures (EM 1110-2-1902 Table 2-1: steady seepage). Omitted: a level pool at drawdown_from_elevation with hydrostatic pressures below it, the assumption of the manual's own example (G-4b, p. G-9), which the result names as assumed. The line should start at the pool level on the upstream face so the pool still loads the face."},
             "drawdown_phreatic_points": {"type": "array", "required": False, "description": "The piezometric line AFTER drawdown, [[x,z],...]: the pore pressures on free-draining slices in the second stage, in the drained check (Eq. G-14) and on the drained slices of the third stage. Omitted: a level pool at drawdown_to_elevation, as in the manual's example, which the result names as assumed."},
+            "base_in_tension": {"type": "str", "required": False, "default": "as_printed", "allowed_values": list(BASE_TENSION_RULES), "description": "As in analyze_slope (describe_method analyze_slope gives the full text): a slice base in tension in every stage's solve, 'as_printed' (default) or 'no_friction' (the module's own device)."},
         },
-        "returns": {"FOS": "Drawdown factor of safety: that of the last stage computed (answer_stage); null where a stage has no solution (no_solution says which and why).", "answer_stage": "2 or 3: the stage FOS is from.", "stage1_FOS": "First stage (before drawdown).", "stage2_FOS": "Second stage (after drawdown, undrained strengths).", "stage3_FOS": "Third stage; null when not computed (two-stage procedures, or no slice's drained strength lower).", "stage_method": "The method of slices that solved every stage.", "water_before": "The water before drawdown: the line given, or the level pool assumed.", "water_after": "The water after drawdown: the line given, or the level lowered pool assumed.", "n_undrained_slices": "Slices that do not drain freely.", "m_alpha_min_stage1": "Least m_alpha of the first stage at its own FOS (a warning says so below 0.2).", "m_alpha_min": "Least m_alpha of the last stage computed at its FOS.", "n_drained_substituted": "Slices on c', phi' and the after-drawdown pore pressure in the third stage.", "slices": "Per slice, low x to high x, the columns of EM Figs. G-10b and G-11b (kPa; N in kN/m): x_left, x_right, sigma_c, tau_c, Kc, Kf, tau_ff_Kc1, tau_ff_Kcf, tau_ff, N_stage2, u_after, sigma_d, s_d, strength_used; 'columns' explains each.", "choices": "The procedure, the method of slices, the strength rules and the water assumed, each with its printed basis.", "layer_overlaps": "Where a layer loses ground to one listed before it (present when any does): layer, held_by, x_from, x_to, max_overlap_m, statement."},
+        "returns": {"arc": "Present when the circle meets the ground at more than two points, or its arc's ends were given: which arc of the circle this result is ({x_start, x_end, index, n_arcs, arcs, description}) and, where the arcs were each analysed, governs, others (each other arc with its value, or not_scored and the reason) and not_scored (the count by reason: no_driving, not_converged, refused). Tell the user which arc the result is.", "FOS": "Drawdown factor of safety: that of the last stage computed (answer_stage); null where a stage has no solution (no_solution says which and why).", "answer_stage": "2 or 3: the stage FOS is from.", "stage1_FOS": "First stage (before drawdown).", "stage2_FOS": "Second stage (after drawdown, undrained strengths).", "stage3_FOS": "Third stage; null when not computed (two-stage procedures, or no slice's drained strength lower).", "stage_method": "The method of slices that solved every stage.", "water_before": "The water before drawdown: the line given, or the level pool assumed.", "water_after": "The water after drawdown: the line given, or the level lowered pool assumed.", "n_undrained_slices": "Slices that do not drain freely.", "m_alpha_min_stage1": "Least m_alpha of the first stage at its own FOS (a warning says so below 0.2).", "m_alpha_min": "Least m_alpha of the last stage computed at its FOS.", "n_drained_substituted": "Slices on c', phi' and the after-drawdown pore pressure in the third stage.", "slices": "Per slice, low x to high x, the columns of EM Figs. G-10b and G-11b (kPa; N in kN/m): x_left, x_right, sigma_c, tau_c, Kc, Kf, tau_ff_Kc1, tau_ff_Kcf, tau_ff, N_stage2, u_after, sigma_d, s_d, strength_used; 'columns' explains each.", "choices": "The procedure, the method of slices, the strength rules and the water assumed, each with its printed basis.", "layer_overlaps": "Where a layer loses ground to one listed before it (present when any does): layer, held_by, x_from, x_to, max_overlap_m, statement."},
     },
     "search_rapid_drawdown": {
         "category": "Slope Stability",
@@ -767,13 +920,13 @@ METHOD_INFO = {
             "n_points": {"type": "int", "required": False, "default": 5, "description": "Polyline vertices for noncircular searches."},
             "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices per trial."},
             "seed": {"type": "int", "required": False, "description": "Random seed for reproducible noncircular searches."},
-            "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function ('constant' = Spencer)."},
+            "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function of every stage's solve ('constant' = Spencer), in every family and every kind of search: one staged solve scores them all, and search.candidate_methods names the procedure and this function for each family."},
             "stage1_phreatic_points": {"type": "array", "required": False, "description": "The seepage line before drawdown, [[x,z],...]; omitted, a level pool at drawdown_from_elevation, named in the result as assumed (see rapid_drawdown_fos)."},
             "drawdown_phreatic_points": {"type": "array", "required": False, "description": "The piezometric line after drawdown, [[x,z],...]; omitted, a level pool at drawdown_to_elevation, named in the result as assumed (see rapid_drawdown_fos)."},
             "low_m_alpha": {"type": "str", "required": False, "default": "flag", "allowed_values": list(LOW_M_ALPHA_ACTIONS), "description": "A trial surface with m_alpha < 0.2 on a drawn-down slice at the drawdown FOS: 'flag' (default), kept and counted as flagged in search.trial_flags (Whitman and Bailey 1967, p. 487, print a warning, not a rejection); 'refuse', left out and counted in search.n_rejected.m_alpha, as before GM-140 step 3."},
             "time_budget_s": {"type": "float", "required": False, "default": SEARCH_TIME_BUDGET_S, "description": "Time budget of the whole search in seconds (at most 600), as search_critical_surface: each trial is two or three GLE solves, so the main search scores coarse first and stops at 80 % of the budget, and search.warnings and search.search_ranges.time_budget say what was covered."},
         },
-        "returns": {"FOS": "Minimum drawdown factor of safety found.", "method": "Stage method used.", "surface_type": "Search strategy.", "n_surfaces_evaluated": "Number of surfaces checked.", "search": "Rich search result (critical surface geometry + diagnostics), with search_ranges, governing_location, refused_lowest and choices as search_critical_surface returns them.", "drawdown_detail": "The winning surface stage by stage, as rapid_drawdown_fos returns it: each stage's factor of safety, the stage the answer is from, the water assumed, the per-slice columns and the choices (layer_overlaps where a layer loses ground to one listed before it)."},
+        "returns": {"FOS": "Minimum drawdown factor of safety found.", "method": "Stage method used.", "surface_type": "Search strategy.", "n_surfaces_evaluated": "Number of surfaces checked.", "search": "Rich search result (critical surface geometry + diagnostics), with search_ranges, governing_location, refused_lowest and choices as search_critical_surface returns them, and candidate_methods: for each family in candidates, the drawdown procedure and interslice function that scored it (one staged solve scores every family). A noncircular drawdown search runs no circular search, and circle_check says its minimum was not checked against a circle.", "drawdown_detail": "The winning surface stage by stage, as rapid_drawdown_fos returns it: each stage's factor of safety, the stage the answer is from, the water assumed, the per-slice columns and the choices (layer_overlaps where a layer loses ground to one listed before it)."},
     },
     "yield_acceleration": {
         "category": "Slope Stability",
@@ -785,7 +938,7 @@ METHOD_INFO = {
             "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices."},
             "kh_max": {"type": "float", "required": False, "default": 2.0, "description": "Upper bound of the kh bracket; if the surface is still stable at kh_max the result is non-converged with ky=kh_max. Where the method has no solution at kh_max the upper end is halved until it has one."},
         },
-        "returns": {"ky": "Yield seismic coefficient (fraction of g). Null when the method has no solution on the surface at a trial kh the bisection needs: every trial kh is solved by the method itself, and nothing stands in for it (see reason).", "ay_m_s2": "Yield acceleration = ky*g (m/s^2); null with ky.", "FOS_static": "Pseudo-static FOS at kh=0 (null when the method has no solution there).", "converged": "Whether ky was bracketed.", "reason": "Present when ky is null: the method, the kh without a solution, and why.", "no_solution_kh": "That kh.", "ky_bounds": "[lower, upper] kh at which the method solved with F > 1 and F <= 1 (an end is null where there is none)."},
+        "returns": {"arc": "Present when the circle meets the ground at more than two points, or its arc's ends were given: which arc of the circle this result is ({x_start, x_end, index, n_arcs, arcs, description}) and, where the arcs were each analysed, governs, others (each other arc with its value, or not_scored and the reason) and not_scored (the count by reason: no_driving, not_converged, refused). Tell the user which arc the result is.", "ky": "Yield seismic coefficient (fraction of g). Null when the method has no solution on the surface at a trial kh the bisection needs: every trial kh is solved by the method itself, and nothing stands in for it (see reason).", "ay_m_s2": "Yield acceleration = ky*g (m/s^2); null with ky.", "FOS_static": "Pseudo-static FOS at kh=0 (null when the method has no solution there).", "converged": "Whether ky was bracketed.", "reason": "Present when ky is null: the method, the kh without a solution, and why.", "no_solution_kh": "That kh.", "ky_bounds": "[lower, upper] kh at which the method solved with F > 1 and F <= 1 (an end is null where there is none)."},
     },
     "newmark_displacement": {
         "category": "Slope Stability",
@@ -826,7 +979,7 @@ METHOD_INFO = {
         "parameters": {
             **_GEOMETRY_PARAMS,
             "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": _SURFACE_TYPES, "description": "Search strategy. 'entry_exit' grids circular arcs between entry/exit windows; 'noncircular_de' refines random polylines with scipy differential evolution."},
-            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": _METHODS, "description": "Limit-equilibrium method (noncircular searches use spencer when 'bishop' is requested). Cost per trial surface, measured on four pinned slopes: fellenius about the same as bishop, janbu about twice bishop, and spencer, morgenstern_price and gle each about 30 to 40 times bishop at 30 slices and 40 to 70 times at 60 slices. A whole search costs less than that ratio where it scans with Bishop (the centre grid's refinement, the toe circles): the default 10 x 10 centre grid took 2-3 s with bishop and 14-16 s with spencer, a 10 x 10 or 12 x 12 entry_exit grid 2 s and 60-70 s, a 30 x 30 entry_exit grid at 60 slices 21 s and 972 s; the noncircular searches, scored with Spencer at their defaults (500 trials, 5 points), took 6-7 s (noncircular), 3-7 s (weak_layer) and 10-12 s (noncircular_de), 41 s where differential evolution scored 2,325 surfaces (development laptop; the app's host up to twice as long). On the circles of these slopes bishop and spencer gave FOS within 0.3 % of each other. Which method to use is the engineer's call; bishop_screen keeps the method and scans with Bishop."},
+            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": _METHODS, "description": "Limit-equilibrium method. Every family of surfaces and every kind of search is scored by it (the centre grid, entry and exit circles, circles through the toe and above it, shallow planes, random polylines, differential evolution, the particle swarm and the weak-layer search), so the reported minimum compares like with like (EM 1110-2-1902 4-3b(9)(a), p. 4-8: state the method used). 'bishop' and 'fellenius' are for circles (Bishop 1955, p. 10; EM 1110-2-1902 C-2b, p. C-16): the planes and the polylines of a search are then scored by Spencer's method. A family the method solves none of is scored by the next in order: planes and polylines Spencer's method, then Janbu's simplified method; circles Spencer's, then Bishop's simplified method, then Janbu's (Bishop's, then Janbu's, where spencer, morgenstern_price or gle is named; FHWA NHI-06-088 p. 6-20 and Table 6-1, p. 6-21); a family Janbu's scores states its correction factor f0 and the uncorrected value (f0 not found in print). Such a family is reported apart under the method that scored it (candidate_methods), and when it governs, method_used, warnings and named_method_lowest say so. Cost per trial surface, measured on four pinned slopes: fellenius about the same as bishop, janbu about twice bishop, and spencer, morgenstern_price and gle each about 30 to 40 times bishop at 30 slices and 40 to 70 times at 60 slices. A whole search costs less than that ratio where it scans with Bishop (the centre grid's refinement, the toe circles): the default 10 x 10 centre grid took 2-3 s with bishop and 14-16 s with spencer, a 10 x 10 or 12 x 12 entry_exit grid 2 s and 60-70 s, a 30 x 30 entry_exit grid at 60 slices 21 s and 972 s; the noncircular searches, scored with Spencer at their defaults (500 trials, 5 points), took 6-7 s (noncircular), 3-7 s (weak_layer) and 10-12 s (noncircular_de), 41 s where differential evolution scored 2,325 surfaces (development laptop; the app's host up to twice as long), to which circle_check now adds the circular search by the same method. On the circles of these slopes bishop and spencer gave FOS within 0.3 % of each other. Which method to use is the engineer's call; bishop_screen keeps the method and scans with Bishop."},
             "x_range": {"type": "array", "required": False, "description": "[xmin, xmax] for circle center search."},
             "y_range": {"type": "array", "required": False, "description": "[ymin, ymax] for circle center search."},
             "x_entry_range": {"type": "array", "required": False, "description": "[xmin, xmax] window for the slip surface's ENTRY: its low-x end, whichever way the slope faces (the toe side of a slope rising to the right, the crest side of one falling to the right)."},
@@ -838,12 +991,15 @@ METHOD_INFO = {
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices per trial."},
             "seed": {"type": "int", "required": False, "description": "Random seed for reproducible noncircular/PSO/DE searches."},
             "time_budget_s": {"type": "float", "required": False, "default": SEARCH_TIME_BUDGET_S, "description": "Time budget of the whole search in seconds (at most 600). The main search scores its centres or entry/exit pairs coarse first and stops at 80 % of the budget; the result is then the lowest surface found, and warnings and search_ranges.time_budget say what was scored of how many, at what spacing, the run time projected for the whole search, and what was not run. Raise it for a long search you mean to wait for."},
-            "bishop_screen": {"type": "bool", "required": False, "default": False, "description": "circular and entry_exit searches with spencer / morgenstern_price / gle: score every centre or pair with Bishop's simplified method, then re-score the lowest (at least 10, every one within 5 % of the lowest, at most 30) with the method itself; the reported FOS is the method's own. On four pinned slopes it found the same surfaces and FOS as the unscreened search in 35-60 % of the time on the default centre grid, 15-30 % on 10 x 10 and 12 x 12 entry_exit grids and 3 % on a 30 x 30 entry_exit grid at 60 slices (33 s against 972 s). Not applied where supports are modelled; noncircular searches are not screened."},
+            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": _F_INTERSLICE, "description": "Interslice force function f(x) of morgenstern_price and gle (Morgenstern and Price 1965, p. 85), taken by every family and every kind of search ('constant' reproduces Spencer). Before GM-140 step 6 a search always took the half-sine function. Spencer's method is the constant function; the other methods have none."},
+            "circle_check": {"type": "bool", "required": False, "default": True, "description": "Noncircular searches. True (default): the circular search (centre grid and toe-circle families) is run first by the method that scores the polylines, on the caller's nx x ny grid and inside the same windows, and its critical circle, as the polyline of its slice-base points, is one of the noncircular search's trials, so the search does not report a minimum above the critical circle's value without saying so. That circular search costs about 2 to 21 times the noncircular search alone (measured on made-up and published slopes). The check is the module's own call (no print found gives it). The result's circle_check gives the circle and both values. Under a time budget the circular search may use a quarter of it. False: no circular search is run and the result says the noncircular minimum was not checked against a circle."},
+            "bishop_screen": {"type": "bool", "required": False, "default": False, "description": "circular and entry_exit searches with spencer / morgenstern_price / gle: score every centre or pair with Bishop's simplified method, then re-score the lowest (at least 10, every one within 5 % of the lowest, at most 30) with the method itself; the reported FOS is the method's own. Centres the screen scored below the reported minimum on which the method has no solution are counted in screen_unsolved. On four pinned slopes it found the same surfaces and FOS as the unscreened search in 35-60 % of the time on the default centre grid, 15-30 % on 10 x 10 and 12 x 12 entry_exit grids and 3 % on a 30 x 30 entry_exit grid at 60 slices (33 s against 972 s). Not applied where supports are modelled; noncircular searches are not screened."},
             "m_alpha_rule": {"type": "str", "required": False, "default": "frictional", "allowed_values": ["frictional", "every_slice"], "description": "Which slices the m_alpha < 0.2 check looks at (Whitman and Bailey 1967, p. 487). 'frictional': slices with phi' > 0; on a phi' = 0 slice m_alpha = cos(a) does not depend on F and the strength does not depend on the normal force (the module's own reasoning, no printed source). 'every_slice': every slice."},
             "low_m_alpha": {"type": "str", "required": False, "default": "flag", "allowed_values": list(LOW_M_ALPHA_ACTIONS), "description": "What the search does with a trial surface that has m_alpha < 0.2 on a slice. 'flag' (default): the surface is kept and scored, and the result says so with the surface and the slice (Whitman and Bailey 1967, p. 487, print a warning and an instruction to examine the result, not a rejection). 'refuse': it is left out and counted (n_rejected.m_alpha), as the module did before GM-140 step 3 and as Slide2 does with its 'Check malpha < 0.2' setting on."},
             "negative_friction_term": {"type": "str", "required": False, "default": "as_printed", "allowed_values": list(NEGATIVE_TERM_RULES), "description": "Bishop's simplified method and the Ordinary Method of Slices on a slice where the pore-water force on the base exceeds the slice's weight. 'as_printed' (default): the frictional term W - u b (Bishop 1955 Eq. 13, p. 10) or W cos(alpha) - u l (Eq. 9) is used as printed, negative. 'zero': it is set to zero there, the module's rule before GM-140 step 3, with no printed source. Either way the result names the slices (acceptability, check 'negative_frictional_term'), as Whitman and Bailey (1967, p. 487) ask."},
+            "base_in_tension": {"type": "str", "required": False, "default": "as_printed", "allowed_values": list(BASE_TENSION_RULES), "description": "Spencer, Morgenstern-Price, GLE and Janbu's simplified method on a slice whose effective normal force N' comes out negative (a base in tension). 'as_printed' (default): the slice's equations are used unchanged, the friction term N' tan(phi') negative there (Spencer 1967, pp. 14 to 15, and Morgenstern and Price 1965, p. 85, print no rule for it). 'no_friction': such a slice is taken frictionless in every equation, the module's own device, not found in print. Either way the result names the slices (acceptability, check 'base_tension'), as EM 1110-2-1902 C-10a asks. Spencer, Morgenstern-Price and GLE report a factor of safety only where one state meets both the moment and the force equation; where those equations have more than one solution it is the first met from lambda = 0 on the branch of solutions that starts there, and where they have none there is no number."},
         },
-        "returns": {"critical": "Critical surface result (FOS, geometry): the lowest of the surfaces the method itself solved. A surface the method has no solution on is not scored by another solver. With method 'bishop', on a circle with no supports and no seismic coefficient where Bishop's value is below the Ordinary Method of Slices value, the Ordinary Method of Slices value is taken (Duncan 1996, p. 580): critical.FOS_bishop and critical.FOS_fellenius give both and critical.method_used says so.", "n_surfaces_evaluated": "Number of surfaces checked.", "no_solution": "Trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any). They were not scored. not_converged: the method's own solve did not converge on them; when the governing family lost trials this way warnings says so, because a lower surface among them cannot be ruled out (UFC 3-220-10 p. 362). Tell the user. no_driving: surfaces with no net driving moment or force (held, for example by a support), which have no factor of safety. below_0_05: surfaces the method solved with a value below 0.05, which a search does not take as a factor of safety.", "n_rejected": "Trial surfaces refused, by reason (present when any were): geometry, nonconverged, jagged, ground_crossings (below the ground over more than one stretch: they leave the ground and come back into it, so they bound more than one sliding mass), and m_alpha (only with low_m_alpha 'refuse': m_alpha below 0.2 on a slice with phi' > 0, or any slice with m_alpha_rule 'every_slice'; by default such surfaces are kept and flagged, see trial_flags).", "trial_flags": "The printed acceptability checks on the scored trials, by family and method: [{family, method, n_scored, n_flagged, by_check}]. A flagged trial is kept and scored.", "critical_flags": "The checks the governing surface does not meet (empty when it meets them all); critical.acceptability gives each finding with the slice and the value. Report them to the user with the factor of safety.", "lowest_unflagged": "Present when the governing surface carries a flag: the lowest factor of safety among the surfaces the search scored by the same method that carry none ({FOS, family, method, and the surface}), or FOS null with a note when it scored none. The headline (critical) stays the lowest solved surface; give the user both.", "refuse_option": "Present when the governing surface carries a flag: the option that leaves surfaces with its flags out of the search, or that there is none (low_m_alpha='refuse' leaves out surfaces with m_alpha below 0.2; no option leaves out the other flags).", "summary": "One sentence: the headline (the lowest solved surface, its FOS, family and method), and when it carries a flag, its flags, the lowest scored surface with no flag (or none found) and refuse_option. Neither number alone is safe: give the user this sentence's numbers together.", "screen_refusals": "Noncircular trial surfaces refused by each of the module's own screens, which are not found in print: slice_count and span, applied before any solve, and jagged_below_1_5 (a FOS below 1.5 on a jagged surface), applied with method janbu or fellenius, which no printed check of EM 1110-2-1902 C-10a covers, so the surfaces it refuses carry no flag: {n, n_flagged}; present when any were. With spencer, morgenstern_price or gle (and bishop, whose noncircular surfaces Spencer scores) a low factor of safety on a jagged surface, or a solution that held about one moment axis or one slicing only, is no longer refused: such a surface is scored, kept and flagged, and can be the headline, with lowest_unflagged beside it.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face). A circular or entry_exit search also scores toe circles and circles passing above the toe, and every search scores shallow planar surfaces where c'=0 soil forms the face; the lowest is reported.", "candidates": "Minimum FOS of each surface family scored.", "infinite_slope_checks": "Each stretch of face where c'=0 soil is at the surface: slope angle, phi', tan(phi')/tan(beta), and the planar-surface FOS (or why it was not evaluated).", "warnings": "What the engineer must check on this surface: no equilibrium solution, the tension crack it was solved with (a reverse-curvature circle closed by one says so), supports Bishop/OMS count little of (with Spencer's FOS on the circle), and each printed acceptability check not met (with EM 1110-2-1902 C-10b's remedies for a steep exit; none is applied). Report these to the user.", "search_ranges": "The entry/exit windows and centre ranges used, which were set automatically from the slope (its toe, crest, height, depth to the base) and where the model's end cut them: what the search covered; time_budget when the budget stopped the search (what was scored, of how many, the projected run time, what was not run).", "governing_location": "Where the governing surface lies: its ends, lowest point, greatest depth below the ground, the layers along its base, and its position against the slope's toe and crest in multiples of H.", "refused_lowest": "No longer returned: a noncircular surface whose solution held about one moment axis or one slicing only is now scored, kept and flagged (trial_flags, critical_flags).", "crack_refused": "Trial surfaces the tension-crack rule refused, by reason (present when any were): reverse_curvature_no_crack (reverse-curvature circles with no crack asked for; naming a crack admits those whose overhang lies within its depth), reverse_curvature_deeper_than_crack (overhang deeper than the crack asked for), reverse_curvature_no_crack_at_end (overhang at the lower end, or at the end away from the crack), reverse_curvature_discard_asked (reverse_curvature='discard'), within_cracked_depth (the surface nowhere passes below the crack's depth, measured below the ground above it, so it is no slip surface) and scan_no_minimum (the scan for the crack depth of minimum F found no minimum). Each: n, what, x_end_range_m (where their upper ends are) and the first few with centre, radius, depths and why; choices gives the counts. The critical surface's own crack is in critical.tension_crack.", "choices": "What the search chose and how (given, default or module), with basis and alternatives: the search and its method, the surface families scored (one it runs that scored none, and why), the search ranges, the m_alpha check, the time budget, any Bishop screen.", "layer_overlaps": "Where a layer loses ground to one listed before it (present when any does): layer, held_by, x_from, x_to, max_overlap_m, statement."},
+        "returns": {"critical": "Critical surface result (FOS, geometry): the lowest of the surfaces the method itself solved. A surface the method has no solution on is not scored by another solver. With method 'bishop', on a circle with no supports and no seismic coefficient where Bishop's value is below the Ordinary Method of Slices value, the Ordinary Method of Slices value is taken (Duncan 1996, p. 580): critical.FOS_bishop and critical.FOS_fellenius give both and critical.method_used says so.", "n_surfaces_evaluated": "Number of surfaces checked.", "circles_split": "Present when any trial circle met the ground at more than two points: {arcs: circles}, the number of such circles by the number of arcs below the ground each gave. Each arc inside the entry / exit windows was scored as a trial surface of its own (the module's rule; no reference prints one) and the circle's score is its lowest arc's; arcs with no driving moment are counted in no_solution under no_driving. critical.arc says which arc the governing surface is; pass its x_start and x_end as arc_x_start and arc_x_end to analyse that surface again.", "arcs_outside_windows": "Present when the entry / exit windows (given, or the automatic ones) left arcs of split circles out: {family: arcs}, not scored. The toe-circle families score only the arc that ends at the toe or face point.", "no_solution": "Trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any). They were not scored. not_converged: the method's own solve did not converge on them; when the governing family lost trials this way warnings says so, because a lower surface among them cannot be ruled out (UFC 3-220-10 p. 362). Tell the user. no_driving: surfaces with no net driving moment or force (held, for example by a support), which have no factor of safety. below_0_05: surfaces the method solved with a value below 0.05, which a search does not take as a factor of safety.", "n_rejected": "Trial surfaces refused, by reason (present when any were): geometry, nonconverged, jagged, ground_crossings (noncircular surfaces below the ground over more than one stretch: they leave the ground and come back into it, so they bound more than one sliding mass; a circle is not refused for it, see circles_split), and m_alpha (only with low_m_alpha 'refuse': m_alpha below 0.2 on a slice with phi' > 0, or any slice with m_alpha_rule 'every_slice'; by default such surfaces are kept and flagged, see trial_flags).", "trial_flags": "The printed acceptability checks on the scored trials, by family and method: [{family, method, n_scored, n_flagged, by_check}]. A flagged trial is kept and scored.", "critical_flags": "The checks the governing surface does not meet (empty when it meets them all); critical.acceptability gives each finding with the slice and the value. Report them to the user with the factor of safety.", "lowest_unflagged": "Present when the governing surface carries a flag: the lowest factor of safety among the surfaces the search scored by the same method that carry none ({FOS, family, method, and the surface}), or FOS null with a note when it scored none. The headline (critical) stays the lowest solved surface; give the user both.", "refuse_option": "Present when the governing surface carries a flag: the option that leaves surfaces with its flags out of the search, or that there is none (low_m_alpha='refuse' leaves out surfaces with m_alpha below 0.2; no option leaves out the other flags).", "summary": "One sentence: the headline (the lowest solved surface, its FOS, family and method), and when it carries a flag, its flags, the lowest scored surface with no flag (or none found) and refuse_option. Neither number alone is safe: give the user this sentence's numbers together.", "screen_refusals": "Noncircular trial surfaces refused by each of the module's own screens, which are not found in print: slice_count and span, applied before any solve, and jagged_below_1_5 (a FOS below 1.5 on a jagged surface), applied with method janbu or fellenius, which no printed check of EM 1110-2-1902 C-10a covers, so the surfaces it refuses carry no flag: {n, n_flagged}; present when any were. With spencer, morgenstern_price or gle (and bishop or fellenius, whose noncircular surfaces Spencer's method scores) a low factor of safety on a jagged surface, or a solution that held about one moment axis or one slicing only, is no longer refused: such a surface is scored, kept and flagged, and can be the headline, with lowest_unflagged beside it.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face). A circular or entry_exit search also scores toe circles and circles passing above the toe, and every search scores shallow planar surfaces where c'=0 soil forms the face; the lowest is reported.", "candidates": "Minimum FOS of each surface family scored.", "named_method": "The method the search was asked for (f_interslice beside it: the interslice function of morgenstern_price and gle, 'constant' for spencer, null for the others).", "candidate_methods": "What scored each family in candidates: [{family, method, f_interslice, FOS, named, reason}], and screen where another method picked the circles the method then scored (the toe-circle families under spencer / morgenstern_price / gle are scanned by Bishop's simplified method; the value is always the scoring method's own on the surface reported). named is false where the family was scored by another method than the one asked for, and reason says why. The infinite-slope entries also carry flags: what the printed acceptability checks find on the family's lowest plane.", "method_used": "Present when the governing surface was scored by another method than the one asked for: that method. warnings says so first. Tell the user, with named_method_lowest.", "named_method_lowest": "Present with method_used: the lowest factor of safety by the method asked for ({method, f_interslice, FOS, family}), or FOS null with a note when that method scored no family of this search. The headline (critical) is the lowest over all families; give the user both.", "screen_unsolved": "Present when a screen by another method scored surfaces below the reported minimum that the method asked for has no solution on: {n, k, N, lowest_screen_FOS, by_family}: of the k circles re-scored from the screen's lowest, n have no solution by the method; the screen scored N circles below the minimum in all. The screen's value is not a factor of safety of the method asked for, but a lower surface among them cannot be ruled out (UFC 3-220-10 p. 362). Tell the user.", "circle_check": "Noncircular searches: the minimum against the critical circle by the same method: {checked, circle (centre, radius, ends, FOS as a circle), FOS_as_polyline, noncircular_minimum (the search's own lowest polyline), governs (the circle's polyline is the surface reported), note}; checked false with the reason where no circular search ran.", "infinite_slope_checks": "Each stretch of face where c'=0 soil is at the surface: slope angle, phi', tan(phi')/tan(beta), and the planar-surface FOS (or why it was not evaluated), with the method and f_interslice that scored its planes, n_planes and n_solved_by_named (how many of them the method asked for solved; null where it does not apply to a plane), flags and, where another method scored it, the reason.", "warnings": "What the engineer must check on this surface: no equilibrium solution, the tension crack it was solved with (a reverse-curvature circle closed by one says so), supports Bishop/OMS count little of (with Spencer's FOS on the circle), and each printed acceptability check not met (with EM 1110-2-1902 C-10b's remedies for a steep exit; none is applied). Report these to the user.", "search_ranges": "The entry/exit windows and centre ranges used, which were set automatically from the slope (its toe, crest, height, depth to the base) and where the model's end cut them: what the search covered; time_budget when the budget stopped the search (what was scored, of how many, the projected run time, what was not run).", "governing_location": "Where the governing surface lies: its ends, lowest point, greatest depth below the ground, the layers along its base, and its position against the slope's toe and crest in multiples of H.", "refused_lowest": "No longer returned: a noncircular surface whose solution held about one moment axis or one slicing only is now scored, kept and flagged (trial_flags, critical_flags).", "crack_refused": "Trial surfaces the tension-crack rule refused, by reason (present when any were): reverse_curvature_no_crack (reverse-curvature circles with no crack asked for; naming a crack admits those whose overhang lies within its depth), reverse_curvature_deeper_than_crack (overhang deeper than the crack asked for), reverse_curvature_no_crack_at_end (overhang at the lower end, or at the end away from the crack), reverse_curvature_discard_asked (reverse_curvature='discard'), within_cracked_depth (the surface nowhere passes below the crack's depth, measured below the ground above it, so it is no slip surface) and scan_no_minimum (the scan for the crack depth of minimum F found no minimum). Each: n, what, x_end_range_m (where their upper ends are) and the first few with centre, radius, depths and why; choices gives the counts. The critical surface's own crack is in critical.tension_crack.", "choices": "What the search chose and how (given, default or module), with basis and alternatives: the search and its method, the interslice function, the families scored by another method than the one named and the order they are tried in, the screens by another method, the check of a noncircular minimum against the critical circle, the surface families scored (one it runs that scored none, and why), the search ranges, the m_alpha check, the time budget, any Bishop screen.", "layer_overlaps": "Where a layer loses ground to one listed before it (present when any does): layer, held_by, x_from, x_to, max_overlap_m, statement.", "centre_contours": "Present only with a centre grid (surface_type 'circular'): the minimum FOS of each centre on the grid ({x, y, fos[iy][ix], values_by, minimum, edge_minimum, closed, statement}); closed true or false, or null where it cannot be judged (centres without a value next to the lowest); statement says why, and where to extend the grid when it does not close (FHWA NHI-06-088 Fig. 6-13, p. 6-23; GEC 11 Vol. II p. 9-24). values_by: the method named, or the Bishop screen where the method's own values cannot be judged. Tell the user when it does not close.", "lowest_surfaces": "The ten lowest surfaces in order (FHWA NHI-06-088 p. 6-49): [{rank, FOS, family, method, and xc, yc, radius, arc or points}]: every family's lowest by the method that scored it, more than one circle per centre allowed, none a screen's value; geometry as scored."},
     },
     "fosm_fos": {
         "category": "Slope Stability",
@@ -935,9 +1091,13 @@ declare_applies_when(METHOD_INFO, {
     "analyze_slope": _crack_and({
         "reverse_curvature": _CIRCLE_GIVEN,
         "f_interslice": [{"method": ["morgenstern_price", "gle"]},
-                         {"compare_methods": [True]}],
+                         {"compare_methods": "set"}],
         "negative_friction_term": [{"method": ["bishop", "fellenius"]},
-                                   {"compare_methods": [True]}],
+                                   {"compare_methods": "set"}],
+        "base_in_tension": [{"method": ["janbu", "spencer",
+                                        "morgenstern_price", "gle"]},
+                            {"compare_methods": "set"},
+                            {"slip_points": "set"}],
         "m_alpha_rule": {"method": ["bishop", "janbu", "spencer",
                                     "morgenstern_price", "gle"]}}),
     "compare_methods_table": _crack_and({
@@ -960,10 +1120,18 @@ declare_applies_when(METHOD_INFO, {
                                       "weak_layer"]},
         "bishop_screen": {**_SEARCH_CIRCLES,
                           "method": ["spencer", "morgenstern_price", "gle"]},
-        "negative_friction_term": {"method": ["bishop", "fellenius"]}}),
+        "f_interslice": {"method": ["morgenstern_price", "gle"]},
+        "circle_check": {"surface_type": ["noncircular", "noncircular_de",
+                                          "pso", "weak_layer"]},
+        "negative_friction_term": {"method": ["bishop", "fellenius"]},
+        "base_in_tension": [{"method": ["janbu", "spencer",
+                                        "morgenstern_price", "gle"]},
+                            {"surface_type": ["noncircular",
+                                              "noncircular_de", "pso",
+                                              "weak_layer"]}]}),
     "fosm_fos": _crack_and({"reverse_curvature": _CIRCLE_GIVEN}),
     "monte_carlo_fos": _crack_and({
-        "time_budget_s": {"research_surface": [True]}}),
+        "time_budget_s": {"research_surface": "set"}}),
     "infinite_slope_fos": {
         "depth": [{"c": "set"}, {**_WATER, "water_depth": "set"}],
         "gamma_w": _WATER, "water_depth": _WATER,
@@ -982,9 +1150,6 @@ _FROM_WATER = ("from the water table",
 _WHOLE_SURFACE = ("the whole ground surface",
                   "the single surcharge acts over the entire surface")
 _NO_ZONES = ("no surcharge zones", "only the single surcharge, if any")
-_NOT_APPLIED = ("the reinforcement force not applied",
-                "reinforcement_force acts only at a given elevation; "
-                "without one it is left out of the analysis")
 _WINDOW = ("set from the slope's geometry",
            "entry and exit windows from the slope's toe, crest, height and "
            "depth to the base; the result lists what the search covered")
@@ -1002,8 +1167,7 @@ _POOL = ("a level pool at drawdown_from_elevation",
 _LOW_POOL = ("a level pool at drawdown_to_elevation",
              "hydrostatic below the lowered pool after drawdown, as in the "
              "manual's example (EM 1110-2-1902 G-4b, p. G-9)")
-_LOADS = {"surcharge_x_range": _WHOLE_SURFACE, "surcharges": _NO_ZONES,
-          "reinforcement_elevation": _NOT_APPLIED}
+_LOADS = {"surcharge_x_range": _WHOLE_SURFACE, "surcharges": _NO_ZONES}
 _GROUND = {"gwt_points": _NO_WATER, "pore_pressure_points": _FROM_WATER,
            **_LOADS}
 declare_when_absent(METHOD_INFO, {
@@ -1032,11 +1196,32 @@ for _m, _info in METHOD_INFO.items():
     _p = _info["parameters"]
     for _name, _when in (
             ("surcharge_x_range", {"surcharge": "set"}),
-            ("reinforcement_elevation", {"reinforcement_force": "set"}),
             ("gwt_points", {"pore_pressure_points": "unset"}),
             ("pore_pressure_points", {"gwt_points": "set"})):
         if _name in _p and _p[_name].get("when_absent"):
             _p[_name]["applies_when"] = _when
+# The reading of the water line (GM-140 step 5a) applies where a line
+# gives the pore pressure: gwt_points without a pore-pressure grid, or,
+# in a rapid drawdown (whose pools are level), a stage-1 seepage line.
+for _m, _info in METHOD_INFO.items():
+    _p = _info["parameters"]
+    if "water_line_kind" in _p:
+        _p["water_line_kind"] = {
+            **_p["water_line_kind"],
+            "applies_when": (
+                {"stage1_phreatic_points": "set"}
+                if "stage1_phreatic_points" in _p else
+                {"gwt_points": "set", "pore_pressure_points": "unset"})}
+# What a support whose pull assists the sliding counts (GM-140 step 8)
+# applies where there is a support.
+for _m, _info in METHOD_INFO.items():
+    _p = _info["parameters"]
+    if "assisting_support" in _p:
+        _p["assisting_support"] = {
+            **_p["assisting_support"],
+            "applies_when": [{_k: "set"} for _k in (
+                "nails", "anchors", "geosynthetics", "stabilizing_piles",
+                "reinforcement_force") if _k in _p]}
 for _m, _seeded in (
         ("search_critical_surface",
          ["noncircular", "noncircular_de", "pso", "weak_layer"]),

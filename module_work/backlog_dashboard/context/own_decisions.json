@@ -4466,6 +4466,240 @@
           }
         ],
         "multi": true
+      },
+      {
+        "label": "36. Pore pressure as printed (GM-140 step 5a, built 2026-11-13), three calls: (a) ru on a column of soils of different unit weight taken on the column's own weight, each soil at its own unit weight (D3; EM 1110-2-1902 p. C-29 defines ru = u / (gamma z) for a uniform slope, the layered sum is the module's reading), where before step 5a it was ru x the unit weight of the base's layer x the column's height: +2.6 % on a made-up two-soil case (Bishop 1.3268 to 1.3617), +1.0 % on a test case (1.4447 to 1.4592), both to the higher side; the old reading is not kept as an option; (b) the pond's thrust on a slice taken from the water depth at each side of the slice, where before it took the line's elevation at the slice's middle and so put a phantom pool on the lower side of every slice under a line at or just under sloping ground: on a 2:1 face with the line at the ground the Ordinary Method of Slices now reads 0.8253 against the closed form 0.8212 (FHWA NHI-06-088 Sec. 6.3), where it read 0.9140 (-9.7 %; Janbu and Morgenstern-Price -13.0 %; V-031 -0.005 %), an arithmetic fix on the unsafe side, not kept as an option; (c) a saved analysis that names no `water_line_kind` reads its line as a piezometric line, the full head, as before (OWN-104); the water-table reading (FHWA NHI-06-088 Eq. 6-16, p. 6-14) is the option and raises the factor of safety under a sloping line; the pond's edge moves a given surface at most 0.2 % (a search up to 0.6 %).",
+        "options": [
+          {
+            "label": "Let all three stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(a) The old ru reading on layered soils",
+            "effect": "ru x the unit weight of the base's layer x the column's height, as before step 5a (the made-up case back to 1.3268, the test case to 1.4447); to be built as an option."
+          },
+          {
+            "label": "(b) The old pond thrust",
+            "effect": "The thrust from the line's elevation at each slice's middle, as before step 5a (the 2:1 face back to 0.9140 against the closed form 0.8212, the unsafe side)."
+          },
+          {
+            "label": "(c) The water-table reading as the default",
+            "effect": "A saved analysis that names no `water_line_kind` reads its line as a water table (u = hw gamma_w cos^2 alpha_w): higher under a sloping line (a made-up circle 1.3229 to 1.3397; the thin plane 0.501 to 0.670)."
+          }
+        ],
+        "multi": true
+      },
+      {
+        "label": "37. Where a circle ends (GM-343, a step of GM-140, built 2026-11-13), two calls: (1) a circle that meets the ground at more than two points (crossing it, or touching it within the touch allowance) is split at those points, and each arc with ground above it is a trial surface of its own, solved, screened and scored like any other, the result naming the arc; nothing is refused for being one of two masses and no arc is carried under the ground in front of the toe (GM-122's ruling; it replaces the refusal of a surface below the ground in more than one stretch); (2) a circle that passes under a corner within the touch allowance is NOT split there, so the allowance does not change the answer: the vertical cut reads 0.851 (Taylor's stability number 3.83) whatever the allowance, where splitting there reads 0.844, the allowance acting as about 1 % more height.",
+        "options": [
+          {
+            "label": "Let both stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) Only the arc that holds the crest",
+            "effect": "A circle that meets the ground at more than two points is scored on the arc under the crest only; an arc in front of the toe is never a trial surface of its own."
+          },
+          {
+            "label": "(2) Split at a touched corner",
+            "effect": "A circle that passes under a corner within the touch allowance is split there: the vertical cut reads 0.844 against Taylor's 0.851, and the reported minimum moves with the allowance."
+          }
+        ],
+        "multi": true
+      },
+      {
+        "label": "38. The GLE solver (GM-344, a step of GM-140, built 2026-11-14), five calls: (1) where Spencer's equations have several roots, the factor reported is the first true crossing met from lambda = 0 upward on the branch of solutions that starts at lambda = 0 (every root is not sought); (2) the default is the equations as printed, with no rule for friction on a base in tension (D29's device, the slice taken frictionless, is an option, base_in_tension, applied in every equation); (3) the low m_alpha finding (Whitman and Bailey 1967, p. 487; EM 1110-2-1902 C-10b, p. C-34) reads, for Spencer, Morgenstern-Price and GLE, the denominator of the method's own slice equation, cos(alpha - theta) + sin(alpha - theta) tan(phi')/F, at the slice's side-force inclination, so a steep exit such as the made-up planar case's Spencer 0.918 (closed form 0.670) is reported with the finding and EM C-10b's remedies; (4) the scan runs from lambda = 0 upward to 1.5 and stops where that branch ends: no crossing there (as on a cohesive crest in tension) gives no number, its reason naming EM C-10c and a tension crack, accepted as the method's own behaviour only where the reviewer's own script finds no root on that branch either (a root it finds that the solver loses is a defect: the branch's end is located to 1e-4 in lambda since a probe found crossings lost in the last 0.1 step); where one surface is analysed, a crossing below lambda = 0 is named in the reason with its flags and not reported, never per trial in a search; (5) under the option, a slice taken frictionless is exempt from the finding, as a phi' = 0 slice is (its denominator cos(alpha - theta) does not depend on F).",
+        "options": [
+          {
+            "label": "Let all five stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) The lowest of all roots",
+            "effect": "Every root in the range is sought and the lowest is reported."
+          },
+          {
+            "label": "(2) The device as the default",
+            "effect": "A base in tension is taken frictionless unless the analysis asks for the equations as printed. Each printed benchmark that moves under the default is nearer print with the option (default / option / before this step / printed): F&K B1 at r_u 0.25 Spencer 1.7567 / 1.7629 / 1.7633 / 1.761, Morgenstern-Price 1.7560 / 1.7653 / 1.7651 / 1.764; F&K B1 dry Spencer 2.0712 / 2.0744 / 2.0745 / 2.073; ACADS 4's declared family Spencer 0.7480 / 0.7495 / 0.7532 / 0.760, Morgenstern-Price 0.7157 / 0.7222 / 0.7225 / 0.720. F&K B1 is within 0.02 % of before with the option; ACADS 4's Spencer is not (-0.5 %). ACADS 1(a) reads the same under both."
+          },
+          {
+            "label": "(3) The finding on horizontal side forces only",
+            "effect": "Spencer, Morgenstern-Price and GLE are screened on Bishop's m_alpha: the planar case's 0.918 is reported with no finding."
+          },
+          {
+            "label": "(4) A scan below lambda = 0 when none is met upward",
+            "effect": "Where the branch from lambda = 0 has no crossing, the scan goes down to -1.5 (D29's former range); the roots met there so far all had a slice denominator near zero."
+          },
+          {
+            "label": "(5) Look at a frictionless slice too",
+            "effect": "A slice taken frictionless under the option can raise the finding (its cos(alpha - theta))."
+          }
+        ],
+        "multi": true
+      },
+      {
+        "label": "39. Supports as printed (GM-140 step 8, built 2026-11-14), seven calls: (1) GEC 7 Eqs. 5.6 to 5.9 (pp. 118 to 120) are not taken as an Ordinary Method of Slices with known forces (one planar wedge's force balance; the method on a circle is a moment equation), so the OMS is refused where a support crosses the surface, its reason citing them and Duncan, Wright and Brandon (2014) p. 93 (no such equation is given); (2) an OMS search is refused when a support crosses any trial surface (a search whose surfaces no support crosses runs as before); (3) a layer with no pullout input carries its full T_allow, and the result's warnings say the pullout was not checked and what to give; (4) a geosynthetic's force acts along the reinforcement's own orientation by default (Duncan, Wright and Brandon Sec. 8.6), along the slip surface as the option (GEC 11 p. 9-7: continuous sheets act tangentially); (5) a nail's force at the slip surface is R_F plus the pullout of the length in front of it, a reading of GEC 7 Fig. 5.7 (p. 106; the library holds its caption) beside Eq. 5.2 (p. 105); (6) under `pullout_basis='gec11'` the pullout is divided by Eq. 9-9's FS under Method B as under Method A; (7) Method A's basis states GEC 11 Eq. 9-17 (p. 9-24): in that form Tal \"must be divided by a required minimum factor of safety FSR = 1.3\"; the allowable force is the engineer's input and nothing divides it.",
+        "options": [
+          {
+            "label": "Let all seven stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) GEC 7's wedge as the OMS with supports",
+            "effect": "The support's normal component in N and its parallel component off the driving force, as the module's old polyline form did; V-040 gets an OMS number again (1.1946 / 1.1758 before the step)."
+          },
+          {
+            "label": "(2) An OMS search over the surfaces no support crosses",
+            "effect": "Reported with that said in the headline (a made-up case: 1.741, with 481 crossed surfaces left out, not the slope's minimum)."
+          },
+          {
+            "label": "(3) Refuse a layer with no pullout input",
+            "effect": "A geosynthetic with no pullout inputs is refused instead of carrying its full T_allow."
+          },
+          {
+            "label": "(4) Tangential by default",
+            "effect": "A geosynthetic acts along the slip surface unless asked otherwise, as GEC 11 takes sheets."
+          },
+          {
+            "label": "(5) The literal min(R_T, R_F, R_PO)",
+            "effect": "A nail's force at the slip surface is the least of the three, with no front term added."
+          },
+          {
+            "label": "(6) GEC 11's pullout not divided under Method B",
+            "effect": "As the step first had it: a made-up layer carries 33.17 kN/m where it now carries 22.11."
+          },
+          {
+            "label": "(7) Divide an active support's force by at least 1.3",
+            "effect": "Under Method A the module divides (or asks for a factor), not only states GEC 11 p. 9-24."
+          }
+        ],
+        "multi": true
+      },
+      {
+        "label": "40. One method across the search (GM-140 step 6, built 2026-11-14), seven calls: (1) on a family of circles that the method named solves none of, the stand-ins are Spencer's method, then Bishop's simplified method, then Janbu's simplified method (Bishop's, then Janbu's, when a complete method is named), Bishop's being the method for circles (FHWA NHI-06-088 p. 6-20 and Table 6-1 Note 1, p. 6-21); planes and polylines keep Spencer, then Janbu; a stand-in never governs above the screen's own value on the same family without the result saying so; (2) where Janbu's simplified method stands in, its value keeps the correction factor f0, and the warning says f0 is applied, that it was not found in print (the account's D28), its value and the uncorrected factor of safety; (3) the circle check's circular search takes the caller's grid (nx, ny), and the tool says what it costs; (4) V-043's differential-evolution seeds are tested as a band (each seed's own minimum within 1.22 to 1.25) and as repeatable (the same seed twice gives the same value), not by exact pins, under the owner's rule on stochastic searches in the GitHub run; (5) the circle check (a noncircular search's critical circle scored as one of its trials, the result saying so) is on by default as the module's own call: EM 1110-2-1902 para. 4-2e(2), p. 4-7, says only that a noncircular search's initial surface \"should correspond to the estimated position of the critical slip surface\", and no page found says to check against the critical circle; (6) the reported factor of safety is the lowest over all families, also where a stand-in scored the governing family; `method_used` and a warning say so, and the named method's own lowest value is given beside it; (7) an Ordinary Method of Slices search that a support crosses on any trial surface is refused whichever method scores its families (since this step Spencer's method scores an OMS search's planes), and nothing stands in (the fix round's call in the merge with step 8, accepted by the orchestrator).",
+        "options": [
+          {
+            "label": "Let all seven stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) Spencer, then Janbu, on every family (the spec's order)",
+            "effect": "#85 without its support, Spencer named, reads 1.033 by Janbu's simplified method (with f0) instead of 0.911 by Bishop's simplified method standing in on the circles above the toe; Bishop's value on Janbu's circle is 0.937."
+          },
+          {
+            "label": "(2) Janbu standing in without f0",
+            "effect": "The uncorrected value is reported where Janbu stands in (on #85's case, 0.98 instead of 1.033 before the step's fix); f0 stays in Janbu's method when it is named."
+          },
+          {
+            "label": "(3) The circle check on its own 10 x 10 grid",
+            "effect": "Finer than a caller's small grid, and slower: the review measured noncircular searches 2 to 21 times their time without the check."
+          },
+          {
+            "label": "(4) Exact pins of each seed's own minimum",
+            "effect": "1.237, 1.234, 1.233 pinned exactly; against the owner's rule for tests the GitHub run executes (one such pin read 6.847 here and 8.34 there)."
+          },
+          {
+            "label": "(5) The circle check off by default",
+            "effect": "`circle_check=True` to ask for it; ACADS 1(a)'s 200-trial random polyline search by Spencer would report 1.0916 against the critical circle's 0.9838 (printed 1.00), with a line saying the noncircular minimum was not checked against a circle."
+          },
+          {
+            "label": "(6) The named method's own lowest value as the headline",
+            "effect": "Families scored by a stand-in are reported apart only; #86 with circles kept off the face and Bishop named would read 0.952 (Bishop, toe circle) instead of 0.944 (Spencer, infinite slope)."
+          },
+          {
+            "label": "(7) Refuse only the families the OMS scores",
+            "effect": "An OMS search crossed by a support refuses its circles, and its planes, scored by Spencer's method with the support, are reported apart under Spencer's name."
+          }
+        ],
+        "multi": true
+      },
+      {
+        "label": "41. Reporting as printed (GM-140 step 10, built 2026-11-14), nine calls: (1) the lowest contour \"closes inside the grid\" only where the lowest value inside is below the lowest on the edge and every centre next to the centres below the midway level has a value, else \"cannot be judged\"; (2) the lowest surfaces listed are pooled from every family's ten lowest by the method that scored each, more than one circle per centre, distinct to 0.01 m, never a screen's value (FHWA NHI-06-088 p. 6-49 asks for the ten minimum); (3) a `tol` above 1e-4 is refused unless the method is Bishop's (it changes nothing there); (4) the rapid-drawdown tools' `m_alpha_rule` is set as a module default, not a new input; (5) the factor of safety goes in the cross-section's key title, not in a box on the drawing; (6) the slice table comes first among the calculation sections (EM 1110-2-1902 4-2d(2), p. 4-2), after the package's input echo; (7) `base_in_tension` always applies in the report package, which compares every method on the critical surface; (8) the contours show the method's own per-centre minima, and Bishop's screen values, named as the screen, where the method's cannot be judged; (9) an input that does nothing in the case (a tol with the Ordinary Method of Slices, `base_in_tension` with no base in tension) is accepted and the report says so.",
+        "options": [
+          {
+            "label": "Let all nine stand",
+            "effect": "Nothing changes."
+          },
+          {
+            "label": "(1) Missing centres not considered",
+            "effect": "A grid with few valued centres can read \"closes: yes\" (#85 by Spencer, 6 of 36 centres valued, read so before the fix)."
+          },
+          {
+            "label": "(2) The main search's trials plus each family's lowest",
+            "effect": "Shorter lists that are not the lowest surfaces (#85 listed 9, ranks 3 to 9 at 1.27 to 2.68 while its governing family had many between 0.911 and 1.27)."
+          },
+          {
+            "label": "(3) Wire tol into the GLE solvers as given",
+            "effect": "Values move at the default tolerance."
+          },
+          {
+            "label": "(4) `m_alpha_rule` as an input of rapid_drawdown_fos",
+            "effect": "That tool's description passes its 16,000-character budget."
+          },
+          {
+            "label": "(5) A box on the drawing",
+            "effect": "It met a label in every corner on one case or another."
+          },
+          {
+            "label": "(6) The slice table ahead of the input echo",
+            "effect": "Every package's generic echo of the inputs moves below it."
+          },
+          {
+            "label": "(7) `base_in_tension` only with a GLE-system method named",
+            "effect": "As `slope_stability_package` takes it."
+          },
+          {
+            "label": "(8) Contour only the centres the named method valued",
+            "effect": "A screened search (Spencer, Morgenstern-Price, GLE named) draws few or no contours and says \"cannot be judged\"."
+          },
+          {
+            "label": "(9) Refuse an input that does nothing in the case",
+            "effect": "The run stops instead."
+          }
+        ],
+        "multi": true
+      },
+      {
+        "label": "42. The noncircular search as printed (GM-140 step 7a; calls made before the build, 2026-11-14; the owner gave the go for the build, 2026-11-15), eight calls: (1) step 7 is split: 7a (the noncircular search's starts and refinement) first, then 7b (impenetrable layers and composite surfaces) with its own section; (2) the refinement's final increment is 10 % of the thinnest stratum the surface may pass through (EM 1110-2-1902 4-2e(2)(b), p. 4-7, prints \"no more than 10 to 25 percent\"), the fraction an option; (3) every layer within the search's depth gets a wedge start (EM C-1g(2), pp. C-8 to C-10), and the weak-layer search's unprinted weight 1/(c + 50 tan phi) goes; (4) no shift may make the exit steeper than Eq. C-32's passive inclination (p. C-34, the phi' of the exit material) or than its start's exit: the EM asks for a toe restriction (4-2e(2)(a)) but prints no limit for a search; (5) TOUCHES THE OWNER'S RULING OF 2026-10-16; CONFIRMED BY THE OWNER, 2026-11-15: automatic windows bound only the random generation, and the refinement's shifts are free along the face on the start's side (windows the caller gives bound everything); only a noncircular search the caller asks for is affected, the default circular search does not change and no circular value moves; (6) no concave-up shape rule (the account's D12 cites EM p. 4-7 for one; the page does not print it); step 3's printed checks judge the surface; (7) ACADS 4's test compares the refined search with Slide2 Table 9.5 (0.707) and the unrefined wedge stage with Table 9.4 (0.760), both at 3 %, plus a check that the search reaches the declared family of surfaces; (8) the refinement is on by default (`refine=False` turns it off), stops at the time budget and then names the starts it left unrefined.",
+        "options": [
+          {
+            "label": "Let all eight stand",
+            "effect": "Step 7a is built as its section says."
+          },
+          {
+            "label": "(1) One step 7, or 7b first",
+            "effect": "About two sessions in one; the evidence (ACADS 4, V-043) waits for the impenetrable layers."
+          },
+          {
+            "label": "(2) 25 % of the thinnest stratum",
+            "effect": "Faster; the far end of the printed range, so the refined value can sit a little higher."
+          },
+          {
+            "label": "(3) Only layers weaker than the one above, or keep the weight",
+            "effect": "Fewer starts; weaker needs a normal stress the print does not give, and the weight has no print."
+          },
+          {
+            "label": "(4) No toe restriction",
+            "effect": "A refined exit may steepen past the passive angle; step 3's checks flag it."
+          },
+          {
+            "label": "(5) Automatic windows also bound the shifts, as today",
+            "effect": "A start outside them (an above-toe circle, searched by default since GM-122) cannot be refined where it lies."
+          },
+          {
+            "label": "(6) Concave-up as the module's own rule",
+            "effect": "Some surfaces the print would accept are refused; the rule has no printed source."
+          },
+          {
+            "label": "(7) The single test against 0.760",
+            "effect": "The refined search is held to the table printed for a search without optimisation."
+          },
+          {
+            "label": "(8) The refinement off by default",
+            "effect": "Noncircular results stay as today unless the caller asks; faster."
+          }
+        ],
+        "multi": true
       }
     ],
     "recommendation": "Let them stand. Look first at the two that depart from the lead's rule: 4 (OWN-104, the water-table correction kept off by default although two manuals print it, because the full head is the safe side and the correction's premise is a statement about the seepage) and 15 (OWN-131, Meyerhof's depth factors followed as printed although they are the less conservative reading).",
@@ -4630,6 +4864,35 @@
       "BACKLOG GM-312",
       "BACKLOG REF-98",
       "module_work/cloud_briefs/DRAWINGS_GM312_315.md"
+    ]
+  },
+  "OWN-155": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Should the FEM consolidation tool use the scheme that actually shows consolidation by default?",
+    "why": "A default run of fem2d_consolidation shows the soil fully consolidated at every time, whatever the permeability, so a time-settlement curve from it is wrong. The tool's one-line description promises pore-pressure dissipation.",
+    "background": "The tool offers two schemes. The default, 'staggered', drains the soil at every step: U = 1 and zero excess pore pressure at every time, for any k (checked from 1e-10 to 1e-16 m/s). 'monolithic' couples the soil and the water: on a made-up layer with k = 1e-10 m/s it gives U = 0, 0.122, 0.417 and 0.976 at t = 0, 1e5, 1e6 and 1e7 s, close to the reviewer's Terzaghi hand check (0.13, 0.43, 0.976). The parameter text and the result's note already say that 'staggered' is drained; the one-line description does not. Found by the standing tests (INF-77) and confirmed by their reviewer.",
+    "options": [
+      {
+        "label": "Make 'monolithic' the default",
+        "effect": "A run that leaves the scheme out shows consolidation with time. Default runs get slower. Saved reports from default runs change."
+      },
+      {
+        "label": "Keep 'staggered', and say so in the description",
+        "effect": "Nothing changes in the numbers. The tool's one-line description says that a load's consolidation needs scheme 'monolithic', so the agent asks for it."
+      }
+    ],
+    "recommendation": "Make 'monolithic' the default. A consolidation tool whose default shows no consolidation misleads; the extra run time is small next to a wrong curve.",
+    "if_no_answer": "Nothing changes: the default stays 'staggered', and the parameter text and the result's note keep saying it is drained.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-350"
+    ],
+    "sources": [
+      "BACKLOG OWN-155",
+      "BACKLOG GM-350",
+      "module_work/inf77/CHECK.md"
     ]
   }
 }

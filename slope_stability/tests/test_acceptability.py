@@ -123,7 +123,11 @@ def test_a_steep_exit_polyline_is_analysed_and_names_em_c10b_remedies():
     same m_alpha check a circle does."""
     geom = _slope(c=1.0, phi=36.0, bottom=-12.0)
     slip = PolylineSlipSurface(points=_STEEP_EXIT)
-    res = analyze_slope(geom, slip_surface=slip, method="spencer")
+    # (GM-344: Morgenstern-Price; Spencer's method, asked for here before,
+    # has no solution on this polyline for lambda from 0 to 1.5, and the
+    # value it read was not a root)
+    res = analyze_slope(geom, slip_surface=slip,
+                        method="morgenstern_price")
     assert res.FOS is not None
     assert "low_m_alpha" in res.flags
     f = _finding(res, "low_m_alpha")
@@ -153,12 +157,13 @@ def test_every_exported_search_reports_its_governing_surface_s_flags():
 
 def test_search_noncircular_called_directly_reports_the_flags():
     """ACADS 1(a) (printed 1.00), a 200-trial random Spencer search called
-    directly: its lowest solved surface (0.633 when measured) is a
-    zig-zag with a negative effective normal force on a base, tensile
+    directly: its lowest solved surface (1.092 when measured) has tensile
     interslice forces and the line of thrust outside the mass. The result
     says so (``critical_flags``, the warning) and gives the lowest scored
-    surface with no flag beside it; before, a direct call returned it with
-    ``critical_flags == []``."""
+    surface with no flag beside it (1.096); before, a direct call returned
+    it with ``critical_flags == []``. (Until GM-344 the lowest was a
+    zig-zag at 0.633 with a base in tension as well: a crossing at a
+    negative lambda, which the scan no longer looks for.)"""
     from slope_stability.search import search_noncircular
     g = SlopeGeometry(
         surface_points=[(20.0, 25.0), (30.0, 25.0), (50.0, 35.0),
@@ -169,8 +174,11 @@ def test_search_noncircular_called_directly_reports_the_flags():
     res = search_noncircular(
         g, x_entry_range=(20.0, 32.0), x_exit_range=(46.0, 68.0),
         n_trials=200, n_points=6, n_slices=25, seed=42, method="spencer")
-    assert {"base_tension", "side_tension", "thrust_outside"} <= set(
-        res.critical_flags)
+    assert {"side_tension", "thrust_outside"} <= set(res.critical_flags)
+    # GM-344: 0.633 -> 1.092. The minimum of a 200-trial random polyline sample: a pin on the
+    # search's repeatability, not a benchmark value. ACADS 1(a)'s benchmark is the circle:
+    # Spencer 0.9838 against the printed 1.00 (Bishop 0.9849).
+    assert res.critical.FOS == pytest.approx(1.092, abs=0.002)
     assert res.critical.acceptability
     low = res.lowest_unflagged
     assert low["FOS"] is not None and low["FOS"] > res.critical.FOS
@@ -417,7 +425,9 @@ def test_spencer_reports_tension_on_bases_and_sides_at_the_crest():
     table = [i + 1 for i, s in enumerate(res.slice_data) if s.N_eff_kN < 0]
     assert [s["slice"] for s in base["slices"]] == table
     assert "C-10a" in base["source"] and "C-10a" in side["source"]
-    assert "no friction" in base["text"]        # the solver's own setting
+    # the equations as printed there, and the option named (GM-344)
+    assert base["rule"] == "as_printed"
+    assert "base_in_tension='no_friction'" in base["text"]
     assert res.tension_crack_depth == 0.0       # nothing was added
 
 

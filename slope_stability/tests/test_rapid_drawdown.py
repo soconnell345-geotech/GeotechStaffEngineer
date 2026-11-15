@@ -37,6 +37,74 @@ def _rd(geom, method):
                               n_slices=50)
 
 
+def test_base_in_tension_reaches_every_stage_and_is_named():
+    """GM-344 fix round (the review's defect 5): rapid_drawdown_fos takes
+    base_in_tension as analyze_slope does; every stage's solve runs under
+    it, the result's choices name it and which root is reported, and the
+    rule in force is reset after the call."""
+    from slope_stability.gle import base_tension_in_force
+    a = _rd(_dam(), "corps_2stage")
+    what = {c["what"]: c for c in a.choices}
+    rule = what["friction on a slice base in tension (a negative effective "
+                "normal force)"]
+    assert rule["how"] == "default"
+    root = what["which solution is reported where the method's two "
+                "equations have more than one"]
+    assert "first crossing" in root["chosen"]
+    b = rapid_drawdown_fos(_dam(), 110 * FT, 24 * FT, xc=169.5 * FT,
+                           yc=210 * FT, radius=210 * FT,
+                           method="corps_2stage", n_slices=50,
+                           base_in_tension="no_friction")
+    assert {c["what"]: c for c in b.choices}[
+        "friction on a slice base in tension (a negative effective normal "
+        "force)"]["chosen"].startswith("the slice taken frictionless")
+    assert base_tension_in_force() == "as_printed"
+    with pytest.raises(ValueError, match="base_in_tension"):
+        rapid_drawdown_fos(_dam(), 110 * FT, 24 * FT, xc=169.5 * FT,
+                           yc=210 * FT, radius=210 * FT,
+                           base_in_tension="clamp")
+
+
+def test_force_equilibrium_stage_reports_the_shear_it_solved():
+    """GM-344 fix round (the review's defect 5): the stage solved by force
+    equilibrium at a fixed side-force inclination (the Modified Swedish
+    Method, EM 1110-2-1902 C-4) asks for the branch above every pole by
+    name and reports S = (c' l + N' tan(phi')) / F with tan(phi') as each
+    slice's own solve took it: as printed, N' negative on a base in
+    tension; with the slice taken frictionless, S = c' l / F there.
+    Before, S was worked out with max(N', 0) whatever was solved. A
+    made-up cohesive circle whose crest base is in tension."""
+    from slope_stability.gle import base_tension
+    from slope_stability.rapid_drawdown import fixed_inclination_solution
+    from slope_stability.slices import build_slices
+    from slope_stability.slip_surface import CircularSlipSurface
+    geom = SlopeGeometry(
+        surface_points=[(-10, 0), (0, 0), (20, 10), (40, 10)],
+        soil_layers=[SlopeSoilLayer(name="fill", top_elevation=10,
+                                    bottom_elevation=-20, gamma=19, phi=25,
+                                    c_prime=10, ru=0.25)])
+    slip = CircularSlipSurface(6, 18, 19.5)
+    slices = build_slices(geom, slip, 30)
+    with base_tension("as_printed"):
+        st = fixed_inclination_solution(slices, slip, 15.0, "force")
+    assert st.solved and min(st.N_eff) < 0.0
+    for s, ne, S in zip(slices, st.N_eff, st.S):
+        assert S * st.fos == pytest.approx(
+            s.c * s.base_length + ne * math.tan(math.radians(s.phi)),
+            rel=1e-9, abs=1e-9)
+    with base_tension("no_friction"):
+        st = fixed_inclination_solution(slices, slip, 15.0, "force")
+    assert st.solved
+    cohesion_only = 0
+    for s, ne, S in zip(slices, st.N_eff, st.S):
+        frictional = s.c * s.base_length + ne * math.tan(math.radians(s.phi))
+        if S * st.fos == pytest.approx(frictional, rel=1e-9, abs=1e-9):
+            continue
+        assert S * st.fos == pytest.approx(s.c * s.base_length, rel=1e-9)
+        cohesion_only += 1
+    assert cohesion_only >= 1
+
+
 def test_stub_is_closed_and_returns_result():
     r = _rd(_dam(), "corps_2stage")
     assert isinstance(r, RapidDrawdownResult)

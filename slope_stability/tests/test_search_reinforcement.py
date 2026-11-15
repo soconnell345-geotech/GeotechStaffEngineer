@@ -103,7 +103,18 @@ def test_slide86_tiebacks_reproduce_published():
     """Slide2 #86 with its five tiebacks, global-failure windows: Bishop
     1.612 against Slide2 1.629 and Duncan & Wright 1.61; the critical surface
     crosses all five tiebacks, and the shallow planar slide (0.942 without
-    supports) no longer governs."""
+    supports) no longer governs.
+
+    GM-140 step 8: these inputs against Duncan, Wright and Brandon (2014)
+    Fig. 8.4 (pp. 164 to 165), the slope Slide2 #86 is taken from. The
+    figure has six layers from the bottom of the slope, 4 ft apart, each
+    20 ft long, the 800 lb/ft force falling linearly to zero over the last
+    4 ft; this test has five tiebacks at 4 to 20 ft (the layer at the
+    base lies on the rock under every circle and counts nothing) carrying
+    the full 800 lb/ft to within 1 ft of their ends (the anchor's bond
+    zone rule), with no taper. The figure's own inputs and its printed
+    Spencer values (1.62 by Method A, 1.46 by Method B) are pinned in
+    test_supports_step8.py::test_fig_8_4_spencer (1.607 and 1.448)."""
     res = search_critical_surface(_slide86(), method="bishop",
                                   x_entry_range=(0.0, 4.0),
                                   x_exit_range=(30.0, 75.0))
@@ -477,8 +488,7 @@ def test_bishop_counts_the_vertical_component(convention):
     assert ours > moment_only * 1.002
 
 
-@pytest.mark.parametrize("method", ["fellenius", "bishop", "janbu",
-                                    "spencer", "gle"])
+@pytest.mark.parametrize("method", ["bishop", "janbu", "spencer", "gle"])
 def test_passive_below_active_in_every_method(method):
     """Every method honours the convention, for every support kind: the
     same force divided by F (passive, Method B) raises F less than applied
@@ -495,6 +505,19 @@ def test_passive_below_active_in_every_method(method):
     plain = analyze_slope(g, slip_surface=slip, method=method,
                           n_slices=40).FOS
     assert plain < out["passive"] < out["active"]
+
+
+def test_oms_has_no_number_where_supports_cross():
+    """GM-140 step 8: the Ordinary Method of Slices is refused where a
+    support crosses the surface (Duncan, Wright and Brandon 2014, p. 93: no
+    such equation with known forces), and the result says why."""
+    g, slip = _phi_slope()
+    g.nails = [SoilNail(x_head=30.0, z_head=15.0, length=22.0,
+                        bond_stress=120.0, spacing_h=1.5)]
+    r = analyze_slope(g, slip_surface=slip, method="fellenius", n_slices=40)
+    assert r.FOS is None and not r.method_solved
+    assert any("no reference held prints the Ordinary Method of Slices"
+               in w for w in r.warnings)
 
 
 def test_support_convention_is_checked_on_every_support():
@@ -554,9 +577,15 @@ def test_no_solution_in_compare_methods_is_left_out():
                       method="bishop", compare_methods=True, **_TOE_85)
     assert r.FOS > 1.0 and r.method_solved
     assert r.FOS_spencer is None and r.FOS_morgenstern_price is None
-    assert r.methods_without_solution == ["Spencer", "Morgenstern-Price"]
+    # GM-140 step 8: the Ordinary Method of Slices is left out too, with
+    # its reason (no printed form with known forces)
+    assert r.FOS_fellenius is None
+    assert r.methods_without_solution == ["Fellenius", "Spencer",
+                                          "Morgenstern-Price"]
     assert sum("(method comparison) finds no equilibrium solution" in w
                for w in r.warnings) == 2
+    assert sum("(method comparison) has no solution on this surface: "
+               "supports cross this surface" in w for w in r.warnings) == 1
 
 
 def test_no_supports_and_no_solution_is_no_number():

@@ -82,6 +82,9 @@ class YieldAccelerationResult:
     reason: str = ""
     no_solution_kh: Optional[float] = None
     ky_bounds: Optional[tuple] = None
+    #: Which arc of its circle the surface is, where the circle meets the
+    #: ground at more than two points (GM-343; `analysis.lowest_arc`).
+    arc: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
@@ -92,6 +95,8 @@ class YieldAccelerationResult:
             "method": self.method,
             "converged": self.converged,
         }
+        if self.arc:
+            d["arc"] = dict(self.arc)
         if self.reason:
             d["reason"] = self.reason
             d["no_solution_kh"] = (None if self.no_solution_kh is None
@@ -231,6 +236,22 @@ def yield_acceleration(geom: SlopeGeometry,
         if xc is None or yc is None or radius is None:
             raise ValueError("provide slip_surface or all of xc, yc, radius")
         slip = CircularSlipSurface(xc, yc, radius)
+
+    # Where a circle ends (GM-343): a circle that meets the ground at more
+    # than two points is split there; the yield coefficient is found on
+    # each arc as a surface of its own and the result is the lowest,
+    # named in ``arc``.
+    from slope_stability.analysis import (split_arcs, lowest_arc,
+                                          checked_surface)
+    slip = checked_surface(geom, slip)
+    arcs = split_arcs(geom, slip)
+    if arcs:
+        return lowest_arc(
+            geom, slip, arcs,
+            lambda arc: yield_acceleration(
+                geom, slip_surface=arc, method=method, n_slices=n_slices,
+                tol=tol, kh_max=kh_max, bisection_tol=bisection_tol),
+            value=lambda r: r.ky, what="yield coefficient")
 
     # Build the FIXED discretization ONCE and reuse it across the bisection: the
     # only kh-dependent slice quantity is the seismic force (kh * soil weight),

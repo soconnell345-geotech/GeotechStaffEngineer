@@ -212,9 +212,18 @@ class RapidDrawdownResult:
     s_d: List[Optional[float]] = field(default_factory=list)         # G-15
     strength_used: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    #: Which arc of its circle the surface is, where the circle meets the
+    #: ground at more than two points (GM-343; `analysis.lowest_arc`).
+    arc: Optional[Dict[str, Any]] = None
     #: Statements that are not warnings (what the manual's example of the
     #: 1970 procedure was computed by).
     notes: List[str] = field(default_factory=list)
+    #: What was chosen (``geotech_common.choices``): the procedure, the
+    #: method of slices, the strengths, the water before and after
+    #: drawdown, and (GM-140 step 5a, ``pore_pressure.water_statements``)
+    #: what the pore pressure on the bases was taken as: the reading of a
+    #: sloping line before drawdown, or after it where one is given, and
+    #: none on total-stress layers.
     choices: List[Dict[str, Any]] = field(default_factory=list)
     #: Where a layer was given ground a layer listed before it also covers
     #: (`SlopeGeometry.layer_overlaps`; the first listed holds it).
@@ -344,6 +353,8 @@ class RapidDrawdownResult:
             d["choices"] = [dict(c) for c in self.choices]
         if self.layer_overlaps:
             d["layer_overlaps"] = [dict(o) for o in self.layer_overlaps]
+        if self.arc:
+            d["arc"] = dict(self.arc)
         if self.notes:
             d["notes"] = list(self.notes)
         if self.warnings:
@@ -684,11 +695,20 @@ def fixed_inclination_solution(slices, slip, theta_deg: float = 0.0,
     n = len(ns)
     try:
         if equilibrium == "force":
-            st = sys_._solve_marched(lam, 1.3)
+            # The branch on which every slice lies above its pole, asked
+            # for by name: the setting of every solve of the GLE engine
+            # (GM-344, `gle._GLESystem._state`). The rule for a base in
+            # tension is the one in force (`gle.base_tension`), as for
+            # every other solve: `analysis.rapid_drawdown_fos` takes
+            # ``base_in_tension``.
+            st = sys_._solve_marched(lam, 1.3, above_poles=True)
             if st is None:
                 return StageSolution(
                     reason=f"{name} has no solution with F > 0", method=name)
             F, V, N = st[1], st[3], list(st[4])
+            # tan(phi') as the march used it on each slice (zero on a
+            # slice taken frictionless under base_in_tension='no_friction')
+            tps = list(sys_._march(lam, F)[3])
         else:
             st = sys_.solve_for_lambda(0.0, max_iter=400)
             if st is None:
@@ -700,7 +720,9 @@ def fixed_inclination_solution(slices, slip, theta_deg: float = 0.0,
             if den_m <= 1e-9 or abs(res_m / den_m - F) > 1e-3:
                 return StageSolution(
                     reason=f"{name} did not converge", method=name)
-            N = [sys_._normal(s, F, 0.0) for s in ns]
+            normals = [sys_._normal_eff(s, F, 0.0) for s in ns]
+            N = [nt[0] for nt in normals]
+            tps = [nt[1] for nt in normals]
     except (ValueError, ZeroDivisionError, OverflowError) as exc:
         return StageSolution(reason=f"{name} stopped with an error ({exc})",
                              method=name)
@@ -708,7 +730,10 @@ def fixed_inclination_solution(slices, slip, theta_deg: float = 0.0,
         return StageSolution(reason=f"{name} has no usable factor of safety",
                              method=name)
     N_eff = [N[i] - s.u * s.length for i, s in enumerate(ns)]
-    S = [(s.c * s.length + max(N_eff[i], 0.0) * s.tan_phi) / F
+    # the mobilized shear of the equations solved: tan(phi') as each
+    # slice's own solve took it, N' as solved (before, max(N', 0), which
+    # no longer matched the equations, GM-344)
+    S = [(s.c * s.length + N_eff[i] * tps[i]) / F
          for i, s in enumerate(ns)]
     if mirrored:
         N, N_eff, S = N[::-1], N_eff[::-1], S[::-1]
@@ -824,6 +849,30 @@ def _drawdown_choices(method, f_interslice, stage_solver, before_given,
     return out
 
 
+_SLOPING_LINE = "pore pressure under the sloping water line"
+
+
+def _stage_water_statements(g_full, g_draw, after_given):
+    """(choices, warnings) on the pore pressure of the bases (GM-140 step
+    5a): every stage's slices take it from the same function
+    (``pore_pressure.base_pore_pressure``), so a sloping line is read as
+    ``geom.water_line_kind`` says. Stage 1's statements in full, with its
+    warnings; for a line given after drawdown (``drawdown_phreatic_points``,
+    GM-140 step 9) the reading of that line where it slopes. The grid, ru
+    and the total-stress layers are the same soils and inputs in every
+    stage and are said once, by stage 1."""
+    from slope_stability.pore_pressure import water_statements
+    stage1 = "Stage 1 (before drawdown): "
+    found, notes = water_statements(g_full)
+    choices = [dict(c, what=stage1 + c["what"]) for c in found]
+    warnings = [stage1 + n for n in notes]
+    if after_given:
+        after, _ = water_statements(g_draw)
+        choices += [dict(c, what="After drawdown: " + c["what"])
+                    for c in after if c["what"] == _SLOPING_LINE]
+    return choices, warnings
+
+
 def rapid_drawdown_fos(geom: SlopeGeometry,
                        drawdown_from_elevation: float,
                        drawdown_to_elevation: float,
@@ -924,6 +973,27 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                 "pp. G-1 to G-2): give R_c and R_phi, or use "
                 "'lowe_karafiath' or 'duncan_3stage'.")
 
+    # Where a circle ends (GM-343): a circle that meets the ground at more
+    # than two points is split there; each arc is put through the stages
+    # as a surface of its own and the result is the lowest, named in
+    # ``arc`` and the warnings.
+    from slope_stability.analysis import (split_arcs, lowest_arc,
+                                          checked_surface)
+    slip = checked_surface(geom, slip)
+    arcs = split_arcs(geom, slip)
+    if arcs:
+        return lowest_arc(
+            geom, slip, arcs,
+            lambda arc: rapid_drawdown_fos(
+                geom, drawdown_from_elevation, drawdown_to_elevation,
+                slip_surface=arc, method=method,
+                f_interslice=f_interslice, n_slices=n_slices, tol=tol,
+                stage1_phreatic_points=stage1_phreatic_points,
+                drawdown_phreatic_points=drawdown_phreatic_points,
+                stage_solver=stage_solver,
+                extra_boundaries=extra_boundaries),
+            what="drawdown factor of safety")
+
     # The surface's crack as printed (GM-140 step 4, ``cracks``): one crack
     # for every stage, its depth, where it depends on the factor of safety,
     # taken at the drawdown factor of safety itself. The geometry it fixes
@@ -1017,6 +1087,24 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         res.choices = _drawdown_choices(
             method, f_interslice, stage_solver, before_given, after_given,
             drawdown_from_elevation, drawdown_to_elevation, res.stage_method)
+        # The pore pressure on the bases (GM-140 step 5a): the reading of
+        # a sloping line, named; stage 1's warnings, once.
+        water, notes = _stage_water_statements(g_full, g_draw, after_given)
+        res.choices += water
+        warnings.extend(notes)
+        # what the supports were taken as, the same in every stage
+        # (GM-140 step 8), and what counts nothing or was not checked on
+        # this surface, among the warnings (the orchestrator's Q3)
+        from slope_stability.supports import (has_supports,
+                                              not_counted_warning,
+                                              resolve_supports,
+                                              support_statements)
+        res.choices += support_statements(geom)[0]
+        if has_supports(geom):
+            sup = resolve_supports(geom, slip, *x_ends)
+            for w in sup.notes + [not_counted_warning(sup.not_counted)]:
+                if w and w not in warnings:
+                    warnings.append(w)
         if (method == "corps_2stage"
                 and stage_solver in (None, "gle", "spencer")):
             res.notes.append(CORPS_EXAMPLE_NOTE)
@@ -1240,7 +1328,13 @@ def search_rapid_drawdown(geom: SlopeGeometry,
     n_trials, n_points, seed : int / int / int
         Random / DE noncircular controls (see ``search_noncircular``/``search_de``).
     n_slices, tol, f_interslice :
-        Passed through to each per-surface ``rapid_drawdown_fos`` solve.
+        Passed through to each per-surface ``rapid_drawdown_fos`` solve, in
+        every family and every kind of search (the centre grid, the entry
+        and exit circles, the toe-circle families, the shallow planes, the
+        random polylines and the differential evolution): one staged solve
+        scores them all, and the search's ``candidate_methods`` names the
+        procedure and ``f_interslice`` for each family (GM-140 step 6). An
+        unknown ``f_interslice`` is refused.
     stage1_phreatic_points : list of (x, z), optional
         The seepage line before drawdown (default None: a level pool, the
         assumption of the manual's own example, named in the result).
@@ -1299,6 +1393,8 @@ def search_rapid_drawdown(geom: SlopeGeometry,
             "drawdown_to_elevation must be below drawdown_from_elevation")
     if stage3_effective_normal is not None:
         raise ValueError(STAGE3_NORMAL_RULE)
+    from slope_stability.solution import check_interslice
+    check_interslice(f_interslice)
 
     from slope_stability.search import (
         grid_search, search_entry_exit, search_noncircular, search_de, _FOS_MAX,
@@ -1366,14 +1462,16 @@ def search_rapid_drawdown(geom: SlopeGeometry,
             x_exit_range, n_trials, n_points, seed, n_slices, tol, _dd_fos,
             refine, budget, windows_auto=windows_auto, grid_auto=grid_auto,
             toe_circles=toe_circles, infinite_slope=infinite_slope,
-            auto=auto, given=given, window_note=window_note)
+            auto=auto, given=given, window_note=window_note,
+            solve_name=method, solve_interslice=f_interslice)
 
     # Recompute the stage-level detail on the winning surface.
     dd = None
     crit = search.critical
     if crit is not None:
         if crit.is_circular:
-            crit_slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+            from slope_stability.slip_surface import circle_of
+            crit_slip = circle_of(crit)     # the governing arc's two ends
         else:
             crit_slip = PolylineSlipSurface(points=list(crit.slip_points))
         dd = rapid_drawdown_fos(
@@ -1397,30 +1495,40 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
                      x_entry_range, x_exit_range, n_trials, n_points, seed,
                      n_slices, tol, _dd_fos, refine, budget, *, windows_auto,
                      grid_auto, toe_circles, infinite_slope, auto, given,
-                     window_note=None):
+                     window_note=None, solve_name=None,
+                     solve_interslice=None):
     """The search of `search_rapid_drawdown` under its time budget: the
-    main search, its supplementary families and what it chose."""
+    main search, its supplementary families and what it chose. Every
+    family is scored by the one staged solve (``solve_name``, the
+    procedure, with ``solve_interslice``), and ``candidate_methods`` says
+    so for each (GM-140 step 6)."""
     from slope_stability.search import (
         grid_search, search_entry_exit, search_noncircular, search_de,
     )
+    # The stages' own method, for the label of the surface reported: the
+    # GLE with the constant function is Spencer's method, with another
+    # function Morgenstern-Price (before GM-140 step 6 the label said
+    # Spencer whatever function was named).
+    stage_method = ("spencer" if solve_interslice in (None, "constant")
+                    else "morgenstern_price")
     if surface_type == "circular":
         search = grid_search(
-            geom, x_range, y_range, nx, ny, method="spencer",
+            geom, x_range, y_range, nx, ny, method=stage_method,
             n_slices=n_slices, tol=tol, x_entry_range=x_entry_range,
             x_exit_range=x_exit_range, fos_fn=_dd_fos, refine=refine)
     elif surface_type == "entry_exit":
         search = search_entry_exit(
             geom, x_entry_range, x_exit_range, n_entry=nx, n_exit=ny,
-            method="spencer", n_slices=n_slices, tol=tol, fos_fn=_dd_fos)
+            method=stage_method, n_slices=n_slices, tol=tol, fos_fn=_dd_fos)
     elif surface_type == "noncircular":
         search = search_noncircular(
             geom, x_entry_range, x_exit_range, n_trials=n_trials,
             n_points=n_points, n_slices=n_slices, tol=tol, seed=seed,
-            method="spencer", fos_fn=_dd_fos)
+            method=stage_method, fos_fn=_dd_fos)
     else:  # noncircular_de
         search = search_de(
             geom, x_entry_range, x_exit_range, n_points=max(n_points, 5),
-            method="spencer", n_slices=n_slices, tol=tol, seed=seed,
+            method=stage_method, n_slices=n_slices, tol=tol, seed=seed,
             fos_fn=_dd_fos)
 
     # Toe circles and shallow planar surfaces, scored with the drawdown FOS.
@@ -1431,13 +1539,23 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
     circular = surface_type in ("circular", "entry_exit")
     search = apply_supplements(
         geom, search, search_kind=CIRCULAR if circular else NONCIRCULAR,
-        method="spencer", n_slices=n_slices, tol=tol,
+        method=stage_method, n_slices=n_slices, tol=tol,
         windows_used=(x_entry_range, x_exit_range),
         windows_auto=windows_auto,
         grid_used=(x_range, y_range) if surface_type == "circular" else None,
         grid_auto=grid_auto, toe_circles=toe_circles,
         infinite_slope=infinite_slope, fos_fn=_dd_fos, auto_ranges=auto,
+        solve_name=solve_name, solve_interslice=solve_interslice,
         **given)
+    if not circular:
+        # (a circular drawdown search costs two or three staged solves a
+        # circle, so it is not run for the check; GM-140 step 6)
+        search.circle_check = {
+            "checked": False,
+            "note": ("the noncircular minimum was not checked against a "
+                     "circle: a rapid-drawdown search runs no circular "
+                     "search for the check (run surface_type 'circular' "
+                     "and compare)")}
     # What the search chose (GM-115); every trial is the drawdown solve.
     # The surfaces left out for m_alpha < 0.2 on a drawn-down slice so far,
     # the supplementary families' included (GM-127).
@@ -1448,6 +1566,11 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
     search.trial_flags = flag_records(
         _flag_tally_so_far(),
         rename={"main": CIRCULAR if circular else NONCIRCULAR})
+    # Arcs of split circles the windows left out (GM-343 review).
+    from slope_stability.search import _outside_so_far, outside_records
+    search.arcs_outside_windows = outside_records(
+        _outside_so_far(),
+        rename={"main": CIRCULAR if circular else NONCIRCULAR})
     search.choices = search_choices(
         search, surface_type=surface_type, toe_circles=toe_circles,
         infinite_slope=infinite_slope,
@@ -1457,6 +1580,8 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
     search.choices += _crack_choices(
         geom, _discards_so_far(),
         circles=surface_type in ("circular", "entry_exit") or toe_circles)
+    from slope_stability.supports import support_statements
+    search.choices += support_statements(geom)[0]
     if window_note:
         search.warnings.insert(0, window_note)
     note_budget(search, budget)     # a search cut short says so first

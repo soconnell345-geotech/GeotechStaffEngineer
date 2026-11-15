@@ -1733,27 +1733,19 @@ def _build_slope_geom(params: dict, method: str):
     did-you-mean instead of being dropped (a layer given 'c' ran with
     c' = 0), and ru, strength_model and every SHANSEP / Hoek-Brown /
     anisotropic / R-envelope field pass through."""
-    from slope_stability.geometry import SlopeGeometry
-    from funhouse_agent.adapters.slope_stability import build_soil_layer
+    from funhouse_agent.adapters.slope_stability import (
+        build_soil_layer, _build_geometry)
 
-    soil_layers = [
+    # the package's required layer keys checked first (its own message)
+    for i, ld in enumerate(params["soil_layers"]):
         build_soil_layer(ld, i, method=method,
-                         required=("name", "top_elevation", "bottom_elevation",
-                                   "gamma"))
-        for i, ld in enumerate(params["soil_layers"])]
-
-    surface_points = [tuple(p) for p in params["surface_points"]]
-    gwt_points = None
-    if params.get("gwt_points"):
-        gwt_points = [tuple(p) for p in params["gwt_points"]]
-
-    return SlopeGeometry(
-        surface_points=surface_points,
-        soil_layers=soil_layers,
-        gwt_points=gwt_points,
-        surcharge=params.get("surcharge", 0.0),
-        kh=params.get("kh", 0.0),
-    )
+                         required=("name", "top_elevation",
+                                   "bottom_elevation", "gamma"))
+    # The rest as analyze_slope and the search build it (GM-140 step 10,
+    # GM-346): the tension crack (step 4), water_line_kind (step 5a) and the
+    # supports with their Method A or B and pullout (step 8) reach the
+    # packages; left out, each is its default, as before.
+    return _build_geometry(params, method=method)
 
 
 def _slope_fos_extra(result, analysis_dict) -> dict:
@@ -1797,25 +1789,181 @@ def _generate_slope_stability_package(params: dict) -> dict:
 
     geom = _build_slope_geom(params, "slope_stability_package")
 
+    from funhouse_agent.adapters.slope_stability import (
+        _slip_surface_from, _check_choice)
+    from slope_stability.gle import BASE_TENSION_RULES
     result = analyze_slope(
         geom,
         xc=params["xc"], yc=params["yc"], radius=params["radius"],
+        # the arc's two ends where given ("where a circle ends", GM-343)
+        slip_surface=_slip_surface_from(params),
         method=params.get("method", "bishop"),
         n_slices=params.get("n_slices", 30),
         include_slice_data=True,
         compare_methods=params.get("compare_methods", False),
+        base_in_tension=_check_choice(
+            params.get("base_in_tension", "as_printed"), BASE_TENSION_RULES,
+            name="base_in_tension", method="slope_stability_package"),
     )
+
+    # inputs given that did nothing in this case, said (Q4)
+    inert = _say_inputs_without_effect(
+        _inputs_without_effect(params, geom, result), result)
 
     # slope_stability calc_steps expects a dict with "geom" + optional metadata
     analysis_dict = {
         "geom": geom,
         "FOS_required": params.get("FOS_required", 1.5),
     }
+    extra = _slope_fos_extra(result, analysis_dict)
+    if inert:
+        extra["inputs_without_effect"] = inert
     return _build_response(
         "slope_stability", result, analysis_dict, params,
         analysis_type="Slope Stability", package="slope_stability_package",
-        extra=_slope_fos_extra(result, analysis_dict),
+        extra=extra,
     )
+
+
+#: What ``tol`` does in the slope solvers (``slope_stability.solution.
+#: solve_method``): Bishop's simplified method takes it as given; Janbu's
+#: simplified method and the GLE behind Spencer, Morgenstern-Price and GLE
+#: run at min(tol, 1e-4) / 10, so a value above 1e-4 changes nothing for
+#: them; the Ordinary Method of Slices does not iterate (GM-140 step 10,
+#: D45).
+SLOPE_TOL_RULE = (
+    "tol is the convergence tolerance of Bishop's simplified method as "
+    "given; Janbu's simplified method and Spencer's, Morgenstern-Price and "
+    "GLE run at min(tol, 1e-4) / 10, and the Ordinary Method of Slices does "
+    "not iterate")
+
+
+def _check_slope_tol(tol, method: str) -> None:
+    """Refuse a ``tol`` that would change nothing (GM-140 step 10, D45): a
+    value above 1e-4 with any method but Bishop's simplified method."""
+    if tol is not None and tol > 1e-4 and method != "bishop":
+        raise ValueError(
+            f"tol={tol:g} changes nothing with method '{method}': "
+            f"{SLOPE_TOL_RULE}. Give tol at most 1e-4, or leave it out.")
+
+
+#: The methods ``base_in_tension`` acts on (``analysis._GLE_SYSTEM_METHODS``).
+_BASE_TENSION_METHODS = ("janbu", "spencer", "morgenstern_price", "gle")
+
+
+def _inputs_without_effect(params: dict, geom, result, search=None,
+                           package: str = "slope_stability_package") -> list:
+    """Inputs given that could act and did nothing in this case (the
+    orchestrator's ruling on GM-140 step 10's review, Q4): accepted, and
+    the report says so and why. Only a value other than the package's
+    default: one equal to it is what the package does without it, and
+    gives the same result as leaving it out. ``[(name, value, why)]``:
+    ``tol`` with the
+    Ordinary Method of Slices, which does not iterate, where it scored the
+    surface reported; ``base_in_tension`` where no slice base was in
+    tension on the surface reported (nor on any trial of the search);
+    ``reverse_curvature`` where no circle had reverse curvature (the
+    circle analysed, or every trial of a search, where a reverse-curvature
+    circle would have been counted). A value that could never act is
+    refused before (``_check_slope_tol``)."""
+    from slope_stability.solution import METHOD_TEXT
+    specs = METHOD_INFO[package]["parameters"]
+
+    def chosen(name):
+        return (name in params
+                and params[name] != specs.get(name, {}).get("default"))
+    out = []
+    method = params.get("method", specs["method"].get("default"))
+    if (search is not None and chosen("tol") and method == "fellenius"
+            and not search.method_used):
+        others = sorted({r["method"] for r in search.candidate_methods
+                         if r["method"] != "fellenius"})
+        why = ("the Ordinary Method of Slices, which scored the surface "
+               "reported, does not iterate, so tol did not act on its "
+               "factor of safety; it acts on the other methods of the "
+               "method comparison")
+        if others:
+            why += (" and on the families "
+                    + " and ".join(METHOD_TEXT.get(m, m) for m in others)
+                    + " scored in its place")
+        out.append(("tol", params["tol"], why))
+    if chosen("base_in_tension") and method in _BASE_TENSION_METHODS:
+        on_surface = any(f.get("check") == "base_tension" and f.get("flag")
+                         for f in getattr(result, "acceptability", None) or [])
+        on_trials = sum(r.get("by_check", {}).get("base_tension", 0)
+                        for r in (getattr(search, "trial_flags", None) or [])
+                        ) if search is not None else 0
+        if not on_surface and not on_trials:
+            where = ("on the surface reported or on any trial the search "
+                     "scored" if search is not None
+                     else "on the surface analysed")
+            out.append((
+                "base_in_tension", params["base_in_tension"],
+                f"no slice base was in tension (a negative effective normal "
+                f"force) {where} by {METHOD_TEXT.get(method, method)}, so "
+                f"the rule had nothing to act on (the other methods of a "
+                f"method comparison are not checked for it)"))
+    if chosen("reverse_curvature"):
+        value = params["reverse_curvature"]
+        none_met = False
+        if search is None:
+            from slope_stability.slip_surface import circle_of
+            try:
+                slip = circle_of(result)
+                none_met = slip.reverse_curvature_crack(geom) is None
+            except (ValueError, AttributeError, TypeError):
+                none_met = False
+        else:
+            asked = (getattr(geom, "tension_crack_depth", 0) > 0
+                     or getattr(geom, "tension_crack_depth_basis", "given")
+                     != "given")
+            # every reverse-curvature circle is counted where it is
+            # discarded, or refused for want of a crack; one a crack
+            # closes is not counted, so with a crack asked and
+            # 'tension_crack' nothing can be said
+            none_met = (not getattr(search, "n_discarded_reverse_curvature",
+                                    0)
+                        and (value == "discard" or not asked))
+        if none_met:
+            what = ("the circle analysed is not a reverse-curvature circle"
+                    if search is None else
+                    "no trial circle of the search was a reverse-curvature "
+                    "circle")
+            out.append((
+                "reverse_curvature", value,
+                f"{what} (one whose centre is below the ground where it "
+                f"ends), so there was none to close with a crack or "
+                f"discard"))
+    return out
+
+
+def _say_inputs_without_effect(found: list, result, search=None) -> list:
+    """Put each input of ``_inputs_without_effect`` in the choices the
+    package's Method Choices section prints (the result's own, or, where
+    it has none, the search's: ``calc_package.tables.package_choices``)
+    and return the statements for the response."""
+    from geotech_common.choices import choice
+    target = (result if getattr(result, "choices", None) or search is None
+              else search)
+    lines = []
+    for name, value, why in found:
+        text = f"{name} = {value!r} (given) did nothing in this case: {why}."
+        target.choices.append(choice(
+            f"{name}, given: what it did in this case", value, "given",
+            f"Nothing in this case: {why}."))
+        lines.append(text)
+    return lines
+
+
+#: The slope tools' later inputs the two slope packages take as the tools
+#: do (GM-140 step 10, GM-346): the tension crack (step 4), the reading of
+#: the water line (step 5a), the supports and how their force is taken
+#: (step 8).
+_SLOPE_PACKAGE_INPUTS = (
+    "tension_crack_depth", "tension_crack_water_depth", "tension_crack_side",
+    "tension_crack_model", "tension_crack_depth_basis", "reverse_curvature",
+    "water_line_kind", "nails", "anchors", "geosynthetics",
+    "stabilizing_piles", "assisting_support")
 
 
 def _generate_slope_report_package(params: dict) -> dict:
@@ -1844,6 +1992,10 @@ def _generate_slope_report_package(params: dict) -> dict:
             "method", "surface_type", "n_slices", "tol", "x_range", "y_range",
             "nx", "ny", "x_entry_range", "x_exit_range", "n_trials", "n_points",
             "seed", "f_interslice", "FOS_required", "time_budget_s",
+            "base_in_tension",
+            # the later inputs (GM-140 step 10): tension crack, water line,
+            # supports
+            *_SLOPE_PACKAGE_INPUTS,
             # probabilistic annex
             "variables", "fosm", "monte_carlo", "n", "research_surface",
             # output + header metadata; the caller's assumptions and the
@@ -1873,6 +2025,12 @@ def _generate_slope_report_package(params: dict) -> dict:
     from slope_stability.solution import check_method, check_interslice
     check_method(method)
     check_interslice(params.get("f_interslice", "half_sine"))
+    _check_slope_tol(tol, method)
+    from funhouse_agent.adapters.slope_stability import _check_choice
+    from slope_stability.gle import BASE_TENSION_RULES
+    base_in_tension = _check_choice(
+        params.get("base_in_tension", "as_printed"), BASE_TENSION_RULES,
+        name="base_in_tension", method="slope_report_package")
 
     def _range(key):
         return tuple(params[key]) if params.get(key) else None
@@ -1889,35 +2047,61 @@ def _generate_slope_report_package(params: dict) -> dict:
         n_points=params.get("n_points", 5),
         seed=params.get("seed"),
         time_budget_s=time_budget_s,
+        f_interslice=params.get("f_interslice", "half_sine"),
+        base_in_tension=base_in_tension,
     )
     budget_is_default(search.choices, params)
 
     crit = search.critical
     if crit is None:
-        return {
-            "status": "error",
-            "analysis_type": "Slope Stability Report",
-            "error": (
+        stopped = (search.search_ranges or {}).get("time_budget")
+        if stopped:
+            # the time budget stopped the search before it scored a
+            # surface: say so, not "widen the grid" (GM-140 step 10's
+            # review, D6; D45: refused with its reason)
+            from slope_stability.search import TIME_BUDGET_MAX_S
+            why = (
+                f"The critical-surface search was stopped by its time "
+                f"budget, time_budget_s = {stopped['time_budget_s']:g} s "
+                f"(it ran {stopped['elapsed_s']:g} s), after "
+                f"{search.n_surfaces_evaluated} surfaces evaluated and "
+                f"before it scored an admissible one, so there is no "
+                f"critical surface to report. Raise time_budget_s (at most "
+                f"{TIME_BUDGET_MAX_S:g} s) and run it again.")
+        else:
+            why = (
                 "Critical-surface search found no admissible surface "
                 f"({search.n_surfaces_evaluated} evaluated). Widen the search "
                 "grid (x_range/y_range for circular, or x_entry_range/"
-                "x_exit_range) or check the geometry."
-            ),
+                "x_exit_range) or check the geometry.")
+        return {
+            "status": "error",
+            "analysis_type": "Slope Stability Report",
+            "error": why,
         }
 
     # Re-analyze the critical surface with method comparison + slice data so the
     # report carries the FOS-by-method table and, for a rigorous method, the
-    # interslice-force / line-of-thrust figure. Uses the SAME method the search
-    # minimized, so the reported critical FOS stays consistent with the search.
+    # interslice-force / line-of-thrust figure. Uses the method that scored
+    # the governing surface in the search (GM-140 step 6): the method named,
+    # or, where the governing family was scored by another (Bishop's
+    # simplified method and the Ordinary Method of Slices do not apply to a
+    # plane or a polyline), that one, so the reported critical FOS is the
+    # search's own; the response says so (method_used).
+    method_named = method
+    method = search.method_used or method
     if crit.is_circular:
-        surf_kwargs = dict(xc=crit.xc, yc=crit.yc, radius=crit.radius)
+        # the governing arc's two ends kept (GM-343)
+        from slope_stability.slip_surface import circle_of
+        surf_kwargs = dict(slip_surface=circle_of(crit))
     else:
         from slope_stability.slip_surface import PolylineSlipSurface
         surf_kwargs = dict(slip_surface=PolylineSlipSurface(crit.slip_points))
     result = analyze_slope(
         geom, method=method, n_slices=n_slices, tol=tol,
         f_interslice=params.get("f_interslice", "half_sine"),
-        include_slice_data=True, compare_methods=True, **surf_kwargs,
+        include_slice_data=True, compare_methods=True,
+        base_in_tension=base_in_tension, **surf_kwargs,
     )
 
     analysis_dict = {
@@ -1931,7 +2115,7 @@ def _generate_slope_report_package(params: dict) -> dict:
     variables = params.get("variables")
     if variables:
         analysis_dict["variables"] = variables
-        prob_surf = (dict(xc=crit.xc, yc=crit.yc, radius=crit.radius)
+        prob_surf = (dict(slip_surface=circle_of(crit))
                      if crit.is_circular
                      else dict(slip_surface=PolylineSlipSurface(crit.slip_points)))
         if params.get("fosm", True):
@@ -1951,6 +2135,12 @@ def _generate_slope_report_package(params: dict) -> dict:
 
     extra = _slope_fos_extra(result, analysis_dict)
     extra["n_surfaces_evaluated"] = search.n_surfaces_evaluated
+    inert = _say_inputs_without_effect(
+        _inputs_without_effect(params, geom, result, search,
+                               package="slope_report_package"),
+        result, search)
+    if inert:
+        extra["inputs_without_effect"] = inert
     if search.no_solution:
         # trials the method has no solution on, by family and method
         extra["search_no_solution"] = [dict(r) for r in search.no_solution]
@@ -1959,6 +2149,18 @@ def _generate_slope_report_package(params: dict) -> dict:
     if search.governing_surface:
         extra["governing_surface"] = search.governing_surface
         extra["candidates"] = dict(search.candidates)
+        extra["candidate_methods"] = [dict(r) for r in
+                                      search.candidate_methods]
+    if search.method_used:
+        # the governing family was scored by another method than the one
+        # named: both are stated (GM-140 step 6, item 5)
+        extra["method_named"] = method_named
+        extra["method_used"] = search.method_used
+        extra["named_method_lowest"] = dict(search.named_method_lowest or {})
+    if search.screen_unsolved:
+        extra["screen_unsolved"] = dict(search.screen_unsolved)
+    if search.circle_check:
+        extra["circle_check"] = dict(search.circle_check)
     if search.warnings:
         extra["warnings"] = list(search.warnings)
     return _build_response(
@@ -3823,7 +4025,7 @@ METHOD_INFO = {
             "renderer": "'story' (pure-Python PyMuPDF engine).",
             "images_embedded": "How many local image files were inlined into the PDF.",
             "included": "The HTML files a data-include put in the PDF.",
-            "include_problems": ("On error: each data-include that could not be "
+            "include_problems": ("Only on error: each data-include that could not be "
                                  "filled, and why."),
             "pages": "How many pages the PDF has.",
             "page_contents": "What landed on each page, read back from the PDF: "
@@ -3882,15 +4084,15 @@ METHOD_INFO = {
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Factor of safety: the method's own converged solution on the circle; null where the method has none (no_solution says why, and the package prints no number).", "method": "Method used.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on this surface.", "flags": "Present when the surface does not meet a printed acceptability check (low_m_alpha, bishop_below_oms, negative_frictional_term, base_tension, side_tension, thrust_outside): the package's Printed Acceptability Checks table names the slices and values. Report the flags with the factor of safety.", "method_used": "Present when FOS is not the method's own value: with Bishop's method on a circle with no supports and no seismic coefficient, where Bishop's value (FOS_bishop) is below the Ordinary Method of Slices value, FOS is the Ordinary Method of Slices value (Duncan 1996, p. 580)."},
+        "returns": {**_COMMON_RETURNS, "inputs_without_effect": "Only when an input given did nothing in this case: each, and why (also in Method Choices).", "FOS": "Factor of safety: the method's own converged solution on the circle; null where the method has none (no_solution says why, and the package prints no number).", "method": "Method used.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on this surface.", "flags": "Present when the surface does not meet a printed acceptability check (low_m_alpha, bishop_below_oms, negative_frictional_term, base_tension, side_tension, thrust_outside): the package's Printed Acceptability Checks table names the slices and values. Report the flags with the factor of safety.", "method_used": "Present when FOS is not the method's own value: with Bishop's method on a circle with no supports and no seismic coefficient, where Bishop's value (FOS_bishop) is below the Ordinary Method of Slices value, FOS is the Ordinary Method of Slices value (Duncan 1996, p. 580)."},
     },
     "slope_report_package": {
         "category": "Calculation Package",
-        "brief": "One-call slope stability REPORT for a critical-surface SEARCH: input echo, search story (surfaces tried + rejection diagnostics + critical surface/FOS), FOS-by-method table, slice-force + interslice/thrust-line figures, reinforcement summary, a probabilistic annex (FOSM/Monte Carlo) when 'variables' is supplied, and CSV tables (every slice, every trial surface). No fixed circle needed — the search finds the critical surface.",
+        "brief": "One-call slope stability REPORT for a critical-surface SEARCH (no fixed circle): input echo, the search (surfaces tried, refused, critical), FOS by method, slice-force and interslice/thrust-line figures, supports, a FOSM/Monte Carlo annex with 'variables', CSV tables of every slice and trial surface.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "List of [x, z] ground surface coordinates."},
             "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' and 'top_boundary_points' ([[x,z],...]) define a non-horizontal layer base or top (e.g. a weak seam). One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
-            "method": {"type": "str", "required": False, "default": "spencer", "allowed_values": ["spencer", "morgenstern_price", "gle", "bishop", "janbu", "fellenius"], "description": "Limit-equilibrium method the search minimizes and the report highlights. Default 'spencer' (rigorous — populates the interslice-force / line-of-thrust figure)."},
+            "method": {"type": "str", "required": False, "default": "spencer", "allowed_values": ["spencer", "morgenstern_price", "gle", "bishop", "janbu", "fellenius"], "description": "Limit-equilibrium method the search minimizes and the report highlights: every family of surfaces is scored by it. Default 'spencer' (rigorous — populates the interslice-force / line-of-thrust figure). 'bishop' and 'fellenius' are for circles: planes and polylines are then scored by Spencer's method and reported apart (candidate_methods); where such a family governs the report analyses the governing surface by the method that scored it and says so (method_used)."},
             "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": ["circular", "entry_exit", "noncircular", "noncircular_de", "pso", "weak_layer"], "description": "Trial-surface family for the search. 'circular' grids circle centres over x_range/y_range and keeps only circles whose ends fall in x_entry_range/x_exit_range; the others draw their surfaces between x_entry_range and x_exit_range. Ranges not given are set from the slope (toe, crest, height, depth to the base). 'weak_layer' biases trials toward a defined weak seam."},
             "x_range": {"type": "array", "required": False, "description": "[min, max] circle-center x for the search grid (circular)."},
             "y_range": {"type": "array", "required": False, "description": "[min, max] circle-center y for the search grid (circular)."},
@@ -3908,15 +4110,15 @@ METHOD_INFO = {
             "monte_carlo": {"type": "bool", "required": False, "default": False, "description": "If True (and 'variables' given), also run a Monte Carlo simulation on the critical surface for the annex."},
             "n": {"type": "int", "required": False, "default": 1000, "description": "Monte Carlo realizations (when monte_carlo=True)."},
             "research_surface": {"type": "bool", "required": False, "default": False, "description": "Monte Carlo: re-search the critical surface each realization (slower) instead of holding it fixed."},
-            "time_budget_s": {"type": "float", "required": False, "default": 180.0, "description": "Time budget of EACH critical-surface search in seconds (at most 600), as slope_stability search_critical_surface: the report's search, and with research_surface each Monte Carlo realization's (per search, not for the run). A search cut short reports the lowest surface in what it covered and says so in its warnings."},
+            "time_budget_s": {"type": "float", "required": False, "default": 180.0, "description": "Time budget of EACH critical-surface search, in seconds (at most 600): the report's search and, with research_surface, each Monte Carlo realization's. A search cut short reports the lowest surface in what it covered and says so in its warnings."},
             "fosm": {"type": "bool", "required": False, "default": True, "description": "With 'variables': run the FOSM annex."},
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
-            "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance for the iterative methods."},
-            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": ["constant", "half_sine", "clipped_sine", "trapezoidal"], "description": "Interslice force function for the rigorous re-analysis of the critical surface. Another name is refused."},
+            "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance: Bishop's simplified method takes it as given; Janbu's simplified, Spencer's, Morgenstern-Price and GLE run at min(tol, 1e-4) / 10; the Ordinary Method of Slices does not iterate. Above 1e-4 it is refused except with 'bishop' (it would change nothing)."},
+            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": ["constant", "half_sine", "clipped_sine", "trapezoidal"], "description": "Interslice force function of morgenstern_price and gle, in every family of the search and in the re-analysis of the critical surface. Another name is refused."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety: the method's own converged solution on the governing surface. Null where the method has no solution on it (a family scored by another method governs, for example the shallow planar family, scored by Janbu's simplified method): no_solution says why and the package prints no number. Tell the user, and give the search's own value (candidates) with the method that scored it.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on the governing surface.", "search_no_solution": "The search's trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any; they were not scored; below_0_05: solved with a value below 0.05, which a search does not take as a factor of safety).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
+        "returns": {**_COMMON_RETURNS, "inputs_without_effect": "Only when an input given did nothing in this case: each, and why (also in Method Choices).", "FOS": "Critical factor of safety: the converged solution on the governing surface by the method that scored it in the search. That is the method named, except where the governing family was scored by another (Bishop's simplified method and the Ordinary Method of Slices do not apply to a plane or a polyline, which Spencer's method then scores; a family the method solves none of is scored by the next in order: planes and polylines Spencer's method, then Janbu's simplified method; circles Spencer's, then Bishop's simplified method, then Janbu's): method_used then names it, method_named the method asked for and named_method_lowest that method's own lowest value. Tell the user both. Null where that method has no solution on the surface: no_solution says why and the package prints no number.", "candidate_methods": "What scored each family in candidates: [{family, method, f_interslice, FOS, named, reason}].", "method_used": "Present when the governing surface was scored by another method than the one named (with method_named and named_method_lowest), or, with Bishop's method, when the Ordinary Method of Slices value was taken (Duncan 1996, p. 580).", "named_method_lowest": "Present with method_named: the lowest factor of safety by the method named ({method, f_interslice, FOS, family}), or FOS null with a note when it scored no family.", "screen_unsolved": "Present when a screen by another method scored surfaces below the reported minimum that the method named has no solution on: {n, lowest_screen_FOS, by_family} (UFC 3-220-10 p. 362). Tell the user.", "circle_check": "Present only with a noncircular search: the minimum against the critical circle by the same method ({checked, circle, FOS_as_polyline, noncircular_minimum, governs, note}).", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on the governing surface.", "search_no_solution": "The search's trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any; they were not scored; below_0_05: solved with a value below 0.05, which a search does not take as a factor of safety).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "settlement_package": {
         "category": "Calculation Package",
@@ -3960,7 +4162,7 @@ METHOD_INFO = {
     "retaining_wall_package": {
         "category": "Calculation Package",
         "brief": "Run a cantilever retaining wall (cantilever_wall), MSE wall (mse_wall, ASD) or MSE LRFD external stability (mse_lrfd_external_stability) analysis, or a cantilever wall's stability with the structural design of its concrete (cantilever_wall_structural_design), and generate its calc package.",
-        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(structural design numbers)": "wall_type 'cantilever_reinforced' only: basis, stem, toe and heel (each Mu, Vu, d, the steel required and provided, the bar, phi Mn, phi Vc, passes), development (the stem bars' hook), recommendations_not_met, not_designed and reinforcement (the reinforced wall section a drawing takes), as the cantilever_wall_structural_design tool works them out; checks_failed then lists the concrete's failed checks too. Report them to the user, with what was not designed.", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user.", "(MSE LRFD numbers)": "wall_type 'mse_lrfd' only, in place of verdict and the FOS: passes, checks_failed, checks_not_run, sliding_CDR_governing and sliding_CDR_strength_min, eL_governing_m, eL_strength_min_m and e_limit_m, bearing_CDR_governing, bearing_CDR_strength_min and sigma_v_strength_min_kPa, as the mse_lrfd_external_stability tool works them out (null: not checked). Report them to the user.", "drawing_dxf_path": "wall_type 'cantilever_reinforced' only: the reinforcement sheet as a DXF, written beside the package as <name>_reinforcement.dxf (null: not drawn, warnings says why). The package's last page (pdf) or its Drawings section (html, latex) is the same sheet.", "drawing_png_path": "wall_type 'cantilever_reinforced' only: the same sheet as a PNG, <name>_reinforcement.png beside the package (null: not drawn).", "drawing_sheet": "The sheet's size: 'letter', or 'tabloid' for a wall letter would draw smaller than 1:50.", "drawing_scale": "The sheet's scale, '1:N', the largest standard scale at which the section fits the sheet.", "drawing_warnings": "What the reader of the sheet should know (an assumed shear key place, a hook that does not fit, a bar drawn wider than to scale). Tell the user.", "warnings": "wall_type 'cantilever_reinforced': why the reinforcement sheet is missing, when it could not be drawn (the package is written without it); and any warning the code raised while it ran."},
+        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(structural design numbers)": "wall_type 'cantilever_reinforced' only: basis, stem, toe and heel (each Mu, Vu, d, the steel required and provided, the bar, phi Mn, phi Vc, passes), development (the stem bars' hook), recommendations_not_met, not_designed and reinforcement (the reinforced wall section a drawing takes), as the cantilever_wall_structural_design tool works them out; checks_failed then lists the concrete's failed checks too. Report them to the user, with what was not designed.", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user.", "(MSE LRFD numbers)": "wall_type 'mse_lrfd' only, in place of verdict and the FOS: passes, checks_failed, checks_not_run, sliding_CDR_governing and sliding_CDR_strength_min, eL_governing_m, eL_strength_min_m and e_limit_m, bearing_CDR_governing, bearing_CDR_strength_min and sigma_v_strength_min_kPa, as the mse_lrfd_external_stability tool works them out (null: not checked). Report them to the user.", "drawing_dxf_path": "wall_type 'cantilever_reinforced' only: the reinforcement sheet as a DXF, written beside the package as <name>_reinforcement.dxf (null: not drawn, warnings says why). The package's last page (pdf) or its Drawings section (html, latex) is the same sheet.", "drawing_png_path": "wall_type 'cantilever_reinforced' only: the same sheet as a PNG, <name>_reinforcement.png beside the package (null: not drawn).", "drawing_sheet": "wall_type 'cantilever_reinforced' only: the sheet's size: 'letter', or 'tabloid' for a wall letter would draw smaller than 1:50.", "drawing_scale": "wall_type 'cantilever_reinforced' only: the sheet's scale, '1:N', the largest standard scale at which the section fits the sheet.", "drawing_warnings": "What the reader of the sheet should know (an assumed shear key place, a hook that does not fit, a bar drawn wider than to scale). Tell the user.", "warnings": "wall_type 'cantilever_reinforced': why the reinforcement sheet is missing, when it could not be drawn (the package is written without it); and any warning the code raised while it ran."},
     },
     "ground_improvement_package": {
         "category": "Calculation Package",
@@ -3985,12 +4187,12 @@ METHOD_INFO = {
     "soe_package": {
         "category": "Calculation Package",
         "brief": "Run a support-of-excavation wall analysis (cantilever, braced/anchored at support levels, or FHWA apparent-pressure anchored wall) and generate its calc package: earth pressures, embedment, moments and the strut or anchor loads, with tables (CSV + printed) of pressure, shear and moment along the wall.",
-        "returns": {**_COMMON_RETURNS, "embedment_m": "Required embedment below the excavation (null: no moment balance; see notes).", "max_moment_kNm_per_m": "Max wall moment.", "support_loads_kN_per_m": "Braced: the load on each support level.", "anchor_design_loads_kN": "FHWA anchored: each anchor's design load.", "notes": "The analysis's notes (also printed in the package). Report every one."},
+        "returns": {**_COMMON_RETURNS, "embedment_m": "Required embedment below the excavation (null: no moment balance; see notes).", "max_moment_kNm_per_m": "Max wall moment.", "support_loads_kN_per_m": "Braced only: the load on each support level.", "anchor_design_loads_kN": "FHWA anchored only: each anchor's design load.", "notes": "The analysis's notes (also printed in the package). Report every one."},
     },
     "reliability_package": {
         "category": "Calculation Package",
         "brief": "Run a reliability analysis (FOSM, point estimates, Monte Carlo or FORM) on a performance function of random variables and generate its calc package: the variables and their distributions, the moments of g, the reliability index beta and the probability of failure, and which variable matters.",
-        "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure.", "n_failed": "Monte Carlo: realizations with g below the threshold.", "n": "Monte Carlo: realizations kept (finite g); pf is n_failed / n.", "n_requested": "Monte Carlo: realizations run.", "n_dropped": "Monte Carlo: realizations left out because g was not finite.", "pf_bounds_dropped": "Monte Carlo: [pf if no dropped realization had failed, pf if all had]; null when nothing was dropped.", "pf_ci95": "Monte Carlo: 95% interval on pf.", "pf_ci95_method": "Monte Carlo: 'normal_approximation', or the Clopper-Pearson bound with no failure or only failures.", "warnings": "What the engine could not resolve (dropped realizations, a count at the edge, bounds FOSM or PEM did not apply), then any warning the code raised while it ran. Report every one."},
+        "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure.", "n_failed": "Monte Carlo only: realizations with g below the threshold.", "n": "Monte Carlo only: realizations kept (finite g); pf is n_failed / n.", "n_requested": "Monte Carlo only: realizations run.", "n_dropped": "Monte Carlo only: realizations left out because g was not finite.", "pf_bounds_dropped": "Monte Carlo: [pf if no dropped realization had failed, pf if all had]; null when nothing was dropped.", "pf_ci95": "Monte Carlo only: 95% interval on pf.", "pf_ci95_method": "Monte Carlo: 'normal_approximation', or the Clopper-Pearson bound with no failure or only failures.", "warnings": "What the engine could not resolve (dropped realizations, a count at the edge, bounds FOSM or PEM did not apply), then any warning the code raised while it ran. Report every one."},
     },
     "fem2d_package": {
         "category": "Calculation Package",
@@ -4009,9 +4211,9 @@ METHOD_INFO = {
                              "largest movements, as the analysis has "
                              "them), with its notes and warnings. Report "
                              "every warning.",
-                    "FOS_required": "slope_srm: the required factor of "
+                    "FOS_required": "slope_srm only: the required factor of "
                                     "safety the package's check used.",
-                    "meets_FOS_required": "slope_srm: whether the "
+                    "meets_FOS_required": "slope_srm only: whether the "
                                           "strength-reduction FOS is at "
                                           "least FOS_required."},
     },
@@ -4064,8 +4266,8 @@ declare_applies_when(METHOD_INFO, {
         "n_points": {"surface_type": _RANDOM_POLYLINES + ["noncircular_de"]},
         "fosm": {"variables": "set"},
         "monte_carlo": {"variables": "set"},
-        "n": {"variables": "set", "monte_carlo": [True]},
-        "research_surface": {"variables": "set", "monte_carlo": [True]},
+        "n": {"variables": "set", "monte_carlo": "set"},
+        "research_surface": {"variables": "set", "monte_carlo": "set"},
     },
 })
 
@@ -4096,4 +4298,51 @@ for _name in ("x_range", "y_range"):
     _report[_name]["applies_when"] = {"surface_type": _CIRCLES_GRID}
 _report["seed"]["applies_when"] = [
     {"surface_type": _RANDOM_POLYLINES + ["noncircular_de"]},
-    {"variables": "set", "monte_carlo": [True]}]
+    {"variables": "set", "monte_carlo": "set"}]
+
+
+# The later inputs reach the slope packages (GM-140 step 10, GM-346): the
+# tools' own specs, so one text says what each does; when each applies as
+# in the tools.
+def _slope_package_inputs():
+    from funhouse_agent.adapters.slope_stability import (
+        _GEOMETRY_PARAMS, _SURFACE_SPEC_PARAMS, METHOD_INFO as _SLOPE_INFO)
+
+    def bare(spec):
+        return {k: v for k, v in spec.items() if k != "applies_when"}
+    base = bare(_SLOPE_INFO["analyze_slope"]["parameters"]["base_in_tension"])
+    for package in ("slope_stability_package", "slope_report_package"):
+        params = METHOD_INFO[package]["parameters"]
+        for name in _SLOPE_PACKAGE_INPUTS:
+            params[name] = bare(_GEOMETRY_PARAMS[name])
+        params["base_in_tension"] = dict(base)
+    for name in ("arc_x_start", "arc_x_end"):
+        METHOD_INFO["slope_stability_package"]["parameters"][name] = bare(
+            _SURFACE_SPEC_PARAMS[name])
+    crack = [{"tension_crack_depth": "set"},
+             {"tension_crack_depth_basis": ["rankine", "min_fos"]}]
+    supports = [{"nails": "set"}, {"anchors": "set"},
+                {"geosynthetics": "set"}, {"stabilizing_piles": "set"}]
+    common = {
+        "tension_crack_water_depth": crack, "tension_crack_side": crack,
+        "tension_crack_model": crack,
+        "tension_crack_depth_basis": {"tension_crack_depth": "set"},
+        "water_line_kind": {"gwt_points": "set"},
+        "assisting_support": supports,
+    }
+    rigorous = ["janbu", "spencer", "morgenstern_price", "gle"]
+    declare_applies_when(METHOD_INFO, {
+        "slope_stability_package": {
+            **common,
+            "base_in_tension": [{"method": rigorous},
+                                {"compare_methods": "set"}]},
+        "slope_report_package": {
+            **common,
+            "reverse_curvature": {"surface_type": ["circular",
+                                                   "entry_exit"]},
+            # the report compares every method on the critical surface
+            "base_in_tension": {}},
+    })
+
+
+_slope_package_inputs()

@@ -45,9 +45,15 @@ strength estimation.
 
 ## Public API
 ```python
-classify_site(vs30=None, n_bar=None, su_bar=None) -> SiteClassResult
-mononobe_okabe_active(phi, beta, theta, delta, kh, kv) -> MOResult
-analyze_liquefaction(N160, FC, sigma_v, sigma_v_eff, amax, M, ...) -> LiquefactionResult
+# exports of seismic_geotech/__init__.py
+classify_site(vs30=None, n_bar=None, su_bar=None) -> str
+site_coefficients(site_class, Ss, S1, pga=None) -> SiteClassResult
+mononobe_okabe_KAE(phi_deg, delta_deg, kh, kv=0.0, beta_deg=0.0, i_deg=0.0) -> float
+mononobe_okabe_KPE(phi_deg, delta_deg, kh, kv=0.0, beta_deg=0.0, i_deg=0.0) -> float
+seismic_earth_pressure(gamma, H, KAE, KA, kv=0.0) -> dict
+evaluate_liquefaction(layer_depths, layer_N160, layer_FC, layer_gamma, amax_g, ...)
+post_liquefaction_strength(N160cs, sigma_v_eff=None, method="seed_harder", ...)
+SiteClassResult, SeismicEarthPressureResult, LiquefactionResult
 ```
 
 ## Key Notes

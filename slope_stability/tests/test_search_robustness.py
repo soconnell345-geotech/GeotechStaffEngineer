@@ -508,7 +508,7 @@ def _acads1a():
                                     phi=19.6, c_prime=3.0)])
 
 
-@pytest.mark.parametrize("method", ["janbu", "fellenius"])
+@pytest.mark.parametrize("method", ["janbu"])
 def test_jagged_screen_stays_for_methods_without_c10a_checks(method,
                                                              monkeypatch):
     """The step 3 review's defect 1. On ACADS 1(a), a 200-trial random
@@ -516,7 +516,11 @@ def test_jagged_screen_stays_for_methods_without_c10a_checks(method,
     admitted 29 and 42 jagged surfaces below F 1.5 once the screen was
     gone, none of them flagged: neither method has a check of EM
     1110-2-1902 C-10a. With the screen kept for them no scored surface is
-    jagged below 1.5, and every refusal is counted under the screen."""
+    jagged below 1.5, and every refusal is counted under the screen.
+    (GM-140 step 6: the Ordinary Method of Slices no longer scores a
+    polyline in a search, EM 1110-2-1902 C-2b, p. C-16; Spencer's method
+    scores it, with its own C-10a checks, so the case is Janbu's alone.
+    `test_one_method.py` has the Ordinary Method of Slices' case.)"""
     from slope_stability import search as search_mod
     scored = []
     real = search_mod._compute_fos
@@ -590,11 +594,16 @@ def test_a_flagged_lowest_surface_is_reported_flagged():
     assert res.refused_lowest is None
     assert "refused_lowest" not in res.to_dict()
     assert res.critical is not None
-    assert "low_m_alpha" in res.critical_flags
-    assert "base_tension" in res.critical_flags
+    # GM-344: the lowest solved surface is now 0.895 with tensile side
+    # forces and the line of thrust outside the mass (it carried m_alpha
+    # below 0.2 and a base in tension too, at a crossing with a negative
+    # lambda that the scan no longer looks for), and the search now
+    # scores a surface without a flag (2.085)
+    assert {"side_tension", "thrust_outside"} <= set(res.critical_flags)
     low = res.lowest_unflagged
-    assert low["FOS"] is None and "without a flag" in low["note"]
+    assert low["FOS"] is not None and low["FOS"] > res.critical.FOS
     (rec,) = [r for r in res.trial_flags if r["family"] == "noncircular"]
-    assert rec["n_flagged"] == rec["n_scored"] > 0
+    # (GM-344: no longer every scored trial; 245 of 285 when measured)
+    assert 0 < rec["n_flagged"] < rec["n_scored"]
     w = [w for w in res.warnings if "printed acceptability checks" in w]
     assert len(w) == 1 and "kept and reported, flagged" in w[0]

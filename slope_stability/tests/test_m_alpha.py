@@ -148,46 +148,35 @@ def test_phi_zero_slices_are_not_checked_by_default():
 # phi' = 0: a vertical cut in undrained clay, against Taylor
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=(
-    "GM-343: the default search reads 0.935 against Taylor's 0.851 (Ns "
-    "3.83), 9.9 % high, on the unsafe side. The cause is the rule for "
-    "where a circle ends (CircularSlipSurface.find_entry_exit), older "
-    "than GM-140 step 4: Taylor's circle (centre (13.02, 10.96), R "
-    "13.00) ended at the toe reads 0.8514, but the module carries it on "
-    "under the floor in front of the toe to x 6.04 and reads 2.676; "
-    "circles leaving the face just above the toe are refused as two "
-    "masses, and the search's 0.935 is a circle dipping 0.048 m under "
-    "the floor, inside the 1 % touch allowance. Before step 4 the "
-    "search read 0.842 on a toe circle closed by a crack from its "
-    "centre's level, which no print gives. With Rankine's crack asked "
-    "for (EM 1110-2-1902 Eq. C-36 with the developed strengths, 3.67 m "
-    "in this 5 m cut) it reads 0.605. Taylor's chart has no crack. The "
-    "step 'Where a circle ends' "
-    "(module_work/cloud_briefs/SLOPE_GM140.md) removes this mark."))
 def test_vertical_cut_in_undrained_clay_against_taylor():
     """Taylor's stability number for a vertical face, 3.83, gives F = 3.83
-    x 20 / (18 x 5) = 0.851."""
+    x 20 / (18 x 5) = 0.851. (A strict xfail until GM-343, "Where a circle
+    ends": the search read 0.935, because Taylor's circle was carried on
+    under the floor in front of the toe and circles leaving the face just
+    above the toe were refused as two masses.)"""
+    # GM-343: 0.935 -> 0.8514; printed 0.8511 (Taylor, Ns 3.83), +0.03 %
     taylor = 3.83 * 20.0 / (18.0 * 5.0)
     res = search_critical_surface(_vertical_cut(), method="bishop")
     assert res.critical.FOS == pytest.approx(taylor, rel=0.02)
 
 
 def test_vertical_cut_m_alpha_rule_on_phi_zero_slices():
-    """The default search (no crack asked for) reads 0.935 (module's own;
-    Taylor 0.851, the test above), with nothing left out for m_alpha:
-    slices with phi = 0 are not checked (GM-127). Checking every slice
-    flags circles (GM-140 step 3, OWN-102: kept and flagged); the lowest of
-    them lies above the lowest unflagged circle, so the headline is 0.935
-    again and carries no flag. Leaving flagged circles out, as Slide2 does
-    (``low_m_alpha='refuse'``), reads 0.935 too; the choice says which was
-    used. A toe circle with its centre 2.3 m below the crest,
+    """The default search (no crack asked for) reads 0.851 (Taylor 0.851,
+    the test above; 0.935 before GM-343, "Where a circle ends"), with
+    nothing left out for m_alpha: slices with phi = 0 are not checked
+    (GM-127). Checking every slice flags circles (GM-140 step 3, OWN-102:
+    kept and flagged); the lowest of them lies above the lowest unflagged
+    circle, so the headline is 0.851 again and carries no flag. Leaving
+    flagged circles out, as Slide2 does (``low_m_alpha='refuse'``), reads
+    0.851 too; the choice says which was used. A toe circle with its centre 2.3 m below the crest,
     closed by a given 2.3 m crack, rises to the vertical at the crack: its
     last slice's m_alpha = cos(a) is below 0.2 (phi = 0), warned of only
     when every slice is checked. (Before GM-134 the slice next to a crack
     took the circle's angle at its midpoint, and its base, width / cos(a),
     fell short of the arc rising to the vertical.)"""
     res = search_critical_surface(_vertical_cut(), method="bishop")
-    assert res.critical.FOS == pytest.approx(0.935, abs=0.005)
+    # GM-343: 0.935 -> 0.851; printed 0.851 (Taylor, Ns 3.83), +0.03 %
+    assert res.critical.FOS == pytest.approx(0.851, abs=0.005)
     assert res.critical.tension_crack is None
     assert res.n_discarded_reverse_curvature > 0
     assert res.n_rejected_m_alpha == 0
@@ -198,12 +187,13 @@ def test_vertical_cut_m_alpha_rule_on_phi_zero_slices():
     assert any("every_slice" in a for a in ch["alternatives"])
     assert any("low_m_alpha='refuse'" in a for a in ch["alternatives"])
     # every slice looked at: the flagged circles are kept and counted;
-    # none is lower than the headline, which carries no flag (module's
-    # own; before step 4 the headline was 0.842 on a toe circle closed by
-    # a crack nobody asked for, now discarded)
+    # none is lower than the headline, which carries no flag (before step
+    # 4 the headline was 0.842 on a toe circle closed by a crack nobody
+    # asked for, now discarded).
+    # GM-343: 0.935 -> 0.851; printed 0.851 (Taylor, Ns 3.83), +0.03 %
     every = search_critical_surface(_vertical_cut(), method="bishop",
                                     m_alpha_rule="every_slice")
-    assert every.critical.FOS == pytest.approx(0.935, abs=0.005)
+    assert every.critical.FOS == pytest.approx(0.851, abs=0.005)
     assert every.n_rejected_m_alpha == 0
     assert every.critical_flags == []
     assert every.lowest_unflagged is None
@@ -216,7 +206,8 @@ def test_vertical_cut_m_alpha_rule_on_phi_zero_slices():
     out = search_critical_surface(_vertical_cut(), method="bishop",
                                   m_alpha_rule="every_slice",
                                   low_m_alpha="refuse")
-    assert out.critical.FOS == pytest.approx(0.935, abs=0.005)
+    # GM-343: 0.935 -> 0.851; printed 0.851 (Taylor, Ns 3.83), +0.03 %
+    assert out.critical.FOS == pytest.approx(0.851, abs=0.005)
     assert out.n_rejected_m_alpha > 0
     (ch,) = [c for c in out.choices
              if c["what"] == "slip surfaces left out for m_alpha"]
@@ -270,7 +261,12 @@ def test_steep_exit_surface_given_to_analyze_slope_is_analysed_with_a_warning():
     assert r.method_solved
     assert r.FOS == pytest.approx(3.358, abs=0.005)
     (w,) = [w for w in r.warnings if "m_alpha" in w]
-    assert "least 0.18 on slice" in w
+    # GM-344 fix round (R6): Spencer's finding reads the denominator of its
+    # own slice equations, with the side force inclined at theta (8.7 deg):
+    # 0.0211 on the exit slice, where m_alpha (horizontal side forces, what
+    # the search's m_alpha_min reads, above) is 0.176. Was "least 0.18".
+    assert "least 0.0211 on slice 40" in w
+    assert "side force inclined 8.7 deg" in w
     assert "67 deg against the sliding" in w
     assert "Whitman and Bailey 1967, p. 487" in w
     assert "must be examined in detail" in w
@@ -309,8 +305,15 @@ def test_ordinary_method_of_slices_has_no_m_alpha():
     r = analyze_slope(_w11(), slip_surface=PolylineSlipSurface(
         points=_W11_PTS), method="fellenius", n_slices=40)
     assert not any("m_alpha" in w for w in r.warnings)
-    assert _compute_fos(_w11(), PolylineSlipSurface(points=_W11_PTS),
-                        "fellenius", 40) < _FOS_MAX
+    # GM-140 step 6 (D26): in a search the Ordinary Method of Slices does
+    # not score a polyline (EM 1110-2-1902 C-2b, p. C-16: it "can only be
+    # used with circular slip surfaces"); Spencer's method scores it, and
+    # has no solution on this surface (`test_w11_surface_has_no_spencer_
+    # solution`). Before, the search scored it by the Ordinary Method of
+    # Slices.
+    for method in ("fellenius", "spencer"):
+        assert _compute_fos(_w11(), PolylineSlipSurface(points=_W11_PTS),
+                            method, 40) == _FOS_MAX
 
 
 def test_de_search_leaves_out_and_counts_negative_m_alpha_surfaces():
@@ -322,8 +325,11 @@ def test_de_search_leaves_out_and_counts_negative_m_alpha_surfaces():
     m_alpha."""
     from slope_stability.search import low_m_alpha
     geom = _weak_over_rock()
+    # (GM-344: Janbu's simplified method; with Spencer's, asked for here
+    # before, the surfaces diving into the rock now have no solution, so
+    # there is no factor of safety at which their m_alpha could be read)
     kw = dict(x_entry_range=(25.5, 28.0), x_exit_range=(29.0, 40.0),
-              n_points=7, method="spencer", seed=1, maxiter=4, popsize=6,
+              n_points=7, method="janbu", seed=1, maxiter=4, popsize=6,
               n_seed_trials=40)
     assert search_de(geom, **kw).n_rejected_m_alpha == 0
     with low_m_alpha("refuse"):
@@ -386,11 +392,17 @@ def test_w11_de_search_runs_its_whole_budget():
     geom = _w11()
     # (with flagged surfaces left out, the rule before GM-140 step 3: the
     # graded score is for surfaces left out for m_alpha)
+    # (GM-344: Janbu's simplified method; with Spencer's, asked for here
+    # before, the surfaces the graded score is for now have no solution,
+    # none is left out for m_alpha and the evolution stops at 465)
     res = search_critical_surface(
-        geom, surface_type="noncircular_de", method="spencer",
+        geom, surface_type="noncircular_de", method="janbu",
         x_entry_range=(20, 30), x_exit_range=(28, 60), n_slices=40,
         n_points=5, seed=3, low_m_alpha="refuse")
-    assert res.n_surfaces_evaluated == 2325
+    # (GM-140 step 6: 2,325 surfaces of the evolution and the critical
+    # circle of the circular search, as a polyline, one more trial)
+    assert res.n_surfaces_evaluated == 2326
+    assert res.circle_check["checked"] is True
     assert res.n_rejected_m_alpha > 0
     c = res.critical
     if c is None:

@@ -42,8 +42,11 @@ def _no_circle(p):
 
 def test_a_flagged_headline_never_comes_alone():
     """GM-140 step 3, the review's ruling 5. ACADS 1(a) (printed 1.00), a
-    200-trial random Spencer search: the lowest solved surface (0.633 when
-    measured) is flagged and the lowest with no flag is higher (1.09).
+    200-trial random Spencer search: the lowest solved surface is flagged
+    and the lowest with no flag is higher (1.096). (The headline was 1.092
+    when measured, 0.633 until GM-344; since GM-140 step 6 it is 0.984,
+    the critical circle as a polyline, one of the search's trials, which
+    carries a tensile interslice force and no other flag.)
     Neither alone is safe, so the tool result gives the headline, its
     flags, the lowest surface with no flag and the option that refuses
     flagged surfaces, as fields and in its one-sentence summary."""
@@ -58,8 +61,11 @@ def test_a_flagged_headline_never_comes_alone():
     fos = r["critical"]["FOS"]
     flags = r["critical_flags"]
     low = r["lowest_unflagged"]["FOS"]
-    assert {"base_tension", "side_tension", "thrust_outside"} <= set(flags)
+    assert {"side_tension"} <= set(flags)
     assert low > fos
+    # GM-140 step 6: the minimum is checked against the critical circle
+    assert r["circle_check"]["governs"] is True
+    assert r["circle_check"]["noncircular_minimum"] > fos
     assert "low_m_alpha='refuse'" in r["refuse_option"]
     s = r["summary"]
     assert s.endswith(".") and ". " not in s          # one sentence
@@ -411,8 +417,14 @@ class TestSingleSurfaceWarnings:
     def test_compare_methods_table_passes_warnings(self):
         p = {k: v for k, v in _slide85().items() if k != "method"}
         tab = METHOD_REGISTRY["compare_methods_table"](p)
-        assert [row["method"] for row in tab["rows"]][:2] == [
-            "Fellenius (OMS)", "Bishop simplified"]
+        # GM-140 step 8: the Ordinary Method of Slices is left out where a
+        # support crosses the surface (no printed form with known forces),
+        # and the table says why
+        assert [row["method"] for row in tab["rows"]][:1] == [
+            "Bishop simplified"]
+        assert "Fellenius" in tab["methods_without_solution"]
+        assert any("no reference held prints the Ordinary Method of Slices"
+                   in w for w in tab["warnings"])
         assert not any(row["method"].startswith("Spencer")
                        for row in tab["rows"])
         assert any("(method comparison) finds no equilibrium solution" in w

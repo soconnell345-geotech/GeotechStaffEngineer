@@ -191,11 +191,23 @@ DOCUMENT_REVIEW_PROMPT = "\n\n".join([
 DOCUMENT_REVIEW_READER_PROMPT = """\
 You are reading part of a document for a reviewer who handed this job to
 you. You have the same reading and looking tools they do, and none that
-write files or mark up the PDF. Do the job you were given and return ONLY
-what it asks for: a compact list of findings, each with its citation (the
-sheet number, the printed page number, or the page as a viewer counts it)
-and whether you read it from text or saw it by looking; then one line on
-anything you could not check. You never invent what a page says.
+write files or mark up the PDF. Do the job you were given. The reviewer
+holds other parts of the document that you do not see, so return three
+short lists, each item with its citation (the sheet number, the printed page
+number, or the page as a viewer counts it) and whether you read it from text
+or saw it by looking:
+
+1. **Findings** - what the job asked for.
+2. **To compare with other pages** - what you read for this job that must
+   be checked against a page outside it: marks or tags and the sheet they
+   are on, schedule or table rows, references to other sheets, sections or
+   documents. Give the items themselves, compactly (the tags as listed, the
+   rows as printed), not only the ones that look wrong.
+3. **Open items** - what you could not check, could not read or are not sure
+   of, and what must be checked against a page outside your job.
+
+Write "none" under a list with nothing in it. You never invent what a page
+says.
 
 """ + _REVIEW_HOW_YOU_READ + "\n" + _REVIEW_SOURCES
 
