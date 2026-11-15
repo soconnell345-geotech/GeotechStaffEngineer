@@ -53,15 +53,25 @@ FINAL_FRACTION = 0.10
 FINAL_FRACTION_RANGE = (0.0, 0.25)
 #: Starting shift increment, as a fraction of the slope's height (a call:
 #: no print gives one). The increment is halved from it down to the final
-#: increment.
+#: increment; it is never raised to meet the final one.
 START_FRACTION_H = 0.10
-#: Vertices of a refined surface (a call: no print gives a count). A start
-#: with fewer gets points added on its longest segments, which leaves the
-#: surface as it is; a circle start is the polyline of its slice-base
-#: points on this many minus one slices.
+#: The final increment is no more than this share of the starting one (the
+#: fix round's ruling 9(a), the module's call: EM 4-2e(2)(b), p. 4-7,
+#: prints a maximum only, "no more than 10 to 25 percent"), so a slope of
+#: thick strata still halves at least twice. Other form: exactly the
+#: fraction of the thinnest stratum (as first built).
+FINAL_OF_START = 0.25
+#: Vertices of the surface the refinement shifts (a call: no print gives a
+#: count). A start with fewer gets points added on its longest segments,
+#: which leaves the surface as it is; a circle's refinement starts from the
+#: polyline of its slice-base points on this many minus one slices, while
+#: the circle as it stands is that polyline on the search's own slices
+#: (ruling 9(b)).
 N_VERTICES = 11
 #: Positions of each end of a wedge's central block over the windows' span
-#: (call 3's count; no print gives one; FHWA p. 6-44 asks for several).
+#: (call 3's count; no print gives one; FHWA p. 6-44 asks for several),
+#: after which the best wedge's two ends are halved down to the final
+#: increment (ruling 10).
 WEDGE_POSITIONS = 21
 #: Passes of the wedge angles on the trial's F (a call): the first with
 #: F = 1, each next one with the F the pass before gave; the lowest pass
@@ -205,62 +215,84 @@ def with_vertices(pts: Sequence[Tuple[float, float]], n: int = N_VERTICES
     return out
 
 
-def circle_start(geom, crit) -> Optional[List[Tuple[float, float]]]:
+def circle_start(geom, crit, n: int = N_VERTICES - 1
+                 ) -> Optional[List[Tuple[float, float]]]:
     """A circle (a result with xc, yc, radius) as the polyline of its
-    slice-base points on ``N_VERTICES - 1`` slices, or None where it cannot
-    be sliced so."""
+    slice-base points on ``n`` slices (``N_VERTICES - 1``: the start the
+    refinement shifts; the search's ``n_slices``: the circle as it stands,
+    step 6's circle-check polyline), or None where it cannot be sliced
+    so."""
     from slope_stability.search import circle_as_polyline
     try:
-        return list(circle_as_polyline(geom, crit, N_VERTICES - 1).points)
+        return list(circle_as_polyline(geom, crit, n).points)
     except (ValueError, ZeroDivisionError, RuntimeError, AttributeError):
         return None
 
 
 class _Circle:
-    """Enough of a result for `circle_as_polyline` (centre and radius)."""
+    """Enough of a result for `circle_as_polyline` (centre and radius),
+    with the circle's own F where the circular search gave it."""
     is_circular = True
 
-    def __init__(self, xc, yc, radius, x_entry=None, x_exit=None, arc=None):
+    def __init__(self, xc, yc, radius, x_entry=None, x_exit=None, arc=None,
+                 FOS=None):
         self.xc, self.yc, self.radius = xc, yc, radius
         self.x_entry, self.x_exit = x_entry, x_exit
         self.arc = arc
         self.slip_points = None
+        self.FOS = FOS
 
 
 def circle_starts_of(circular_result) -> List[Tuple[str, Any]]:
     """The locally critical circles of a circular search's result, as
-    (label, circle) pairs: its separate grid minima (``local_minima``) and
-    the critical circles of the toe and above-toe families where they ran
-    (``family_surfaces``), lowest first, a circle listed once."""
+    (label, circle) pairs, each circle with its own F (``FOS``): the
+    critical circle, its separate grid minima (``local_minima``) and the
+    critical circles of the toe and above-toe families where they ran
+    (``family_surfaces``), lowest first, a circle listed once.
+
+    A grid minimum the refinement walk started from is the circle the walk
+    ended on (``refined_centre``), with its F; one it did not start from is
+    its grid node's circle, with the F the record gives. A None F (a walk
+    that found no solution, or a grid valued by the Bishop screen) is no
+    value: the circle is kept, sorted last, with F None (the fix round's
+    D1: a None F crashed the sort under a time budget)."""
     if circular_result is None:
         return []
     out: List[Tuple[float, str, Any]] = []
     seen = set()
 
-    def add(f, label, xc, yc, r):
+    def add(f, label, xc, yc, r, circle=None):
+        if r is None or r <= 0:
+            return
         key = (round(xc, 2), round(yc, 2), round(r, 2))
-        if key in seen or r is None or r <= 0:
+        if key in seen:
             return
         seen.add(key)
-        out.append((f, label, _Circle(xc, yc, r)))
+        c = circle if circle is not None else _Circle(xc, yc, r)
+        c.FOS = None if f is None else float(f)
+        out.append((math.inf if f is None else float(f), label, c))
 
     crit = getattr(circular_result, "critical", None)
-    if crit is not None and getattr(crit, "radius", 0) > 0:
-        c = _Circle(crit.xc, crit.yc, crit.radius, crit.x_entry, crit.x_exit,
-                    getattr(crit, "arc", None))
-        key = (round(crit.xc, 2), round(crit.yc, 2), round(crit.radius, 2))
-        seen.add(key)
-        out.append((crit.FOS, "critical circle", c))
+    if crit is not None and (getattr(crit, "radius", 0) or 0) > 0:
+        add(crit.FOS, "critical circle", crit.xc, crit.yc, crit.radius,
+            _Circle(crit.xc, crit.yc, crit.radius, crit.x_entry, crit.x_exit,
+                    getattr(crit, "arc", None)))
     for k, m in enumerate(getattr(circular_result, "local_minima", []) or []):
-        if m.get("radius"):
-            add(m.get("FOS", math.inf), f"grid minimum {k + 1}", m["xc"],
-                m["yc"], m["radius"])
+        rc = m.get("refined_centre")
+        if m.get("refined") and rc and m.get("FOS") is not None:
+            add(m["FOS"], f"grid minimum {k + 1}", rc["xc"], rc["yc"],
+                rc["radius"])
+        elif m.get("radius"):
+            f = m.get("FOS")
+            if f is None and not m.get("values_by"):
+                f = m.get("FOS_grid")       # the node's own F, by the method
+            add(f, f"grid minimum {k + 1}", m["xc"], m["yc"], m["radius"])
     fams = getattr(circular_result, "family_surfaces", {}) or {}
     for fam in ("toe_circle", "circle_above_toe"):
         s = fams.get(fam)
         if s and s.get("radius"):
-            add(s.get("FOS", math.inf), fam.replace("_", " "), s["xc"],
-                s["yc"], s["radius"])
+            add(s.get("FOS"), fam.replace("_", " "), s["xc"], s["yc"],
+                s["radius"])
     out.sort(key=lambda t: t[0])
     return [(label, c) for _f, label, c in out]
 
@@ -323,85 +355,233 @@ def toe_at_low_x(geom, windows) -> bool:
             < geom.ground_elevation_at(0.5 * (x0 + x1)))
 
 
+def _wedge_mid(geom, layer, x: float, z_floor: float
+               ) -> Optional[Tuple[float, float]]:
+    """(z of the mid-line, z of the layer's top) of ``layer`` at x: the
+    mid-line between its bottom and its top cut at the ground, as
+    `thinnest_stratum` reads the band (the fix round's D6); None where it
+    holds no ground there within the search's depth."""
+    from slope_stability.search import _layer_band_at
+    band = _layer_band_at(geom, layer, x)
+    if band is None:
+        return None
+    zg = geom.ground_elevation_at(x)
+    top = min(band[1], zg)
+    if top - band[0] <= 1e-6:
+        return None
+    z_mid = 0.5 * (band[0] + top)
+    if not z_floor - 1e-9 <= z_mid < zg - 1e-6:
+        return None
+    return z_mid, band[1]
+
+
 def wedge_starts(geom, windows, score: Callable, *,
                  windows_given: Tuple[bool, bool] = (True, True),
                  n_positions: int = WEDGE_POSITIONS,
                  z_floor: Optional[float] = None,
-                 time_up: Callable[[], bool] = lambda: False
+                 d_final: Optional[float] = None,
+                 tol: float = 1e-4,
+                 time_up: Callable[[], bool] = lambda: False,
+                 on_stop: Optional[Callable] = None
                  ) -> List[Dict[str, Any]]:
     """A wedge along each layer within the search's depth (EM C-1f(2),
     p. C-6; C-1g(2), pp. C-8 to C-10; FHWA pp. 6-43 to 6-44).
 
-    The central block's base runs on the layer's mid-line where the layer
-    is at each x (`search._layer_band_at`); its two ends take
-    ``n_positions`` positions each over the windows' span. The wedge at the
-    toe side rises to the ground at 45 - phi'_D/2 (passive), the other at
-    45 + phi'_D/2 (active), with the phi' of the material just above the
-    base end, on the trial's F (`WEDGE_F_PASSES`). A wedge whose end on
-    the ground falls outside a window the caller gave is not taken
-    (``windows_given``; call 5: automatic windows bound only the
-    samplers). ``score(points)``
-    gives F (or the search's not-scored mark, >= 900).
+    The central block's base runs on the layer's mid-line at each x, the
+    mid-line between its bottom and its top cut at the ground (`_wedge_mid`;
+    the fix round's D6); its two ends take ``n_positions`` positions each
+    over the windows' span. The wedge at the toe side rises to the ground
+    at 45 - phi'_D/2 (passive), the other at 45 + phi'_D/2 (active), with
+    the phi' of the material just above the layer at the base end, on the
+    trial's F (`WEDGE_F_PASSES`). Then the best wedge's two ends are
+    halved, one end at a time, the inclinations fixed, from half the
+    positions' spacing down to ``d_final`` (the refinement's final
+    increment; ruling 10), a shift taken where F falls by more than
+    ``tol``. A wedge whose end on the ground falls outside a window the
+    caller gave is not taken (``windows_given``; call 5: automatic windows
+    bound only the samplers). ``score(points)`` gives F (or the search's
+    not-scored mark, >= 900).
 
-    Returns one record per layer that holds ground in the span:
-    {layer, FOS, points, n_scored} (FOS None and points None where no wedge
-    along it was scored)."""
-    from slope_stability.search import _layer_band_at
+    The stage is a stage of the time budget (``time_up``): where it stops,
+    ``on_stop(done, of, t0, left)`` is told the low-end positions scored
+    of all and what was left (the layers and positions not built), never
+    a silent stop.
+
+    Returns one record per layer: {layer, FOS, points, n_scored} and, for
+    a wedge, its ``ends`` (the central block's two ends), its
+    ``inclinations_deg`` (low-x and high-x legs) and ``end_levels`` (the
+    halving's increments); FOS None and points None with ``why`` where no
+    wedge along the layer was scored."""
     (e_lo, e_hi), (x_lo, x_hi) = windows
     lo, hi = min(e_lo, x_lo), max(e_hi, x_hi)
     if z_floor is None:
         z_floor = min(L.bottom_elevation for L in geom.soil_layers)
     low_is_toe = toe_at_low_x(geom, windows)
-    xs = [lo + (hi - lo) * i / (n_positions - 1) for i in range(n_positions)]
-    out = []
+    spacing = (hi - lo) / (n_positions - 1)
+    xs = [lo + spacing * i for i in range(n_positions)]
+    at = {x: i for i, x in enumerate(xs)}
+    t0 = time.perf_counter()
+    plan = []
     for layer in geom.soil_layers:
         mids = {}
         for x in xs:
-            band = _layer_band_at(geom, layer, x)
-            if band is None:
-                continue
-            z_mid = 0.5 * (band[0] + band[1])
-            if z_floor - 1e-9 <= z_mid < geom.ground_elevation_at(x) - 1e-6:
-                mids[x] = (z_mid, band[1])
+            m = _wedge_mid(geom, layer, x, z_floor)
+            if m is not None:
+                mids[x] = m
+        plan.append((layer, mids))
+    rows_of = sum(len(m) for _layer, m in plan)
+    rows_done = 0
+    left: List[str] = []            # what the time budget left
+    out: List[Dict[str, Any]] = []
+
+    def outside(p0, p1) -> bool:
+        return ((windows_given[0]
+                 and not e_lo - 1e-9 <= p0[0] <= e_hi + 1e-9)
+                or (windows_given[1]
+                    and not x_lo - 1e-9 <= p1[0] <= x_hi + 1e-9))
+
+    for layer, mids in plan:
+        rec: Dict[str, Any] = {"layer": layer.name, "FOS": None,
+                               "points": None, "n_scored": 0}
+        out.append(rec)
         if not mids:
+            rec["why"] = ("the layer holds no ground below the ground "
+                          "surface between the windows within the search's "
+                          "depth")
             continue
-        rec = {"layer": layer.name, "FOS": None, "points": None,
-               "n_scored": 0}
         keys = sorted(mids)
+        if left:
+            rec["why"] = ("not built: the time budget stopped the wedge "
+                          "stage before this layer (GM-123)")
+            left.append(f"the wedges along {layer.name} (all {len(keys)} "
+                        f"low-end positions)")
+            continue
+        n = {"pairs": 0, "no_leg": 0, "outside": 0, "unscored": 0}
+        best = None
+        cut_here = False
+
+        def build(xa, xb, za, zb, a_low, a_high, keys=keys, mids=mids):
+            p0 = _wedge_leg(geom, xa, za, a_low, -1)
+            p1 = _wedge_leg(geom, xb, zb, a_high, +1)
+            if p0 is None or p1 is None:
+                return None, "no_leg"
+            if outside(p0, p1):
+                return None, "outside"
+            return ([p0, (xa, za)]
+                    + [(x, mids[x][0]) for x in keys
+                       if xa + 1e-9 < x < xb - 1e-9]
+                    + [(xb, zb), p1]), None
+
         for i, xa in enumerate(keys):
             if time_up():
+                cut_here = True
+                left.append(f"the wedges along {layer.name} with the low end "
+                            f"from x = {xa:.2f} on ({len(keys) - i} of "
+                            f"{len(keys)} low-end positions)")
                 break
+            rows_done += 1
             for xb in keys[i + 1:]:
-                # the central block on the mid-line at every grid x between
-                inner = [x for x in keys if xa <= x <= xb]
-                if len(inner) != xs.index(xb) - xs.index(xa) + 1:
+                if (at[xb] - at[xa] + 1
+                        != sum(1 for x in keys if xa <= x <= xb)):
                     continue        # the layer leaves the ground between
+                n["pairs"] += 1
                 f_trial = 1.0
                 for _ in range(WEDGE_F_PASSES):
                     a_low = _wedge_angle(_phi_above(geom, xa, mids[xa][1]),
                                          f_trial, active=not low_is_toe)
                     a_high = _wedge_angle(_phi_above(geom, xb, mids[xb][1]),
                                           f_trial, active=low_is_toe)
-                    p0 = _wedge_leg(geom, xa, mids[xa][0], a_low, -1)
-                    p1 = _wedge_leg(geom, xb, mids[xb][0], a_high, +1)
-                    if p0 is None or p1 is None:
+                    pts, why = build(xa, xb, mids[xa][0], mids[xb][0],
+                                     a_low, a_high)
+                    if pts is None:
+                        n[why] += 1
                         break
-                    if ((windows_given[0]
-                         and not e_lo - 1e-9 <= p0[0] <= e_hi + 1e-9)
-                            or (windows_given[1] and
-                                not x_lo - 1e-9 <= p1[0] <= x_hi + 1e-9)):
-                        break
-                    pts = ([p0] + [(x, mids[x][0]) for x in inner] + [p1])
                     f = score(pts)
                     rec["n_scored"] += 1
                     if f >= 900:
+                        n["unscored"] += 1
                         break
-                    if rec["FOS"] is None or f < rec["FOS"]:
-                        rec["FOS"], rec["points"] = f, pts
+                    if best is None or f < best[0]:
+                        best = (f, xa, xb, a_low, a_high, pts)
                     if abs(f - f_trial) < 1e-3:
                         break
                     f_trial = f
-        out.append(rec)
+        levels: List[float] = []
+        if best is not None and d_final is not None and not left:
+            # ruling 10: the best wedge's two ends halved, one at a time,
+            # the inclinations fixed, down to the final increment
+            f_b, xa, xb, a_low, a_high, pts_b = best
+            d = max(0.5 * spacing, d_final)
+            while True:
+                levels.append(round(d, 6))
+                moved = True
+                while moved and not cut_here:
+                    moved = False
+                    for end in (0, 1):
+                        if time_up():
+                            cut_here = True
+                            break
+                        trial = []
+                        for s in (+1, -1):
+                            na = xa + s * d if end == 0 else xa
+                            nb = xb + s * d if end == 1 else xb
+                            if not (lo - 1e-9 <= na and na < nb - 1e-9
+                                    and nb <= hi + 1e-9):
+                                continue
+                            ma = _wedge_mid(geom, layer, na, z_floor)
+                            mb = _wedge_mid(geom, layer, nb, z_floor)
+                            if ma is None or mb is None or any(
+                                    x not in mids for x in xs if na < x < nb):
+                                continue
+                            pts, _why = build(na, nb, ma[0], mb[0], a_low,
+                                              a_high)
+                            if pts is None:
+                                continue
+                            f = score(pts)
+                            rec["n_scored"] += 1
+                            if f < 900:
+                                trial.append((f, na, nb, pts))
+                        if trial:
+                            f, na, nb, pts = min(trial, key=lambda q: q[0])
+                            if f < f_b - tol:
+                                f_b, xa, xb, pts_b = f, na, nb, pts
+                                moved = True
+                if cut_here or d <= d_final + 1e-12:
+                    break
+                d = max(0.5 * d, d_final)
+            if cut_here:
+                left.append(f"the halving of the ends of the wedge along "
+                            f"{layer.name} (stopped at the increment "
+                            f"{d:.3g} m)")
+            best = (f_b, xa, xb, a_low, a_high, pts_b)
+        if best is not None:
+            f_b, xa, xb, a_low, a_high, pts_b = best
+            rec.update(FOS=f_b, points=pts_b,
+                       ends=(round(xa, 3), round(xb, 3)),
+                       inclinations_deg=(round(a_low, 2), round(a_high, 2)))
+            if levels:
+                rec["end_levels"] = levels
+            if cut_here:
+                rec["note"] = ("the time budget stopped the wedge stage in "
+                               "this layer: its wedge is the lowest of the "
+                               "positions scored (GM-123)")
+        else:
+            if n["pairs"] == 0 and not cut_here:
+                why = ("no two end positions hold the layer's ground "
+                       "continuously between them")
+            else:
+                why = (f"no wedge along it was scored: of {n['pairs']} "
+                       f"pairs of end positions, {n['no_leg']} gave a wedge "
+                       f"leg that does not reach the ground within the "
+                       f"profile, {n['outside']} ended on the ground outside "
+                       f"a window you gave, and {n['unscored']} wedges were "
+                       f"not scored (the method has no solution on them, or "
+                       f"a screen refused them)")
+            if cut_here:
+                why += "; the time budget stopped the wedge stage in this layer (GM-123)"
+            rec["why"] = why
+    if left and on_stop is not None:
+        on_stop(rows_done, rows_of, t0, left)
     return out
 
 
@@ -522,6 +702,7 @@ def refine_polyline(geom, pts, score: Callable, *, d_start: float,
 def refinement_stage(geom, *, score: Callable, flags_of: Callable,
                      own_best: Optional[Sequence], windows,
                      windows_given: Tuple[bool, bool],
+                     n_slices: int = 30,
                      circle_starts: Optional[List[Tuple[str, Any]]] = None,
                      circle_note: Optional[str] = None,
                      seed_surface: Optional[Sequence] = None,
@@ -530,28 +711,44 @@ def refinement_stage(geom, *, score: Callable, flags_of: Callable,
                      tol: float = 1e-4,
                      time_up: Callable[[], bool] = lambda: False,
                      record_stop: Optional[Callable] = None,
+                     span_of: Optional[Callable] = None,
                      own_label: str = "the search's own best surface",
                      wedge_only: bool = False) -> Dict[str, Any]:
-    """Every start refined separately, the lowest result first (EM
-    4-2e(1)(b), pp. 4-3 and 4-6; 4-2e(2), p. 4-7; C-1g(4), p. C-11; FHWA
-    p. 6-22).
+    """Every start scored as it stands and refined separately, the lowest
+    result first (EM 4-2e(1)(b), pp. 4-3 and 4-6; 4-2e(2), p. 4-7; C-1g(4),
+    p. C-11; FHWA p. 6-22).
 
     The starts: the search's own best surface (``own_best``, its points),
     each locally critical circle (``circle_starts``, (label, circle) from
     `circle_starts_of`), a wedge along each layer (`wedge_starts`, when
-    ``wedges``), and the caller's surface (``seed_surface``). With
-    ``refine`` False nothing is shifted: the starts are scored as they are
-    (``wedge_only``: the wedge stage alone, Slide2's search without
-    optimisation). ``score(points)`` gives F; ``flags_of(points)`` the
-    flags of the printed checks on the surface.
+    ``wedges``), and the caller's surface (``seed_surface``).
+
+    Every start is first scored as it stands (the fix round's ruling 9(b);
+    a circle as the polyline of its slice-base points on the search's
+    ``n_slices``, step 6's circle-check polyline), then refined while the
+    time budget lasts (a circle from its polyline on ``N_VERTICES - 1``
+    slices). A start's minimum is the lower of the two, labelled which
+    (``minimum``: "as it stands" or "refined"); a start the budget left is
+    listed not refined with its value as it stands. With ``refine`` False
+    nothing is shifted: the starts are scored as they are (``wedge_only``:
+    the wedge stage alone, Slide2's search without optimisation).
+
+    ``score(points[, start_span])`` gives F; with ``span_of`` (the span of
+    a polyline as the span screen measures it) each start's own span is
+    passed as ``start_span``, and the scorer takes the lesser of the
+    module's span floor and it (ruling 8). ``flags_of(points)`` gives the
+    flags of the printed checks on the surface. ``record_stop(stage, done,
+    of, unit, t0, covered, not_covered)`` records a stage the budget
+    stopped (the wedge stage, the refinement).
 
     Returns the record the search puts on its result as ``refinement``:
-    {final_increment (stratum, thickness, fraction, increment), start_
-    increment, n_vertices, wedges (one per layer), local_minima (one per
-    start, lowest first: start, F_start, FOS, points, flags, refined,
-    levels, n_scored), circle_starts (the note where there are none),
-    unrefined (starts the time budget left), best (points, FOS, start),
-    n_scored}."""
+    {final_increment (stratum, thickness, fraction, increment and the rule
+    that set it), start_increment, n_vertices, wedges (one per layer),
+    local_minima (one per start, lowest first: start, F_start (as it
+    stands), F_circle (a circle start's own F), F_refined, FOS, minimum,
+    points, flags, refined, levels, n_scored), circle_starts (the note
+    where there are none), unrefined (starts the time budget left), best
+    (points, FOS, start), n_scored}."""
     t0 = time.perf_counter()
     (e_lo, e_hi), (x_lo, x_hi) = windows
     lo, hi = min(e_lo, x_lo), max(e_hi, x_hi)
@@ -564,10 +761,14 @@ def refinement_stage(geom, *, score: Callable, flags_of: Callable,
             f"{FINAL_FRACTION_RANGE[1]} (EM 1110-2-1902 4-2e(2)(b), p. 4-7: "
             f"no more than 10 to 25 percent of the thinnest stratum), got "
             f"{final_fraction}")
-    d_final = (final_fraction * stratum["thickness"] if stratum
-               else final_fraction * max(h, 1.0))
-    d_final = max(d_final, 1e-4)
-    d_start = max(START_FRACTION_H * h, d_final)
+    # ruling 9(a): the starting increment is never raised to meet the final
+    # one; the final increment is the lesser of the fraction of the
+    # thinnest stratum and a quarter of the starting increment
+    d_start = max(START_FRACTION_H * h, 1e-3)
+    d_stratum = (final_fraction * stratum["thickness"] if stratum
+                 else final_fraction * max(h, 1.0))
+    d_quarter = FINAL_OF_START * d_start
+    d_final = max(min(d_stratum, d_quarter), 1e-4)
     rec: Dict[str, Any] = {
         "final_increment": {
             "stratum": None if stratum is None else stratum["layer"],
@@ -575,82 +776,161 @@ def refinement_stage(geom, *, score: Callable, flags_of: Callable,
             "at_x": None if stratum is None else stratum["x"],
             "fraction": final_fraction,
             "increment": round(d_final, 4),
+            "fraction_of_stratum": round(d_stratum, 4),
+            "quarter_of_start": round(d_quarter, 4),
+            "governed_by": ("the fraction of the thinnest stratum"
+                            if d_stratum <= d_quarter else
+                            "a quarter of the starting increment"),
             "basis": ("EM 1110-2-1902 4-2e(2)(b), p. 4-7: final shift "
                       "increments no more than 10 to 25 percent of the "
                       "thickness of the thinnest stratum the surface may "
-                      "pass through")},
+                      "pass through; it prints a maximum only, so the "
+                      "lesser of that fraction and a quarter of the "
+                      "starting increment is the module's call")},
         "start_increment": round(d_start, 4),
         "n_vertices": N_VERTICES,
         "refined": bool(refine),
         "wedges": [], "local_minima": [], "unrefined": [],
     }
     n_scored = 0
-    starts: List[Tuple[str, List[Tuple[float, float]]]] = []
+    starts: List[Dict[str, Any]] = []
     if own_best is not None and not wedge_only:
-        starts.append((own_label, list(own_best)))
+        starts.append({"label": own_label,
+                       "stands": [(float(x), float(z)) for x, z in own_best]})
     if circle_starts:
-        for label, c in circle_starts:
-            p = circle_start(geom, c)
-            if p is not None:
-                starts.append((label, p))
+        if not wedge_only:
+            for label, c in circle_starts:
+                starts.append({"label": label, "circle": True,
+                               "F_circle": getattr(c, "FOS", None),
+                               "stands": circle_start(geom, c, n_slices),
+                               "reduced": circle_start(geom, c)})
     elif circle_note:
         rec["circle_starts"] = circle_note
     if wedges:
+        def on_stop(done, of, tw, left):
+            rec["wedge_stage_stopped"] = list(left)
+            if record_stop is not None:
+                record_stop("wedge stage", done, of, "low-end positions", tw,
+                            "the layers in order, each over its grid of "
+                            "end positions", "; ".join(left))
         ws = wedge_starts(geom, windows, score, z_floor=z_floor,
-                          windows_given=windows_given, time_up=time_up)
+                          windows_given=windows_given, d_final=d_final,
+                          tol=tol, time_up=time_up, on_stop=on_stop)
         for w in ws:
             n_scored += w["n_scored"]
-            rec["wedges"].append({
+            entry = {
                 "layer": w["layer"], "n_scored": w["n_scored"],
                 "FOS": None if w["FOS"] is None else round(w["FOS"], 4),
                 "points": None if w["points"] is None else
-                [(round(x, 3), round(z, 3)) for x, z in w["points"]]})
+                [(round(x, 3), round(z, 3)) for x, z in w["points"]]}
+            for k in ("ends", "inclinations_deg", "end_levels", "why",
+                      "note"):
+                if k in w:
+                    entry[k] = w[k]
+            rec["wedges"].append(entry)
             if w["points"] is not None:
-                starts.append((f"wedge along {w['layer']}", w["points"]))
-    if seed_surface is not None:
-        starts.append(("the caller's surface (seed_surface)",
-                       [(float(x), float(z)) for x, z in seed_surface]))
-    if wedge_only:
-        starts = [s for s in starts if s[0].startswith("wedge along")]
+                starts.append({"label": f"wedge along {w['layer']}",
+                               "stands": w["points"]})
+    if seed_surface is not None and not wedge_only:
+        starts.append({"label": "the caller's surface (seed_surface)",
+                       "stands": [(float(x), float(z))
+                                  for x, z in seed_surface]})
+
+    # every start scored as it stands first (ruling 9(b); D3), each with
+    # its own span floor (ruling 8)
+    for s in starts:
+        base = s.get("reduced") if s.get("circle") else s.get("stands")
+        s["from"] = (None if base is None else
+                     with_vertices(base) if refine else list(base))
+        spans = []
+        if span_of is not None:
+            for p in (s.get("stands"), s["from"] if refine else None):
+                v = None if p is None else span_of(p)
+                if v is not None:
+                    spans.append(v)
+        span = min(spans) if spans else None
+        s["score"] = (score if span is None else
+                      (lambda p, _span=span: score(p, start_span=_span)))
+        f = math.inf
+        if s.get("stands") is not None:
+            f = s["score"](s["stands"])
+            n_scored += 1
+        s["f_stands"] = f if f < 900 else None
 
     minima = []
-    for k, (label, pts) in enumerate(starts):
-        if refine:
-            pts = with_vertices(pts)
-        if refine and time_up():
-            rec["unrefined"].append(label)
+    for s in starts:
+        r = None
+        why = None
+        if refine and s["from"] is not None:
+            if time_up():
+                why = ("not refined: the time budget (GM-123); its value is "
+                       "the start's as it stands")
+                rec["unrefined"].append(s["label"])
+            else:
+                f1 = s["score"](s["from"])
+                n_scored += 1
+                if f1 < 900:
+                    r = refine_polyline(geom, s["from"], s["score"],
+                                        d_start=d_start, d_final=d_final,
+                                        windows=windows,
+                                        windows_given=windows_given, tol=tol,
+                                        time_up=time_up, f_start=f1)
+                    n_scored += r["n_scored"]
+                    if r["stopped"]:
+                        rec["unrefined"].append(
+                            s["label"] + " (refinement cut short)")
+                else:
+                    why = ("not refined: the refinement's start is not "
+                           "scored (the method has no solution on it, or a "
+                           "screen refused it)")
+        elif refine:
+            why = "not refined: the start could not be built as a polyline"
+        m: Dict[str, Any] = {
+            "start": s["label"],
+            "F_start": (None if s["f_stands"] is None
+                        else round(s["f_stands"], 4))}
+        if s.get("circle"):
+            m["F_circle"] = (None if s["F_circle"] is None
+                             else round(s["F_circle"], 4))
+        cands = []
+        if s["f_stands"] is not None:
+            cands.append((s["f_stands"], "as it stands", s["stands"]))
+        if r is not None:
+            cands.append((r["FOS"], "refined", r["points"]))
+        if not cands:
+            m.update(FOS=None, points=None, refined=False,
+                     note="the start is not scored (the method has no "
+                          "solution on it, or a screen refused it)")
+            if why:
+                m["why_unrefined"] = why
+            minima.append(m)
             continue
-        f0 = score(pts)
-        n_scored += 1
-        if f0 >= 900:
-            minima.append({"start": label, "F_start": None, "FOS": None,
-                           "points": None, "refined": False,
-                           "note": "the start is not scored (the method "
-                                   "has no solution on it, or a screen "
-                                   "refused it)"})
-            continue
-        if refine:
-            r = refine_polyline(geom, pts, score, d_start=d_start,
-                                d_final=d_final, windows=windows,
-                                windows_given=windows_given, tol=tol,
-                                time_up=time_up, f_start=f0)
-            n_scored += r["n_scored"]
-            if r["stopped"]:
-                rec["unrefined"].append(label + " (refinement cut short)")
-            m = {"start": label, "F_start": round(f0, 4),
-                 "FOS": r["FOS"], "points": r["points"], "refined": True,
-                 "levels": r["levels"], "n_scored": r["n_scored"],
-                 "toe_limit_deg": r["toe_limit_deg"],
-                 "eq_c32_deg": r["eq_c32_deg"]}
-        else:
-            m = {"start": label, "F_start": round(f0, 4), "FOS": f0,
-                 "points": pts, "refined": False}
+        f, which, pts = min(cands, key=lambda q: q[0])
+        m.update(FOS=f, minimum=which, points=pts, refined=r is not None)
+        if r is not None:
+            m.update(F_refined=round(r["FOS"], 4), levels=r["levels"],
+                     n_scored=r["n_scored"],
+                     toe_limit_deg=r["toe_limit_deg"],
+                     eq_c32_deg=r["eq_c32_deg"])
+            if s.get("circle"):
+                m["F_refine_start"] = round(r["F_start"], 4)
+        elif why:
+            m["why_unrefined"] = why
         minima.append(m)
     if rec["unrefined"] and record_stop is not None:
-        record_stop(len([m for m in minima if m.get("refined")]),
-                    len(starts), t0, rec["unrefined"])
+        record_stop("noncircular refinement",
+                    len([m for m in minima if m.get("refined")]),
+                    len(starts), "starts", t0,
+                    "every start scored as it stands; the starts refined "
+                    "first, in order",
+                    "starts left unrefined: " + "; ".join(rec["unrefined"]))
     scored = [m for m in minima if m["FOS"] is not None]
     scored.sort(key=lambda m: m["FOS"])
+    # the headline from the unrounded value and points (the list below is
+    # rounded for the record)
+    rec["best_exact"] = (None if not scored else
+                         {"FOS": scored[0]["FOS"],
+                          "points": list(scored[0]["points"])})
     for m in scored:
         m["flags"] = list(flags_of(m["points"]))
         m["FOS"] = round(m["FOS"], 4)
@@ -684,47 +964,90 @@ def refinement_choices(rec: Optional[Dict[str, Any]], *, refine: bool,
     if not rec or not rec.get("final_increment"):
         return out
     fi = rec["final_increment"]
+    stratum = (f"{fi['fraction']:g} x the thinnest stratum "
+               f"({fi['stratum']}, {fi['thickness']} m least vertical "
+               f"thickness within the windows): "
+               f"{fi.get('fraction_of_stratum')} m"
+               if fi.get("stratum") is not None else
+               f"{fi['fraction']:g} x the ground's relief (no stratum in "
+               f"the windows): {fi.get('fraction_of_stratum')} m")
     out.append(choice(
         "final shift increment of the noncircular refinement",
-        f"{fi['increment']} m = {fi['fraction']:g} x the thinnest stratum "
-        f"({fi['stratum']}, {fi['thickness']} m least vertical thickness "
-        f"within the windows)",
+        f"{fi['increment']} m, the lesser of {stratum} and a quarter of the "
+        f"starting increment, {fi.get('quarter_of_start')} m (here "
+        f"{fi.get('governed_by')})",
         how_given(fraction, None, name="refine_fraction"), fi["basis"],
         ["refine_fraction up to 0.25, the print's upper end (the default "
          "0.10 is the module's call: accuracy first, and it meets both ends "
-         "of the printed range)"]))
+         "of the printed range)",
+         "exactly the fraction of the thinnest stratum, the starting "
+         "increment raised to meet it where the strata are thick (as first "
+         "built: one level of shifts on a slope of thick strata)"]))
     out.append(choice(
         "starting increment and vertices of the noncircular refinement",
         f"start {rec['start_increment']} m (0.10 x the ground's relief in "
-        f"the windows), halved to the final increment; "
-        f"{rec['n_vertices']} vertices",
+        f"the windows, never raised to meet the final increment), halved "
+        f"to the final increment; {rec['n_vertices']} vertices on the "
+        f"surface the refinement shifts",
         "module",
         "not in print: EM C-1g(3) gives the method, not the increments or "
-        "the vertex count", ["other starting increments and vertex counts"]))
+        "the vertex count. With points closer together than the increment "
+        "a one-point shift is only a kink, so a refinement of a 30-point "
+        "polyline would cost about three times as much and mostly stand "
+        "still",
+        ["other starting increments and vertex counts",
+         "refine a circle's polyline on the search's own slices itself"]))
     out.append(choice(
         "starts of the noncircular refinement",
         "the search's own best surface; each locally critical circle of "
-        "the circular search run for circle_check (its grid minima and the "
-        "toe and above-toe families' critical circles); a wedge along each "
-        "layer within the search's depth; the caller's seed_surface",
+        "the circular search run for circle_check (its critical circle, "
+        "its grid minima as the walk left them, and the toe and above-toe "
+        "families' critical circles); a wedge along each layer within the "
+        "search's depth; the caller's seed_surface. Every start is scored "
+        "as it stands before it is refined, and its minimum is the lower "
+        "of the two, labelled which (local_minima: minimum); a circle as "
+        "it stands is the polyline of its slice-base points on the "
+        "search's own slices, and its refinement starts from that polyline "
+        "on ten slices",
         "module",
         "EM 4-2e(2), p. 4-7: the initial surface should match the estimated "
         "critical surface; 4-2e(1)(b), pp. 4-3 and 4-6, and C-1g(4), p. "
         "C-11: separate searches; FHWA NHI-06-088 p. 6-22",
-        ["circle_check=False: no circle starts"]))
+        ["circle_check=False: no circle starts",
+         "a start's minimum its refined value alone (as first built: a "
+         "circle start could end above its own circle)"]))
     out.append(choice(
         "wedge starts",
         f"one per layer within the search's depth; the central block on "
-        f"the layer's mid-line, its ends at {WEDGE_POSITIONS} positions "
-        f"each over the windows; wedges at 45 +/- phi'_D/2 on the trial's "
-        f"F (F = 1 first, then the F each pass gave, {WEDGE_F_PASSES} "
-        f"passes at most), phi' of the material just above the base end",
+        f"the mid-line between the layer's bottom and its top cut at the "
+        f"ground, its ends at {WEDGE_POSITIONS} positions each over the "
+        f"windows, then the best wedge's two ends halved, one at a time, "
+        f"the inclinations fixed, down to the final increment; wedges at "
+        f"45 +/- phi'_D/2 on the trial's F (F = 1 first, then the F each "
+        f"pass gave, {WEDGE_F_PASSES} passes at most), phi' of the material "
+        f"just above the layer at the base end",
         "module",
         "EM 1110-2-1902 C-1f(2), p. C-6; C-1g(2), pp. C-8 to C-10, Fig. "
         "C-7b; FHWA NHI-06-088 pp. 6-43 to 6-44. Which layers, how many "
-        "positions and how F is updated are the module's calls",
+        "positions, the halving of the ends and how F is updated are the "
+        "module's calls",
         ["only layers weaker than the one above (FHWA p. 6-33), compared "
-         "at a normal stress no print gives"]))
+         "at a normal stress no print gives",
+         "an inclination band about C-1g(2)'s values (Fig. C-7b), not "
+         "built"]))
+    out.append(choice(
+        "span screen inside the noncircular refinement",
+        "the lesser of the module's span floor (half the span of the "
+        "windows you gave, else half the slope's height) and the start's "
+        "own span, for every start scored as it stands and every shift of "
+        "its refinement; the samplers and the wedge stage keep the "
+        "module's floor",
+        "module",
+        "not in print: the span floor is the module's own screen (D22); a "
+        "start shorter than it, such as a short critical circle, is scored "
+        "and refined where it lies",
+        ["the module's floor alone (as first built: it refused a critical "
+         "circle's start shorter than half the slope's height)"]))
     out.append(choice(
         "toe of the noncircular refinement",
         "no shift makes the toe-end segment steeper than EM Eq. C-32's "

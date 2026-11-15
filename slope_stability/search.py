@@ -1384,8 +1384,38 @@ def _rejection_kwargs(stats: Dict[str, int], n_evaluated: int) -> Dict[str, int]
     }
 
 
+def module_span_floor(geom, window_span: Optional[float] = None) -> float:
+    """The module's span floor of a noncircular surface (D22: its own
+    screen, not in print; `_noncircular_admissible`): half the caller's
+    window span where given, else half the slope's height."""
+    if window_span is not None and window_span > 0:
+        return 0.5 * window_span
+    zs = [p[1] for p in geom.surface_points]
+    return 0.5 * ((max(zs) - min(zs)) if zs else 0.0)
+
+
+def start_span_floor(geom, pts, n_slices: int,
+                     window_span: Optional[float] = None) -> Optional[float]:
+    """The span floor of a start of the noncircular refinement (GM-140 step
+    7a, the fix round's ruling 8): the lesser of the module's floor and the
+    start's own span, as the span screen measures it (from its first
+    slice's left side to its last slice's right side); None where the start
+    gives no slices."""
+    try:
+        slip = (pts if hasattr(pts, "points") else PolylineSlipSurface(
+            points=[(float(x), float(z)) for x, z in pts]))
+        slices = build_slices(geom, slip, n_slices)
+    except (ValueError, ZeroDivisionError, RuntimeError, IndexError):
+        return None
+    if not slices:
+        return None
+    return min(module_span_floor(geom, window_span),
+               slices[-1].x_right - slices[0].x_left)
+
+
 def _noncircular_admissible(slip, slices, geom, n_slices_requested: int,
-                            window_span: Optional[float] = None) -> bool:
+                            window_span: Optional[float] = None,
+                            span_floor: Optional[float] = None) -> bool:
     """Reject grossly-degenerate noncircular trial surfaces (SS-6, geometry).
 
     Cheap geometric sanity checks the team-lead's list calls for — they weed
@@ -1406,16 +1436,15 @@ def _noncircular_admissible(slip, slices, geom, n_slices_requested: int,
       The old floor of 15% of the FULL model width silently rejected a legitimate
       localized failure in a wide model — a wide right-of-way or a long tailwater
       bench blew the floor up far past a real slide length.
+      ``span_floor`` (GM-140 step 7a, the fix round's ruling 8): a floor
+      given in its place, the lesser of this one and a refinement start's
+      own span (`start_span_floor`); the samplers pass none.
     """
     if len(slices) < max(5, n_slices_requested // 3):
         return False
     span = slices[-1].x_right - slices[0].x_left
-    if window_span is not None and window_span > 0:
-        min_span = 0.5 * window_span
-    else:
-        zs = [p[1] for p in geom.surface_points]
-        slope_height = (max(zs) - min(zs)) if zs else 0.0
-        min_span = 0.5 * slope_height
+    min_span = (module_span_floor(geom, window_span) if span_floor is None
+                else span_floor)
     if min_span > 0 and span < min_span:
         return False
     return True
@@ -1555,7 +1584,8 @@ def _compute_fos(geom: SlopeGeometry,
                  fos_fn: Optional[Callable] = None,
                  m_alpha_check: bool = True,
                  info: Optional[Dict[str, Any]] = None,
-                 inside_model: bool = True) -> float:
+                 inside_model: bool = True,
+                 span_floor: Optional[float] = None) -> float:
     """The search's score of a trial surface: the method's own factor of
     safety, or _FOS_MAX (not scored) where the surface is refused or the
     method has no solution on it.
@@ -1578,7 +1608,10 @@ def _compute_fos(geom: SlopeGeometry,
     a scored surface (None for the OMS), whether or not it is checked.
 
     ``window_span`` anchors the noncircular span floor to the caller's entry/exit
-    window (see ``_noncircular_admissible``). ``reject_stats`` (optional) is a
+    window (see ``_noncircular_admissible``); ``span_floor`` replaces that
+    floor (the noncircular refinement's starts, GM-140 step 7a: the lesser
+    of the module's floor and the start's own span; None, the default,
+    leaves the screen as it is). ``reject_stats`` (optional) is a
     mutable tally the generators pass so that silent noncircular rejections
     (geometry / non-converged / jagged) are counted rather than lost.
 
@@ -1625,7 +1658,8 @@ def _compute_fos(geom: SlopeGeometry,
                     geom, arc, method, n_slices, tol=tol,
                     window_span=window_span, reject_stats=reject_stats,
                     fos_fn=fos_fn, m_alpha_check=m_alpha_check,
-                    info=arc_info, inside_model=inside_model)
+                    info=arc_info, inside_model=inside_model,
+                    span_floor=span_floor)
                 if fos < best:
                     best, best_arc, best_info = fos, arc, arc_info
             _remember_arc(slip, best_arc)
@@ -1654,7 +1688,8 @@ def _compute_fos(geom: SlopeGeometry,
                             window_span=window_span,
                             reject_stats=reject_stats, fos_fn=fos_fn,
                             m_alpha_check=m_alpha_check, info=info,
-                            inside_model=inside_model),
+                            inside_model=inside_model,
+                            span_floor=span_floor),
                         plan=plan)
                 finally:
                     _LOWEST_OFF.reset(off)
@@ -1679,7 +1714,7 @@ def _compute_fos(geom: SlopeGeometry,
         # circular or not: GM-140 step 2.)
         if not getattr(slip, 'is_circular', True):
             if not _noncircular_admissible(slip, slices, geom, n_slices,
-                                           window_span):
+                                           window_span, span_floor):
                 _bump(reject_stats, "geometry")
                 _bump_screen(
                     reject_stats, "slice_count"
@@ -2476,6 +2511,15 @@ def _grid_minima_record(*args, **kwargs):
 # at the end of each search. With ``refine=False`` nothing is shifted;
 # the weak-layer search is then its wedge stage alone.
 
+#: The statement a weak-layer search with ``refine=False`` (its wedge
+#: stage alone) carries (the fix round's ruling 10).
+WEDGE_STAGE_ALONE = (
+    "The wedge stage alone (refine=False, Slide2's search without "
+    "optimisation): the wedges' inclinations are fixed at EM 1110-2-1902 "
+    "C-1g(2)'s values, 45 + phi'_D/2 and 45 - phi'_D/2 (pp. C-8 to C-10), "
+    "and the stage is not a minimum over the inclinations or the shape of "
+    "the surface.")
+
 #: The options every noncircular search takes for its refinement.
 _REFINE_OPTIONS = {"refine": True, "refine_fraction": None,
                    "circle_starts": None, "circle_note": None,
@@ -2550,43 +2594,60 @@ def _run_refinement(result: SearchResult, a, opts, kind: str) -> None:
     # the refinement's trials either (`_noncircular_admissible` then takes
     # half the slope's height).
     window_span = _window_span(*windows) if all(given) else None
+    # The fix round's ruling 8 (D2, Q4): inside the refinement, and for
+    # every start scored as it stands, the span floor is the lesser of the
+    # module's floor and the start's own span; the samplers and the wedge
+    # stage keep step 3's screen.
+    floor = module_span_floor(geom, window_span)
     reject_stats = _new_reject_stats()
-    seen: Dict[tuple, tuple] = {}
+    seen: Dict[tuple, float] = {}
+    flags: Dict[tuple, list] = {}
 
-    def score(pts):
+    def score(pts, start_span=None):
         key = tuple((float(x), float(z)) for x, z in pts)
-        if key in seen:
-            return seen[key][0]
+        span_floor = None if start_span is None else min(floor, start_span)
+        if (key, span_floor) in seen:
+            return seen[(key, span_floor)]
         info: Dict[str, Any] = {}
         try:
             slip = PolylineSlipSurface(points=list(key))
             f = _compute_fos(geom, slip, method, n_slices, tol=tol,
                              window_span=window_span,
                              reject_stats=reject_stats, fos_fn=fos_fn,
-                             info=info)
+                             info=info, span_floor=span_floor)
         except (ValueError, ZeroDivisionError, RuntimeError, IndexError):
             f = _FOS_MAX
-        seen[key] = (f, list(info.get("flags") or []))
+        seen[(key, span_floor)] = f
+        if f < _FOS_MAX:
+            flags[key] = list(info.get("flags") or [])
         return f
 
     def flags_of(pts):
         key = tuple((float(x), float(z)) for x, z in pts)
-        if key not in seen:
+        if key not in flags:
             score(pts)
-        return seen[key][1]
+        return flags.get(key, [])
 
-    def record_stop(n_done, n_of, t0, left):
-        _record_stop("noncircular refinement", n_done, n_of, "starts", t0,
-                     "the starts refined first, in order",
-                     "starts left unrefined: " + "; ".join(left))
+    def span_of(pts):
+        """A start's own span, as the span screen measures it."""
+        try:
+            slices = build_slices(geom, PolylineSlipSurface(
+                points=[(float(x), float(z)) for x, z in pts]), n_slices)
+        except (ValueError, ZeroDivisionError, RuntimeError, IndexError):
+            return None
+        return (slices[-1].x_right - slices[0].x_left) if slices else None
+
+    def record_stop(stage, n_done, n_of, unit, t0, covered, not_covered):
+        _record_stop(stage, n_done, n_of, unit, t0, covered, not_covered)
 
     own = (result.critical.slip_points
            if result.critical is not None and result.critical.slip_points
            else None)
     fraction = opts["refine_fraction"]
+    wedge_only = kind == "weak_layer" and not opts["refine"]
     rec = refinement_stage(
         geom, score=score, flags_of=flags_of, own_best=own,
-        windows=windows, windows_given=given,
+        windows=windows, windows_given=given, n_slices=n_slices,
         circle_starts=opts["circle_starts"],
         circle_note=(opts["circle_note"] or
                      "no circular search ran with this search, so there "
@@ -2597,9 +2658,16 @@ def _run_refinement(result: SearchResult, a, opts, kind: str) -> None:
         wedges=True, refine=bool(opts["refine"]),
         final_fraction=FINAL_FRACTION if fraction is None else fraction,
         tol=tol, time_up=_time_up, record_stop=record_stop,
+        span_of=span_of,
         own_label=f"the {kind.replace('_', ' ')} search's own best surface",
-        wedge_only=(kind == "weak_layer" and not opts["refine"]))
-    rec["fraction_given"] = fraction is not None
+        wedge_only=wedge_only)
+    if wedge_only:
+        # ruling 10: the wedge stage alone is not a minimum over the
+        # inclinations or the shape (in a run with refine=False only the
+        # stage's own value exists, so the first sentence alone);
+        # search_critical_surface puts it back after its supplements
+        rec["warning"] = WEDGE_STAGE_ALONE
+        result.warnings.append(WEDGE_STAGE_ALONE)
     result.n_surfaces_evaluated += rec["n_scored"]
     result.n_rejected_geometry += reject_stats["geometry"]
     result.n_rejected_nonconverged += reject_stats["nonconverged"]
@@ -2616,11 +2684,12 @@ def _run_refinement(result: SearchResult, a, opts, kind: str) -> None:
                 "FOS": m["FOS"], "points": list(m["points"]),
                 "from": m["start"]})
     best = rec.get("best")
-    if best is not None and (result.critical is None
-                             or best["FOS"] < result.critical.FOS - 1e-9):
+    exact = rec.pop("best_exact", None) or best
+    if exact is not None and (result.critical is None
+                              or exact["FOS"] < result.critical.FOS - 1e-9):
         try:
             result.critical = _polyline_result(
-                geom, best["points"], best["FOS"], method, n_slices, tol,
+                geom, exact["points"], exact["FOS"], method, n_slices, tol,
                 fos_fn)
         except ValueError:
             pass
@@ -3751,9 +3820,16 @@ def add_circle_trial(geom, result: SearchResult, circle, method: str,
                      "FOS": round(circle.FOS, 4)}
     fos = _FOS_MAX
     poly = None
+    # (where the noncircular refinement ran, the circle's polyline is one
+    # of its starts as it stands, so its span floor is the start's: the
+    # fix round's ruling 8; otherwise step 6's screen as it was)
+    refined = bool((result.refinement or {}).get("refined"))
     try:
         poly = circle_as_polyline(geom, circle, n_slices)
-        fos = _compute_fos(geom, poly, method, n_slices, tol=tol)
+        fos = _compute_fos(
+            geom, poly, method, n_slices, tol=tol,
+            span_floor=(start_span_floor(geom, poly, n_slices)
+                        if refined else None))
     except (ValueError, ZeroDivisionError, RuntimeError) as exc:
         out["note"] = (f"the critical circle could not be scored as a "
                        f"polyline ({exc})")
@@ -3787,6 +3863,19 @@ def add_circle_trial(geom, result: SearchResult, circle, method: str,
     if not out["governs"]:
         out["note"] = ("the search's own lowest polyline is at or below "
                        "the critical circle's value as a polyline")
+        if refined and own is not None and own > circle.FOS + 1e-9:
+            # the fix round's ruling 9: every start, this polyline among
+            # them, is scored as it stands, so it never governs here; a
+            # headline above the circle's own value still says so
+            out["warning"] = (
+                f"The noncircular search's lowest surface (FOS {own:.4f}) "
+                f"is above the critical circle's value by the same method "
+                f"({name}, FOS {circle.FOS:.4f} as a circle, {fos:.4f} as "
+                f"the polyline of its {len(poly.points) - 1} slice bases; "
+                f"circle_check). Every start, that polyline among them, was "
+                f"scored as it stands and refined one point at a time (EM "
+                f"1110-2-1902 C-1g(3), p. C-10), and none reached below the "
+                f"circle: report the circle's value beside this one.")
         return out
     try:
         x_entry, x_exit = poly.find_entry_exit(geom)

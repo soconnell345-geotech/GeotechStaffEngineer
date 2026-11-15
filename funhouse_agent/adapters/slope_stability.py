@@ -644,7 +644,8 @@ def _run_search_rapid_drawdown(params: dict) -> dict:
             "surface_type", "x_range", "y_range", "x_entry_range",
             "x_exit_range", "nx", "ny", "n_trials", "n_points", "seed",
             "n_slices", "tol", "f_interslice", "stage1_phreatic_points",
-            "drawdown_phreatic_points", "time_budget_s", "low_m_alpha"),
+            "drawdown_phreatic_points", "time_budget_s", "low_m_alpha",
+            "refine", "refine_fraction"),
         method="search_rapid_drawdown")
     geom = _build_geometry(params, method="search_rapid_drawdown")
     require_params(params, ["drawdown_from_elevation", "drawdown_to_elevation"],
@@ -675,6 +676,8 @@ def _run_search_rapid_drawdown(params: dict) -> dict:
         low_m_alpha=_check_choice(
             params.get("low_m_alpha", "flag"), LOW_M_ALPHA_ACTIONS,
             name="low_m_alpha", method="search_rapid_drawdown"),
+        refine=bool(params.get("refine", True)),
+        refine_fraction=params.get("refine_fraction"),
     )
     if result.search is not None:
         budget_is_default(result.search.choices, params)
@@ -930,8 +933,10 @@ METHOD_INFO = {
             "drawdown_phreatic_points": {"type": "array", "required": False, "description": "The piezometric line after drawdown, [[x,z],...]; omitted, a level pool at drawdown_to_elevation, named in the result as assumed (see rapid_drawdown_fos)."},
             "low_m_alpha": {"type": "str", "required": False, "default": "flag", "allowed_values": list(LOW_M_ALPHA_ACTIONS), "description": "A trial surface with m_alpha < 0.2 on a drawn-down slice at the drawdown FOS: 'flag' (default), kept and counted as flagged in search.trial_flags (Whitman and Bailey 1967, p. 487, print a warning, not a rejection); 'refuse', left out and counted in search.n_rejected.m_alpha, as before GM-140 step 3."},
             "time_budget_s": {"type": "float", "required": False, "default": SEARCH_TIME_BUDGET_S, "description": "Time budget of the whole search in seconds (at most 600), as search_critical_surface: each trial is two or three GLE solves, so the main search scores coarse first and stops at 80 % of the budget, and search.warnings and search.search_ranges.time_budget say what was covered."},
+            "refine": {"type": "bool", "required": False, "default": True, "description": "circular: refine the lowest grid centre by a local walk on the centre. noncircular and noncircular_de (GM-140 step 7a): every start (the search's own best surface and a wedge along each layer; no circle starts) is scored as it stands and refined one point at a time with the drawdown F, as search_critical_surface's refine describes; search.local_minima lists each start's minimum. False: the grid unrefined, or the sampler alone."},
+            "refine_fraction": {"type": "float", "required": False, "default": 0.1, "description": "noncircular and noncircular_de with refine: the final shift increment as a fraction of the thinnest stratum (EM 1110-2-1902 4-2e(2)(b), p. 4-7: no more than 10 to 25 percent), the final increment the lesser of it and a quarter of the starting increment. Default 0.10; at most 0.25."},
         },
-        "returns": {"FOS": "Minimum drawdown factor of safety found.", "method": "Stage method used.", "surface_type": "Search strategy.", "n_surfaces_evaluated": "Number of surfaces checked.", "search": "Rich search result (critical surface geometry + diagnostics), with search_ranges, governing_location, refused_lowest and choices as search_critical_surface returns them, and candidate_methods: for each family in candidates, the drawdown procedure and interslice function that scored it (one staged solve scores every family). A noncircular drawdown search runs no circular search, and circle_check says its minimum was not checked against a circle.", "drawdown_detail": "The winning surface stage by stage, as rapid_drawdown_fos returns it: each stage's factor of safety, the stage the answer is from, the water assumed, the per-slice columns and the choices (layer_overlaps where a layer loses ground to one listed before it)."},
+        "returns": {"FOS": "Minimum drawdown factor of safety found.", "method": "Stage method used.", "surface_type": "Search strategy.", "n_surfaces_evaluated": "Number of surfaces checked.", "search": "Rich search result (critical surface geometry + diagnostics), with search_ranges, governing_location, refused_lowest and choices as search_critical_surface returns them, and candidate_methods: for each family in candidates, the drawdown procedure and interslice function that scored it (one staged solve scores every family). A noncircular drawdown search runs no circular search, and circle_check says its minimum was not checked against a circle; its refinement and local_minima are as search_critical_surface's.", "drawdown_detail": "The winning surface stage by stage, as rapid_drawdown_fos returns it: each stage's factor of safety, the stage the answer is from, the water assumed, the per-slice columns and the choices (layer_overlaps where a layer loses ground to one listed before it)."},
     },
     "yield_acceleration": {
         "category": "Slope Stability",
@@ -998,8 +1003,8 @@ METHOD_INFO = {
             "time_budget_s": {"type": "float", "required": False, "default": SEARCH_TIME_BUDGET_S, "description": "Time budget of the whole search in seconds (at most 600). The main search scores its centres or entry/exit pairs coarse first and stops at 80 % of the budget; the result is then the lowest surface found, and warnings and search_ranges.time_budget say what was scored of how many, at what spacing, the run time projected for the whole search, and what was not run. Raise it for a long search you mean to wait for."},
             "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": _F_INTERSLICE, "description": "Interslice force function f(x) of morgenstern_price and gle (Morgenstern and Price 1965, p. 85), taken by every family and every kind of search ('constant' reproduces Spencer). Before GM-140 step 6 a search always took the half-sine function. Spencer's method is the constant function; the other methods have none."},
             "circle_check": {"type": "bool", "required": False, "default": True, "description": "Noncircular searches. True (default): the circular search (centre grid and toe-circle families) is run first by the method that scores the polylines, on the caller's nx x ny grid and inside the same windows, and its critical circle, as the polyline of its slice-base points, is one of the noncircular search's trials, so the search does not report a minimum above the critical circle's value without saying so. That circular search costs about 2 to 21 times the noncircular search alone (measured on made-up and published slopes). The check is the module's own call (no print found gives it). The result's circle_check gives the circle and both values. Under a time budget the circular search may use a quarter of it. False: no circular search is run and the result says the noncircular minimum was not checked against a circle."},
-            "refine": {"type": "bool", "required": False, "default": True, "description": "circular: refine the lowest centres of the grid by a local walk on the centre. Noncircular searches (noncircular, noncircular_de, pso, weak_layer; GM-140 step 7a): finish the search as EM 1110-2-1902 C-1g(3), p. C-10, describes one: every start is moved one point at a time, all others held (interior points up and down, end points along the ground), until no shift lowers F, the shift halved down to the final increment (refine_fraction x the thinnest stratum, EM 4-2e(2)(b), p. 4-7). The starts: the search's own best surface, each locally critical circle of the circular search run for circle_check (its grid minima and the toe and above-toe families' critical circles), a wedge along each layer within the search's depth (EM C-1f(2), C-1g(2): the central block on the layer's mid-line, its ends at 21 positions each, wedges at 45 +/- phi'_D/2) and seed_surface. The lowest is reported, every start's minimum listed in local_minima with its flags (EM 4-2d(2), p. 4-2). No end crosses a crest from its start or moves onto another face (EM 4-2e(1)(a)); no shift makes the toe exit steeper than EM Eq. C-32's 45 - phi'/2 (or the start's own exit, where steeper; the module's call on EM 4-2e(2)(a)); automatic windows bound only the samplers, windows you give bound everything (confirmed by the owner, 2026-11-15). Starting increment (0.10 x the ground's relief), 11 vertices, the wedge positions and passes are the module's calls (choices). It is a stage of the time budget: a stopped one names the starts it left unrefined. Run time, measured on the noncircular cases of the published validation set with circle_check on (development container): noncircular 3.5-24 s (3-13 s before the refinement), noncircular_de 6.5-18 s (6-11 s), weak_layer 2-15 s (2-10 s). False: no shifts (weak_layer is then its wedge stage alone, Slide2's search without optimisation)."},
-            "refine_fraction": {"type": "float", "required": False, "description": "Noncircular refinement: the final shift increment as a fraction of the thinnest stratum within the windows (EM 1110-2-1902 4-2e(2)(b), p. 4-7: no more than 10 to 25 percent). Default 0.10 (the module's call: accuracy first); at most 0.25, above is refused. The result's refinement names the stratum, its thickness and the increment."},
+            "refine": {"type": "bool", "required": False, "default": True, "description": "circular: refine the lowest centres of the grid by a local walk on the centre. Noncircular searches (noncircular, noncircular_de, pso, weak_layer; GM-140 step 7a): finish the search as EM 1110-2-1902 C-1g(3), p. C-10, describes one: every start is scored as it stands, then moved one point at a time, all others held (interior points up and down, end points along the ground), until no shift lowers F, the shift halved down to the final increment (the lesser of refine_fraction x the thinnest stratum, EM 4-2e(2)(b), p. 4-7, and a quarter of the starting increment); a start's minimum is the lower of the two, labelled which. The starts: the search's own best surface, each locally critical circle of the circular search run for circle_check (its grid minima and the toe and above-toe families' critical circles; as it stands, the polyline of its slice bases on n_slices), a wedge along each layer within the search's depth (EM C-1f(2), C-1g(2): the central block on the layer's mid-line, its ends at 21 positions each, then halved down to the final increment, wedges at 45 +/- phi'_D/2) and seed_surface. The lowest is reported, every start's minimum listed in local_minima with its flags (EM 4-2d(2), p. 4-2). No end crosses a crest from its start or moves onto another face (EM 4-2e(1)(a)); no shift makes the toe exit steeper than EM Eq. C-32's 45 - phi'/2 (or the start's own exit, where steeper; the module's call on EM 4-2e(2)(a)); automatic windows bound only the samplers, windows you give bound everything (confirmed by the owner, 2026-11-15); a start shorter than the module's span floor keeps its own span as the floor. Starting increment (0.10 x the ground's relief), 11 vertices, the wedge positions and passes are the module's calls (choices). It is a stage of the time budget: a stopped one names the starts it left unrefined, each still scored as it stands. Run time, measured on the noncircular cases of the published validation set with circle_check on (development container): noncircular 3.5-24 s (3-13 s before the refinement), noncircular_de 6.5-18 s (6-11 s), weak_layer 2-15 s (2-10 s). False: no shifts (weak_layer is then its wedge stage alone, Slide2's search without optimisation, its inclinations fixed at C-1g(2)'s values, which the result says)."},
+            "refine_fraction": {"type": "float", "required": False, "default": 0.1, "description": "Noncircular refinement: the final shift increment as a fraction of the thinnest stratum within the windows (EM 1110-2-1902 4-2e(2)(b), p. 4-7: no more than 10 to 25 percent); the final increment is the lesser of it and a quarter of the starting increment (the module's call: the print gives a maximum only). Default 0.10 (the module's call: accuracy first); at most 0.25, above is refused. The result's refinement names the stratum, its thickness and the increment."},
             "seed_surface": {"type": "array", "required": False, "description": "Noncircular searches: a surface of your own as [[x, z], ...] (increasing x, ends on the ground), one more start of the refinement (EM 4-2e(2), p. 4-7: the initial surface should match the estimated critical surface); noncircular_de also seeds its population with it."},
             "bishop_screen": {"type": "bool", "required": False, "default": False, "description": "circular and entry_exit searches with spencer / morgenstern_price / gle: score every centre or pair with Bishop's simplified method, then re-score the lowest (at least 10, every one within 5 % of the lowest, at most 30) with the method itself; the reported FOS is the method's own. Centres the screen scored below the reported minimum on which the method has no solution are counted in screen_unsolved. On four pinned slopes it found the same surfaces and FOS as the unscreened search in 35-60 % of the time on the default centre grid, 15-30 % on 10 x 10 and 12 x 12 entry_exit grids and 3 % on a 30 x 30 entry_exit grid at 60 slices (33 s against 972 s). Not applied where supports are modelled; noncircular searches are not screened."},
             "m_alpha_rule": {"type": "str", "required": False, "default": "frictional", "allowed_values": ["frictional", "every_slice"], "description": "Which slices the m_alpha < 0.2 check looks at (Whitman and Bailey 1967, p. 487). 'frictional': slices with phi' > 0; on a phi' = 0 slice m_alpha = cos(a) does not depend on F and the strength does not depend on the normal force (the module's own reasoning, no printed source). 'every_slice': every slice."},
@@ -1116,7 +1121,12 @@ declare_applies_when(METHOD_INFO, {
         "reverse_curvature": _SEARCH_CIRCLES,
         "nx": _SEARCH_CIRCLES, "ny": _SEARCH_CIRCLES,
         "n_trials": {"surface_type": ["noncircular"]},
-        "n_points": {"surface_type": ["noncircular", "noncircular_de"]}}),
+        "n_points": {"surface_type": ["noncircular", "noncircular_de"]},
+        "refine": {"surface_type": ["circular", "noncircular",
+                                    "noncircular_de"]},
+        # (with refine=False the fraction sets nothing: the sampler alone)
+        "refine_fraction": {"surface_type": ["noncircular", "noncircular_de"],
+                            "refine": "set"}}),
     "yield_acceleration": _crack_and({
         "reverse_curvature": _CIRCLE_GIVEN}),
     "search_critical_surface": _crack_and({
@@ -1128,8 +1138,12 @@ declare_applies_when(METHOD_INFO, {
                                       "pso"]},
         "refine": {"surface_type": ["circular", "noncircular",
                                     "noncircular_de", "pso", "weak_layer"]},
-        "refine_fraction": {"surface_type": ["noncircular", "noncircular_de",
-                                             "pso", "weak_layer"]},
+        # (with refine=False the fraction sets nothing but in the weak-layer
+        # search, whose wedge ends are halved down to the final increment)
+        "refine_fraction": [{"surface_type": ["noncircular",
+                                              "noncircular_de", "pso"],
+                             "refine": "set"},
+                            {"surface_type": ["weak_layer"]}],
         "seed_surface": {"surface_type": ["noncircular", "noncircular_de",
                                           "pso", "weak_layer"]},
         "bishop_screen": {**_SEARCH_CIRCLES,
@@ -1237,8 +1251,10 @@ for _m, _info in METHOD_INFO.items():
                 "nails", "anchors", "geosynthetics", "stabilizing_piles",
                 "reinforcement_force") if _k in _p]}
 for _m, _seeded in (
+        # (the weak-layer search draws no random trials since GM-140 step
+        # 7a, so its seed is inert)
         ("search_critical_surface",
-         ["noncircular", "noncircular_de", "pso", "weak_layer"]),
+         ["noncircular", "noncircular_de", "pso"]),
         ("search_rapid_drawdown", ["noncircular", "noncircular_de"])):
     _p = METHOD_INFO[_m]["parameters"]
     _p["seed"]["applies_when"] = {"surface_type": _seeded}

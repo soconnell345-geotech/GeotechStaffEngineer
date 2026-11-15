@@ -36,8 +36,10 @@ What cannot be checked:
 The piezometric line is Table 9.3 as printed.
 
 The module's weak-layer search (GM-140 step 7a: a wedge along each layer,
-then the refinement) reaches Table 9.5 refined; its wedge stage alone does
-not reach Table 9.4 at the printed inclinations (strict xfails, below).
+then the refinement) reaches Table 9.5 refined, and its wedge stage alone
+reaches Table 9.4 since the step's fix round halved the best wedge's ends;
+at the printed inclinations the wedge stage stays above the declared
+family (a strict xfail, below).
 
 E8 itself is the capability: ``SlopeGeometry.surcharges``, a list of
 (pressure, x_start, x_end) zones summed on top of the single
@@ -196,16 +198,20 @@ def test_v028_janbu_corrected_against_print(family_lowest):
 _WEDGE_STAGE_SHORT = (
     "GM-140 step 7a: the weak-layer search's wedge stage (refine=False), "
     "a wedge along each layer with the wedges at EM 1110-2-1902 C-1g(2)'s "
-    "printed inclinations (45 -/+ phi'_D/2, pp. C-8 to C-10), reads Spencer "
-    "0.804 against Table 9.4's 0.760 (+5.8 %) and above the declared "
-    "family's 0.748. The family's lowest surface has its bench wedge at 25 "
-    "deg; C-1g(2)'s passive inclination on the trial's F is 31 to 33 deg, "
-    "and on the same base ends (47, 76) the printed angles give 0.79. So "
-    "the shortfall is the fixed inclinations, not the base ends: Slide2's "
-    "block search varies the projection angles, and EM Fig. C-7b shows "
-    "searched inclinations, which the brief's item 4 does not include (a "
-    "call left for the owner in STEP7A_CHECK.md). Nothing tuned; the "
-    "refined search reaches Table 9.5 (test above).")
+    "printed inclinations (45 -/+ phi'_D/2, pp. C-8 to C-10), its best "
+    "wedge's two ends halved down to the final increment after the "
+    "21-position grid (the fix round's ruling 10), reads Spencer 0.776, "
+    "above the declared family's lowest, 0.748 (0.7484 with the slicing "
+    "difference). Two things hold it there: the base-end spacing and the "
+    "fixed inclinations. C-1g(2)'s inclinations on the family's own base "
+    "ends (47, 76) give 0.797, and the halved ends (46.3, 77.6) 0.776 (the "
+    "21-position grid alone gave 0.804); the family's lowest surface has "
+    "its bench wedge at 25 deg, where C-1g(2)'s passive inclination on the "
+    "trial's F is 31 to 33 deg. Slide2's block search varies the "
+    "projection angles and EM Fig. C-7b shows searched inclinations; an "
+    "inclination band about C-1g(2)'s values is the call's other form, not "
+    "built (DESIGN.md, Calls made). Nothing tuned; the refined search "
+    "reaches Table 9.5 and the wedge stage Table 9.4 (tests above).")
 
 
 @pytest.fixture(scope="module")
@@ -226,20 +232,28 @@ def test_v028_weak_layer_search_refined_against_table_9_5(
     carry them too)."""
     res = weak_layer_searches[True]
     assert res.critical is not None
-    # GM-140 step 7a: 0.830 (flagged) -> 0.697; printed 0.707 (Spencer,
-    # Slide2 Verification Manual problem #9, Table 9.5, with optimisation,
-    # manual p. 52), -1.4 %
+    # GM-140 step 7a: 0.830 (flagged) -> 0.697 -> 0.696 (its fix round:
+    # every start scored as it stands, the wedge ends halved); printed
+    # 0.707 (Spencer, Slide2 Verification Manual problem #9, Table 9.5,
+    # with optimisation, manual p. 52), -1.5 %
     assert res.critical.FOS == pytest.approx(0.707, rel=0.03)
     assert res.critical_flags          # reported with its flags
     assert res.critical.FOS <= weak_layer_searches[False].critical.FOS
 
 
-@pytest.mark.xfail(strict=True, reason=_WEDGE_STAGE_SHORT)
 def test_v028_weak_layer_wedge_stage_against_table_9_4(weak_layer_searches):
+    """The wedge stage alone (Slide2's search without optimisation). A
+    strict xfail until the fix round's ruling 10 (the best wedge's two ends
+    halved down to the final increment after the 21-position grid, the
+    inclinations fixed; decided before this case was re-run): 0.804
+    (+5.8 %) -> 0.776. Its result says the inclinations are fixed at
+    C-1g(2)'s values and that it is not a minimum over them."""
     res = weak_layer_searches[False]
     # printed 0.760 (Spencer): Slide2 Verification Manual problem #9,
-    # Table 9.4 (no optimisation), manual p. 52
+    # Table 9.4 (no optimisation), manual p. 52; 0.776, +2.1 %
     assert res.critical.FOS == pytest.approx(0.760, rel=0.03)
+    assert [w for w in res.warnings
+            if w.startswith("The wedge stage alone")]
 
 
 @pytest.mark.xfail(strict=True, reason=_WEDGE_STAGE_SHORT)

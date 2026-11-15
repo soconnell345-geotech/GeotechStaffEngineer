@@ -299,13 +299,17 @@ y = 27.75; the crest load is entered as its mean. The piezometric line is Table
 
 **The module's weak-layer search (GM-140 step 7a).** It is now a wedge along each
 layer (EM 1110-2-1902 C-1f(2), C-1g(2)), then the refinement one point at a time
-(EM C-1g(3)). Refined, Spencer reads 0.697 against Table 9.5's 0.707 (-1.4 %;
+(EM C-1g(3)). Refined, Spencer reads 0.696 against Table 9.5's 0.707 (-1.5 %;
 `test_v028_weak_layer_search_refined_against_table_9_5`), on a surface carrying the
 printed checks' flags, which the result reports. The wedge stage alone
-(`refine=False`) reads 0.804 against Table 9.4's 0.760 (+5.8 %) and above the
-declared family's 0.748: two strict xfails, the cause the fixed inclinations of
-C-1g(2) (the family's lowest has its bench wedge at 25 deg, the printed passive
-inclination is 31 to 33 deg; Slide2 varies the projection angles). Before step 7a
+(`refine=False`), its best wedge's ends halved down to the final increment since
+the step's fix round, reads 0.776 against Table 9.4's 0.760 (+2.1 %; 0.804 before
+the halving) and stays above the declared family's 0.748: a strict xfail, the
+causes the base-end spacing and the fixed inclinations of C-1g(2) (on the family's
+own base ends the printed inclinations give 0.797; the family's lowest has its
+bench wedge at 25 deg, the printed passive inclination is 31 to 33 deg; Slide2
+varies the projection angles). Its result says the inclinations are fixed and
+that it is not a minimum over them. Before step 7a
 the search aimed random polylines at a layer chosen by an unprinted weight and
 returned 0.830, flagged (`module_work/gm140/STEP7A_CHECK.md`).
 

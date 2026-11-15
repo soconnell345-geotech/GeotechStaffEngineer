@@ -1279,6 +1279,7 @@ def search_rapid_drawdown(geom: SlopeGeometry,
                           infinite_slope: bool = True,
                           refine: bool = True,
                           time_budget_s: Optional[float] = None,
+                          refine_fraction: Optional[float] = None,
                           drawdown_phreatic_points: Optional[List] = None,
                           low_m_alpha: str = "flag",
                           ) -> RapidDrawdownSearchResult:
@@ -1353,10 +1354,21 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         result's ``search`` carries ``governing_surface``, ``candidates`` and
         ``warnings``. Default True.
     refine : bool
-        Refine the lowest centre of the circular grid by a local compass
-        search on the centre (GM-87; ``search.grid_search``). With a
-        per-surface solve this costly only the lowest grid centre is
-        refined, three step halvings, at most 12 centres. Default True.
+        Circular: refine the lowest centre of the circular grid by a local
+        compass search on the centre (GM-87; ``search.grid_search``). With
+        a per-surface solve this costly only the lowest grid centre is
+        refined, three step halvings, at most 12 centres. Noncircular
+        (GM-140 step 7a): every start (the search's own best surface, a
+        wedge along each layer; no circle starts, since this search runs no
+        circular search) is scored as it stands and refined one point at a
+        time with the drawdown F (EM 1110-2-1902 C-1g(3), p. C-10), as
+        ``search_critical_surface`` does; False runs the sampler alone.
+        Default True.
+    refine_fraction : float or None
+        Noncircular refinement: the final shift increment as a fraction of
+        the thinnest stratum (EM 4-2e(2)(b), p. 4-7: no more than 10 to 25
+        percent); None (default) 0.10; at most 0.25. As
+        ``search_critical_surface``.
     low_m_alpha : str
         A trial surface with m_alpha < 0.2 on a drawn-down slice at the
         drawdown FOS: 'flag' (default), kept and counted as flagged in
@@ -1461,6 +1473,7 @@ def search_rapid_drawdown(geom: SlopeGeometry,
             geom, surface_type, x_range, y_range, nx, ny, x_entry_range,
             x_exit_range, n_trials, n_points, seed, n_slices, tol, _dd_fos,
             refine, budget, windows_auto=windows_auto, grid_auto=grid_auto,
+            refine_fraction=refine_fraction,
             toe_circles=toe_circles, infinite_slope=infinite_slope,
             auto=auto, given=given, window_note=window_note,
             solve_name=method, solve_interslice=f_interslice)
@@ -1496,7 +1509,7 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
                      n_slices, tol, _dd_fos, refine, budget, *, windows_auto,
                      grid_auto, toe_circles, infinite_slope, auto, given,
                      window_note=None, solve_name=None,
-                     solve_interslice=None):
+                     solve_interslice=None, refine_fraction=None):
     """The search of `search_rapid_drawdown` under its time budget: the
     main search, its supplementary families and what it chose. Every
     family is scored by the one staged solve (``solve_name``, the
@@ -1521,15 +1534,20 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
             geom, x_entry_range, x_exit_range, n_entry=nx, n_exit=ny,
             method=stage_method, n_slices=n_slices, tol=tol, fos_fn=_dd_fos)
     elif surface_type == "noncircular":
+        # the noncircular refinement (GM-140 step 7a; the fix round's D5):
+        # the switch, the fraction and which windows were given passed on
         search = search_noncircular(
             geom, x_entry_range, x_exit_range, n_trials=n_trials,
             n_points=n_points, n_slices=n_slices, tol=tol, seed=seed,
-            method=stage_method, fos_fn=_dd_fos)
+            method=stage_method, fos_fn=_dd_fos, refine=refine,
+            refine_fraction=refine_fraction,
+            windows_given=(not windows_auto[0], not windows_auto[1]))
     else:  # noncircular_de
         search = search_de(
             geom, x_entry_range, x_exit_range, n_points=max(n_points, 5),
             method=stage_method, n_slices=n_slices, tol=tol, seed=seed,
-            fos_fn=_dd_fos)
+            fos_fn=_dd_fos, refine=refine, refine_fraction=refine_fraction,
+            windows_given=(not windows_auto[0], not windows_auto[1]))
 
     # Toe circles and shallow planar surfaces, scored with the drawdown FOS.
     from slope_stability.search_supplements import (
@@ -1582,6 +1600,11 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
         circles=surface_type in ("circular", "entry_exit") or toe_circles)
     from slope_stability.supports import support_statements
     search.choices += support_statements(geom)[0]
+    if not circular:
+        # the noncircular refinement (GM-140 step 7a)
+        from slope_stability.search_refine import refinement_choices
+        search.choices += refinement_choices(
+            search.refinement, refine=refine, fraction=refine_fraction)
     if window_note:
         search.warnings.insert(0, window_note)
     note_budget(search, budget)     # a search cut short says so first

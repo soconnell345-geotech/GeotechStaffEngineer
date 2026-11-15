@@ -1400,6 +1400,10 @@ def search_critical_surface(
         # value by the same method (circle_check) says so.
         if (result.circle_check or {}).get("warning"):
             result.warnings.append(result.circle_check["warning"])
+        # The weak-layer search's wedge stage alone says what it is not
+        # (GM-140 step 7a, the fix round's ruling 10).
+        if (result.refinement or {}).get("warning"):
+            result.warnings.append(result.refinement["warning"])
         # Surfaces left out for m_alpha < 0.2 so far, the supplementary
         # families' included, and the governing surface on finer slices
         # (GM-127).
