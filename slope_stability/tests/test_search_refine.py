@@ -301,3 +301,15 @@ def test_default_circular_search_lists_its_grid_minima_and_is_unrefined_by_7a():
     for m in res.local_minima:
         if not m["refined"]:
             assert m["why_unrefined"]
+
+
+def test_a_seed_surface_given_as_points_is_one_of_the_starts():
+    """EM 4-2e(2), p. 4-7: the caller's initial surface is a start of the
+    refinement, given to search_critical_surface as a list of points."""
+    seed = [(4.0, 0.0), (12.0, -2.0), (20.0, 1.0), (26.0, 6.0)]
+    res = search_critical_surface(
+        _two_strata(), surface_type="noncircular", method="spencer",
+        n_trials=20, seed=1, x_entry_range=(2.0, 12.0),
+        x_exit_range=(22.0, 38.0), circle_check=False, seed_surface=seed)
+    starts = [m["start"] for m in res.local_minima]
+    assert "the caller's surface (seed_surface)" in starts

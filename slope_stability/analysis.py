@@ -1503,6 +1503,7 @@ def search_critical_surface(
             circle = (_critical_circle(scored_main[0]) if circle_check
                       else None)
             from slope_stability.search_refine import circle_starts_of
+            from slope_stability.slip_surface import PolylineSlipSurface
             if seed_surface is not None and not hasattr(seed_surface,
                                                          "points"):
                 seed_surface = PolylineSlipSurface(
