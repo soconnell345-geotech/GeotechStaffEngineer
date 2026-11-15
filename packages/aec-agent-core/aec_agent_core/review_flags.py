@@ -141,15 +141,20 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     suite yet; the ``show_me`` arm does (EV-40).
 
 ``GEOTECH_REVIEW_SHEET_TOOLS`` (default off)
-    ``1`` gives the Document Review page planlens' two sheet tools, where
+    ``1`` gives the Document Review page planlens' sheet tools, where
     the installed planlens has them (after 0.15.1; otherwise the page is
     the default build): ``sheet_index``, a drawing set's sheets read from
     their title blocks (number, title, revision, views), and
     ``check_cross_references``, every callout checked against the sheet it
-    names, the unresolved first, each with the box to view. Code does the
-    looking-up that is the same on every set; the agent views what the
-    check flags and judges it. BACKLOG PL-37, DR-07. Not measured; the
-    ``sheet_tools`` arm does (EV-40).
+    names, the unresolved first, each with the box to view; and, where
+    the installed planlens has it, ``check_schedule_marks``, the set's
+    schedules checked against the marks drawn on every sheet both ways
+    (a mark with no row, a row on no sheet, either where sheets could not
+    be read, and what it cannot tell), with ``open_document`` bringing the
+    sheet index and that check with the document's map (BACKLOG PL-42).
+    Code does the looking-up that is the same on every set; the agent
+    views what the check flags and judges it. BACKLOG PL-37, DR-07. Not
+    measured; the ``sheet_tools`` arm does (EV-40).
 """
 
 from __future__ import annotations
