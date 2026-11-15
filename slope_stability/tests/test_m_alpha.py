@@ -364,7 +364,8 @@ def test_de_reports_the_seeding_search_when_it_has_no_surface(monkeypatch):
                                     phi=19.6, c_prime=3.0)])
     res = search_de(acads, x_entry_range=(20, 32), x_exit_range=(46, 68),
                     n_points=5, method="spencer", seed=1, maxiter=2,
-                    popsize=4, n_seed_trials=30)
+                    popsize=4, n_seed_trials=30,
+                    refine=False)   # the evolution's own fallback (7a)
     assert res.critical is not None and res.critical.FOS < _FOS_MAX
     (w,) = [w for w in res.warnings if "seeded it" in w]
     assert "random search that seeded it (30 trials)" in w
@@ -398,7 +399,8 @@ def test_w11_de_search_runs_its_whole_budget():
     res = search_critical_surface(
         geom, surface_type="noncircular_de", method="janbu",
         x_entry_range=(20, 30), x_exit_range=(28, 60), n_slices=40,
-        n_points=5, seed=3, low_m_alpha="refuse")
+        n_points=5, seed=3, low_m_alpha="refuse",
+        refine=False)   # the evolution's own budget (GM-140 step 7a)
     # (GM-140 step 6: 2,325 surfaces of the evolution and the critical
     # circle of the circular search, as a polyline, one more trial)
     assert res.n_surfaces_evaluated == 2326

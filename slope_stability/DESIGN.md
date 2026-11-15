@@ -520,9 +520,138 @@ guard (`test_a_state_at_one_slicing_only_is_refused`).
   named (GM-140 step 6; Spencer's method where a method for circles only
   is named). The particle swarm and the weak-layer search do the same;
   before step 6 both always used Spencer's method.
+- Since GM-140 step 7a every noncircular search ends with the refinement
+  of several starts (next section but one).
 - Returns best (minimum FOS) surface found. Through
   `search_critical_surface` the critical circle of a circular search by the
   same method is one of the trials ("One method across the search" below).
+
+### The noncircular search finished as printed (GM-140 step 7a, 2026-11-15)
+
+`search_refine.py`; `search._refines_noncircular` puts the stage at the end
+of `search_noncircular`, `search_de`, `search_pso` and
+`search_weak_layer_biased` (and so of `search_critical_surface` and the
+drawdown search's noncircular kinds, which pass their `fos_fn`). Each start
+is scored by the search's own `_compute_fos`, so step 3's checks, step 6's
+method rule and a caller's `fos_fn` hold.
+
+- *Starts* (EM 1110-2-1902 4-2e(1)(b), pp. 4-3 and 4-6; 4-2e(2), p. 4-7;
+  C-1g(4), p. C-11; FHWA NHI-06-088 p. 6-22): the kind's own best surface;
+  each locally critical circle of the circular search
+  `search_critical_surface` runs for `circle_check` (its grid minima,
+  `SearchResult.local_minima`, and the toe and above-toe families' critical
+  circles), scored as it stands as the polyline of its slice-base points on
+  the search's `n_slices` (step 6's circle-check polyline) and refined from
+  the polyline of its slice-base points on ten slices (11 vertices); a wedge
+  along each layer; the caller's `seed_surface`. With `circle_check=False`
+  there are no circle starts and the record says so. Every start is scored
+  as it stands before it is refined, and its minimum is the lower of the
+  two, labelled which (fix round, ruling 9(b)): a start the time budget
+  leaves unrefined still has its value, and none ends above itself.
+- *Wedges* (EM C-1f(2), p. C-6; C-1g(2), pp. C-8 to C-10; FHWA pp. 6-43 to
+  6-44): every layer holding ground within the windows' span and the
+  search's depth; the central block on the mid-line between the layer's
+  bottom and the lesser of its top and the ground (`_wedge_mid`, as
+  `thinnest_stratum` reads the band; fix round, D6), its ends at 21
+  positions each over the span, then the best wedge's two ends halved, one
+  at a time, the inclinations fixed, from half the spacing down to the
+  final increment (fix round, ruling 10); the wedge on the toe side at
+  45 - phi'_D/2, the other at 45 + phi'_D/2, tan phi'_D = tan phi'/F, phi'
+  of the material just above the base end, F = 1 first and then the F each
+  pass gave (3 passes at most). A layer with no wedge says why (no leg
+  reaching the ground, the windows given, no solution, the time budget).
+  The random aiming of the weak-layer search and its weight
+  1/(c + 50 tan phi), which had no print, are gone;
+  `search_weak_layer_biased` is the wedge stage (`refine=False`: Slide2's
+  search without optimisation, whose result says the inclinations are
+  fixed at C-1g(2)'s values and that the stage is not a minimum over the
+  inclinations or the shape) and its `n_trials`, `n_points` and `seed` no
+  longer change the result. A stop of the wedge stage by the time budget is
+  recorded as a stage of `search_ranges.time_budget`, naming the layers
+  and positions not built (fix round, D3).
+- *Refinement* (EM C-1g(3), p. C-10, Fig. C-8): interior points up and
+  down, ends along the ground, one point at a time, the better of two
+  shifts taken where F falls by more than the solver's tolerance; passes
+  repeat until none does; the increment halves from 0.10 x the ground's
+  relief in the windows down to the final increment, the lesser of 0.10 x
+  the least vertical thickness of the thinnest stratum (EM 4-2e(2)(b), p.
+  4-7; `refine_fraction`, at most 0.25) and a quarter of the starting
+  increment (fix round, ruling 9(a): the print gives a maximum only; the
+  starting increment is never raised to meet it). Starts get points on
+  their longest segments up to 11 vertices (the surface unchanged): with
+  points closer together than the increment a one-point shift is only a
+  kink, so a refinement of the 30-point polyline would cost three times as
+  much and mostly stand still; no vertex count is in print (ruling 9(b)).
+- *Restrictions.* No end crosses a crest from its start or moves from one
+  face group onto another (EM 4-2e(1)(a), p. 4-3). No shift makes the toe
+  segment steeper than EM Eq. C-32's 45 - phi'/2 (exit material) or, where
+  the start's own exit is steeper, than the start's (EM 4-2e(2)(a), p. 4-7;
+  call 4). Automatic windows bound only the samplers: the shifts and the
+  wedge ends are free of them, and they do not anchor the span screen of
+  the refinement's trials (`_noncircular_admissible` then takes half the
+  slope's height); windows the caller gives bound everything (call 5,
+  confirmed by the owner 2026-11-15). Inside the refinement, and for every
+  start scored as it stands, the span floor is the lesser of that floor
+  (`search.module_span_floor`) and the start's own span
+  (`search.start_span_floor`; fix round, ruling 8), so a start shorter than
+  the floor (B14's critical circle, 4.66 m against 5 m) is scored and
+  refined; the samplers keep step 3's screen. No shape rule (call 6).
+- *Report* (EM 4-2d(2), p. 4-2): `local_minima`, each start's minimum
+  lowest first with `F_start` (as it stands), `F_refined`, `minimum` ("as
+  it stands" or "refined"), the surface and its flags, and for a circle
+  start `F_circle` (the circle's own F) and `F_refine_start` (its 11-vertex
+  polyline); the headline is the lowest. Where it is above the critical
+  circle's own F, the result says so with both values (step 6's rule). `refinement`: the increments with the stratum,
+  the wedges, the starts the time budget left (`unrefined`; GM-123: the
+  refinement is a stage with `_REFINE_SHARE` of the time, and a stop is
+  recorded as a stage of `search_ranges.time_budget`) and the surfaces
+  scored (no run time: a result does not change from run to run). A circular search lists its grid minima in
+  `local_minima` (whether the walk started from each, and why not: the
+  run-time caps or the budget); no circular value changes.
+- *Choices*: `search_refine.refinement_choices`.
+
+**Calls made (step 7a and its fix round after review; for OWN-143).**
+Each with the form taken and the other form. The builder's seven
+(`module_work/gm140/STEP7A_CHECK.md`, section 5):
+
+1. The toe limit: the larger of Eq. C-32's angle and the start's own exit.
+   Other form: both as separate limits, which leaves a start steeper than
+   C-32 unrefinable.
+2. The span screen under automatic windows: half the slope's height (call
+   5). Other form: the automatic windows' span, which refused B14's wedge
+   and every short start.
+3. Wedge ends under automatic windows: bounded only by windows the caller
+   gives (call 5). Other form: the automatic windows bound them too.
+4. Starting increment: 0.10 x the ground's relief in the windows. Other
+   form: none printed (C-1g(3): "a small distance").
+5. 11 vertices, 21 positions per wedge end, 3 passes of F: none printed;
+   set before any benchmark was run.
+6. Circle starts refined from the polyline of their slice-base points on
+   10 slices. Other form: the `n_slices` polyline (ruling 9(b) below).
+7. The record keeps no run time, so a result repeats.
+
+The fix round's, by the orchestrator's rulings:
+
+8. The span floor inside the refinement: the lesser of the module's floor
+   (D22) and the start's own span, for every shift and every start scored
+   as it stands; the samplers unchanged. Other form: the module's floor
+   alone (as built), under which B14's critical circle was not a start.
+9. (a) The final increment: the lesser of `refine_fraction` x the thinnest
+   stratum and a quarter of the starting increment, the starting increment
+   never raised; EM 4-2e(2)(b) prints a maximum only ("no more than 10 to
+   25 percent"). Other form: exactly the fraction of the thinnest stratum
+   (as built), one level with no halving on a thick stratum.
+   (b) Every start scored as it stands, its minimum the lower of that and
+   the refined value, labelled; a circle start as it stands is the
+   polyline of its slice bases on the search's `n_slices`, and the
+   refinement works on the 11-vertex polyline (the reason above). Other
+   form: refine the `n_slices` polyline itself.
+10. The wedge stage's positions: the best wedge's two ends halved after the
+    21-position grid, the inclinations fixed, down to the final increment;
+    decided before ACADS 4 was re-run. Other form: an inclination band
+    about C-1g(2)'s values, Fig. C-7b, not built.
+11. The toe limit: call 1 kept, max(Eq. C-32, the start's own exit). Other
+    form: as call 1.
 
 ### Supplementary families: toe circles and the infinite slope (GM-13, GM-14)
 `search_critical_surface` scores two more surface families after the main

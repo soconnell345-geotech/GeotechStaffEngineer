@@ -297,20 +297,21 @@ surface); the bench is entered at el. 28.0 where Table 9.2 puts the bench load a
 y = 27.75; the crest load is entered as its mean. The piezometric line is Table
 9.3 as printed.
 
-**The module's weak-layer search does not reach these values.** As V-028 calls it
-(seed 3, 700 trials, 6 points, 30 slices, the loads on) it returns Spencer 0.830
-on a surface along the seam, x = 41.59 to 77.19, 9.2 % above the printed 0.760.
-Since GM-140 step 2 (B20) that is Spencer's own solution on the surface it
-reports: `analyze_slope` gives the same 0.830 (theta 8.0 degrees), Janbu
-(corrected) 0.830 and Morgenstern-Price 0.816. Before that step it returned
-0.515 on a short surface leaving the seam at x = 60, a state with the interslice
-force at -43.5 degrees and tension across the back wedge, accepted about the
-search's second moment axis where the single-surface solver had no solution. A
-strict xfail against the printed 0.760
-(`test_v028_weak_layer_search_against_print`), nothing pinned to the module's own
-number. What is left is the search's generator (277 of the 700 trials have no
-Spencer solution; its best surface is not the declared family's best, 0.753):
-step 7 of the slope rebuild (the account's D12).
+**The module's weak-layer search (GM-140 step 7a).** It is now a wedge along each
+layer (EM 1110-2-1902 C-1f(2), C-1g(2)), then the refinement one point at a time
+(EM C-1g(3)). Refined, Spencer reads 0.696 against Table 9.5's 0.707 (-1.5 %;
+`test_v028_weak_layer_search_refined_against_table_9_5`), on a surface carrying the
+printed checks' flags, which the result reports. The wedge stage alone
+(`refine=False`), its best wedge's ends halved down to the final increment since
+the step's fix round, reads 0.776 against Table 9.4's 0.760 (+2.1 %; 0.804 before
+the halving) and stays above the declared family's 0.748: a strict xfail, the
+causes the base-end spacing and the fixed inclinations of C-1g(2) (on the family's
+own base ends the printed inclinations give 0.797; the family's lowest has its
+bench wedge at 25 deg, the printed passive inclination is 31 to 33 deg; Slide2
+varies the projection angles). Its result says the inclinations are fixed and
+that it is not a minimum over them. Before step 7a
+the search aimed random polylines at a layer chosen by an unprinted weight and
+returned 0.830, flagged (`module_work/gm140/STEP7A_CHECK.md`).
 
 **The kept surface, a record only.** (41.987, 28.0) ... (77.528, 40.0) was the
 minimum of the weak-layer search while the soil was weighed three times (B19); it

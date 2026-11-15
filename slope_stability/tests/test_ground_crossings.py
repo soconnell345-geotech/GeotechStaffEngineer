@@ -380,8 +380,15 @@ def test_circles_passing_above_the_toe_keep_to_given_windows():
 
 
 def test_a_noncircular_search_counts_refused_polylines():
-    r = search_weak_layer_biased(_w10(), (0, 25), (25, 60), n_trials=150,
-                                 seed=1, n_slices=20)
+    # (GM-140 step 7a: the weak-layer search's random aiming, whose
+    # polylines crossed the ground, is gone; a start of the refinement
+    # that leaves the ground and comes back into it is refused and
+    # counted the same way)
+    from slope_stability.search import search_noncircular
+    crossing = [(2.0, 0.0), (10.0, -2.0), (20.0, 1.0), (26.0, 2.0),
+                (40.0, 6.0), (50.0, 10.0)]
+    r = search_noncircular(_w10(), (0, 25), (25, 60), n_trials=20,
+                           seed=1, n_slices=20, seed_surface=crossing)
     assert r.n_rejected_ground_crossings > 0
 
 

@@ -35,8 +35,11 @@ What cannot be checked:
   30 kPa, over x = 70 to 80.
 The piezometric line is Table 9.3 as printed.
 
-The module's weak-layer search does not reach these values: see
-``test_v028_weak_layer_search_against_print`` (a strict xfail).
+The module's weak-layer search (GM-140 step 7a: a wedge along each layer,
+then the refinement) reaches Table 9.5 refined, and its wedge stage alone
+reaches Table 9.4 since the step's fix round halved the best wedge's ends;
+at the printed inclinations the wedge stage stays above the declared
+family (a strict xfail, below).
 
 E8 itself is the capability: ``SlopeGeometry.surcharges``, a list of
 (pressure, x_start, x_end) zones summed on top of the single
@@ -192,35 +195,80 @@ def test_v028_janbu_corrected_against_print(family_lowest):
     assert family_lowest[1]["janbu"][0] == pytest.approx(0.734, rel=0.03)
 
 
-_SEARCH_SHORT_OF_PRINT = (
-    "V-028's weak-layer search (seed 3, 700 trials, 6 points, Table 9.2's "
-    "loads on) returns Spencer 0.830 against the printed 0.760 (Slide2 "
-    "problem #9, Table 9.4, manual p. 52), 9.2 % above; a plain family of "
-    "surfaces along the seam reaches 0.753 (test_v028_spencer_against_"
-    "print). Since GM-140 step 2 the search scores a surface with the "
-    "single-surface solver, so the 0.830 is Spencer's own solution on the "
-    "surface it reports (x = 41.59 to 77.19, along the seam; theta 8.0 "
-    "deg; Janbu corrected 0.830 and Morgenstern-Price 0.816 on the same "
-    "surface, analyze_slope the same 0.830). Before that step it returned "
-    "0.515, a state accepted about the search's second moment axis with "
-    "the interslice force at -43.5 deg, on a surface where the "
-    "single-surface solver had no solution. What is left is the search's "
-    "generator: 277 of the 700 trials have no Spencer solution and its "
-    "best surface is not the family's best. The generator belongs to step "
-    "7 of the slope rebuild (the account's D12); nothing was tuned here, "
-    "and nothing is pinned to the module's own number.")
+_WEDGE_STAGE_SHORT = (
+    "GM-140 step 7a: the weak-layer search's wedge stage (refine=False), "
+    "a wedge along each layer with the wedges at EM 1110-2-1902 C-1g(2)'s "
+    "printed inclinations (45 -/+ phi'_D/2, pp. C-8 to C-10), its best "
+    "wedge's two ends halved down to the final increment after the "
+    "21-position grid (the fix round's ruling 10), reads Spencer 0.776, "
+    "above the declared family's lowest, 0.748 (0.7484 with the slicing "
+    "difference). Two things hold it there: the base-end spacing and the "
+    "fixed inclinations. C-1g(2)'s inclinations on the family's own base "
+    "ends (47, 76) give 0.797, and the halved ends (46.3, 77.6) 0.776 (the "
+    "21-position grid alone gave 0.804); the family's lowest surface has "
+    "its bench wedge at 25 deg, where C-1g(2)'s passive inclination on the "
+    "trial's F is 31 to 33 deg. Slide2's block search varies the "
+    "projection angles and EM Fig. C-7b shows searched inclinations; an "
+    "inclination band about C-1g(2)'s values is the call's other form, not "
+    "built (DESIGN.md, Calls made). Nothing tuned; the refined search "
+    "reaches Table 9.5 and the wedge stage Table 9.4 (tests above).")
 
 
-@pytest.mark.xfail(strict=True, reason=_SEARCH_SHORT_OF_PRINT)
-def test_v028_weak_layer_search_against_print():
-    res = search_critical_surface(
+@pytest.fixture(scope="module")
+def weak_layer_searches():
+    """The weak-layer search, Spencer, Table 9.2's loads on, without and
+    with the refinement (GM-140 step 7a)."""
+    return {refine: search_critical_surface(
         _geom(surcharges=_ZONES), surface_type="weak_layer", method="spencer",
-        n_trials=700, n_points=6, n_slices=30, seed=3,
-        x_entry_range=(20.0, 50.0), x_exit_range=(58.0, 84.0))
+        n_slices=30, refine=refine, x_entry_range=(20.0, 50.0),
+        x_exit_range=(58.0, 84.0)) for refine in (False, True)}
+
+
+def test_v028_weak_layer_search_refined_against_table_9_5(
+        weak_layer_searches):
+    """The refined search (EM C-1g(3), p. C-10) against Slide2's result
+    with optimisation. Its surface carries the printed checks' flags,
+    which the result reports beside it (the declared family's surfaces
+    carry them too)."""
+    res = weak_layer_searches[True]
     assert res.critical is not None
+    # GM-140 step 7a: 0.830 (flagged) -> 0.697 -> 0.696 (its fix round:
+    # every start scored as it stands, the wedge ends halved); printed
+    # 0.707 (Spencer, Slide2 Verification Manual problem #9, Table 9.5,
+    # with optimisation, manual p. 52), -1.5 %
+    assert res.critical.FOS == pytest.approx(0.707, rel=0.03)
+    assert res.critical_flags          # reported with its flags
+    assert res.critical.FOS <= weak_layer_searches[False].critical.FOS
+
+
+def test_v028_weak_layer_wedge_stage_against_table_9_4(weak_layer_searches):
+    """The wedge stage alone (Slide2's search without optimisation). A
+    strict xfail until the fix round's ruling 10 (the best wedge's two ends
+    halved down to the final increment after the 21-position grid, the
+    inclinations fixed; decided before this case was re-run): 0.804
+    (+5.8 %) -> 0.776. Its result says the inclinations are fixed at
+    C-1g(2)'s values and that it is not a minimum over them."""
+    res = weak_layer_searches[False]
     # printed 0.760 (Spencer): Slide2 Verification Manual problem #9,
-    # Table 9.4 (no optimisation), manual p. 52
+    # Table 9.4 (no optimisation), manual p. 52; 0.776, +2.1 %
     assert res.critical.FOS == pytest.approx(0.760, rel=0.03)
+    assert [w for w in res.warnings
+            if w.startswith("The wedge stage alone")]
+
+
+@pytest.mark.xfail(strict=True, reason=_WEDGE_STAGE_SHORT)
+def test_v028_weak_layer_wedge_stage_reaches_the_declared_family(
+        weak_layer_searches, family_lowest):
+    """The wedge stage reaches the family declared above (the brief's
+    coverage assertion), within the slicing difference: the family's best
+    surface at 30 against 60 slices."""
+    f_fam, pts = family_lowest[1]["spencer"]
+    slip = PolylineSlipSurface(points=pts)
+    g = _geom(surcharges=_ZONES)
+    f60 = gle_fos(build_slices(g, slip, 60), slip,
+                  f_interslice="constant").fos
+    assert (weak_layer_searches[False].critical.FOS
+            <= f_fam + abs(f60 - f_fam) + 1e-6)
 
 
 # ════════════════════════════════════════════════════════════════════════════

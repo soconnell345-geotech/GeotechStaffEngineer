@@ -164,17 +164,29 @@ def test_profile_end_check_covers_noncircular_surfaces():
     enters there at 4.82 (3.86 with windows set from the model width, before
     GM-57: the random surfaces are drawn inside the windows), and a circle
     past the left end gives 2.252 (Spencer; the profile-end circle of the
-    circular search is 2.237)."""
+    circular search is 2.237).
+
+    GM-140 step 7a's fix round: refined from every start scored as it
+    stands, the search reads 2.138 (flagged) on a surface that ends at the
+    left end, and no circle past the end is 1 % lower, so the result gives
+    the clipped-range statement instead (no surface past the end was tried;
+    circles past it are no lower). The check itself is a mechanism, so it
+    is tested here on the sampler alone (refine=False): 2.479, the critical
+    circle's polyline."""
     res = search_critical_surface(_toe_geom(), method="spencer",
                                   surface_type="noncircular", seed=1,
-                                  n_trials=300)
+                                  n_trials=300, refine=False)
     assert res.governing_surface == NONCIRCULAR
     w = [w for w in res.warnings if "end of the ground surface" in w]
     assert len(w) == 1
     assert w[0].startswith("The critical surface ends near")
     f = float(re.search(r"gives FOS ([0-9.]+)", w[0]).group(1))
     assert f < 0.99 * res.critical.FOS
-    assert f == pytest.approx(2.252, abs=0.03)
+    # GM-140 step 7a: 2.252 -> 2.221, the circle through the ends of the
+    # refined surface; its fix round, on the sampler alone: 2.219 (made-up
+    # slope, nothing printed; the profile-end circle of the circular search
+    # is 2.237)
+    assert f == pytest.approx(2.221, abs=0.03)
 
 
 def test_toe_circles_honour_given_windows():
@@ -323,13 +335,29 @@ def test_infinite_slope_honours_pore_pressure_and_kh():
 
 
 def test_infinite_slope_mirrored_and_noncircular_search():
-    """The face falling toward +x, and a noncircular search, both report it."""
+    """The face falling toward +x, and a noncircular search, both report it.
+
+    GM-140 step 7a's fix round (ruling 8): a start scored as it stands
+    keeps its own span as the span floor, so the circular search's critical
+    circle, a shallow slide on the face (0.942), is now a noncircular start
+    as it stands and reads below the planar family (0.944): the
+    noncircular search governs, and the result names the infinite-slope
+    mechanism, as it does where a circle governs. The sampler alone
+    (refine=False) stays above the planar family, which governs."""
     res = search_critical_surface(_fill_geom(mirror=True), method="spencer",
                                   surface_type="noncircular", n_trials=100,
                                   seed=1)
     assert res.critical.FOS == pytest.approx(_TAN_RATIO_86, abs=0.01)
-    assert res.governing_surface == INFINITE_SLOPE
-    assert res.candidates[NONCIRCULAR] > res.critical.FOS
+    assert res.governing_surface in (NONCIRCULAR, INFINITE_SLOPE)
+    assert res.critical.FOS <= res.candidates[INFINITE_SLOPE] + 1e-9
+    assert any("the infinite slope mechanism" in w for w in res.warnings)
+    alone = search_critical_surface(_fill_geom(mirror=True),
+                                    method="spencer",
+                                    surface_type="noncircular", n_trials=100,
+                                    seed=1, refine=False)
+    assert alone.critical.FOS == pytest.approx(_TAN_RATIO_86, abs=0.01)
+    assert alone.governing_surface == INFINITE_SLOPE
+    assert alone.candidates[NONCIRCULAR] > alone.critical.FOS
 
 
 def test_infinite_slope_excluded_by_windows_is_warned():

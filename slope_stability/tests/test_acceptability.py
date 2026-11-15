@@ -173,7 +173,8 @@ def test_search_noncircular_called_directly_reports_the_flags():
                                     phi=19.6, c_prime=3.0)])
     res = search_noncircular(
         g, x_entry_range=(20.0, 32.0), x_exit_range=(46.0, 68.0),
-        n_trials=200, n_points=6, n_slices=25, seed=42, method="spencer")
+        n_trials=200, n_points=6, n_slices=25, seed=42, method="spencer",
+        refine=False)     # the random sample's own lowest (GM-140 step 7a)
     assert {"side_tension", "thrust_outside"} <= set(res.critical_flags)
     # GM-344: 0.633 -> 1.092. The minimum of a 200-trial random polyline sample: a pin on the
     # search's repeatability, not a benchmark value. ACADS 1(a)'s benchmark is the circle:

@@ -150,6 +150,15 @@ def _sand_de_results():
         n_slices=30, seed=seed) for seed in (1, 2, 3))
 
 
+@functools.lru_cache(maxsize=1)
+def _sand_random_results():
+    """The random search on the sand fill, 2000 trials, 30 slices, seeds 1
+    and 2."""
+    return {seed: search_critical_surface(
+        _geom("sand"), method="spencer", surface_type="noncircular",
+        n_trials=2000, n_slices=30, seed=seed) for seed in (1, 2)}
+
+
 def _sand_de():
     """The noncircular minima the three searches report."""
     return tuple(r.candidates["noncircular"] for r in _sand_de_results())
@@ -162,9 +171,15 @@ def test_v043_sand_no_reinforcement_noncircular():
     GM-140 step 6 (a noncircular minimum checked against the circle): the
     circular search runs first and its critical circle (Spencer 1.186), as
     the polyline of its 30 slice bases, is one of the trials: 1.194 from
-    every seed. The polylines differential evolution generates itself stay
-    above it (1.237, 1.234 and 1.233: `circle_check`), and the result says
-    so; the generator is step 7 of the rebuild (D12).
+    every seed. The polylines differential evolution generated itself
+    stayed above it (1.237, 1.234 and 1.233). GM-140 step 7a: every start
+    (the search's own best, the locally critical circles, a wedge along
+    each layer) is refined one point at a time; the critical circle's start
+    refines to 1.183 from every seed, below the circle, and the random
+    search reaches the same surface. Its fix round: the final increment is
+    the lesser of 10 % of the thinnest stratum and a quarter of the
+    starting increment, here the quarter, so the refinement halves once
+    more: 1.180.
 
     Differential evolution on 30 slices reached 1.234 from seeds 1, 2 and 3
     (1.237 from seed 1 since GM-344),
@@ -178,45 +193,52 @@ def test_v043_sand_no_reinforcement_noncircular():
     state held about one moment axis at 30 slices only; see
     test_search_robustness.)"""
     de = list(_sand_de())
-    # GM-140 step 6: 1.234 (1.237 seed 1) -> 1.194; printed 1.188 (Slide2
+    # GM-140 step 7a: 1.194 -> 1.183 -> 1.180 (its fix round: the final
+    # increment a quarter of the starting one); printed 1.188 (Slide2
     # Verification #39, the sand embankment with no reinforcement,
-    # noncircular Spencer; +0.5 %), 1.192 (Tandjiria; +0.2 %). 1.194 is the
-    # circle trial's value (the critical circle of the circular search, no
-    # seed, as the polyline of its 30 slice bases): deterministic, so it
-    # is pinned; the seeds' own minima are not (below).
-    assert de == pytest.approx([1.194] * 3, abs=0.002)
+    # noncircular Spencer; -0.7 %), 1.192 (Tandjiria; -1.0 %). Every seed
+    # refines the same start, the critical circle on ten slices, to the
+    # same surface (EM 1110-2-1902 C-1g(3), p. C-10), so the value is
+    # deterministic and is pinned.
+    assert de == pytest.approx([1.180] * 3, abs=0.002)
     for r in _sand_de_results():
         cc = r.circle_check
-        assert cc["checked"] and cc["governs"]
-        assert r.candidates["noncircular"] == pytest.approx(
-            cc["FOS_as_polyline"], abs=1e-4)
-        # the circle by the same method, and the search's own polylines
-        # above it (the known gap of the generator)
+        assert cc["checked"] and not cc["governs"]
+        # the circle by the same method, and the search's own minimum
+        # no longer above it (GM-117 closed by step 7a)
         assert cc["circle"]["FOS"] == pytest.approx(1.186, abs=0.002)
-        assert cc["circle"]["FOS"] < cc["FOS_as_polyline"] \
-            < cc["noncircular_minimum"]
-        assert any("circle_check" in w for w in r.warnings)
-    for seed in (1, 2):
-        r = search_critical_surface(_geom("sand"), method="spencer",
-                                    surface_type="noncircular", n_trials=2000,
-                                    n_slices=30, seed=seed)
-        assert r.candidates["noncircular"] >= min(de) - 1e-9
+        assert cc["noncircular_minimum"] <= cc["circle"]["FOS"]
+        assert r.local_minima[0]["FOS"] == pytest.approx(
+            r.candidates["noncircular"], abs=1e-4)
+    for r in _sand_random_results().values():
+        # the random search refines the same starts (GM-140 step 7a); the
+        # fix round (D9): a band, not the sample's own number: no more than
+        # the circle by the same method, or than DE's lowest + 0.002
+        assert r.candidates["noncircular"] <= max(
+            r.circle_check["circle"]["FOS"], min(de) + 0.002)
 
 
 def test_v043_sand_lowest_de_seed_and_the_random_search_above_it():
     """The LOWEST of the three noncircular minima (differential evolution,
-    seeds 1 to 3, 30 slices) reads 1.194 since GM-140 step 6, the critical
-    circle as a polyline, and the random search (2000 trials, seeds 1 and
-    2) reports the same trial, so neither ends above the circle
-    (published: Slide2 1.188 / Tandjiria 1.192)."""
+    seeds 1 to 3, 30 slices) read 1.194 from GM-140 step 6, the critical
+    circle as a polyline, and 1.180 since step 7a's fix round, the
+    critical circle's start refined. The random search (2000 trials, seeds
+    1 and 2) refines the same starts, so it is no lower, and the same seed
+    run twice gives the same value (published: Slide2 1.188 / Tandjiria
+    1.192)."""
     de = list(_sand_de())
-    # GM-140 step 6: 1.234 -> 1.194; printed 1.188 (Slide2), +0.5 %
-    assert min(de) == pytest.approx(1.194, abs=0.002)
-    for seed in (1, 2):
-        r = search_critical_surface(_geom("sand"), method="spencer",
-                                    surface_type="noncircular", n_trials=2000,
-                                    n_slices=30, seed=seed)
+    # GM-140 step 7a: 1.194 -> 1.183 -> 1.180 (its fix round); printed
+    # 1.188 (Slide2), -0.7 %
+    assert min(de) == pytest.approx(1.180, abs=0.002)
+    runs = _sand_random_results()
+    for r in runs.values():
+        # the fix round (D9): the bound restored from -0.002 to -1e-9
         assert r.candidates["noncircular"] >= min(de) - 1e-9
+    again = search_critical_surface(_geom("sand"), method="spencer",
+                                    surface_type="noncircular", n_trials=2000,
+                                    n_slices=30, seed=1)
+    assert again.candidates["noncircular"] == runs[1].candidates[
+        "noncircular"]
 
 
 def test_v043_sand_noncircular_reaches_the_published():
@@ -234,18 +256,16 @@ def test_v043_sand_noncircular_reaches_the_published():
     assert statistics.median(_sand_de()) == pytest.approx(1.19, abs=0.04)
 
 
-def test_v043_sand_de_seeds_own_minima_are_a_band_and_repeat():
-    """The polylines differential evolution generates itself (each seed's
-    own minimum, `circle_check.noncircular_minimum`, 1.233 to 1.237 here)
-    are watched as a property, not pinned: no exact number of a stochastic
-    search goes in a test the GitHub run executes (the owner's standing
-    rule; the fix round's Q4). The generator's drift stays watched until
-    step 7 (D12): each seed's own minimum lies in the band 1.22 to 1.25,
-    above the circle trial's 1.194 (the generator's own gap), and the same
-    seed run twice gives the same value."""
+def test_v043_sand_de_seeds_own_minima_reach_the_circle_and_repeat():
+    """The search's own minimum (`circle_check.noncircular_minimum`): until
+    GM-140 step 7a the polylines differential evolution generated itself
+    ended at 1.233 to 1.237, above the critical circle (GM-117). Refined
+    from several starts (EM C-1g(3), p. C-10; 4-2e(1)(b)) each seed's own
+    minimum is now no more than the circle by the same method, and the
+    same seed run twice gives the same value."""
     own = [r.circle_check["noncircular_minimum"] for r in _sand_de_results()]
-    for v in own:
-        assert 1.22 <= v <= 1.25
+    for r, v in zip(_sand_de_results(), own):
+        assert v <= r.circle_check["circle"]["FOS"]
     again = search_critical_surface(
         _geom("sand"), method="spencer", surface_type="noncircular_de",
         n_slices=30, seed=1)

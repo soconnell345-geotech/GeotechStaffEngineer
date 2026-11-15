@@ -119,8 +119,10 @@ def test_a_short_search_reports_its_flagged_surface():
     ``no_solution`` and a warning), and the lowest it solves reads 9.49,
     with no flag. A search this short on this slope finds nothing
     useful, and says so."""
+    # (the sample of 100 trials alone: refine=False, GM-140 step 7a)
     r = search_critical_surface(_w10(), surface_type="noncircular",
-                                n_trials=100, seed=1, n_slices=30)
+                                n_trials=100, seed=1, n_slices=30,
+                                refine=False)
     # GM-344: 0.462 (flagged) -> 9.49; made-up slope, nothing printed
     assert r.critical.FOS == pytest.approx(9.493, abs=0.01)
     assert r.critical_flags == []

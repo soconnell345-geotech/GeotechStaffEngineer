@@ -1073,6 +1073,7 @@ class TestNoncircularSearch:
             x_exit_range=(25, 40),
             n_trials=30,
             seed=42,
+            refine=False,       # the random trials alone (GM-140 step 7a)
         )
         assert len(result.grid_fos) == result.n_surfaces_evaluated
 

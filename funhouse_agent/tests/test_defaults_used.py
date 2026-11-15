@@ -287,7 +287,10 @@ def test_the_weak_rock_curve_uses_rqd_and_lists_it():
     ("circular", {"nx", "ny"}, {"n_trials", "n_points", "bishop_screen"}),
     ("noncircular_de", {"n_points"}, {"nx", "ny", "n_trials",
                                       "bishop_screen"}),
-    ("weak_layer", {"n_trials", "n_points"}, {"nx", "ny"}),
+    # GM-140 step 7a: the weak-layer search is a wedge along each layer
+    # and draws no random trials, so n_trials and n_points do not apply
+    ("weak_layer", {"refine"},
+     {"nx", "ny", "n_trials", "n_points"}),
 ])
 def test_a_slope_search_lists_only_its_own_settings(surface_type, used,
                                                      unused):
@@ -1583,6 +1586,9 @@ _NO_CASE = {
         "the drawdown's pool levels set the water",
     "slope_stability|search_rapid_drawdown|pore_pressure_points":
         "the drawdown's pool levels set the water",
+    "slope_stability|search_critical_surface|seed_surface":
+        "a start the call adds to the refinement (GM-140 step 7a): left "
+        "out, there is none",
     "calc_package|slope_report_package|variables":
         "the reliability annex the call adds",
 }

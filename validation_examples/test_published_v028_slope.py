@@ -21,8 +21,8 @@ keeps three things without the loads:
    not converge on it.
 3. The SS-6 regression: the weak-layer search returns a surface that
    solves at the slice counts that used to break it. Its value is not
-   pinned: see ``test_v028_weak_layer_search_against_print`` in
-   test_published_v028_e8.py (a strict xfail).
+   pinned here: see ``test_v028_weak_layer_search_refined_against_table_9_5``
+   in test_published_v028_e8.py (GM-140 step 7a).
 
 What the problem text gives (module_work/slope_v53/
 slide2_selected_problems.txt, manual pp. 50-54): the two soils (Table 9.1),
@@ -119,9 +119,9 @@ def test_v028_weak_layer_search_is_not_degenerate():
     """REGRESSION for the SS-6 fix: the weak-layer noncircular search
     returns a surface with a solution, not the pre-fix degenerate
     ~0.05-0.18, at the slice counts that used to break it. The value it
-    returns is not pinned here: it does not reach print (see
-    ``test_v028_weak_layer_search_against_print`` in
-    test_published_v028_e8.py)."""
+    returns is not pinned here (see
+    ``test_v028_weak_layer_search_refined_against_table_9_5`` in
+    test_published_v028_e8.py, GM-140 step 7a)."""
     geom = _v028_geom()
     for n_slices in (30, 40):
         res = search_critical_surface(
