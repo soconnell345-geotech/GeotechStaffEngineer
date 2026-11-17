@@ -1,7 +1,7 @@
 # User Manual — source & build
 
-The manual is `manual.html` in this folder (rebuilt for 5.35.0 on
-2026-11-10). The PDF, `../GeotechStaffEngineer_User_Manual_v<version>.pdf`,
+The manual is `manual.html` in this folder (rebuilt for 5.36.0 on
+2026-11-17). The PDF, `../GeotechStaffEngineer_User_Manual_v<version>.pdf`,
 named for the `pyproject.toml` version, is not kept in the repo: at 5.35.0 it
 is 188 pages and about 11 MB, and every release would add that to the public
 repo's history. Render it on demand with step 3; the old v5.3 PDF was removed

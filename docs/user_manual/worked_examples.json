@@ -176,7 +176,7 @@
       "sigma_v_tip_kPa": 178.9,
       "Q_factored_kN": 1015.0,
       "resistance_factors": {
-        "basis": "GEC-12 Table 7-1 (p. 224), Eq. 7-3; Eq. 7-38",
+        "basis": "GEC-12 Table 7-1 (Vol I p. 224), Eq. 7-3; Eq. 7-38",
         "compression": {
           "shaft": {
             "nordlund": {
@@ -227,7 +227,7 @@
           "what": "sigma'p at the toe (Nordlund, Step 8)",
           "chosen": "143.6 kPa (limit 143.6 kPa; sigma'v at the toe 178.9 kPa)",
           "how": "default",
-          "basis": "Nordlund method, Step 8 (GEC-12 Sec. 7.2.1.3.1, p. 244): 'The limiting value of sigma'p is 3 ksf' (144 kPa), as Nordlund recommended (p. 234); GEC-12's worked example (Vol 3, Table D-6) did not apply it",
+          "basis": "Nordlund method, Step 8 (GEC-12 Sec. 7.2.1.3.1, Vol I p. 244): 'The limiting value of sigma'p is 3 ksf' (144 kPa), as Nordlund recommended (p. 234); GEC-12's worked example (Vol 3, Table D-6) did not apply it",
           "alternatives": [
             "no limit (toe_stress_limit None)"
           ]
@@ -236,7 +236,7 @@
           "what": "toe friction angle (Nordlund)",
           "chosen": "36 deg, the toe layer's friction_angle",
           "how": "default",
-          "basis": "GEC-12 Steps 7a, 7b and 9 (pp. 244-245) enter Figs. 7-16 and 7-15 with the 'phi angle near the pile toe'; Step 7c: where phi is estimated from SPT data, average (N1)60 'over the zone from the pile toe to 3 diameters below the pile toe' and estimate phi from that; the module takes phi, so 'average_3b' averages the cohesionless layers' toe phi over that zone (the same where phi is linear in N); GEC-12's worked examples (Vol 3, Tables D-6 and D-51, DrivenPiles) took the toe layer's phi",
+          "basis": "GEC-12 Steps 7a, 7b and 9 (Vol I pp. 244-245) enter Figs. 7-16 and 7-15 with the 'phi angle near the pile toe'; Step 7c: where phi is estimated from SPT data, average (N1)60 'over the zone from the pile toe to 3 diameters below the pile toe' and estimate phi from that; the module takes phi, so 'average_3b' averages the cohesionless layers' toe phi over that zone (the same where phi is linear in N); GEC-12's worked examples (Vol 3, Tables D-6 and D-51, DrivenPiles) took the toe layer's phi",
           "alternatives": [
             "the toe layer's phi (toe_phi_zone 'toe_layer')",
             "averaged from the toe to 3b below (toe_phi_zone 'average_3b')"
@@ -261,7 +261,7 @@
           "what": "resistance factors, compression (LRFD)",
           "chosen": "phi_stat 0.45 Nordlund shaft, 0.45 toe, Nordlund (Eq. 7-9): R_r = 1,015.0 kN",
           "how": "module",
-          "basis": "GEC-12 Table 7-1 (p. 224, modified from AASHTO 2014) and Eq. 7-3: the shaft resistance times the factor of its method plus the toe resistance times the factor of its method: Nordlund (sand) 0.45, alpha method (clay and mixed soils) 0.35; AASHTO gives none for the beta method by Fellenius (p. 258), the API method (p. 255) or Tomlinson's Eq. 7-90; the soil plug weight of Eq. 7-89 is subtracted unfactored; in a layered profile each layer takes its method's factor, as GEC-12's worked example does (Vol 3 p. 111: 0.45 on the Nordlund layers, 0.35 on the alpha-method layers; p. 115 in tension: 0.35 and 0.25); for a small group (fewer than 3 piles per substructure unit) AASHTO reduces the factors by 20 % (p. 225); the AASHTO calibration considered few large diameter pipe piles (p. 223)",
+          "basis": "GEC-12 Table 7-1 (Vol I p. 224, modified from AASHTO 2014) and Eq. 7-3: the shaft resistance times the factor of its method plus the toe resistance times the factor of its method: Nordlund (sand) 0.45, alpha method (clay and mixed soils) 0.35; AASHTO gives none for the beta method by Fellenius (p. 258), the API method (p. 255) or Tomlinson's Eq. 7-90; the soil plug weight of Eq. 7-89 is subtracted unfactored; in a layered profile each layer takes its method's factor, as GEC-12's worked example does (Vol 3 p. 111: 0.45 on the Nordlund layers, 0.35 on the alpha-method layers; p. 115 in tension: 0.35 and 0.25); for a small group (fewer than 3 piles per substructure unit) AASHTO reduces the factors by 20 % (p. 225); the AASHTO calibration considered few large diameter pipe piles (p. 223)",
           "alternatives": [
             "the field verification method's phi_dyn (Table 7-2), which AASHTO C10.5.5.2.3 uses to set the number of piles (p. 225)"
           ]
@@ -1248,6 +1248,10 @@
           "utilization": 0.0
         }
       ],
+      "notes": [
+        "Piles are pinned to the cap: each is an axial spring along its axis and a lateral spring across it, with no head moment or torsional stiffness of its own (EM 1110-2-2906's b44, b55, b66 are left out). Batter is carried in full, the horizontal-vertical terms included.",
+        "Vx, Vy, Vz, Mx, My and Mz are taken to act at the origin of the coordinates, (x, y) = (0, 0), at the cap (the piles' centroid too). A load applied at another point (xa, ya) needs its moment about the origin added: Vz x xa to My, -Vz x ya to Mx, and xa x Vy - ya x Vx to Mz (+My compresses the +x side, +Mx uplifts the +y side, +Mz turns the cap counterclockwise in plan)."
+      ],
       "defaults_used": {
         "Vy": 0.0,
         "My": 0.0,
@@ -1298,7 +1302,7 @@
           "name": "Neutral plane at 100% toe mobilization",
           "method": "force_equilibrium",
           "toe_mobilization": 1.0,
-          "source": "UFC 3-220-20 \u00a76-7.4 steps 3-5, Fig 6-26 (pp. 476-478); FHWA GEC-12 \u00a77.3.6.1 step 5, Fig 7-60 point A (p. 346)",
+          "source": "UFC 3-220-20 \u00a76-7.4 steps 3-5, Fig 6-26 (pp. 476-478); FHWA GEC-12 \u00a77.3.6.1 step 5, Fig 7-60 point A (Vol I p. 346)",
           "assumptions": "Intersection of the load and resistance curves with side and base resistance fully mobilized: UFC \u00a76-7.4 step 3 calls it 'a conservative approach for evaluating the drag force'; not conservative for settlement (\u00a76-5.8.4.2).",
           "applies": true,
           "used": true,
@@ -1317,7 +1321,7 @@
           "name": "Neutral plane at 50% toe mobilization",
           "method": "force_equilibrium",
           "toe_mobilization": 0.5,
-          "source": "UFC 3-220-20 \u00a76-5.8.4.2 (p. 447), App. B-5.5 Table B-28 (p. 640); FHWA GEC-12 \u00a77.3.6.1 steps 2-5, Figs 7-59 and 7-60 (pp. 342-346); Siegel et al. (2013)",
+          "source": "UFC 3-220-20 \u00a76-5.8.4.2 (p. 447), App. B-5.5 Table B-28 (p. 640); FHWA GEC-12 \u00a77.3.6.1 steps 2-5, Figs 7-59 and 7-60 (Vol I pp. 342-346); Siegel et al. (2013)",
           "assumptions": "Intersection of the load and resistance curves, side fully mobilized, toe at 50% of its nominal resistance: UFC \u00a76-5.8.4.2 and GEC-12 \u00a77.3.6.1 analyse 0%, 50% and 100% (Siegel et al. 2013).",
           "applies": true,
           "used": false,
@@ -1336,7 +1340,7 @@
           "name": "Neutral plane at 0% toe mobilization",
           "method": "force_equilibrium",
           "toe_mobilization": 0.0,
-          "source": "UFC 3-220-20 \u00a76-5.8.4.2 (p. 447), App. B-5.5 Table B-28 (p. 640); FHWA GEC-12 \u00a77.3.6.1 steps 2-5, Figs 7-59 and 7-60 (pp. 342-346); Siegel et al. (2013)",
+          "source": "UFC 3-220-20 \u00a76-5.8.4.2 (p. 447), App. B-5.5 Table B-28 (p. 640); FHWA GEC-12 \u00a77.3.6.1 steps 2-5, Figs 7-59 and 7-60 (Vol I pp. 342-346); Siegel et al. (2013)",
           "assumptions": "Intersection of the load and resistance curves, side fully mobilized, toe at 0% of its nominal resistance: UFC \u00a76-5.8.4.2 and GEC-12 \u00a77.3.6.1 analyse 0%, 50% and 100% (Siegel et al. 2013).",
           "applies": true,
           "used": false,
@@ -1393,7 +1397,7 @@
           "name": "Neutral plane at the pile toe",
           "method": "pile_toe",
           "toe_mobilization": null,
-          "source": "FHWA GEC-12 \u00a77.3.5.7 (p. 336; Goudreault and Fellenius 1994); CGPR #56 Table 3.1 'end bearing'",
+          "source": "FHWA GEC-12 \u00a77.3.5.7 (Vol I p. 336; Goudreault and Fellenius 1994); CGPR #56 Table 3.1 'end bearing'",
           "assumptions": "The whole shaft in negative skin friction: the upper bound on the drag force for a single pile. GEC-12 \u00a77.3.5.7 uses the plane at the toe for group settlement.",
           "applies": false,
           "used": false,
@@ -1478,7 +1482,7 @@
           "what": "toe bearing capacity factor Nt",
           "chosen": "Nt 60.0 (UFC 3-220-20 Table 6-17, p. 421, Fellenius (2021) column = GEC-12 Table 7-9; sand, phi' 34 deg)",
           "how": "default",
-          "basis": "The module's default. The ultimate toe resistance, qb = Nq sigma'zD (UFC 3-220-20 Eq 6-20; GEC-12 Eq. 7-20 with Table 7-9 for its beta method, p. 258), sigma'v final (skin_friction_stress); the drag procedures leave the method to the engineer (UFC \u00a76-7.4 step 2; GEC-12 \u00a77.3.6.1 Step 2). Table 6-17's Fellenius (2021) column, like GEC-12 Table 7-9 (p. 256), prints only each soil type's Nt range beside its phi' range (sand: Nt 30 to 150 over phi' 32 to 40 deg); the straight line in phi' between the ends, and a phi' outside the range held at its end, is this module's reading, not printed. UFC \u00a76-7.4 step 2's advice on lower and higher values is for side friction (alpha and beta); for the toe, neutral_plane_comparison gives the neutral plane at 0 %, 50 % and 100 % of the toe resistance.",
+          "basis": "The module's default. The ultimate toe resistance, qb = Nq sigma'zD (UFC 3-220-20 Eq 6-20; GEC-12 Eq. 7-20 with Table 7-9 for its beta method, Vol I p. 258), sigma'v final (skin_friction_stress); the drag procedures leave the method to the engineer (UFC \u00a76-7.4 step 2; GEC-12 \u00a77.3.6.1 Step 2). Table 6-17's Fellenius (2021) column, like GEC-12 Table 7-9 (Vol I p. 256), prints only each soil type's Nt range beside its phi' range (sand: Nt 30 to 150 over phi' 32 to 40 deg); the straight line in phi' between the ends, and a phi' outside the range held at its end, is this module's reading, not printed. UFC \u00a76-7.4 step 2's advice on lower and higher values is for side friction (alpha and beta); for the toe, neutral_plane_comparison gives the neutral plane at 0 %, 50 % and 100 % of the toe resistance.",
           "alternatives": [
             "Nt 39.0 (UFC 3-220-20 Table 6-17, p. 421, Cheng (2004) equation; phi' 34 deg, Z/b 45.0): Nt_method 'cheng'",
             "Nt 30, the sand range's low end in Table 6-17 (phi' 32 deg): give Nt 30",
@@ -1490,16 +1494,16 @@
           "what": "skin friction method in the cohesive soil, 0-6 m",
           "chosen": "Alpha method, fs = alpha x cu (UFC 3-220-20 Eq 6-8)",
           "how": "default",
-          "basis": "The module's default for cohesive soil: undrained, short-term conditions (UFC 3-220-20 \u00a76-5.4.2, p. 414, and p. 410), as in UFC's drag force example (App. B-5.4, p. 636); FHWA recommends the \u03b1-method in cohesive soils (GEC-12 \u00a77.2.1.2, p. 229). Either serves the drag procedures: 'an appropriate static analysis method' (GEC-12 \u00a77.3.6.1 Step 2, p. 342); higher alpha and beta are conservative for negative skin friction (UFC 3-220-20 \u00a76-7.4 step 2, p. 476).",
+          "basis": "The module's default for cohesive soil: undrained, short-term conditions (UFC 3-220-20 \u00a76-5.4.2, p. 414, and p. 410), as in UFC's drag force example (App. B-5.4, p. 636); FHWA recommends the \u03b1-method in cohesive soils (GEC-12 \u00a77.2.1.2, Vol I p. 229). Either serves the drag procedures: 'an appropriate static analysis method' (GEC-12 \u00a77.3.6.1 Step 2, Vol I p. 342); higher alpha and beta are conservative for negative skin friction (UFC 3-220-20 \u00a76-7.4 step 2, p. 476).",
           "alternatives": [
-            "Beta method, fs = beta x sigma'v (UFC 3-220-20 Eq 6-7), for long-term, drained conditions (UFC 3-220-20 \u00a76-5.4.1, p. 411; FHWA GEC-12 \u00a77.2.1.3.4, p. 255): skin_friction_method 'beta' with beta (GEC-12 Table 7-9, p. 256: clay 0.15-0.35)"
+            "Beta method, fs = beta x sigma'v (UFC 3-220-20 Eq 6-7), for long-term, drained conditions (UFC 3-220-20 \u00a76-5.4.1, p. 411; FHWA GEC-12 \u00a77.2.1.3.4, Vol I p. 255): skin_friction_method 'beta' with beta (GEC-12 Table 7-9, Vol I p. 256: clay 0.15-0.35)"
           ]
         },
         {
           "what": "beta in the cohesionless soil, 6-18 m",
           "chosen": "beta 0.450 at 6-18 m (sand, phi' 34 deg)",
           "how": "default",
-          "basis": "The module's default, by soil_class (sand unless given). GEC-12 Table 7-9 (p. 256; Step 2b, p. 257) prints only each soil type's range of phi', beta and Nt; UFC 3-220-20 Table 6-15 (p. 414) pairs beta's ends with phi' for driven piles (sand: beta 0.30 at phi' 32 deg, 0.90 at 40 deg). The straight line in phi' between the ends, and a phi' outside the range held at its end, is this module's reading; neither manual prints it. UFC 3-220-20 \u00a76-7.4 step 2 (p. 476): lower alpha and beta are conservative for resistance, higher alpha and beta for negative skin friction.",
+          "basis": "The module's default, by soil_class (sand unless given). GEC-12 Table 7-9 (Vol I p. 256; Step 2b, p. 257) prints only each soil type's range of phi', beta and Nt; UFC 3-220-20 Table 6-15 (p. 414) pairs beta's ends with phi' for driven piles (sand: beta 0.30 at phi' 32 deg, 0.90 at 40 deg). The straight line in phi' between the ends, and a phi' outside the range held at its end, is this module's reading; neither manual prints it. UFC 3-220-20 \u00a76-7.4 step 2 (p. 476): lower alpha and beta are conservative for resistance, higher alpha and beta for negative skin friction.",
           "alternatives": [
             "beta 0.30, the sand range's low end in Table 6-15 (phi' 32 deg), conservative for resistance: give the layer beta 0.30",
             "beta 0.90, the sand range's high end in Table 6-15 (phi' 40 deg), conservative for negative skin friction: give the layer beta 0.90",
@@ -1513,7 +1517,7 @@
           "how": "default",
           "basis": "The module's default, as the module follows UFC 3-220-20's procedure by default. UFC 3-220-20 \u00a76-5.4.2 (pp. 415-417): alpha 1 in soft clay (su below 800 psf, Table 6-16); in firm to very stiff clay Fig 6-14, curve A for Z of 40b or more and curve B for Z = 10b, Z from the ground surface to the clay's base or the pile toe and b the pile width. UFC's drag example reads it so (App. B-5.4, pp. 636-637: alpha 1.0 in soft clay, 0.5 in stiff clay, Eq 6-9 in the transition zone).",
           "alternatives": [
-            "FHWA GEC-12 Fig. 7-17 (Tomlinson 1979): alpha_chart 'gec12_fig_7_17' with fig_7_17_curve; Ca by su, D/b and pile type, as drawn (GEC-12 \u00a77.2.1.3.2 Step 1, p. 250)",
+            "FHWA GEC-12 Fig. 7-17 (Tomlinson 1979): alpha_chart 'gec12_fig_7_17' with fig_7_17_curve; Ca by su, D/b and pile type, as drawn (GEC-12 \u00a77.2.1.3.2 Step 1, Vol I p. 250)",
             "alpha given on the layer; a higher alpha is conservative for negative skin friction, a lower one for resistance (UFC 3-220-20 \u00a76-7.4 step 2, p. 476)"
           ]
         }
@@ -1844,6 +1848,7 @@
       "include_pile_weight": false,
       "influence_depth_criterion": "bearing_stress",
       "influence_depth_warning_percent": 25.0,
+      "settlement_compatible_beside": "The load and resistance curves meet at 17.66 m, below the depth at which the soil stops settling more than the pile (5.99 m). With the neutral plane where the two settle equally (UFC 3-220-20 Sec. 6-5.8.4.3, p. 449): Neutral plane depth: 5.99 m; Drag load: 226.0 kN; Max pile load at NP: 626.0 kN; Drag force (Q_np - Q_dead): 226.0 kN. The headline stays the curves' intersection (UFC 3-220-20 Sec. 6-7.4 step 3, p. 477), the larger load: a few millimetres of relative movement mobilize the shaft resistance, and a settlement profile is seldom known that closely. The value here is for the engineer who can defend the settlement profile.",
       "defaults_used": {
         "gw_drawdown": 0.0,
         "pile_E": 200000000.0,
@@ -2016,14 +2021,26 @@
           "load_kN_per_m": 146.66,
           "from_above_kN_per_m": 70.4,
           "from_below_kN_per_m": 76.27,
-          "type": "strut"
+          "type": "strut",
+          "spacing_m": 4.0,
+          "angle_deg": 0.0,
+          "axial_load_kN_per_m": 146.66,
+          "horizontal_load_kN_per_support": 586.66,
+          "axial_load_kN_per_support": 586.66,
+          "vertical_load_kN_per_support": 0.0
         },
         {
           "depth_m": 5.0,
           "load_kN_per_m": 102.06,
           "from_above_kN_per_m": 29.33,
           "from_below_kN_per_m": 72.73,
-          "type": "strut"
+          "type": "strut",
+          "spacing_m": 4.0,
+          "angle_deg": 0.0,
+          "axial_load_kN_per_m": 102.06,
+          "horizontal_load_kN_per_support": 408.23,
+          "axial_load_kN_per_support": 408.23,
+          "vertical_load_kN_per_support": 0.0
         }
       ],
       "support_load_method": "hinge",
@@ -2047,7 +2064,8 @@
       "notes": [
         "Pressure above the excavation: sand apparent envelope (max 31.20 kPa) + surcharge 4.00 kPa (GEC-4 5.2.4 adds surcharge and water explicitly).",
         "Support loads by the Caltrans T&S hinge method (8-4.02, Fig. 8-7): the load above the first support and its moment M1 to that support and the span below it, simple spans between supports, and the lowest support's load from below by free earth support about it (FS = 1): 72.7 kN/m.",
-        "Embedment: free earth support about the lowest support, MR = FS x MD with FS = 1.5 (Caltrans T&S 8-4 uses 1.3)."
+        "Embedment: free earth support about the lowest support, MR = FS x MD with FS = 1.5 (Caltrans T&S 8-4 uses 1.3).",
+        "Support loads: load_kN_per_m is the horizontal load per metre of wall; a support's own loads are load x spacing (horizontal) and load x spacing / cos(angle_deg) (axial) (GEC-4 Eqs. 19 and 20, pp. 66, 67)."
       ],
       "choices": [
         {
@@ -2067,6 +2085,15 @@
           "alternatives": [
             "hinge_subgrade (support_load_method 'hinge_subgrade'), GEC-4's hinge method, Fig. 38 (p. 79): the span below the lowest support simply supported on it and a subgrade reaction R at the excavation base: support loads 146.7, 82.1 kN/m, R 52.8 kN/m",
             "simple_spans (support_load_method 'simple_spans'), UFC 3-220-20 Fig. 4-54 (p. 257): simple spans between supports, the span below the lowest support a cantilever on it: support loads 123.2, 158.4 kN/m"
+          ]
+        },
+        {
+          "what": "each support's own load (supports[].spacing, angle_deg)",
+          "chosen": "support 1: spacing 4 m, horizontal; support 2: spacing 4 m, horizontal",
+          "how": "given",
+          "basis": "GEC-4 Eqs. 19 to 21 (pp. 66, 67), printed for ground anchors: Th = Thi s (Thi the horizontal load per unit width of wall, s the horizontal spacing), T = Th / cos(theta) (theta the inclination below the horizontal), Tv = T sin(theta); the Caltrans Trenching and Shoring Manual's Example 8-1 does the same two steps (Eq. 8-4-21, p. 8-15: the load per foot of wall x the 10 ft anchor spacing = T_H; Eq. 8-4-22, p. 8-16: T = T_H / cos 15 deg); the same statics for an inclined strut or raker. No spacing given: no load per support; angle_deg not given: horizontal (0)",
+          "alternatives": [
+            "no spacing: loads per metre of wall only"
           ]
         },
         {
@@ -2334,36 +2361,241 @@
       "n_slices": 25
     },
     "result": {
-      "n_surfaces_evaluated": 2300,
-      "n_rejected": {
-        "geometry": 0,
-        "nonconverged": 0,
-        "jagged": 0,
-        "ground_crossings": 70,
-        "m_alpha": 0
+      "n_surfaces_evaluated": 2283,
+      "circles_split": {
+        "2": 10
       },
+      "no_solution": [
+        {
+          "family": "circular",
+          "method": "bishop",
+          "n": 10,
+          "not_converged": 0,
+          "no_driving": 10,
+          "below_0_05": 0
+        }
+      ],
+      "trial_flags": [
+        {
+          "family": "circular",
+          "method": "bishop",
+          "n_scored": 1371,
+          "n_flagged": 0,
+          "by_check": {}
+        },
+        {
+          "family": "toe_circle",
+          "method": "bishop",
+          "n_scored": 119,
+          "n_flagged": 0,
+          "by_check": {}
+        },
+        {
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "n_scored": 713,
+          "n_flagged": 0,
+          "by_check": {}
+        }
+      ],
+      "critical_flags": [],
       "critical": {
-        "FOS": 1.5831,
+        "FOS": 1.584,
         "is_stable": true,
         "method": "Bishop",
         "method_solved": true,
         "method_used": "Bishop",
         "surface_type": "circular",
-        "xc_m": 10.4,
-        "yc_m": 19.38,
-        "radius_m": 19.38,
-        "x_entry_m": 10.0,
+        "xc_m": 10.42,
+        "yc_m": 19.37,
+        "radius_m": 19.35,
+        "x_entry_m": 10.02,
         "x_exit_m": 27.36,
         "n_slices": 25,
         "has_seismic": false,
-        "kh": 0.0
+        "kh": 0.0,
+        "FOS_fellenius": 1.5124,
+        "FOS_bishop": 1.584,
+        "flags": [],
+        "acceptability": [
+          {
+            "check": "bishop_against_oms",
+            "flag": false,
+            "source": "Duncan (1996), p. 580",
+            "text": "Bishop's factor of safety (1.584) is not below the Ordinary Method of Slices value for this circle (1.512).",
+            "compared": true,
+            "FOS_bishop": 1.584,
+            "FOS_oms": 1.5124,
+            "taken": "bishop"
+          }
+        ]
       },
-      "governing_surface": "toe_circle",
+      "governing_surface": "circle_above_toe",
       "candidates": {
         "circular": 1.587,
-        "toe_circle": 1.5831,
+        "toe_circle": 1.5881,
         "circle_above_toe": 1.584
       },
+      "named_method": "bishop",
+      "f_interslice": null,
+      "candidate_methods": [
+        {
+          "family": "circular",
+          "method": "bishop",
+          "f_interslice": null,
+          "FOS": 1.587,
+          "named": true,
+          "reason": ""
+        },
+        {
+          "family": "toe_circle",
+          "method": "bishop",
+          "f_interslice": null,
+          "FOS": 1.5881,
+          "named": true,
+          "reason": ""
+        },
+        {
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "f_interslice": null,
+          "FOS": 1.584,
+          "named": true,
+          "reason": ""
+        }
+      ],
+      "lowest_surfaces": [
+        {
+          "rank": 1,
+          "FOS": 1.584,
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "xc": 10.4232,
+          "yc": 19.366,
+          "radius": 19.3538,
+          "arc": [
+            10.0244,
+            27.3598
+          ]
+        },
+        {
+          "rank": 2,
+          "FOS": 1.584,
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "xc": 10.429,
+          "yc": 19.3124,
+          "radius": 19.3004,
+          "arc": [
+            10.0244,
+            27.3341
+          ]
+        },
+        {
+          "rank": 3,
+          "FOS": 1.584,
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "xc": 10.4418,
+          "yc": 19.3336,
+          "radius": 19.3218,
+          "arc": [
+            10.0244,
+            27.3598
+          ]
+        },
+        {
+          "rank": 4,
+          "FOS": 1.584,
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "xc": 10.4103,
+          "yc": 19.3447,
+          "radius": 19.3323,
+          "arc": [
+            10.0244,
+            27.3341
+          ]
+        },
+        {
+          "rank": 5,
+          "FOS": 1.584,
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "xc": 10.4591,
+          "yc": 19.2602,
+          "radius": 19.2488,
+          "arc": [
+            10.0244,
+            27.3341
+          ]
+        },
+        {
+          "rank": 6,
+          "FOS": 1.584,
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "xc": 10.3929,
+          "yc": 19.4186,
+          "radius": 19.4058,
+          "arc": [
+            10.0244,
+            27.3598
+          ]
+        },
+        {
+          "rank": 7,
+          "FOS": 1.584,
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "xc": 10.4195,
+          "yc": 19.3992,
+          "radius": 19.3869,
+          "arc": [
+            10.0244,
+            27.3756
+          ]
+        },
+        {
+          "rank": 8,
+          "FOS": 1.584,
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "xc": 10.4008,
+          "yc": 19.4317,
+          "radius": 19.4191,
+          "arc": [
+            10.0244,
+            27.3756
+          ]
+        },
+        {
+          "rank": 9,
+          "FOS": 1.584,
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "xc": 10.4497,
+          "yc": 19.3466,
+          "radius": 19.3351,
+          "arc": [
+            10.0244,
+            27.3756
+          ]
+        },
+        {
+          "rank": 10,
+          "FOS": 1.584,
+          "family": "circle_above_toe",
+          "method": "bishop",
+          "xc": 10.4719,
+          "yc": 19.2813,
+          "radius": 19.2702,
+          "arc": [
+            10.0244,
+            27.3598
+          ]
+        }
+      ],
       "search_ranges": {
         "x_entry_range": [
           10,
@@ -2401,10 +2633,10 @@
         ]
       },
       "governing_location": {
-        "x_entry": 10.0,
-        "x_exit": 27.361,
-        "z_lowest": -0.004,
-        "depth": 4.181,
+        "x_entry": 10.024,
+        "x_exit": 27.36,
+        "z_lowest": 0.012,
+        "depth": 4.176,
         "layers": [
           "clayey sand"
         ],
@@ -2418,9 +2650,66 @@
             10
           ],
           "height": 10,
-          "toe_side_end_beyond_toe_H": -0.0,
+          "toe_side_end_beyond_toe_H": -0.002,
           "crest_side_end_behind_crest_H": 0.236,
-          "lowest_below_toe_H": 0.0
+          "lowest_below_toe_H": -0.001
+        }
+      },
+      "crack_refused": {
+        "reverse_curvature_no_crack": {
+          "n": 79,
+          "what": "reverse-curvature circles with no tension crack asked for: not admissible surfaces; naming a crack (tension_crack_depth, or tension_crack_depth_basis 'rankine' or 'min_fos') admits those whose overhang lies within its depth",
+          "x_end_range_m": [
+            25.005,
+            40.516
+          ],
+          "first": [
+            {
+              "x_end_m": 26.25,
+              "xc": 17.223,
+              "yc": 5.416,
+              "radius": 9.028,
+              "overhang_depth_m": 4.584,
+              "crack_depth_m": 0.0,
+              "why": "a reverse-curvature circle: its centre is 4.58 m below the ground where it ends (x = 26.25), so the arc would turn back over itself, and no tension crack was asked for to close it, so it is not an admissible surface; naming a crack (tension_crack_depth, or tension_crack_depth_basis 'rankine' or 'min_fos') admits such circles whose overhang lies within the crack's depth"
+            },
+            {
+              "x_end_m": 25.098,
+              "xc": 15.1,
+              "yc": 8.601,
+              "radius": 9.999,
+              "overhang_depth_m": 1.399,
+              "crack_depth_m": 0.0,
+              "why": "a reverse-curvature circle: its centre is 1.40 m below the ground where it ends (x = 25.10), so the arc would turn back over itself, and no tension crack was asked for to close it, so it is not an admissible surface; naming a crack (tension_crack_depth, or tension_crack_depth_basis 'rankine' or 'min_fos') admits such circles whose overhang lies within the crack's depth"
+            },
+            {
+              "x_end_m": 29.065,
+              "xc": 18.757,
+              "yc": 5.437,
+              "radius": 10.308,
+              "overhang_depth_m": 4.563,
+              "crack_depth_m": 0.0,
+              "why": "a reverse-curvature circle: its centre is 4.56 m below the ground where it ends (x = 29.06), so the arc would turn back over itself, and no tension crack was asked for to close it, so it is not an admissible surface; naming a crack (tension_crack_depth, or tension_crack_depth_basis 'rankine' or 'min_fos') admits such circles whose overhang lies within the crack's depth"
+            },
+            {
+              "x_end_m": 28.024,
+              "xc": 16.632,
+              "yc": 9.263,
+              "radius": 11.392,
+              "overhang_depth_m": 0.737,
+              "crack_depth_m": 0.0,
+              "why": "a reverse-curvature circle: its centre is 0.74 m below the ground where it ends (x = 28.02), so the arc would turn back over itself, and no tension crack was asked for to close it, so it is not an admissible surface; naming a crack (tension_crack_depth, or tension_crack_depth_basis 'rankine' or 'min_fos') admits such circles whose overhang lies within the crack's depth"
+            },
+            {
+              "x_end_m": 31.925,
+              "xc": 20.285,
+              "yc": 5.451,
+              "radius": 11.64,
+              "overhang_depth_m": 4.549,
+              "crack_depth_m": 0.0,
+              "why": "a reverse-curvature circle: its centre is 4.55 m below the ground where it ends (x = 31.93), so the arc would turn back over itself, and no tension crack was asked for to close it, so it is not an admissible surface; naming a crack (tension_crack_depth, or tension_crack_depth_basis 'rankine' or 'min_fos') admits such circles whose overhang lies within the crack's depth"
+            }
+          ]
         }
       },
       "choices": [
@@ -2439,7 +2728,8 @@
         {
           "what": "FOS method of the search",
           "chosen": "bishop",
-          "how": "given"
+          "how": "given",
+          "basis": "every family of surfaces is scored by the method named, so the minimum compares like with like (EM 1110-2-1902 4-3b(9)(a), p. 4-8: state the method used); the method that scored each family is in the result (candidate_methods)"
         },
         {
           "what": "surface families scored",
@@ -2457,13 +2747,40 @@
           "basis": "the result says where the reported surface lies (governing_location)"
         },
         {
-          "what": "slip surfaces left out for m_alpha",
-          "chosen": "none (m_alpha < 0.2 on a slice with phi' > 0 leaves a surface out)",
+          "what": "slip surfaces with m_alpha below 0.2",
+          "chosen": "kept and flagged: 0 scored trial(s) with m_alpha < 0.2 on a slice with phi' > 0",
           "how": "default",
-          "basis": "m_alpha = cos(a) (1 + tan(a) tan(phi) / F), at the method's own F, is the denominator of the normal force on a slice base; below 0.2 the factor of safety may be incorrect or misleading (Whitman & Bailey 1967), and Slide2 reports such a surface as invalid with its 'Check malpha < 0.2' setting on (its error -112), circular or not; slices with phi' = 0 are not checked: there m_alpha = cos(a) does not depend on F and the shear strength is c l whatever the normal force, so leaving such a surface out would only raise the minimum; on 25 slices the governing surface's FOS is 1.583 and its least m_alpha 0.80; on 50 slices, 1.583 and 0.79",
+          "basis": "m_alpha = cos(a) + sin(a) tan(phi') / F, at the method's own F, is the denominator of the normal force on a slice base. Whitman and Bailey (1967, p. 487, Eq. 5) print a warning and an instruction to examine the result where it is below 0.2 on any slice, not a rejection, so the surface is scored and the result says which surface and slice (trial_flags, critical.acceptability); slices with phi' = 0 are not looked at: there m_alpha = cos(a) does not depend on F and the shear strength is c l whatever the normal force (the module's own reasoning, no printed source); on 25 slices the governing surface's FOS is 1.584 and its least m_alpha 0.80; on 50 slices, 1.584 and 0.79",
           "alternatives": [
-            "the FOS of one such surface, with a warning: analyze_slope on that surface",
-            "every slice, phi' = 0 ones included, as Slide2 checks (m_alpha_rule='every_slice')"
+            "left out of the search and counted, as the module did before GM-140 step 3 and as Slide2 does with its 'Check malpha < 0.2' setting on (low_m_alpha='refuse')",
+            "every slice, phi' = 0 ones included (m_alpha_rule='every_slice')"
+          ]
+        },
+        {
+          "what": "circles that meet the ground at more than two points",
+          "chosen": "split at those points, each arc inside the windows scored as a trial surface of its own: 10 circle(s)",
+          "how": "module",
+          "basis": "the module's rule (GM-343, 2026-11-13): no reference in hand prints one for a circle that crosses the ground more than twice (Slide2 refuses it). An arc is a slip surface between two points where the circle meets the ground; an arc with no net driving moment has no factor of safety and is counted (no_solution, no_driving); no arc is carried under the ground in front of a toe. The toe-circle and circle-above-the-toe families score only the arc that ends at the toe or face point. Circles ending on a face: FHWA NHI-06-088 p. 6-38; exits at every height of the face: GEC 11 p. 9-6. circles_split counts them and critical.arc names the governing arc"
+        },
+        {
+          "what": "surfaces that do not meet a printed acceptability check",
+          "chosen": "kept and flagged: 0 of 2203 scored trials",
+          "how": "module",
+          "basis": "every solved surface that is one sliding mass is scored; the checks' findings are reported, not acted on (Whitman and Bailey 1967, p. 487: the user is warned and must examine the result; EM 1110-2-1902 C-10a, pp. C-33 to C-34: forces examined, no tension on slice sides or bases, the line of thrust within the mass). trial_flags counts them by family; critical_flags and lowest_unflagged say what the governing surface carries and the lowest surface without a flag"
+        },
+        {
+          "what": "Bishop's value against the Ordinary Method of Slices value",
+          "chosen": "computed for every circle; Bishop's value was never the lower",
+          "how": "module",
+          "basis": "Duncan (1996, p. 580): calculate the Ordinary Method of Slices value for each circle when Bishop's method is used; where Bishop's is below it, the Ordinary Method of Slices value is the better answer. Not made on circles with supports or under a seismic coefficient (Duncan, Wright and Brandon 2014, p. 93, print no Ordinary Method of Slices equation with known forces)"
+        },
+        {
+          "what": "frictional term where the pore-water force exceeds the weight",
+          "chosen": "as printed, negative",
+          "how": "default",
+          "basis": "Bishop (1955) Eqs. 9 and 13, p. 10 write W cos(alpha) - u l and W - u b with no lower limit; Whitman and Bailey (1967, p. 487) ask for a warning, and the result names the slices",
+          "alternatives": [
+            "set to zero where negative, the module's earlier rule, no printed source (negative_friction_term='zero')"
           ]
         },
         {
@@ -2474,12 +2791,23 @@
           "alternatives": [
             "another budget (time_budget_s)"
           ]
+        },
+        {
+          "what": "reverse-curvature circles",
+          "chosen": "discarded: no tension crack was asked for (79 discarded)",
+          "how": "default",
+          "basis": "a circle whose centre is below the ground at its upper end would turn back over itself. The tension crack is a condition of the analysis, set by the engineer and the same on every trial surface; a circle's shape never switches it on. With a crack asked for, every surface ends at the crack's bottom, and a reverse-curvature circle whose overhang lies within the crack's depth is closed by that crack; one overhanging deeper is not a mechanism the method describes (a crack is justified only to the depth the soil can be in tension, EM 1110-2-1902 (2003) C-10c, p. C-36; OWN-103). With no crack asked for, such a circle is not an admissible surface; naming a crack admits those within its depth. A circle overhanging at its lower end is discarded: no printed crack is there. The circles discarded are counted by reason and located in the result (crack_refused)",
+          "alternatives": [
+            "discard every such circle (reverse_curvature='discard')",
+            "name a crack (tension_crack_depth, or tension_crack_depth_basis 'rankine' or 'min_fos') to admit the circles whose overhang lies within its depth"
+          ]
         }
       ],
       "warnings": [
-        "A toe circle governs: the circle through the toe at (x = 10.00, z = 0.00) and the ground at x = 27.36 gives FOS 1.583, below the circular (search) minimum (1.587). The main search's entry/exit windows or the spacing of its entry/exit pairs kept it from this circle; the toe circle is reported.",
-        "The critical surface's entry point (x = 10.00) lies on the edge of the given x_entry_range (10.00 to 20.00); a lower factor of safety may lie outside it. Widen the range to check."
+        "A circle passing above the toe governs: the circle from the face at (x = 10.02, z = 0.02), 0.02 m above the toe at x = 10.00, to the ground at x = 27.36 gives FOS 1.584, below the circular (search) minimum (1.587). The main search did not reach it: its entry/exit pairs missed this circle. The circle passing above the toe is reported (FHWA NHI-06-088 p. 6-38).",
+        "The critical surface's entry point (x = 10.02) lies on the edge of the given x_entry_range (10.00 to 20.00); a lower factor of safety may lie outside it. Widen the range to check."
       ],
+      "summary": "The lowest solved surface has FOS 1.584 (circle passing above the toe, Bishop) and meets every printed acceptability check made on it.",
       "defaults_used": {
         "gwt_points": "no water table: no pore water pressure: effective stress equals total stress",
         "kh": 0.0,
@@ -2492,6 +2820,8 @@
         "y_range": "set from the slope's geometry: the circle-centre grid over the windows, from the slope's height and depth to the base",
         "time_budget_s": 180.0,
         "m_alpha_rule": "frictional",
+        "low_m_alpha": "flag",
+        "negative_friction_term": "as_printed",
         "tol": 0.0001
       }
     }
@@ -2810,7 +3140,7 @@
           "what": "total vertical stress",
           "chosen": "summed through the layers above",
           "how": "module",
-          "basis": "each gamma applies from the previous evaluation depth (the ground surface for the first) down to its own depth: sigma_v(z_k) = sum of gamma_i x h_i. sigma_v is the total vertical overburden of the simplified procedure's CSR (FHWA GEC-13 Vol I Eq. 5-9). The same rule on both SPT procedures (bi2014 and nceer2001)"
+          "basis": "each gamma applies from the previous evaluation depth (the ground surface for the first) down to its own depth: sigma_v(z_k) = sum of gamma_i x h_i. A change in unit weight between two given depths is therefore taken at the upper one, so the depths should include each change in unit weight (a layer's base). sigma_v is the total vertical overburden of the simplified procedure's CSR (FHWA GEC-13 Vol I Eq. 5-9). The same rule on both SPT procedures (bi2014 and nceer2001)"
         }
       ],
       "defaults_used": {
@@ -2842,12 +3172,18 @@
       "engine": "monte_carlo",
       "convention": "margin",
       "n": 50000,
+      "n_requested": 50000,
+      "n_dropped": 0,
+      "dropped_fraction": 0.0,
+      "pf_bounds_dropped": null,
       "n_failed": 1008,
       "pf": 0.02016,
       "pf_ci95": [
         0.01892805,
         0.02139195
       ],
+      "pf_ci95_method": "normal_approximation",
+      "warnings": [],
       "g_mean": 199.4937,
       "g_std": 109.7902,
       "g_cov": 0.5503,
