@@ -4,7 +4,7 @@
 hosts **Document Review alone**. The geotechnical page left this host at the
 app split (owner, 2026-10-20) and runs on its own elsewhere. Document Review
 is its own public package, `aec-document-review` 1.1.0, which pins the
-shared core `aec-agent-core` 1.1.0 and the document layer `planlens` 0.15.1
+shared core `aec-agent-core` 1.1.0 and the document layer `planlens` 0.16.0
 exactly (`packages/aec-document-review/`; built at step 13,
 `module_work/inf33/CHECK_STEP13.md`). 1.1.0 is the first release of the
 two as one unit and is not on PyPI until the lead releases it; until then
@@ -147,8 +147,8 @@ its commands without installing or starting anything.
 | Route | Put in the repo | Setting |
 | --- | --- | --- |
 | **C. Nexus** (the normal one; owner, 2026-11-09) | Only the template: `packages.txt` pins the three packages and includes the third-party pins. | `APP_SOURCE=nexus` |
-| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.1.0-py3-none-any.whl` and `wheels/aec_document_review-1.1.0-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.15.1, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
-| **A. Source folder** (development copies) | `app_src/aec_document_review/` (copied from `packages/aec-document-review/`) and `app_src/requirements.txt` holding `aec-agent-core==1.1.0`, `planlens==0.15.1` and `websockets>=14,<16`. It goes first on `PYTHONPATH` (`app.py` also adds it for a plain `streamlit run app.py`). For an unreleased core as well, add `app_src/aec_agent_core/` and list the core's own dependencies in place of its pin. | `APP_SOURCE=source` |
+| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.1.0-py3-none-any.whl` and `wheels/aec_document_review-1.1.0-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.16.0, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
+| **A. Source folder** (development copies) | `app_src/aec_document_review/` (copied from `packages/aec-document-review/`) and `app_src/requirements.txt` holding `aec-agent-core==1.1.0`, `planlens==0.16.0` and `websockets>=14,<16`. It goes first on `PYTHONPATH` (`app.py` also adds it for a plain `streamlit run app.py`). For an unreleased core as well, add `app_src/aec_agent_core/` and list the core's own dependencies in place of its pin. | `APP_SOURCE=source` |
 
 Tests: `webapp/tests/test_tinyapps_wrapper.py` (each route's dry run, the
 import line, the pins against the package's pyproject, pandas==3.0.2).
@@ -255,7 +255,7 @@ stop and copy the last screen's text into a note for the lead.
 
 **Before you start.** The three packages must be on PyPI
 (`aec-document-review` 1.1.0, `aec-agent-core` 1.1.0 and
-`planlens` 0.15.1; planlens since 2026-11-10, the other two once the lead
+`planlens` 0.16.0; planlens since 2026-11-17, the other two once the lead
 releases them as one unit). The company's Nexus mirror carries a
 release a day or two after PyPI; step 2 shows whether it has them. You need
 from CfA: the Prompter values (URL, model, key, CA bundle) and, for step 7,
@@ -285,7 +285,7 @@ steps 1-6 and leave step 7 for later.
    Python, so nothing needs "activating" (PowerShell often refuses the
    activate script). Run them in the `document-review-tinyapp` folder; in a
    new terminal, `cd` there first. You should see "Successfully installed ... aec-document-review-1.1.0 ...
-   aec-agent-core-1.1.0 ... planlens-0.15.1 ... pandas-3.0.2 ...". If pip
+   aec-agent-core-1.1.0 ... planlens-0.16.0 ... pandas-3.0.2 ...". If pip
    says it cannot find `aec-document-review` (or the core or planlens), the
    mirror does not carry it yet: wait a day, or ask CfA (ask 1 below). If
    pip prints a conflict, copy it into the note and stop.
@@ -338,7 +338,7 @@ steps 1-6 and leave step 7 for later.
 
 1. **Nexus carries our three public packages.** "Please make sure the Nexus
    mirror carries `aec-document-review==1.1.0`, `aec-agent-core==1.1.0` and
-   `planlens==0.15.1` from PyPI, and clears them through the firewall if it
+   `planlens==0.16.0` from PyPI, and clears them through the firewall if it
    holds them back. They are our own packages, public on PyPI." (If this
    cannot be done, the backup is route B: "May our repo carry two small
    pure-Python wheels of ours in `wheels/`, installed by path?")

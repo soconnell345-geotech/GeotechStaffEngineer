@@ -37,7 +37,7 @@ classifiers = [
 # openpyxl, PyMuPDF, Pillow) or is listed here.
 dependencies = [
     "aec-agent-core==1.1.0",
-    "planlens==0.15.1",
+    "planlens==0.16.0",
     # The page (app.py and the shell's widgets); requests comes with it and
     # the diagnostics' upload probe uses it.
     "streamlit>=1.39",

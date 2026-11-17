@@ -87,6 +87,9 @@ dependencies = [
     "openpyxl>=3.1",
     # The document layer; the core binds its review tools. 0.15 since step
     # 11 (a): the app binds planlens.review (PL-29 (b)), and its pin is 0.15.
+    # It stays 0.15 at 1.1.0: the sheet tools and 0.16's schedule-mark
+    # check are offered only where the installed planlens publishes them
+    # (document_tools.sheet_tool_names); Document Review pins 0.16.0.
     "planlens>=0.15",
     # Step 11 (a), the vision tools: they open and render PDF pages with
     # PyMuPDF themselves (vision_tools, vision_view), so it is listed here,
