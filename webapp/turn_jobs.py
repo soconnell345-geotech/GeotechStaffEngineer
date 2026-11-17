@@ -312,12 +312,13 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                 retry=not spent)
         except Exception:                          # noqa: BLE001
             final = ""
-        # TA-33 (behind GEOTECH_STEP_CAP_ANSWER, OFF): a turn stopped at its
-        # step cap answers from what it gathered, in one last call with no
-        # tools, instead of ending on an error (live wave w8, F55).
+        # TA-33 (GEOTECH_STEP_CAP_ANSWER, on in the app since 2026-11-16;
+        # 0 turns it off): a turn stopped at its step cap answers from what
+        # it gathered, in one last call with no tools (live wave w8, F55),
+        # and the plain step-cap message stays under it, naming the setting
+        # to raise. If that call fails, the plain message shows as before.
         try:
-            from funhouse_agent import review_flags as _rf
-            if (_rf.step_cap_answer() and record is not None
+            if (core.step_cap_answer_on() and record is not None
                     and core.is_step_cap(exc)):
                 written = core.answer_at_step_cap(
                     agent, messages[-1] if messages else None,
@@ -325,7 +326,6 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                 if written:
                     final = written
                     error_detail = f"{type(exc).__name__}: {exc}"[:2000]
-                    turn_error = None
         except Exception:                          # noqa: BLE001
             pass
 

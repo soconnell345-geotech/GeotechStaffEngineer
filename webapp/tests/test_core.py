@@ -725,7 +725,7 @@ def test_checkpoint_partial_never_raises(tmp_path):
 
 def test_default_behavior_matches_current_defaults():
     assert core.default_behavior() == {
-        "references": "anytime", "ref_max_calls": 10, "recursion_limit": 50,
+        "references": "anytime", "ref_max_calls": 10, "recursion_limit": 150,
         "analysis_depth": "standard", "agent_type": "full", "route_calc": True,
         "trace": None}
     b = core.default_behavior()          # fresh copy each call, not shared
@@ -1234,8 +1234,74 @@ def test_a_turn_at_the_step_cap_answers_from_what_it_gathered():
     out = core.answer_at_step_cap(_Agent(), {"role": "user",
                                              "content": "the wall"}, turn)
     assert out.startswith("Ka = 0.307")
-    msgs = seen["msgs"]
-    assert msgs[0]["content"] == "the wall"
-    assert msgs[-1]["content"] == core.STEP_CAP_NUDGE
-    assert len(msgs[2]["content"]) < 5000
+    # one plain-text message: no tool messages, which some services refuse
+    # in a call without tools
+    (msg,) = seen["msgs"]
+    text = msg["content"]
+    assert text.startswith("The request:\nthe wall")
+    assert text.endswith(core.STEP_CAP_NUDGE)
+    assert "[called call_agent]" in text and "[result of call_agent]" in text
+    assert "x" * 4000 in text and "x" * 4001 not in text
     assert core.answer_at_step_cap(object(), "q", turn) is None
+
+
+@pytest.mark.parametrize("cap, says, not_says", [
+    (50, ["(all 50 of them)", "above 50 (up to 200)", "split the request"],
+     ["e.g. 50-100"]),
+    (150, ["(all 150 of them)", "above 150 (up to 200)"], []),
+    (200, ["(all 200 of them)", "already at the most the sidebar allows "
+           "(200)"], ["raise 'Primary"]),
+    (None, ["ran out of its steps for this turn before", "(up to 200)"],
+     ["all None", "above"])])
+def test_the_step_cap_message_names_the_cap_it_hit(cap, says, not_says):
+    """The cap comes from the error's own text; the advice never suggests a
+    value at or below the cap that was hit (made-up caps)."""
+    text = (f"Recursion limit of {cap} reached without hitting a stop "
+            "condition." if cap else "GraphRecursionError: recursion limit")
+    msg = core.friendly_turn_error(RuntimeError(text))
+    assert core.step_cap_of(RuntimeError(text)) == cap
+    for words in says:
+        assert words in msg, words
+    for words in not_says:
+        assert words not in msg, words
+    assert "Recursion limit" not in msg
+
+
+def test_the_step_cap_answer_is_on_in_the_app_unless_zero(monkeypatch):
+    monkeypatch.delenv("GEOTECH_STEP_CAP_ANSWER", raising=False)
+    assert core.step_cap_answer_on()
+    for off in ("0", "off", "False"):
+        monkeypatch.setenv("GEOTECH_STEP_CAP_ANSWER", off)
+        assert not core.step_cap_answer_on()
+    monkeypatch.setenv("GEOTECH_STEP_CAP_ANSWER", "1")
+    assert core.step_cap_answer_on()
+
+
+def test_the_step_cap_answer_sends_a_bounded_record():
+    """A long turn's written-out work keeps its start and its end within
+    STEP_CAP_WORK_CHARS; image data in the question is not sent."""
+    turn = []
+    for k in range(200):
+        turn.append({"role": "assistant", "content": f"step {k}",
+                     "tool_calls": [{"name": "read_page", "id": f"c{k}",
+                                     "args": {"page": k}}]})
+        turn.append({"role": "tool", "content": "y" * 3000,
+                     "tool_call_id": f"c{k}"})
+    work = core._work_so_far(turn)
+    assert len(work) < core.STEP_CAP_WORK_CHARS + 200
+    assert "step 0" in work and "step 199" in work
+    assert "steps cut for the step-limit answer" in work
+    seen = {}
+
+    class _Model:
+        def invoke(self, msgs):
+            seen["msgs"] = msgs
+            return type("R", (), {"content": "made-up answer"})()
+
+    question = {"role": "user", "content": [
+        {"type": "text", "text": "check this plan"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJD"}}]}
+    agent = type("A", (), {"geotech_model": _Model()})()
+    assert core.answer_at_step_cap(agent, question, turn) == "made-up answer"
+    sent = seen["msgs"][0]["content"]
+    assert "check this plan" in sent and "base64" not in sent

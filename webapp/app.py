@@ -1000,11 +1000,17 @@ with st.sidebar:
                      "\"Consult references\" off to stop them.") \
                 if _geo else int(_b["ref_max_calls"])
             _rlim = st.number_input(
-                "Primary step cap (recursion limit)", min_value=5, max_value=200,
+                "Primary step cap (recursion limit)", min_value=5,
+                max_value=core.MAX_RECURSION_LIMIT,
                 value=int(_b["recursion_limit"]), step=5,
                 key=f"rlim_{ss.thread_id}",
                 help="Max reasoning/tool steps the main agent may take in one turn "
-                     "(LangGraph recursion limit).")
+                     "(LangGraph recursion limit). Each step sends the whole "
+                     "turn so far again, so the cost grows with the steps: a "
+                     "real document review that reached 50 steps used about "
+                     "1.5 million tokens, and a turn that runs to 150 can "
+                     "cost several times that. A turn that reaches the cap "
+                     "answers from the work so far.")
         _new_b = {**_b, "references": "anytime" if _refs_on else "off",
                   "analysis_depth": _depth, "ref_max_calls": int(_refcalls),
                   "recursion_limit": int(_rlim), "route_calc": bool(_route_calc)}

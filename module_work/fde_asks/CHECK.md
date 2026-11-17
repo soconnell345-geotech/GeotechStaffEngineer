@@ -1,4 +1,4 @@
-# The hosted platform's four small asks: check (2026-11-16)
+# The hosted platform's small asks: check (2026-11-16)
 
 Branch `fix/fde-small-asks` from master 6941d9d, one commit per ask. The
 evidence is build j's conversations, which ran app 5.35.0 with
@@ -134,3 +134,73 @@ before anything changed.
   unchanged, and `--rebuild` exits 0.
 - Only the single test files named above were run here. The suites run
   on GitHub.
+
+## 5. The main agent's step cap, and no empty turn at the cap
+
+- **What master did.**
+  - **The default cap.** The main agent's default step cap was 50
+    (`DEFAULT_BEHAVIOR["recursion_limit"]`; the sidebar allows 5 to 200).
+    A normal submittal review on the hosted platform hit 50 and ended with
+    no answer after 292 s. At 150, the next turn answered well, and
+    another real review used 42 of its 50 steps.
+  - **The message at the cap.** It advised "(e.g. 50-100)", which is
+    wrong when the cap is already 50.
+  - **The step-cap answer.** `GEOTECH_STEP_CAP_ANSWER` (TA-33) was off and
+    never run live. When on, it had two faults:
+    - it replaced the plain message, so the setting to raise was lost;
+    - it sent the turn's tool calls and results as tool messages in a call
+      with no tools, which some model services refuse.
+- **What changed.**
+  - **(a) The default cap is now 150** (`webapp/core.py`). A new
+    constant, `MAX_RECURSION_LIMIT = 200`, also sets the sidebar's
+    maximum. The comments, the default test and `funhouse_agent/DESIGN.md`
+    are updated. No user doc named 50, and the manual rebuild is
+    unchanged. The lean agent's floor is untouched.
+  - **(b) The message names the cap it hit**, read from the error's
+    "Recursion limit of N":
+    - "The agent ran out of its steps for this turn (all 150 of them)
+      before it finished. … raise 'Primary step cap (recursion limit)' …
+      above 150 (up to 200) and re-ask, or split the request across
+      turns".
+    - At 200 it says the cap is already at the most the sidebar allows,
+      and to split the request.
+    - Without a number in the error, it says "(up to 200)".
+  - **(c) The step-cap answer is on by default in the app**
+    (`webapp.core.step_cap_answer_on`): on unless
+    `GEOTECH_STEP_CAP_ANSWER` is `0` (or false, no, off). The library
+    default and the eval's `baseline` stay off; `review_flags` changed
+    only in its docstring. Two small changes made it sound:
+    - The turn's replies, tool calls and tool results go as plain text in
+      one message. Each result is cut to 4,000 characters, the whole to
+      120,000 characters with its start and end kept. Image data is not
+      sent.
+    - The plain message, with the cap hit and the setting to raise, stays
+      under the written answer.
+
+    If the extra call fails or returns nothing, the plain message shows
+    alone, as before. The cost is one more model call with at most about
+    30 thousand tokens of input.
+  - **(d) The "Primary step cap" help text in the sidebar now says what a
+    turn can cost.** Each step sends the whole turn again; a real document
+    review that reached 50 steps used about 1.5 million tokens; a turn that
+    runs to 150 can cost several times that; a turn at the cap answers from
+    the work so far.
+- **Tests** (made-up values).
+  - `webapp/tests/test_turn_jobs.py`, three new tests with a fake model
+    through the real turn job:
+    - a turn at the cap answers from its work, with the plain message
+      under it;
+    - if that call fails, the plain message still shows;
+    - `0` turns the answer off.
+  - `webapp/tests/test_core.py`:
+    - the message names the cap (50, 150, 200 and no number);
+    - the switch is on unless `0`;
+    - the written-out work stays within its bound and sends no image data;
+    - the existing step-cap answer test now checks the one plain-text
+      message;
+    - the default test now expects 150.
+  - Results: `test_core.py` and `test_turn_jobs.py` 104 passed;
+    `test_record_ev06.py`, `test_app_smoke.py` and
+    `test_review_harness_offline.py` 55 passed; public text, manual and
+    fingerprints 19 passed. `check_manual --rebuild --write` left the
+    manual unchanged, and `--rebuild` exits 0.
