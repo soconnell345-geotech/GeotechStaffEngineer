@@ -9,7 +9,22 @@ Done entries; items that change only GeotechStaffEngineer are left out.
 
 ## For testers (Document Review on Tiny Apps)
 
-What you will notice:
+**You get nothing from this release until the app is updated.** The
+testers' app changes only when the version numbers in the Tiny Apps
+wrapper repository (its `packages.txt`) are moved to 1.1.0 and the App
+Services team syncs the app. Until then you keep the app you have now.
+
+**At that update, if your sign-in name is not plain**, you get a new,
+empty folder of your own. Your earlier conversations stay in your old
+folder: nothing moves them, so ask the app owner to copy them across.
+Plain means letters, digits, dots and hyphens, with single underscores
+only inside the user name; not plain is a name with an apostrophe, a
+space, an accented letter, an underscore in the domain or at an end of
+the user name, a doubled underscore, a dot at either end, or more than
+about 60 characters. Whether any tester's name is not plain is still
+open (BACKLOG OWN-147, the owner's, before that update).
+
+What you will notice after the update:
 
 - **More sheets are looked at on a drawing set.** Every page 11 x 17 in or
   larger is now on the list of pages to view, so titled drawing sheets the
@@ -57,13 +72,8 @@ What you will notice:
 - **Your own key and folder.** Two testers whose sign-in names differ only
   in punctuation or accents can now have separate AI keys, and never share
   a folder. One tester's spent or refused key no longer lowers the image
-  size of other testers' looks (TA-39). **If your sign-in name is not
-  plain** (it holds an apostrophe, a space, an accented letter, an
-  underscore in the domain or at an end of the user name, a doubled
-  underscore, a dot at either end, or is longer than about 60 characters),
-  the app opens a new, empty folder for you. Your earlier conversations are
-  still in the old folder and are not moved: ask the app owner to copy them
-  (TA-39, TA-40; OWN-147).
+  size of other testers' looks (TA-39). A sign-in name that is not plain
+  gets a new folder, as said above (TA-39, TA-40; OWN-147).
 - **A saved file is named by its file name**, not a `/tmp` path or a
   `sandbox:` link (DR-43).
 - **Figures**: the plotting tool can draw panels side by side on one
