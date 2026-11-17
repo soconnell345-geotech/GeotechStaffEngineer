@@ -234,3 +234,19 @@ class TestStepCapAnswer:
         result = self._run(monkeypatch, "TJCAP3", _Model())
         assert not seen and result["final"] == core.NOTHING_KEPT
         assert "ran out of its steps" in result["error"]
+
+    def test_the_last_call_counts_in_the_turn_tokens(self, monkeypatch):
+        """Review C1: the cost shown for a capped turn includes it."""
+        monkeypatch.delenv("GEOTECH_STEP_CAP_ANSWER", raising=False)
+
+        class _Model:
+            def invoke(self, msgs):
+                return type("R", (), {
+                    "content": "Ka = 0.333 was found.",
+                    "usage_metadata": {"input_tokens": 700,
+                                       "output_tokens": 50,
+                                       "total_tokens": 750}})()
+
+        result = self._run(monkeypatch, "TJCAP4", _Model())
+        assert result["final"].startswith("Ka = 0.333 was found")
+        assert result["turn_tokens"] == 750

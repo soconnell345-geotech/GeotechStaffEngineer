@@ -2121,6 +2121,29 @@ def step_cap_answer_on() -> bool:
     return value.lower() not in ("0", "false", "no", "off")
 
 
+#: How the app's turn record names the step-cap answer while
+#: ``GEOTECH_STEP_CAP_ANSWER`` is unset (:func:`with_app_switches`).
+STEP_CAP_APP_DEFAULT = "GEOTECH_STEP_CAP_ANSWER=1 (app default)"
+
+
+def with_app_switches(engine: Any) -> Any:
+    """``engine`` (:func:`engine_record`) with its switches line as the app
+    has them: the library's line (``review_flags.describe``) leaves the
+    step-cap answer out while its variable is unset, but the app answers at
+    the cap unless it says ``0`` (:func:`step_cap_answer_on`; review C3).
+    Only the app's turn uses it: the eval, which never answers at the cap,
+    keeps the library's line. A copy; ``engine`` itself is not changed."""
+    build = engine.get("build") if isinstance(engine, dict) else None
+    if (not isinstance(build, dict)
+            or str(os.environ.get("GEOTECH_STEP_CAP_ANSWER", "")).strip()):
+        return engine
+    line = str(build.get("switches") or "")
+    out = dict(engine)
+    out["build"] = dict(build, switches=", ".join(
+        p for p in (line, STEP_CAP_APP_DEFAULT) if p))
+    return out
+
+
 #: What the last call is told when a turn has hit its step cap
 #: (``GEOTECH_STEP_CAP_ANSWER``; TA-33).
 STEP_CAP_NUDGE = (
@@ -2184,13 +2207,16 @@ def _work_so_far(turn_messages: List[dict]) -> str:
 
 
 def answer_at_step_cap(agent, question: Any,
-                       turn_messages: List[dict]) -> Optional[str]:
+                       turn_messages: List[dict],
+                       usage: Optional[dict] = None) -> Optional[str]:
     """One last model call, with no tools, that answers from what a turn
     gathered before it hit its step cap (TA-33; live wave w8, F55: the user
     got a raw error and five chart cards, no answer). ``turn_messages`` are
     the turn's own replies and tool results (``webapp.turn_record``),
     written out as plain text in one message (:func:`_work_so_far`);
-    ``None`` when there is no model or nothing was gathered."""
+    ``None`` when there is no model or nothing was gathered. ``usage``,
+    when given, gets ``"tokens"``: the call's tokens, which the turn's
+    count adds (review C1)."""
     model = getattr(agent, "geotech_model", None)
     if model is None or not turn_messages:
         return None
@@ -2204,6 +2230,14 @@ def answer_at_step_cap(agent, question: Any,
                  "and tool results, written out):\n" + work)
     parts.append(STEP_CAP_NUDGE)
     reply = model.invoke([{"role": "user", "content": "\n\n".join(parts)}])
+    if usage is not None:
+        meta = getattr(reply, "usage_metadata", None) or {}
+        try:
+            usage["tokens"] = int(meta.get("total_tokens") or (
+                int(meta.get("input_tokens") or 0)
+                + int(meta.get("output_tokens") or 0)))
+        except (AttributeError, TypeError, ValueError):
+            pass
     text = getattr(reply, "content", reply)
     if isinstance(text, list):
         text = "".join(b.get("text", "") if isinstance(b, dict) else str(b)

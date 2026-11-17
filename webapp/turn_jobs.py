@@ -214,7 +214,8 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     # the record and in meta.json (BACKLOG EV-14).
     engine = {}
     try:
-        engine = core.engine_record(agent)
+        # the switches as the app has them (review C3)
+        engine = core.with_app_switches(core.engine_record(agent))
         core.record_engine(thread_id, engine)
     except Exception:                                  # noqa: BLE001
         pass
@@ -320,9 +321,13 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         try:
             if (core.step_cap_answer_on() and record is not None
                     and core.is_step_cap(exc)):
+                cap_usage = {}
                 written = core.answer_at_step_cap(
                     agent, messages[-1] if messages else None,
-                    record.messages)
+                    record.messages, usage=cap_usage)
+                # that call's tokens count in the turn's (review C1)
+                turn_tokens = ((turn_tokens or 0)
+                               + int(cap_usage.get("tokens") or 0))
                 if written:
                     final = written
                     error_detail = f"{type(exc).__name__}: {exc}"[:2000]

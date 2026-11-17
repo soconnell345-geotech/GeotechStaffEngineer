@@ -1305,3 +1305,40 @@ def test_the_step_cap_answer_sends_a_bounded_record():
     assert core.answer_at_step_cap(agent, question, turn) == "made-up answer"
     sent = seen["msgs"][0]["content"]
     assert "check this plan" in sent and "base64" not in sent
+
+
+def test_the_step_cap_answer_reports_its_tokens():
+    """Review C1: the last call's tokens reach the turn's count."""
+    class _Model:
+        def invoke(self, msgs):
+            return type("R", (), {"content": "made-up answer",
+                                  "usage_metadata": {
+                                      "input_tokens": 900,
+                                      "output_tokens": 100,
+                                      "total_tokens": 1000}})()
+
+    turn = [{"role": "assistant", "content": "",
+             "tool_calls": [{"name": "call_agent", "args": {}, "id": "t1",
+                             "type": "tool_call"}]},
+            {"role": "tool", "content": "Ka = 0.333 (made up)",
+             "tool_call_id": "t1"}]
+    agent = type("A", (), {"geotech_model": _Model()})()
+    usage = {}
+    assert core.answer_at_step_cap(agent, "q", turn,
+                                   usage=usage) == "made-up answer"
+    assert usage == {"tokens": 1000}
+
+
+def test_the_app_record_shows_the_step_cap_answer_as_the_app_has_it(
+        monkeypatch):
+    """Review C3: unset, the app answers at the cap, and its record says
+    so; set, the library's line already names it."""
+    monkeypatch.delenv("GEOTECH_STEP_CAP_ANSWER", raising=False)
+    eng = {"build": {"switches": "MADE_UP_SWITCH=1 (default)"}}
+    out = core.with_app_switches(eng)
+    assert out["build"]["switches"] == (
+        "MADE_UP_SWITCH=1 (default), " + core.STEP_CAP_APP_DEFAULT)
+    assert eng["build"]["switches"] == "MADE_UP_SWITCH=1 (default)"
+    assert core.with_app_switches({}) == {}
+    monkeypatch.setenv("GEOTECH_STEP_CAP_ANSWER", "0")
+    assert core.with_app_switches(eng) == eng
