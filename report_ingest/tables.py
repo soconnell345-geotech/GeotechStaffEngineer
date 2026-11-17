@@ -2086,6 +2086,28 @@ def after_ingest(out_dir: Any, *, record: Any, children: Sequence[Any] = (),
 # the command line
 # ---------------------------------------------------------------------------
 
+def _not_foundry_note() -> str:
+    """Why ``--deliver`` will send nothing off a Foundry deployment, and the
+    settings that change it; "" on a Foundry deployment. A terminal on
+    Foundry does not inherit what the published app's entry point sets, so
+    every report's line read "dataset: not a Foundry deployment" with no
+    word on the cause (the Foundry engineer's ask, build j)."""
+    try:
+        from aec_agent_core import engine_config
+    except Exception:                                  # noqa: BLE001
+        return ""
+    if engine_config.is_foundry_deployment():
+        return ""
+    name = engine_config.DEPLOYMENT_ENV
+    value = str(os.environ.get(name) or "").strip()
+    now = f"is '{value}'" if value else "is not set"
+    also = "" if dataset_alias() else (
+        f", and set {ENV_DATASET} to the dataset's alias")
+    return (f"{name} {now}, and --deliver sends only on a Foundry "
+            f"deployment: set {name}=foundry in this terminal (the published "
+            f"app's entry point sets it){also}, then run again.")
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """``python -m report_ingest.tables <run_root> [--root R] [--deliver]``:
     every report already ingested under ``run_root`` exported, no model
@@ -2113,6 +2135,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
     if not args.run_root:
         parser.error("a run_root is needed (or --columns)")
+    if args.deliver:
+        note = _not_foundry_note()
+        if note:
+            print(f"--deliver: nothing will be sent to the dataset. {note}")
     outcomes = export_folder(args.run_root, args.root,
                              deliver=args.deliver)
     for one in outcomes:

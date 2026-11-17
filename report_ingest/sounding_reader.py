@@ -1861,6 +1861,13 @@ def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
 # turning the reading into the record
 # ---------------------------------------------------------------------------
 
+def _on_elevation(reading: "SoundingReading") -> bool:
+    """Does the reading say its vertical axis is an elevation? One test, so
+    the depth gate and the record's ``vertical_axis`` always agree (RI-213
+    review: case and spaces folded)."""
+    return (reading.vertical_axis or "").strip().lower() == "elevation"
+
+
 class _Builder:
     """Turns one :class:`SoundingReading` into an :class:`Investigation`.
 
@@ -1895,12 +1902,20 @@ class _Builder:
                        "the number has no meaning",
                 "refused_by": "python"})
             return None
-        axis = self.axes.get("depth") or self.axes.get("elevation")
+        # The axis of the quantity the reading says it reports (BACKLOG
+        # RI-213): a depth below the ground is checked against a depth axis
+        # and a level on a datum against an elevation axis, never one
+        # against the other. A depth checked against an axis the floor
+        # titled "Elevation" refused every reading below that axis's range:
+        # one report had most readings of 12 of its 14 cone soundings cut,
+        # in the record and in the DIGGS file.
+        quantity = "elevation" if _on_elevation(self.reading) else "depth"
+        axis = self.axes.get(quantity)
         if axis is not None and not axis.holds(value):
             self.unresolved.append({
                 "what": what, "page": axis.page, "value": value,
-                "why": f"depth {value:g} is outside the sheet's own depth "
-                       f"axis ({axis.low:g} to {axis.high:g} "
+                "why": f"{quantity} {value:g} is outside the sheet's own "
+                       f"{quantity} axis ({axis.low:g} to {axis.high:g} "
                        f"{axis.unit or self.unit}); refused rather than "
                        f"accepted",
                 "refused_by": "python"})
@@ -2056,7 +2071,7 @@ class _Builder:
         if kind == "cpt":
             data = CPTData(
                 points=points,
-                vertical_axis=("elevation" if r.vertical_axis == "elevation"
+                vertical_axis=("elevation" if _on_elevation(r)
                                else "depth"),
                 datum=r.datum,
                 step=step, digitised=bool(r.digitised),

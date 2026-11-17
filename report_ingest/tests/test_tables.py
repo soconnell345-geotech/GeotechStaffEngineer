@@ -1444,6 +1444,38 @@ class TestFoldersIngestedBefore:
         assert f"{written.key}: written" in said
         assert "1 report(s)" in said
 
+    def test_deliver_off_foundry_names_the_missing_setting(
+            self, tmp_path, capsys, monkeypatch):
+        # The Foundry engineer's ask (build j): a terminal without
+        # GEOTECH_DEPLOYMENT=foundry sent nothing and never said why.
+        _folder, _pdf, written = _write_folder(tmp_path)
+        monkeypatch.delenv("GEOTECH_DEPLOYMENT", raising=False)
+        monkeypatch.setenv("GSE_REPORT_TABLES_DATASET", "made_up_alias")
+
+        assert tables.main([str(tmp_path / "run"), "--deliver"]) == 0
+        said = capsys.readouterr().out
+        assert "GEOTECH_DEPLOYMENT is not set" in said
+        assert "GEOTECH_DEPLOYMENT=foundry" in said
+        assert f"{written.key}: written" in said
+
+        monkeypatch.setenv("GEOTECH_DEPLOYMENT", "tinyapps")
+        assert tables.main([str(tmp_path / "run"), "--deliver"]) == 0
+        said = capsys.readouterr().out
+        assert "GEOTECH_DEPLOYMENT is 'tinyapps'" in said
+        assert "set GSE_REPORT_TABLES_DATASET" not in said
+
+        monkeypatch.delenv("GSE_REPORT_TABLES_DATASET")
+        assert "set GSE_REPORT_TABLES_DATASET" in tables._not_foundry_note()
+
+    def test_no_note_without_deliver_or_on_foundry(self, tmp_path, capsys,
+                                                   monkeypatch):
+        _write_folder(tmp_path)
+        monkeypatch.delenv("GEOTECH_DEPLOYMENT", raising=False)
+        assert tables.main([str(tmp_path / "run")]) == 0
+        assert "GEOTECH_DEPLOYMENT" not in capsys.readouterr().out
+        monkeypatch.setenv("GEOTECH_DEPLOYMENT", "foundry")
+        assert tables._not_foundry_note() == ""
+
 
 # ---------------------------------------------------------------------------
 # the settings
