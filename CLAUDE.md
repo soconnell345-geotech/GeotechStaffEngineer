@@ -210,6 +210,11 @@ This repository builds three packages; the app also needs two more of the same p
   Figure test set since 2026-11-14 (GM-314): `funhouse_agent/figure_eval/`,
   plot code OFF against ON, offline-tested; its paid run on Foundry is
   GM-352 (`module_work/gm314/FOUNDRY_SECTION_FIGURE_SET.md`).
+  Since 2026-11-17 (build j's trace review and the hosted platform's asks):
+  the main agent's default step cap is 150 (max 200) and a turn at the cap
+  answers from its work so far (`GEOTECH_STEP_CAP_ANSWER`, on in the app);
+  one figure gets at most 3 draws and 3 looks a turn (10 draws a helper call);
+  `GEOTECH_OPEN_IN_NEW_TAB` hides the button, by default on the hosted platform.
   Defaults since 2026-11-13 (the owner's calls, OWN-143): a drilled shaft's
   rock base with no RQD is refused, MSE backfill with Cu below 4 needs
   `F_star_tested`, log-spiral wall friction only for a layer marked clean,
