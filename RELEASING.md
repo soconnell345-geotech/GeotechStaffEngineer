@@ -47,8 +47,8 @@ back (`MAINTAINERS.md` section 9).
 ## 2. An app release, step by step
 
 Made by the repository's owner, from the public repository (the first fact
-above), as release 5.35.0 was made (2026-11-10; its record is in
-`HANDOFF.md` section 0a-current).
+above), as releases 5.35.0 (2026-11-10) and 5.36.0 (2026-11-17) were made
+(their records are in `HANDOFF.md` section 0a-current).
 
 1. **Upstream first.** Every version the app's pins name is on the index:
    the reference library, planlens, the core.
@@ -68,7 +68,7 @@ above), as release 5.35.0 was made (2026-11-10; its record is in
    tag (`git -C geotech-references fetch origin --tags`, then
    `git -C geotech-references checkout vX.Y.Z` and
    `git add geotech-references`). Where `tests.yml` installs planlens by its
-   own line (`"planlens>=0.15"` in the `core-only` and numpy 1.26 jobs), the
+   own line (`"planlens>=0.16.0"` in the `core-only` and numpy 1.26 jobs), the
    same floor. Check: `webapp/tests/test_wheels.py` (the core pin equals the
    core's version).
 
@@ -213,8 +213,8 @@ The public release the build starts from, then a short name for the
 platform, the build date and that day's build number. A labelled version
 sorts after its public release, and the diagnostics report's versions line
 shows it in full. A pin without a label accepts a labelled build:
-`geotech-references>=1.7.0` is met by `1.7.0+site.20261120.1`, and
-`aec-agent-core==1.0.1` by `1.0.1+site.20261120.1`.
+`geotech-references>=1.8.0` is met by `1.8.0+site.20261120.1`, and
+`aec-agent-core==1.1.0` by `1.1.0+site.20261120.1`.
 
 **The label never goes on master.** `test_docs_currency.py` would fail
 (the state docs name the plain version), and the label belongs to one
@@ -367,8 +367,8 @@ listed as not run. Files a command rewrote were restored afterwards.
 
 Not run here:
 
-- Step 3's submodule move: a release step (last done in `bd11539`, the
-  library at 1.7.0).
+- Step 3's submodule move: a release step (last done in `0187efb` on
+  `release/5.36.0`, the library at 1.8.0).
 - `render_pdf.py`: optional, and the PDF is not part of a release.
 - Step 9's `git tag` and `git push`: a pushed tag publishes at once.
 - Step 11's merge: a release step (5.35.0's is `ce49b16`).

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "5.35.0"
+version = "5.36.0"
 description = "Python toolkit for LLM-based geotechnical engineering agents - 33 analysis modules covering foundations, piles, slopes, structural section/RC/frame analysis, reliability, seismic site response, excavation support, pavement design (AASHTO 1993 / UFC 3-250-01), subsurface characterization (DIGGS/GEF/AGS4), FEM, drawing & profile rendering, and a cited public-domain reference layer."
 readme = "README.md"
 license = "MIT"
@@ -42,7 +42,10 @@ dependencies = [
     # manuals: corrected lookups and stored text, refusals outside a printed
     # range, the table catalogs the references helper's table tools read.
     # An install that already has 1.6.0 must not keep it.
-    "geotech-references>=1.7.0",
+    # RAISED TO 1.8.0 (5.36.0, 2026-11-17): the typed tables of DM 7.1,
+    # GEC-12 Vol I and GEC-13, result units and pages on 17 references,
+    # DM 7.2 cited as UFS 3-220-20. Dependencies IDENTICAL (numpy only).
+    "geotech-references>=1.8.0",
     # The shared core of the app split (INF-26 / INF-32; built from
     # packages/aec-agent-core in this repository), pinned EXACTLY: the two
     # move together. REQUIRED FROM 5.35.0 (2026-11-10): 1.0.0 is the core's
@@ -61,8 +64,9 @@ dependencies = [
     # (one version, tag aec-v<version>, which v* never matches), and
     # publish.yml also refuses while packages/aec-agent-core has changed
     # since the tag of the pinned version: release the core, then pin it.
-    # 1.1.0 on master (INF-76's first one-unit version; not on PyPI until
-    # the lead releases it with Document Review 1.1.0).
+    # REQUIRED FROM 5.36.0 (2026-11-17): 1.1.0, INF-76's first one-unit
+    # version, published with aec-document-review 1.1.0 by the tag
+    # aec-v1.1.0 BEFORE the app's tag.
     "aec-agent-core==1.1.0",
     # -- agent stack (formerly the [deep] extra) --
     # Agent-stack UPPER BOUNDS (5.10.2): unpinned drift has broken deployed
@@ -237,7 +241,13 @@ dependencies = [
     # planlens.review, the document tools the app binds to (PL-29 (b)), and
     # reads `Label (unit): value` as a quantity (PL-11). Dependencies again
     # IDENTICAL: no new package.
-    "planlens>=0.15",
+    # RAISED TO `planlens>=0.16.0` (5.36.0, 2026-11-17): the sheet index,
+    # callout and schedule checks behind GEOTECH_REVIEW_SHEET_TOOLS (off),
+    # every large sheet on `pages_to_view`, a search that lists only the
+    # pages it could not read, and the OpenCV probe that leaves no core
+    # file on a FIPS host (PL-37, PL-38, PL-39, PL-42). Dependencies
+    # IDENTICAL: no new package.
+    "planlens>=0.16.0",
     # -- structural round 1 (owner, 2026-09-03): section/RC/frame analysis --
     # sectionproperties and concreteproperties were REMOVED in 5.13.0: both
     # require `cytriangle`, whose only manylinux wheel is quarantined by the

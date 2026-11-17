@@ -272,8 +272,9 @@ WORKED = {
     "slope_stability": ("slope_stability.search_critical_surface",
         "Find the critical circular slip surface and minimum factor of safety for a 10&nbsp;m "
         "c&ndash;&phi; slope (c&prime;=12&nbsp;kPa, &phi;&prime;=28&deg;) by Bishop&rsquo;s method.",
-        "2,300 trial surfaces were evaluated: the entry&ndash;exit arcs, then small circles through "
-        "the toe and circles a little above it. A toe circle governs (FOS 1.583); the "
+        "2,283 trial surfaces were evaluated: the entry&ndash;exit arcs, then small circles through "
+        "the toe and circles a little above it. A circle leaving the face 0.02&nbsp;m above the toe "
+        "governs (FOS 1.584); the toe circles&rsquo; minimum is 1.588 and the "
         "entry&ndash;exit arcs&rsquo; minimum is 1.587."),
     "fem2d": ("fem2d.fem2d_slope_srm",
         "Run a finite-element strength-reduction analysis on the same slope (c=10&nbsp;kPa, "
@@ -1389,7 +1390,7 @@ VALIDATION_ROWS = [
 
 # Version history (Appendix B)
 VERSION_HISTORY = [
-    ("5.4.0 &ndash; 5.35.0", "2026-07 &ndash; 2026-11",
+    ("5.4.0 &ndash; 5.36.0", "2026-07 &ndash; 2026-11",
      "Not yet summarised in this appendix. Each release&rsquo;s notes, including the changes that "
      "move a calculation&rsquo;s answer, are in the repository&rsquo;s <code>HANDOFF.md</code> and "
      "<code>CLAUDE.md</code>; the method and parameter tables in this manual are generated from "

@@ -399,5 +399,5 @@ Not run here:
 - The full suite: 50 to 100 minutes in one process; it runs on CI.
 - `git submodule update --init geotech-references`: it would clone the
   library's history (about 1.4 GB) again; CI's checkout does the same.
-- The submodule move of section 3: a release step (last done in `bd11539`,
-  the library at 1.7.0).
+- The submodule move of section 3: a release step (last done in `0187efb`
+  on `release/5.36.0`, the library at 1.8.0).

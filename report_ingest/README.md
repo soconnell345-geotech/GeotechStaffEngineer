@@ -2350,7 +2350,7 @@ ingest `run.json` carry `di_withheld: true`, and RESULTS says so.
 These cells were written for 5.25.0 (2026-09-21) and pin it. Report ingest is
 now measured on Foundry, and from 5.34.0 every stage reads model first by
 default (`GEOTECH_INGEST_MODEL_FIRST`, above). A current install is
-`geotech-staff-engineer==5.35.0`, which brings the shared core
+`geotech-staff-engineer==5.36.0`, which brings the shared core
 `aec-agent-core`, planlens and geotech-references with it.
 
 ```python
