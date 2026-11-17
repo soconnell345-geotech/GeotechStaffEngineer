@@ -3,14 +3,20 @@
 **Status (2026-11-10, the app split's step 14, BACKLOG INF-34).** Tiny Apps
 hosts **Document Review alone**. The geotechnical page left this host at the
 app split (owner, 2026-10-20) and runs on its own elsewhere. Document Review
-is its own public package, `aec-document-review` 0.1.1, which pins the
-shared core `aec-agent-core` 1.0.1 and the document layer `planlens` 0.15.1
+is its own public package, `aec-document-review` 1.1.0, which pins the
+shared core `aec-agent-core` 1.1.0 and the document layer `planlens` 0.16.0
 exactly (`packages/aec-document-review/`; built at step 13,
-`module_work/inf33/CHECK_STEP13.md`). All three are on PyPI (these versions
-since 2026-11-10: they carry the fixes of the deployment review of that
+`module_work/inf33/CHECK_STEP13.md`). 1.1.0 is the first release of the
+two as one unit and is not on PyPI until the lead releases it; until then
+the released set is 0.1.1 and 1.0.1 with planlens 0.15.1 (on PyPI since
+2026-11-10: they carry the fixes of the deployment review of that
 day, `module_work/docreview_review_2026-11-10/REVIEW.md`, and replace the
 first releases 0.1.0, 1.0.0 and 0.15.0);
-the company's Nexus mirror carries a release a day or two later. The wrapper
+the company's Nexus mirror carries a release a day or two later. From the
+next release on (BACKLOG INF-76) Document Review and the core carry ONE
+version number and go out together on one tag (`aec-v<version>`, the core
+first), so an update moves both pins to the same number; planlens keeps
+its own. The wrapper
 template in `tinyapps/wrapper_repo/` installs them from Nexus, or from two
 wheels in the repo as the backup. Next: the owner's first round on the test
 machine (dosdev), with the checklist below. The end-to-end check of the
@@ -98,7 +104,14 @@ The Prompter engine itself is in the core:
   `Shared Documents/GeotechStaffEngineer/conversations/<tester>/document_review/<title>_<date>/`
   on the published app (the owner's folder, 2026-10-21;
   `GEOTECH_SHAREPOINT_ROOT` changes the first part). With one person and no
-  sign-in (dosdev) the `<tester>/` segment is left out.
+  sign-in (dosdev) the `<tester>/` segment is left out. From 1.1.0 a
+  tester whose sign-in name is not plain (letters, digits, dots and
+  hyphens, single underscores only inside the user name, no dot at
+  either end, at most about 60 characters) has a folder of their own, on the host and on SharePoint; their earlier
+  conversations stay in the old folder and nothing copies them (the
+  release note, `module_work/inf76/RELEASE_NOTE.md`; BACKLOG OWN-147).
+  The save after a turn runs in the background; a file above 2048 MB
+  is not sent and is named (`GEOTECH_SHAREPOINT_MAX_UPLOAD_MB`).
 - Python on dosdev: 3.11.9 (the package requires 3.11 or newer).
 - Approval path: MOU, then the GHE repo, then the SIA (1-2 weeks), then a
   change board only for connections outside the pilot's boundary (the
@@ -141,8 +154,8 @@ its commands without installing or starting anything.
 | Route | Put in the repo | Setting |
 | --- | --- | --- |
 | **C. Nexus** (the normal one; owner, 2026-11-09) | Only the template: `packages.txt` pins the three packages and includes the third-party pins. | `APP_SOURCE=nexus` |
-| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.0.1-py3-none-any.whl` and `wheels/aec_document_review-0.1.1-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.15.0, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
-| **A. Source folder** (development copies) | `app_src/aec_document_review/` (copied from `packages/aec-document-review/`) and `app_src/requirements.txt` holding `aec-agent-core==1.0.1`, `planlens==0.15.1` and `websockets>=14,<16`. It goes first on `PYTHONPATH` (`app.py` also adds it for a plain `streamlit run app.py`). For an unreleased core as well, add `app_src/aec_agent_core/` and list the core's own dependencies in place of its pin. | `APP_SOURCE=source` |
+| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.1.0-py3-none-any.whl` and `wheels/aec_document_review-1.1.0-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.16.0, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
+| **A. Source folder** (development copies) | `app_src/aec_document_review/` (copied from `packages/aec-document-review/`) and `app_src/requirements.txt` holding `aec-agent-core==1.1.0`, `planlens==0.16.0` and `websockets>=14,<16`. It goes first on `PYTHONPATH` (`app.py` also adds it for a plain `streamlit run app.py`). For an unreleased core as well, add `app_src/aec_agent_core/` and list the core's own dependencies in place of its pin. | `APP_SOURCE=source` |
 
 Tests: `webapp/tests/test_tinyapps_wrapper.py` (each route's dry run, the
 import line, the pins against the package's pyproject, pandas==3.0.2).
@@ -180,7 +193,10 @@ is not served.
 **Resolution order** for a tester (`aec_document_review/tinyapps_keys.py`,
 `resolve_for`):
 
-1. **The per-tester secret** `PROMPTER-API-KEY--<TESTER>`. The optional
+1. **The per-tester secret** `PROMPTER-API-KEY--<TESTER>` (for a sign-in
+   name with anything other than letters and digits, its exact secret
+   name comes first and its `PROMPTER-KEYS` entry before this one: see
+   "Naming `<TESTER>`" below). The optional
    `PROMPTER-MODEL--<TESTER>` and `PROMPTER-URL--<TESTER>` fall back to the
    shared `PROMPTER-MODEL` / `PROMPTER-URL`.
 2. **The JSON secret `PROMPTER-KEYS`**:
@@ -201,10 +217,32 @@ is not served.
 and turn every run of characters other than a letter or digit into ONE
 hyphen: `CORP\jdoe` becomes `CORP-JDOE`, `CORP\j.doe` becomes `CORP-J-DOE`,
 `jdoe@example.org` becomes `EXAMPLE-ORG-JDOE`. As an app setting or a `.env`
-line the same name uses underscores: `PROMPTER_API_KEY__CORP_JDOE`. A name
-longer than 127 characters is never looked up; two people whose names differ
-only in punctuation would share a secret name; give either a `PROMPTER-KEYS`
-entry instead.
+line the same name uses underscores: `PROMPTER_API_KEY__CORP_JDOE`.
+
+Sign-in names that differ only in punctuation or accents (`CORP\j.doe`,
+`CORP\j-doe`, `CORP\j_doe`; `o'brien` and `o_brien`) give the same
+`<TESTER>`. So a name holding anything other than letters and digits also
+has an exact secret name, `PROMPTER-API-KEY--<TESTER>--<HASH>`, which the
+app looks up first; then that person's `PROMPTER-KEYS` entry; then
+`PROMPTER-API-KEY--<TESTER>`, so a key set up earlier still works. To give
+two such testers different keys, give each the exact secret (or a
+`PROMPTER-KEYS` entry) and delete the plain `PROMPTER-API-KEY--<TESTER>`
+once both are served: while it exists, whichever of them has neither is
+served by it. A name of letters and digits has only the plain name, and a
+look-alike with punctuation or an accent at an end of a part (`CORP\jdoe_`
+beside `CORP\jdoe`) that has no key of its own is served by it too: the key
+that is such a tester's alone is a `PROMPTER-KEYS` entry. The app shows the
+exact name, never a key: in the refusal a tester without a key sees, in the
+sidebar's Connection diagnostics, and from `python -m
+aec_document_review.tinyapps_keys "CORP\j.doe"`. As an app setting or `.env`
+line the name is spelt with underscores
+(`PROMPTER_API_KEY__CORP_J_DOE__<HASH>`). A tester's own model and URL sit
+beside the key under the same ending.
+
+A name of letters and digits whose secret name would pass Key Vault's 127
+characters has no secret name (give it a `PROMPTER-KEYS` entry); any other
+name that long is looked up by its exact secret name, whose readable part is
+cut to fit.
 
 **Behaviour to know.**
 
@@ -227,29 +265,66 @@ entry instead.
   up from them; a helper that stops writes what it read to the
   conversation's `kept/` folder.
 - Model calls wait out busy refusals (retry-after, else 15/30/60/120 s); at
-  most two helpers run at once; every model request has a 180 s time limit
-  and is retried like a busy refusal when it times out.
+  most two helpers run at once; every model request has a 180 s time
+  limit. The model client asks a request again once, at once (a timeout,
+  a dropped connection, a brief rate limit); a request that timed out
+  twice is not asked again, so a stuck call ends in about 6 minutes.
+- A page reading (a vision call) is given up after 90 s and asked once
+  more; one refused as busy is asked at most six times; a look that
+  waits 10 minutes for a free reading slot comes back as not read.
+- The page's model-call budget (40) covers the whole turn: an automatic
+  "continue" and the calls that finish a cut-off reply count against it.
 
 Settings (environment or app settings, not Key Vault; all optional, listed
 in `wrapper_repo/.env.example`): `GEOTECH_TOKENS_PER_MINUTE` (pace calls a
 little under the deployment's limit; unset means no pacing),
 `GEOTECH_MAX_HELPERS` (2), `GEOTECH_HELPER_MAX_MODEL_CALLS` (30),
 `GEOTECH_AGENT_BUSY_TRIES` (5), `GEOTECH_BUSY_TURN_MAX_S` (900),
-`GEOTECH_PROMPTER_STREAM_USAGE` (on), and the figure helper's two switches,
+`GEOTECH_PROMPTER_STREAM_USAGE` (on), `GEOTECH_PROMPTER_MAX_RETRIES` (1; `0`
+turns the client's own retry off), `GEOTECH_VISION_CALL_TIMEOUT_S` (90),
+`GEOTECH_VISION_SLOT_WAIT_S` (600; `0` = no bound), and the figure helper's
+two switches,
 `GEOTECH_FIGURE_HELPER` and `GEOTECH_PLOT_CODE` (on; `0` turns each off).
 On the App Service the wrapper's `app.py` sets `GEOTECH_PLOT_CODE=0` unless
 the app setting says `1`: the box that code runs in limits Python, not the
 operating system (INF-16), and one process holds every tester's files. The
 figure helper still draws, with the fixed plotting tool.
 
+**Off by default** (app settings or `.env` lines, not Key Vault; `1` turns
+each on; listed in `wrapper_repo/.env.example`; turning one on for a tester
+round is the owner's call):
+
+- `GEOTECH_STOP_BUTTON`: a Stop button while the tester's own turn runs.
+  What the turn had done is kept, and the agent can be asked to continue. A
+  stop pressed while the final answer is being written lets the turn
+  finish, and tool calls the model already issued in that reply still run.
+- `GEOTECH_SPEND_ESTIMATE`: a sidebar line estimating the tester's own AI
+  spend this calendar month, from the token counts in their own
+  conversations' records, priced by `GEOTECH_SPEND_INPUT_USD_PER_MTOK` and
+  `GEOTECH_SPEND_OUTPUT_USD_PER_MTOK` (US dollars per million tokens), with
+  `GEOTECH_SPEND_MONTHLY_BUDGET_USD` as the month's budget if set. Without
+  the prices it counts tokens only. It is an estimate: set it beside the
+  key's own meter before relying on it (BACKLOG TA-42).
+- `GEOTECH_REVIEW_SHEET_TOOLS`: planlens' sheet tools on the page: the
+  sheet index read from the title blocks, every callout checked against the
+  sheet it names, and (planlens 0.16.0) the set's schedules checked against
+  the marks on its sheets, with `open_document` bringing the sheet index and
+  the schedule check. Not measured on a model yet.
+- `GEOTECH_REVIEW_TODOS_WITH_CALLS`: one sentence asking the agent to update
+  its to-do list in the same step as its next tool call. Not measured yet.
+- `GEOTECH_VISION_SHOW_ME`: the agent may have a page or region shown to
+  its own model, instead of a separate reading's description of it. Not
+  measured on the review suite yet.
+
 ## The owner's first round on the test machine (paste-ready checklist)
 
 Do these in order. Each step says what you should see. If a step fails,
 stop and copy the last screen's text into a note for the lead.
 
-**Before you start.** The three packages are on PyPI
-(`aec-document-review` 0.1.1, `aec-agent-core` 1.0.1 and
-`planlens` 0.15.1, all since 2026-11-10). The company's Nexus mirror carries a
+**Before you start.** The three packages must be on PyPI
+(`aec-document-review` 1.1.0, `aec-agent-core` 1.1.0 and
+`planlens` 0.16.0; planlens since 2026-11-17, the other two once the lead
+releases them as one unit). The company's Nexus mirror carries a
 release a day or two after PyPI; step 2 shows whether it has them. You need
 from CfA: the Prompter values (URL, model, key, CA bundle) and, for step 7,
 the four SharePoint values. If the SharePoint values have not arrived, do
@@ -277,8 +352,8 @@ steps 1-6 and leave step 7 for later.
    Every command below starts with `.venv\Scripts\python`, the folder's own
    Python, so nothing needs "activating" (PowerShell often refuses the
    activate script). Run them in the `document-review-tinyapp` folder; in a
-   new terminal, `cd` there first. You should see "Successfully installed ... aec-document-review-0.1.1 ...
-   aec-agent-core-1.0.1 ... planlens-0.15.1 ... pandas-3.0.2 ...". If pip
+   new terminal, `cd` there first. You should see "Successfully installed ... aec-document-review-1.1.0 ...
+   aec-agent-core-1.1.0 ... planlens-0.16.0 ... pandas-3.0.2 ...". If pip
    says it cannot find `aec-document-review` (or the core or planlens), the
    mirror does not carry it yet: wait a day, or ask CfA (ask 1 below). If
    pip prints a conflict, copy it into the note and stop.
@@ -330,8 +405,8 @@ steps 1-6 and leave step 7 for later.
 ## What to ask CfA (paste-ready)
 
 1. **Nexus carries our three public packages.** "Please make sure the Nexus
-   mirror carries `aec-document-review==0.1.1`, `aec-agent-core==1.0.1` and
-   `planlens==0.15.1` from PyPI, and clears them through the firewall if it
+   mirror carries `aec-document-review==1.1.0`, `aec-agent-core==1.1.0` and
+   `planlens==0.16.0` from PyPI, and clears them through the firewall if it
    holds them back. They are our own packages, public on PyPI." (If this
    cannot be done, the backup is route B: "May our repo carry two small
    pure-Python wheels of ours in `wheels/`, installed by path?")

@@ -18,11 +18,18 @@ build-backend = "setuptools.build_meta"
 # 1.0.0 since step 13 (INF-33): the first real release, published by the
 # lead (tag core-v1.0.0) before GSE's release that pins it and before
 # aec-document-review, which requires it exactly.
+# Since INF-76 the core and aec-document-review release as ONE unit: one
+# version, one tag `aec-v<version>` that publishes both (publish-core.yml
+# first, publish-document-review.yml waits for it). Both workflows refuse a
+# tag unless both packages carry its version and Document Review pins this
+# one exactly at it.
 [project]
 name = "aec-agent-core"
-# Kept equal to geotech-staff-engineer's exact pin on it (its pyproject) and
-# to aec_agent_core.__version__; webapp/tests/test_wheels.py checks all three.
-version = "1.0.1"
+# Kept equal to geotech-staff-engineer's exact pin on it (its pyproject), to
+# aec_agent_core.__version__ and to aec-document-review's version and its
+# pin on this package (INF-76: one version); webapp/tests/test_wheels.py and
+# webapp/tests/test_inf76_release_unit.py check them.
+version = "1.1.0"
 description = "The shared core of LLM agents that review and produce architecture, engineering and construction documents: model connections, vision calls, guards and records, Word and Excel, and a figure helper. No user interface of its own."
 readme = "README.md"
 license = "MIT"
@@ -80,6 +87,9 @@ dependencies = [
     "openpyxl>=3.1",
     # The document layer; the core binds its review tools. 0.15 since step
     # 11 (a): the app binds planlens.review (PL-29 (b)), and its pin is 0.15.
+    # It stays 0.15 at 1.1.0: the sheet tools and 0.16's schedule-mark
+    # check are offered only where the installed planlens publishes them
+    # (document_tools.sheet_tool_names); Document Review pins 0.16.0.
     "planlens>=0.15",
     # Step 11 (a), the vision tools: they open and render PDF pages with
     # PyMuPDF themselves (vision_tools, vision_view), so it is listed here,

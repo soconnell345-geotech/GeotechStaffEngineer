@@ -10,6 +10,8 @@ detailed Phase-E history; this file supersedes it.
 
 **This week (2026-11-12 to 2026-11-18, the owner's last week on the top plan):** the plan, by lead, is the first bullet of `BACKLOG.md` §0.
 
+**Close-out releases (2026-11-17, the owner's "full releases"):** planlens 0.16.0 is on PyPI (tag `v0.16.0`). The core and Document Review 1.1.0 are merged on master as one unit (INF-76, f9cde92); their tag `aec-v1.1.0` waits for the figure-cap fix in `packages/aec-agent-core`; the app's release comes after it.
+
 ### Start here (written 2026-10-21 evening; work restarted 2026-10-22 after the weekly limit reset; updated 2026-10-23)
 
 - **Order of work (owner, 2026-10-21; BACKLOG §0 and its sections follow it):** report ingest and GSE on Foundry first, then the geotech calc modules, then Document Review and Tiny Apps last. Everything on master through ed929c7 (2026-11-10) is released as 5.35.0 with planlens 0.15.0, geotech-references 1.6.0 and the shared core `aec-agent-core` ("Where things stand", item 0); 5.34.0 (2026-11-04, through d57f28d) is item 0a.

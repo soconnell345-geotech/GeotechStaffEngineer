@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # every tag and the history, for the pinned-core check below
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -18,8 +21,9 @@ jobs:
       # Named directories only (the app split, INF-32 step 10): a `v*` tag
       # builds the repository root, geotech-staff-engineer, and nothing
       # else. The shared core in packages/aec-agent-core is NOT built or
-      # published here; it has its own workflow, publish-core.yml, on a
-      # `core-v*` tag.
+      # published here: since INF-76 it releases with Document Review as one
+      # unit, on an `aec-v<version>` tag (publish-core.yml and
+      # publish-document-review.yml), which `v*` never matches.
       - run: python -m build --outdir dist/ .
       - name: Only geotech-staff-engineer is in dist/
         run: |
@@ -31,11 +35,10 @@ jobs:
             esac
           done
       # A release must install: the app pins aec-agent-core exactly
-      # (INF-32), and pip can only find that version once it is on PyPI.
-      # Until the app split's step 12 publishes the core it is not, so a
-      # release tagged before then would install nowhere, and PyPI never
-      # takes the same version twice. This stops the publish instead. At
-      # step 12 the core goes up first and this check passes by itself.
+      # (INF-32), and pip can only find that version once it is on PyPI,
+      # and PyPI never takes the same version twice. This stops the publish
+      # while the pinned core is missing; release the core first (an
+      # `aec-v<version>` tag, INF-76).
       - name: The aec-agent-core version the app pins is on PyPI
         shell: python
         run: |
@@ -80,10 +83,77 @@ jobs:
           if not ok:
               print(f"::error::Not published: geotech-staff-engineer pins "
                     f"{NAME}=={version}, which is not on PyPI, so this release "
-                    f"could not be installed. Publish the core first (the app "
-                    f"split's step 12, BACKLOG INF-32), then publish the app.")
+                    f"could not be installed. Publish the core first (an "
+                    f"aec-v<version> tag, BACKLOG INF-76), then publish the "
+                    f"app.")
               sys.exit(1)
           print(f"{NAME} {version} is on PyPI: the release can install.")
+      # INF-76: a release must go out with a core that has what it imports.
+      # The pinned core version being on PyPI is not enough: the core in
+      # this checkout (which the release was tested with) may have gained
+      # a module since that version was cut (foundry_dataset_store did,
+      # after 1.0.1). So the core's folder must be unchanged since the tag
+      # of the pinned version: aec-v<version>, or core-v<version> for a
+      # core released before INF-76. Otherwise release the core first.
+      # publish.yml and publish-document-review.yml carry this step word
+      # for word; only PYPROJECT differs.
+      - name: The pinned core is the core in this checkout
+        shell: python
+        env:
+          PYPROJECT: pyproject.toml
+        run: |
+          import os
+          import re
+          import subprocess
+          import sys
+          import tomllib
+
+          NAME = "aec-agent-core"
+          CORE = "packages/aec-agent-core/"
+          with open(os.environ["PYPROJECT"], "rb") as f:
+              deps = tomllib.load(f)["project"]["dependencies"]
+          pins = []
+          for dep in deps:
+              name = re.split(r"[\s<>=!~;\[(]", dep, maxsplit=1)[0]
+              if re.sub(r"[-_.]+", "-", name).lower() == NAME:
+                  pins.append(re.sub(r"\s+", "", dep.split(";")[0]))
+          pin = re.fullmatch(r"aec-agent-core==([^,]+)", pins[0]) \
+              if len(pins) == 1 else None
+          if pin is None:
+              print(f"::error::Expected one exact pin ({NAME}==<version>) "
+                    f"in {os.environ['PYPROJECT']}, found {pins}.")
+              sys.exit(1)
+          version = pin.group(1)
+
+          def git(*args):
+              return subprocess.run(["git", *args], capture_output=True,
+                                    text=True)
+
+          tags = (f"aec-v{version}", f"core-v{version}")
+          tag = next((t for t in tags if git(
+              "rev-parse", "-q", "--verify",
+              f"refs/tags/{t}^{{commit}}").returncode == 0), None)
+          if tag is None:
+              print(f"::error::No tag {' or '.join(tags)} in this checkout, "
+                    f"so nothing says which core {NAME} {version} was cut "
+                    f"from. Release the core first (an aec-v<version> tag).")
+              sys.exit(1)
+          diff = git("diff", "--name-only", tag, "HEAD", "--", CORE)
+          if diff.returncode != 0:
+              print(f"::error::git diff against {tag} failed: "
+                    f"{diff.stderr.strip()}")
+              sys.exit(1)
+          changed = diff.stdout.split()
+          if changed:
+              print(f"::error::{CORE} has changed since {tag}, the release "
+                    f"of the pinned {NAME} {version} ({len(changed)} files, "
+                    f"e.g. {', '.join(changed[:5])}). This release would "
+                    f"install a core without those changes. Release the "
+                    f"core and Document Review first (a new aec-v<version> "
+                    f"tag), pin that version, then release this.")
+              sys.exit(1)
+          print(f"{CORE} is unchanged since {tag}: {NAME} {version} is the "
+                f"core this release was tested with.")
       - uses: actions/upload-artifact@v4
         with:
           name: dist

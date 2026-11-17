@@ -45,7 +45,7 @@ import sys
 import threading
 from typing import Mapping
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 __all__ = ["install_aliases", "remove_aliases", "aliases", "resolve_alias",
            "__version__"]
