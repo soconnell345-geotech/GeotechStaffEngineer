@@ -125,6 +125,33 @@ class FigureData:
 
 
 @dataclass
+class SheetData:
+    """A drawing sheet appended to the package (BACKLOG GM-313).
+
+    Pure data: the caller draws the sheet (``dxf_export.render``) and
+    hands over its PDF page and its PNG; this package imports nothing of
+    the drawing layer. In a PDF package the sheet's own vector page is
+    appended after the last page, at the sheet's own size; in HTML and in
+    LaTeX source the PNG is shown under a last section "Drawings".
+
+    Attributes
+    ----------
+    title : str
+        The sheet's title.
+    caption : str
+        Caption shown under the PNG (HTML, LaTeX source).
+    pdf_bytes : bytes
+        A PDF whose first page is the sheet (vector).
+    image_base64 : str
+        The same sheet as a base64-encoded PNG.
+    """
+    title: str
+    caption: str = ""
+    pdf_bytes: bytes = b""
+    image_base64: str = ""
+
+
+@dataclass
 class TableData:
     """A data table (e.g., per-layer breakdown, slice data).
 
@@ -185,6 +212,8 @@ class CalcPackageData:
         Ordered sections of the calc package.
     references : list of str
         Reference citations.
+    sheets : list of SheetData
+        Drawing sheets appended after everything else (GM-313).
     """
     project_name: str = "Project"
     project_number: str = ""
@@ -195,3 +224,4 @@ class CalcPackageData:
     company: str = ""
     sections: List[CalcSection] = field(default_factory=list)
     references: List[str] = field(default_factory=list)
+    sheets: List["SheetData"] = field(default_factory=list)

@@ -177,7 +177,9 @@ def _inputs_aggregate_piers(result, analysis) -> List[InputItem]:
         InputItem("E_s", "Soil modulus",
                   _piers(analysis, "E_soil"), "kPa"),
         InputItem("n", "Stress concentration ratio",
-                  r.stress_concentration_ratio, ""),
+                  "not used in this method"
+                  if r.stress_concentration_ratio is None
+                  else r.stress_concentration_ratio, ""),
     ]
     if r.settlement_method != "stress_ratio":
         # GEC-13 Fig. 5-21's methods take E_c / E_s (GM-220)

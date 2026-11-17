@@ -269,10 +269,11 @@ _PLOT_APP_NOTE = (
     "out, and redraw under the same name. Never draw a chart by hand as SVG, "
     "as text or as a .plotly.json. What it draws: x/y series, filled "
     "outlines and named points (a name is placed where it stands clear of "
-    "the data, near the point, not exactly on it), and notes placed where "
-    "you put them (annotations). It cannot draw a "
-    "structure to scale with diagrams beside it, or several panels sharing "
-    "one axis. plan_view is for plans only (it adds a north arrow and a "
+    "the data, near the point, not exactly on it), notes placed where "
+    "you put them (annotations), a section to scale with its diagrams "
+    "beside it (panels), contours. It cannot draw "
+    "panels stacked one above another, two vertical axes, bars or arcs. "
+    "plan_view is for plans only (it adds a north arrow and a "
     "scale bar), never for a section.")
 
 
@@ -286,7 +287,8 @@ def _plot_description(reference_chart: bool = True) -> str:
         info = method_info()
         params = info.get("parameters") or {}
         lines = [str(info.get("brief") or "").strip()]
-        for key in ("series", "annotations",
+        for key in ("series", "annotations", "panels", "contour",
+                    "footnote",
                     *(("reference_chart",) if reference_chart else ()),
                     "plan_view", "north_deg",
                     "equal_aspect", "xlabel", "ylabel", "depth_axis",
@@ -430,6 +432,7 @@ _DOCUMENT_TOOL_NOTES = {
     "document_markups": _PDF_PAGES_NOTE,
     "find_quantities": _PDF_PAGES_NOTE,
     "check_cross_references": _PDF_PAGES_NOTE,
+    "check_schedule_marks": _PDF_PAGES_NOTE,
     "render_page_thumbnails": _PDF_PAGES_NOTE,
     "annotate_document": (
         " In this app give output_path a bare file name: it is written into "
@@ -580,8 +583,9 @@ def make_vision_tools(
     picture too), behind ``GEOTECH_VISION_SHOW_ME`` (BACKLOG DR-38).
     ``sheet_tools`` adds planlens' ``sheet_index`` and
     ``check_cross_references`` where the installed planlens has them
-    (after 0.15.1; nothing is added otherwise), behind
-    ``GEOTECH_REVIEW_SHEET_TOOLS`` (BACKLOG PL-37, DR-07).
+    (after 0.15.1; nothing is added otherwise), and
+    ``check_schedule_marks`` where it has that too, behind
+    ``GEOTECH_REVIEW_SHEET_TOOLS`` (BACKLOG PL-37, DR-07, PL-42).
 
     ``added_tools`` are tools another app adds to the kit, ``{name:
     builder}``: ``builder(dispatch)`` returns ``(function, description)``,
@@ -635,7 +639,7 @@ def make_vision_tools(
     save_fn = save_fn or _default_save_fn
     added = dict(added_tools or {})
     # The sheet tools: asked for AND in the installed planlens.
-    sheet_names = (set(_document_tools.SHEET_TOOL_NAMES)
+    sheet_names = (set(_document_tools.sheet_tool_names())
                    if sheet_tools and _document_tools.available()
                    and _document_tools.sheet_tools_available() else set())
     default_include = include is None
@@ -1147,6 +1151,19 @@ def make_vision_tools(
         return _dispatch("check_cross_references",
                          _with_pdf_pages(args, pdf_pages))
 
+    def check_schedule_marks(handle: str, pages: Any = None,
+                             status: str = "", offset: int = 0,
+                             pdf_pages: Any = None) -> str:
+        """The set's schedules, and the marks on its sheets checked
+        against them both ways."""
+        args = {"handle": handle, "offset": offset}
+        if pages not in (None, ""):
+            args["pages"] = pages
+        if status:
+            args["status"] = status
+        return _dispatch("check_schedule_marks",
+                         _with_pdf_pages(args, pdf_pages))
+
     def annotate_document(handle: str, markups: Optional[list] = None,
                           output_path: str = "",
                           append: bool = True, check: bool = True,
@@ -1283,7 +1300,8 @@ def make_vision_tools(
             args["_author"] = markup_author
         return _with_saved_note(_dispatch("write_docx", args), save_fn)
 
-    def plot_data(series: list, title: str = "", xlabel: str = "",
+    def plot_data(series: Optional[list] = None, title: str = "",
+                  xlabel: str = "",
                   ylabel: str = "", depth_axis: bool = False,
                   logx: bool = False, logy: bool = False,
                   hlines: Optional[list] = None,
@@ -1295,10 +1313,13 @@ def make_vision_tools(
                   north_deg: Optional[float] = None,
                   scale_units: str = "m", x_on_top: bool = False,
                   annotations: Optional[list] = None,
-                  reference_chart: str = "") -> str:
+                  reference_chart: str = "",
+                  panels: Optional[list] = None,
+                  contour: Optional[dict] = None,
+                  footnote: str = "") -> str:
         """Plot x/y data (the chart stack's ``plot_data``)."""
         params: Dict[str, Any] = {
-            "series": series, "title": title, "xlabel": xlabel,
+            "title": title, "xlabel": xlabel,
             "ylabel": ylabel, "depth_axis": depth_axis, "logx": logx,
             "logy": logy, "interactive": interactive,
             "equal_aspect": equal_aspect,
@@ -1309,6 +1330,8 @@ def make_vision_tools(
                      ("legend", legend), ("output_path", output_path or None),
                      ("xlim", xlim), ("ylim", ylim), ("north_deg", north_deg),
                      ("annotations", annotations),
+                     ("series", series), ("panels", panels),
+                     ("contour", contour), ("footnote", footnote or None),
                      ("reference_chart", reference_chart or None)):
             if v is not None:
                 params[k] = v
@@ -1336,8 +1359,9 @@ def make_vision_tools(
                 # series, then the turn ran out of steps
                 result["redraw_note"] = (
                     f"This figure has now been drawn {draws[key]} times. If "
-                    "plot_data cannot draw what it needs (a structure to "
-                    "scale with diagrams beside it, panels sharing one axis), "
+                    "plot_data cannot draw what it needs (its description "
+                    "says what; a structure to scale with diagrams beside "
+                    "it is its 'panels'), "
                     "draw it with plot_code where you have it, or hand it to "
                     "the figure helper where there is one; otherwise say "
                     "what it cannot show rather than drawing it again.")
@@ -1407,6 +1431,9 @@ def make_vision_tools(
         document_review_builders += [
             ("sheet_index", sheet_index),
             ("check_cross_references", check_cross_references)]
+        if "check_schedule_marks" in sheet_names:
+            document_review_builders.append(
+                ("check_schedule_marks", check_schedule_marks))
     if _document_tools.has_tool("annotate_document"):
         document_review_builders.append(("annotate_document", annotate_document))
     # Visual scales (planlens' find_scales behind both): described in the

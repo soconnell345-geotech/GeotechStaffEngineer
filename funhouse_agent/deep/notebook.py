@@ -86,7 +86,7 @@ _INTERNAL_SOURCES = frozenset({"summarization"})
 _KNOWN_TOOLS = {
     "call_agent", "list_methods", "describe_method", "list_agents",
     "read_pdf_text", "analyze_image", "analyze_pdf_page",
-    "read_reference_figure", "save_file",
+    "read_reference_figure", "read_reference_table", "save_file",
     "write_todos", "task",
 }
 
@@ -189,6 +189,11 @@ def _format_tool_call(name: str, args: Optional[dict]) -> str:
         ref = args.get("reference", "?")
         fig = args.get("figure_number", "?")
         return f"read_reference_figure: {ref} fig {fig}"
+
+    if name == "read_reference_table":
+        ref = args.get("reference", "?")
+        tab = args.get("table_number", "?")
+        return f"read_reference_table: {ref} table {tab}"
 
     if name == "read_pdf_text":
         src = args.get("source") or args.get("attachment_key") or "?"

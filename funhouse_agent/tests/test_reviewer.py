@@ -225,6 +225,22 @@ class TestRunReview:
         assert "water table" in result
         assert len(engine.chat_calls) == 2
 
+    def test_the_reviewer_is_told_its_own_round_limit(self):
+        """2026-11-10 review follow-up: the v1 reviewer's prompt states the
+        limit run_review keeps (one tool call a response, the review by the
+        last), for whatever max_rounds it is given."""
+        log = [{"tool_name": "call_agent", "arguments": {
+            "agent_name": "bearing_capacity", "method": "vesic",
+            "parameters": {}}}]
+        for rounds in (6, 3):
+            engine = MockEngine(["REVIEW_STATUS: PASS"])
+            run_review(engine=engine, question="q?", answer="a",
+                       tool_log=log, max_rounds=rounds)
+            system = engine.chat_calls[0]["system"]
+            assert system.startswith(REVIEWER_SYSTEM_PROMPT)
+            assert f"You have {rounds} responses for this review" in system
+            assert f"at most {rounds - 1} lookups" in system
+
 
 # ---------------------------------------------------------------------------
 # Integration: GeotechAgent with review=True

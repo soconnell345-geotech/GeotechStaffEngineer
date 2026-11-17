@@ -125,7 +125,9 @@ def test_v026e4_mass_truncation_matches_slide2():
     for m in ("bishop", "spencer", "gle"):
         assert abs(f[m] - _PUB[m]) / _PUB[m] < 0.005
     assert f["n_crack"] == 0                                 # wedge removed
-    assert f["n_slices"] < 60                                # truncated mass
+    # GM-140 step 4: the mass that is kept takes all 60 slices, from the
+    # crack's vertical boundary to the toe end
+    assert f["n_slices"] == 60
 
 
 def test_v026e4_truncation_is_less_conservative_than_strength():

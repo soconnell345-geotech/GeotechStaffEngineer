@@ -106,6 +106,10 @@ class CalcTable:
         False: the table is written to CSV only, because the calc package
         already prints it elsewhere (the input echo, a layer table in its
         own section).
+    left_out : str
+        A sentence for the agent's response as well as the note: rows this
+        table leaves out, or a table the module could not build (GM-328
+        review C1). Empty when nothing is left out.
     """
     title: str
     columns: List[Any]
@@ -113,6 +117,7 @@ class CalcTable:
     note: str = ""
     name: str = ""
     printed: bool = True
+    left_out: str = ""
 
     def __post_init__(self):
         self.columns = [_as_column(c) for c in self.columns]

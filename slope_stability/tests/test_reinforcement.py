@@ -60,9 +60,12 @@ def _drained_slope(**kw):
 
 class TestGeosyntheticHandCalc:
 
-    def test_fellenius_undrained_closed_form(self):
+    def test_bishop_undrained_closed_form(self):
         """Geosynthetic at z=12: FOS_new = M_R/(M_D - T*d_perp/R) exactly
-        for phi=0 Fellenius."""
+        for phi=0 by Bishop's simplified method (Duncan, Wright and Brandon
+        2014, Eq. 6.78, pp. 91 to 93: a horizontal force enters the moment
+        only, as M_n / r). GM-140 step 8: this was pinned on the Ordinary
+        Method of Slices, which has no printed form with known forces."""
         T = 60.0
         z_g = 12.0
         geom, slip = _clay_slope(geosynthetics=[
@@ -70,7 +73,7 @@ class TestGeosyntheticHandCalc:
         x_entry, x_exit = slip.find_entry_exit(geom)
         slices = build_slices(geom, slip, 40)
 
-        fos_0 = fellenius_fos(slices, slip)
+        fos_0 = bishop_fos(slices, slip, tol=1e-12)
         forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
         assert len(forces) == 1
         f = forces[0]
@@ -78,7 +81,7 @@ class TestGeosyntheticHandCalc:
         assert f.z == pytest.approx(z_g)
         assert abs(f.dir_z) < 1e-12  # horizontal
 
-        fos_r = fellenius_fos(slices, slip, reinf_forces=forces)
+        fos_r = bishop_fos(slices, slip, tol=1e-12, reinf_forces=forces)
 
         # closed form: same resisting; driving reduced by T*d_perp/R
         # horizontal force at z_g -> d_perp = yc - z_g
@@ -92,16 +95,23 @@ class TestGeosyntheticHandCalc:
         assert fos_r == pytest.approx(fos_hand, rel=1e-9)
         assert fos_r > fos_0
 
-    def test_bishop_undrained_matches_fellenius(self):
-        """phi=0: Bishop == Fellenius, with or without reinforcement."""
+    def test_oms_gives_no_number_where_a_support_crosses(self):
+        """GM-140 step 8: no reference held prints the Ordinary Method of
+        Slices with known forces (Duncan, Wright and Brandon 2014, p. 93),
+        so where a support crosses the surface the method has no number;
+        phi=0 Bishop == Fellenius still holds without supports."""
+        from slope_stability.solution import NoSolution
         geom, slip = _clay_slope(geosynthetics=[
             Geosynthetic(elevation=12.0, T_allow=60.0)])
         x_entry, x_exit = slip.find_entry_exit(geom)
         slices = build_slices(geom, slip, 40)
         forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
-        fb = bishop_fos(slices, slip, reinf_forces=forces)
-        ff = fellenius_fos(slices, slip, reinf_forces=forces)
-        assert fb == pytest.approx(ff, rel=1e-6)
+        with pytest.raises(NoSolution) as exc:
+            fellenius_fos(slices, slip, reinf_forces=forces)
+        assert exc.value.kind == "with_supports"
+        assert "p. 93" in exc.value.reason
+        assert bishop_fos(slices, slip) == pytest.approx(
+            fellenius_fos(slices, slip), rel=1e-6)
 
 
 class TestNails:
@@ -171,9 +181,8 @@ class TestNails:
         forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
         assert len(forces) >= 2
 
-        f0_fell = fellenius_fos(slices, slip)
-        f1_fell = fellenius_fos(slices, slip, reinf_forces=forces)
-        assert f1_fell > f0_fell
+        # (the Ordinary Method of Slices has no number with supports:
+        # GM-140 step 8, test_oms_gives_no_number_where_a_support_crosses)
 
         f0_b = bishop_fos(slices, slip)
         f1_b = bishop_fos(slices, slip, reinf_forces=forces)
@@ -239,11 +248,11 @@ class TestAnalyzeSlopeIntegration:
         """SlopeGeometry.reinforcement_force/elevation now actually acts."""
         geom0, slip = _clay_slope()
         res0 = analyze_slope(geom0, xc=30.0, yc=32.0, radius=26.0,
-                             method="fellenius", n_slices=40)
+                             method="bishop", n_slices=40)
         geom1, _ = _clay_slope(reinforcement_force=80.0,
                                reinforcement_elevation=12.0)
         res1 = analyze_slope(geom1, xc=30.0, yc=32.0, radius=26.0,
-                             method="fellenius", n_slices=40)
+                             method="bishop", n_slices=40)
         assert res1.FOS > res0.FOS
 
     def test_gle_with_nails_via_analyze(self):
@@ -263,20 +272,22 @@ class TestStabilizingPile:
 
     def test_explicit_shear_closed_form(self):
         """A pile with a specified shear capacity reduces the driving moment by
-        (shear_capacity/spacing)*d_perp/R exactly, for phi=0 Fellenius."""
+        (shear_capacity/spacing)*d_perp/R exactly, for phi=0 by Bishop's
+        simplified method (Eq. 6.78; on the Ordinary Method of Slices
+        until GM-140 step 8)."""
         from slope_stability.reinforcement import StabilizingPile
         shear, spacing, x_pile = 80.0, 2.0, 30.0
         geom, slip = _clay_slope(stabilizing_piles=[
             StabilizingPile(x=x_pile, shear_capacity=shear, spacing=spacing)])
         x_entry, x_exit = slip.find_entry_exit(geom)
         slices = build_slices(geom, slip, 40)
-        fos_0 = fellenius_fos(slices, slip)
+        fos_0 = bishop_fos(slices, slip, tol=1e-12)
         forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
         assert len(forces) == 1 and forces[0].kind == "pile"
         f = forces[0]
         assert f.T == pytest.approx(shear / spacing)     # per metre
         assert abs(f.dir_z) < 1e-12                       # horizontal
-        fos_r = fellenius_fos(slices, slip, reinf_forces=forces)
+        fos_r = bishop_fos(slices, slip, tol=1e-12, reinf_forces=forces)
         d_perp = slip.yc - f.z                            # horizontal force arm
         driving_0 = abs(sum((s.weight + s.surcharge_force)
                             * (s.x_mid - slip.xc) / slip.radius for s in slices))
@@ -300,12 +311,25 @@ class TestStabilizingPile:
         geom, slip = _drained_slope()
         res0 = analyze_slope(geom, xc=30.0, yc=32.0, radius=26.0,
                              method="bishop", n_slices=40)
+        fos = []
+        for spacing in (4.0, 2.4):
+            geom.stabilizing_piles = [StabilizingPile(
+                x=30.0, spacing=spacing, ito_matsui=True, diameter=0.8)]
+            res1 = analyze_slope(geom, xc=30.0, yc=32.0, radius=26.0,
+                                 method="bishop", n_slices=40)
+            assert res1.reinforcements
+            fos.append(res1.FOS)
+        assert res0.FOS < fos[0] < fos[1]       # closer piles, higher FOS
+        # At a spacing of 1.6 the row's force (an active support, taken
+        # off the driving moment) exceeds the driving moment: there is no
+        # ratio left to report, and the result says so (GM-140 step 2:
+        # this returned the solver's 999.9 marker as the FOS).
         geom.stabilizing_piles = [StabilizingPile(
             x=30.0, spacing=1.6, ito_matsui=True, diameter=0.8)]
-        res1 = analyze_slope(geom, xc=30.0, yc=32.0, radius=26.0,
+        res2 = analyze_slope(geom, xc=30.0, yc=32.0, radius=26.0,
                              method="bishop", n_slices=40)
-        assert res1.FOS > res0.FOS
-        assert res1.reinforcements
+        assert res2.FOS is None and res2.method_solved is False
+        assert any("no net driving moment" in w for w in res2.warnings)
         # per-metre Ito-Matsui force decreases as spacing widens
         f = [ito_matsui_lateral_force(8.0, 25.0, 19.0, D1, D1 - 0.8,
                                       z_top=6.0, z_bot=0.0) / D1
@@ -362,17 +386,25 @@ class TestOMSNoncircularDirZ:
         forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
         return geom, slip, slices, forces
 
-    def test_horizontal_reduction_counts_dir_z(self):
-        """A 'normal' pile is largely vertical; the fixed horizontal_reduction
-        (given the slices) adds its base-tangent projection, so it exceeds the
-        old dir_x-only value."""
-        _, _, slices, forces = self._noncirc(force_direction="normal")
+    def test_normal_direction_is_refused(self):
+        """GM-140 step 8 (GM-82): a pile force 'normal' to the slip surface
+        is refused: Duncan, Wright and Brandon (2014, Sec. 8.6, pp. 163 to
+        164) print two directions for a support's force, the support's own
+        orientation and parallel to the slip surface, and on a circle a
+        normal force has no moment about the centre."""
+        with pytest.raises(ValueError, match="no reference held prints"):
+            StabilizingPile(x=27.0, shear_capacity=200.0,
+                            force_direction="normal")
+
+    def test_pile_force_parallel_to_the_slip_surface(self):
+        """The stated option: the pile's force along the slip surface at
+        the crossing, against the sliding (toward the crest)."""
+        _, slip, slices, forces = self._noncirc(
+            force_direction="along_slip_surface")
         f = forces[0]
-        assert f.kind == "pile" and abs(f.dir_z) > 0.5      # largely vertical
-        legacy = horizontal_reduction(forces)               # dir_x only
-        fixed = horizontal_reduction(forces, slices)        # + dir_z tangential
-        assert legacy == pytest.approx(f.T * abs(f.dir_x))
-        assert fixed > legacy
+        # the surface at x = 27 is the segment (24, 6) to (30, 4)
+        n = math.hypot(6.0, -2.0)
+        assert (f.dir_x, f.dir_z) == pytest.approx((6.0 / n, -2.0 / n))
 
     def test_horizontal_pile_byte_identical(self):
         """dir_z == 0 (horizontal pile / nails / anchors / geosynthetics):
@@ -384,34 +416,33 @@ class TestOMSNoncircularDirZ:
             pytest.approx(horizontal_reduction(forces))
         assert horizontal_reduction(forces) == pytest.approx(f.T * abs(f.dir_x))
 
-    def test_oms_noncircular_credits_normal_pile(self):
-        """With dir_z counted, the OMS (Fellenius) noncircular FOS rises when the
-        normal pile is added (active convention), instead of the near-zero credit
-        the dropped dir_z used to give."""
-        _, slip, slices, forces = self._noncirc(force_direction="normal")
-        assert fellenius_fos(slices, slip, reinf_forces=forces) > \
-            fellenius_fos(slices, slip)
+    def test_oms_noncircular_gives_no_number_with_a_pile(self):
+        """GM-140 step 8: the Ordinary Method of Slices has no printed form
+        with known forces, on a polyline as on a circle."""
+        from slope_stability.solution import NoSolution
+        _, slip, slices, forces = self._noncirc()
+        with pytest.raises(NoSolution) as exc:
+            fellenius_fos(slices, slip, reinf_forces=forces)
+        assert exc.value.kind == "with_supports"
 
-    def test_oms_and_bishop_agree_on_pile_benefit_direction(self):
-        """On a circular surface both OMS (Fellenius) and Bishop resolve the pile
-        through the dir_z-aware moment_reduction, so a horizontal stabilizing
-        pile raises BOTH factors of safety — consistent benefit direction."""
+    def test_bishop_counts_a_horizontal_pile(self):
+        """On a circle a horizontal stabilizing pile raises Bishop's factor
+        of safety (its moment about the centre, Eq. 6.78)."""
         geom, slip = _drained_slope(stabilizing_piles=[
             StabilizingPile(x=30.0, shear_capacity=300.0, spacing=2.0)])
         x_entry, x_exit = slip.find_entry_exit(geom)
         slices = build_slices(geom, slip, 40)
         forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
-        d_fell = (fellenius_fos(slices, slip, reinf_forces=forces)
-                  - fellenius_fos(slices, slip))
-        d_bish = (bishop_fos(slices, slip, reinf_forces=forces)
-                  - bishop_fos(slices, slip))
-        assert d_fell > 0 and d_bish > 0
+        assert (bishop_fos(slices, slip, reinf_forces=forces)
+                > bishop_fos(slices, slip))
 
 
-class TestLegacyFallbackWarnsOnReinforcement:
-    """Finding #5: when the rigorous GLE fails and spencer/MP fall back to the
-    legacy solvers (which take no reinforcement), warn that the reported FOS is
-    unreinforced instead of silently dropping the reinforcement."""
+class TestNoFallbackWhenTheRigorousSolveFails:
+    """GM-140 step 2 (before: finding #5, a warning). When the rigorous GLE
+    does not converge, spencer_fos / morgenstern_price_fos gave the old
+    approximate solver's value, which took no reinforcement, with a Python
+    warning. There is no such value now: they raise NoSolution with the
+    reason, with supports or without, and warn of nothing."""
 
     def _reinforced(self):
         geom, slip = _drained_slope()
@@ -424,29 +455,28 @@ class TestLegacyFallbackWarnsOnReinforcement:
         assert forces
         return slip, slices, forces
 
-    def test_fallback_warns_with_reinforcement(self, monkeypatch):
-        import slope_stability.gle as gle_mod
-
-        def _boom(*a, **k):
-            raise ValueError("forced non-convergence")
-
-        monkeypatch.setattr(gle_mod, "gle_fos", _boom)
-        slip, slices, forces = self._reinforced()
-        with pytest.warns(UserWarning, match="IGNORES reinforcement"):
-            spencer_fos(slices, slip, reinf_forces=forces)
-        with pytest.warns(UserWarning, match="IGNORES reinforcement"):
-            morgenstern_price_fos(slices, slip, reinf_forces=forces)
-
-    def test_fallback_silent_without_reinforcement(self, monkeypatch):
+    @pytest.mark.parametrize("with_supports", [True, False])
+    def test_no_value_and_no_warning(self, monkeypatch, with_supports):
         import warnings as _w
         import slope_stability.gle as gle_mod
+        from slope_stability.solution import NoSolution, solve_method
 
-        def _boom(*a, **k):
-            raise ValueError("forced non-convergence")
+        def _not_converged(*a, **k):
+            return gle_mod.GLEResult(
+                fos=1.234, converged=False,
+                warnings=["no F_m = F_f crossing found in lambda range"])
 
-        monkeypatch.setattr(gle_mod, "gle_fos", _boom)
-        slip, slices, _ = self._reinforced()
-        with _w.catch_warnings(record=True) as rec:
-            _w.simplefilter("always")
-            spencer_fos(slices, slip)                     # no reinf_forces
-        assert not any("IGNORES reinforcement" in str(w.message) for w in rec)
+        monkeypatch.setattr(gle_mod, "gle_fos", _not_converged)
+        slip, slices, forces = self._reinforced()
+        forces = forces if with_supports else None
+        with _w.catch_warnings():
+            _w.simplefilter("error")
+            for fn in (spencer_fos, morgenstern_price_fos):
+                with pytest.raises(NoSolution, match="no lambda from"):
+                    fn(slices, slip, reinf_forces=forces)
+            for method in ("spencer", "morgenstern_price", "gle"):
+                sol = solve_method(slices, slip, method,
+                                   reinf_forces=forces)
+                assert sol.fos is None and not sol.solved and sol.reason
+
+

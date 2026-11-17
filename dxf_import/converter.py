@@ -21,6 +21,20 @@ from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.nails import SoilNail
 
 
+#: The value ``build_slope_geometry`` gives a nail property that
+#: ``nail_defaults`` leaves out. They are slope_stability.nails.SoilNail's
+#: own defaults (the slope tool declares the same five for its ``nails``).
+#: A caller that reports what was assumed (the agent adapter's
+#: ``defaults_used``) reads them from here; a test holds the two together.
+NAIL_PROPERTY_DEFAULTS = {
+    "bar_diameter": 25.0,          # mm
+    "drill_hole_diameter": 150.0,  # mm
+    "fy": 420.0,                   # MPa
+    "bond_stress": 100.0,          # kPa, grout-ground ultimate bond
+    "spacing_h": 1.5,              # m, horizontal
+}
+
+
 @dataclass
 class SoilPropertyAssignment:
     """User-supplied soil properties for a named layer.
@@ -174,6 +188,14 @@ def build_slope_geometry(
                     f"Available: {sorted(prop_lookup.keys())}"
                 )
             sp = prop_lookup[bname]
+            # One material per point (slope_stability, GM-140 step 1):
+            # "each boundary profile defines the bottom of one layer and
+            # the top of the next". The layer named for a boundary starts
+            # AT that boundary (its top polyline; top_elevation is the
+            # boundary's highest point) and ends at the next boundary down
+            # (its bottom polyline), or 2 m below the lowest boundary.
+            # Before, the layer's bottom was its own boundary, so no layer
+            # held the ground under a boundary.
             soil_layers.append(SlopeSoilLayer(
                 name=bname,
                 top_elevation=boundary_z_max,
@@ -184,10 +206,13 @@ def build_slope_geometry(
                 c_prime=sp.c_prime,
                 cu=sp.cu,
                 analysis_mode=sp.analysis_mode,
+                top_boundary_points=(
+                    sorted(boundary_pts, key=lambda p: p[0])
+                    if len(soil_layers) > 0 else None),
+                bottom_boundary_points=(
+                    sorted(next_boundary, key=lambda p: p[0])
+                    if i + 1 < len(boundary_names) else None),
             ))
-            # Attach polyline boundary if available
-            boundary_pts_sorted = sorted(boundary_pts, key=lambda p: p[0])
-            soil_layers[-1].bottom_boundary_points = boundary_pts_sorted
 
     # --- GWT ---
     gwt_points = parse_result.gwt_points

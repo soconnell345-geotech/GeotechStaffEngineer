@@ -410,23 +410,33 @@ def test_log_spiral_names_the_log_spiral_theory():
 
 def test_sheet_pile_wall_friction_rows():
     """GM-242: a layer's interface_soil names the steel sheet pile row
-    (EM 1110-2-2504 Table 3-3, USS Table 4, UFC 3-220-20 Table 4-1); left
-    out, the log-spiral passive side takes the clean sand row, 17 deg."""
+    (EM 1110-2-2504 Table 3-3, USS Table 4, UFC 3-220-20 Table 4-1).
+    GM-310 (the call for OWN-82): left out, the layer takes no wall
+    friction under log_spiral either; marked clean sand it takes 17 deg,
+    and the choice gives the embedment that way."""
     layers = [{"thickness": 15.0, "unit_weight": 18.0,
                "friction_angle": 32.0}]
     args = {"excavation_depth": 4.0, "pressure_method": "log_spiral"}
     left_out = D.call_agent("sheet_pile", "cantilever_wall",
                             {**args, "layers": layers})
     friction = left_out["choices"][-1]
-    assert friction["chosen"] == ("layer 1: 17 deg (the clean sand row, "
-                                  "taken when the layer gives none)")
+    assert friction["chosen"] == (
+        "layer 1: 0 deg (taken when the layer gives none: it is not marked "
+        "clean sand or gravel)")
     assert friction["how"] == "default"
-    # the GM-242 review: the embedment with no wall friction beside it
     smooth = D.call_agent("sheet_pile", "cantilever_wall", {
         **args, "layers": [{**layers[0], "wall_friction_deg": 0.0}]})
-    said = friction["alternatives"][0].rsplit("the embedment is ", 1)[1]
+    assert left_out["embedment_depth_m"] == smooth["embedment_depth_m"]
+    clean = D.call_agent("sheet_pile", "cantilever_wall", {
+        **args, "layers": [{**layers[0], "interface_soil": "clean_sand"}]})
+    assert clean["choices"][-1]["chosen"] == (
+        "layer 1: 17 deg (interface_soil 'clean_sand')")
+    assert clean["embedment_depth_m"] < left_out["embedment_depth_m"]
+    (row,) = [a for a in friction["alternatives"]
+              if a.startswith("the clean_sand row")]
+    said = row.rsplit("the embedment is ", 1)[1]
     assert float(said.removesuffix(" m")) == pytest.approx(
-        smooth["embedment_depth_m"], abs=0.006)
+        clean["embedment_depth_m"], abs=0.006)
     silty = D.call_agent("sheet_pile", "cantilever_wall", {
         **args, "layers": [{**layers[0], "interface_soil": "silty_sand"}]})
     assert silty["choices"][-1]["chosen"] == (

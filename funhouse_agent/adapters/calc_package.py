@@ -127,11 +127,14 @@ def _figure_file_name(out_dir: str, prefix: str, index: int, title: str,
 
 
 def _figures_response(module: str, result, analysis, opts: dict,
-                      analysis_type: str, extra: dict = None) -> dict:
+                      analysis_type: str, extra: dict = None,
+                      drawing: dict = None, params: dict = None) -> dict:
     """Save the module's calc-package figures as standalone PNGs.
 
     ``opts`` is the ``_RENDER_MODE`` payload (``output_dir``/``name_prefix``),
-    not the package's own params.
+    not the package's own params. ``drawing``: the package's reinforced
+    wall section (GM-313, the join), whose sheet's PNG is saved with the
+    figures; ``params``, the package's own (its title block).
 
     Owner feedback 2026-09-11: ~25 ready matplotlib figures (slope sections,
     trial-surface maps, p-y curves, settlement plots, pavement charts, FEM
@@ -146,6 +149,17 @@ def _figures_response(module: str, result, analysis, opts: dict,
 
     reg = _ensure_registered(module)
     figures = reg["get_figures"](result, analysis) or []
+    drawn = sheet_problem = None
+    if drawing is not None:
+        # the reinforcement sheet's PNG goes with the figures; one that
+        # cannot be drawn costs the sheet, never the figures
+        try:
+            drawn = _wall_sheet(drawing, params or {})
+            figures = list(figures) + [drawn["sheet"]]
+        except Exception as exc:                           # noqa: BLE001
+            sheet_problem = (f"The reinforcement sheet could not be drawn "
+                             f"({type(exc).__name__}: {exc}); the other "
+                             "figures are saved.")
     out_dir = opts.get("output_dir")
     out_dir = (resolve_output_path(str(out_dir)) if out_dir
                else default_output_dir())
@@ -213,6 +227,8 @@ def _figures_response(module: str, result, analysis, opts: dict,
         response["error"] = "; ".join(problems)
     if extra:
         response.update(extra)
+    if drawing is not None:
+        _add_sheet_keys(response, _sheet_response(drawn, sheet_problem))
     return response
 
 
@@ -335,7 +351,8 @@ def _tables_response(module: str, result, analysis, path: str, calc_tables,
     tables_out = _save_tables(calc_tables, table_names, os.path.dirname(path))
     if tables_out:
         response["tables"] = tables_out
-        response["tables_note"] = _TABLES_FILE_NOTE
+        response["tables_note"] = (_TABLES_FILE_NOTE
+                                   + _tables_left_out(calc_tables))
         failed = [t["title"] for t in tables_out if not t["file_exists"]]
         if failed:
             table_error = ("these table CSVs did not save: "
@@ -361,12 +378,31 @@ _TABLES_FILE_NOTE = (
     "the user.")
 
 
+def _raised_warnings(result) -> list:
+    """The warnings the analysis code raised so far in this call (GM-316:
+    the same texts the result's ``warnings`` gets), less the module's own
+    ``warnings`` its sections print, cut as the result cuts them: printed
+    in the package (GM-316 review B4)."""
+    from aec_agent_core.call_warnings import capped, so_far
+    own = (result.get("warnings") if isinstance(result, dict)
+           else getattr(result, "warnings", None))
+    own = ({str(w).strip() for w in own}
+           if isinstance(own, (list, tuple)) else set())
+    return capped([t for t in so_far() if t.strip() not in own])
+
+
 def _build_response(module: str, result, analysis, params: dict,
                     analysis_type: str, extra: dict = None,
-                    run: "_ToolRun" = None, package: str = None) -> dict:
+                    run: "_ToolRun" = None, package: str = None,
+                    drawing: dict = None) -> dict:
     """Run generate_calc_package and return a summary response dict.
 
     Always saves to disk.  Auto-generates output_path if not provided.
+
+    ``drawing``: a ``reinforced_wall_section/1`` description (GM-313, the
+    join): the package ends with its sheet, and the sheet's DXF and PNG
+    are written beside the package (``_wall_sheet``); one that cannot be
+    drawn costs the sheet, never the package.
 
     Inside a ``render_figures`` call (``_RENDER_MODE`` kind ``figures``), the
     package is NOT generated: the module's ``get_figures`` runs on the same
@@ -380,7 +416,8 @@ def _build_response(module: str, result, analysis, params: dict,
     mode = _RENDER_MODE.get()
     if mode is not None and mode.get("kind") == "figures":
         return _figures_response(module, result, analysis, mode,
-                                 analysis_type=analysis_type, extra=extra)
+                                 analysis_type=analysis_type, extra=extra,
+                                 drawing=drawing, params=params)
     tables_only = mode is not None and mode.get("kind") == "tables"
 
     meta = _extract_metadata(params)
@@ -428,20 +465,42 @@ def _build_response(module: str, result, analysis, params: dict,
             response["defaults_used"] = dict(run.defaults_used)
         return response
 
-    render_report = {}
-    content = generate_calc_package(
+    package_args = dict(
         module=module,
         result=result,
         analysis=analysis,
         output_path=output_path,
         format=fmt,
-        render_report=render_report,
         tables=calc_tables,
         table_files=table_names,
         given_inputs=given,
         assumed_inputs=assumed,
+        raised_warnings=_raised_warnings(result),
         **meta,
     )
+    # The sheet is drawn after the calculation's warnings are taken, so a
+    # warning the drawing raises is not printed as the calculation's
+    drawn = sheet_problem = None
+    if drawing is not None:
+        try:
+            drawn = _wall_sheet(drawing, params, dxf_name=os.path.basename(
+                _sheet_stem(output_path)) + ".dxf")
+        except Exception as exc:                           # noqa: BLE001
+            sheet_problem = _sheet_failed(exc)
+    render_report = {}
+    try:
+        content = generate_calc_package(
+            **package_args, render_report=render_report,
+            sheets=[drawn["sheet"]] if drawn else None)
+    except Exception as exc:                               # noqa: BLE001
+        if not drawn:
+            raise
+        # the package could not take the sheet: written without it
+        drawn, sheet_problem = None, _sheet_failed(exc, "added to the "
+                                                   "package")
+        render_report = {}
+        content = generate_calc_package(**package_args,
+                                        render_report=render_report)
     tables_out = _save_tables(calc_tables, table_names, table_dir)
 
     # Verify the write on the REAL filesystem so callers (LLM agents) never
@@ -494,7 +553,7 @@ def _build_response(module: str, result, analysis, params: dict,
             response["error"] += rescue_note(rescue)
     if tables_out:
         response["tables"] = tables_out
-        response["tables_note"] = _TABLES_NOTE
+        response["tables_note"] = _TABLES_NOTE + _tables_left_out(calc_tables)
         failed = [t["title"] for t in tables_out if not t["file_exists"]]
         if failed:
             table_error = ("these table CSVs did not save: "
@@ -503,6 +562,9 @@ def _build_response(module: str, result, analysis, params: dict,
         response["tables_error"] = table_error
     if extra:
         response.update(extra)
+    if drawing is not None:
+        _add_sheet_keys(response, _sheet_response(drawn, sheet_problem,
+                                                  abs_path))
     if run is not None and run.defaults_used:
         # the defaults the tool's run left in force (GM-141)
         response["defaults_used"] = dict(run.defaults_used)
@@ -515,6 +577,14 @@ _TABLES_NOTE = (
     "echo is the *_inputs.csv) and printed in the package's Calculation "
     "Tables section. They show as downloads under your reply; name them to "
     "the user.")
+
+
+def _tables_left_out(tables) -> str:
+    """The sentences the tables carry for the agent's response: rows a
+    table leaves out, or a table the module could not build (GM-328
+    review C1); "" when none."""
+    said = [t.left_out for t in tables if getattr(t, "left_out", "")]
+    return (" " + " ".join(said)) if said else ""
 
 
 def _save_tables(tables, names, out_dir) -> list:
@@ -609,12 +679,27 @@ _PACKAGE_TOOLS = {
                      "'mse_lrfd' (the mse_lrfd_external_stability tool, "
                      "LRFD capacity:demand ratios under Strength I max and "
                      "min, the critical combination and Service I, "
-                     "external stability only; GM-307)."),
+                     "external stability only; GM-307) or "
+                     "'cantilever_reinforced' (the "
+                     "cantilever_wall_structural_design tool: the "
+                     "cantilever wall's stability sections, then the "
+                     "structural design of its stem, toe and heel on "
+                     "USACE EM 1110-2-2104 (2023), with the bar schedule; "
+                     "the package ends with the reinforcement sheet (the "
+                     "section with its bars, dimensions and callouts: "
+                     "letter, or tabloid for a wall that letter would "
+                     "draw smaller than 1:50) and writes it beside the "
+                     "package as <name>_reinforcement.dxf and "
+                     "<name>_reinforcement.png; GM-312, GM-313)."),
         "tools": {"cantilever": "cantilever_wall", "mse": "mse_wall",
-                  "mse_lrfd": "mse_lrfd_external_stability"},
+                  "mse_lrfd": "mse_lrfd_external_stability",
+                  "cantilever_reinforced":
+                      "cantilever_wall_structural_design"},
         "selector_values": {"cantilever_wall": "cantilever",
                             "mse_wall": "mse",
-                            "mse_lrfd_external_stability": "mse_lrfd"},
+                            "mse_lrfd_external_stability": "mse_lrfd",
+                            "cantilever_wall_structural_design":
+                                "cantilever_reinforced"},
         # Where the shear key is drawn (GM-216): the sliding check takes
         # its passive on the plane below the toe over the key's depth,
         # wherever the key is, so its place is the figure's only
@@ -622,7 +707,8 @@ _PACKAGE_TOOLS = {
             "type": "float", "required": False,
             "description": "Distance from the toe to the front face of the "
                            "shear key (m), for the wall section figure "
-                           "only: the sliding check takes the passive "
+                           "and the reinforcement sheet only: the sliding "
+                           "check takes the passive "
                            "resistance on the plane below the toe over the "
                            "key's depth, wherever the key is. Not given: "
                            "the key is drawn under the stem, an "
@@ -633,16 +719,18 @@ _PACKAGE_TOOLS = {
             "applies_when": {"has_shear_key": [True], "key_depth": "set"},
             "when_absent": {
                 "case": "under the stem",
-                "basis": "no key position given: the wall section draws "
+                "basis": "no key position given: the wall section and "
+                         "the sheet draw "
                          "the key's front face under the stem's, an "
                          "assumption with no printed basis (UFC 3-220-20 "
                          "Fig. 4-29 draws a gravity wall, GEC-6 Fig. 5-22 "
                          "a footing, neither a cantilever wall's key "
-                         "position), and says so"}},
+                         "position), and say so"}},
             "key_width": {
                 "type": "float", "required": False,
                 "description": "Width of the shear key (m), for the wall "
-                               "section figure only. Not given: the "
+                               "section figure and the reinforcement sheet "
+                               "only. Not given: the "
                                "stem's thickness at its base, an "
                                "assumption: no printed basis for a "
                                "cantilever wall's key width.",
@@ -650,7 +738,8 @@ _PACKAGE_TOOLS = {
                                  "key_depth": "set"},
                 "when_absent": {
                     "case": "the stem's thickness at its base",
-                    "basis": "no key width given: the wall section draws "
+                    "basis": "no key width given: the wall section and "
+                             "the sheet draw "
                              "the key as wide as the stem, an "
                              "assumption with no printed basis"}}},
         "older": {"cantilever": {
@@ -833,6 +922,38 @@ _PACKAGE_TOOLS = {
                   "monte_carlo": "monte_carlo", "form": "form"},
         "selector_values": {"mc": "monte_carlo", "monte carlo": "monte_carlo",
                             "taylor": "fosm"},
+    },
+    "fem2d_package": {
+        "adapter": "fem2d_adapter",
+        "selector": ("analysis_type", "slope_srm",
+                     "Which finite element analysis to run and report: "
+                     "'slope_srm' (the fem2d_slope_srm tool), 'excavation' "
+                     "(fem2d_excavation), 'consolidation' "
+                     "(fem2d_consolidation), 'seepage' (fem2d_seepage) or "
+                     "'staged' (fem2d_staged)."),
+        "tools": {"slope_srm": "fem2d_slope_srm",
+                  "excavation": "fem2d_excavation",
+                  "consolidation": "fem2d_consolidation",
+                  "seepage": "fem2d_seepage",
+                  "staged": "fem2d_staged"},
+        "selector_values": {"fem2d_slope_srm": "slope_srm", "srm": "slope_srm",
+                            "slope": "slope_srm",
+                            "fem2d_excavation": "excavation",
+                            "fem2d_consolidation": "consolidation",
+                            "fem2d_seepage": "seepage",
+                            "fem2d_staged": "staged"},
+        # The factor of safety the package's adequacy check sets the
+        # strength-reduction FOS against: the package's, not the tool's
+        # (the tool reports the FOS and checks nothing).
+        "own": {"FOS_required": {
+            "type": "float", "required": False, "default": 1.5,
+            "description": "Required factor of safety, this package's "
+                           "choice, not a printed requirement; the "
+                           "package's check sets the strength-reduction "
+                           "FOS against it (analysis_type 'slope_srm' "
+                           "only). A finite number at or above 1.0; the "
+                           "default 1.5: give the project's own.",
+            "applies_when": {"analysis_type": ["slope_srm"]}}},
     },
     "pavement_design_package": {
         "adapter": "pavement_design_adapter",
@@ -1385,7 +1506,12 @@ def _run_tool(package: str, params: dict) -> _ToolRun:
         used[spec["selector"][0]] = spec["selector"][1]
     used.update(_defaults_used(mod, tool, given, p, inputs.reported,
                                inputs.took))
-    used.update(_own_defaults_used(spec.get("own", {}), own, p, declared))
+    # the selector in force too, so a package's own input can apply to
+    # one of its tools only (fem2d_package's FOS_required, GM-328)
+    in_force = ({**p, spec["selector"][0]: value} if "selector" in spec
+                else p)
+    used.update(_own_defaults_used(spec.get("own", {}), own, in_force,
+                                   declared))
     return _ToolRun(value, tool, p, out, own, used,
                     declared=declared, package=package)
 
@@ -1474,6 +1600,15 @@ def _union_spec(selector: str, entries, n_tools: int) -> dict:
             {repr(a) for a in allowed}) > 1:
         out["allowed_values"] = sorted({v for a in allowed if a
                                         for v in a}, key=str)
+    for key in ("value_aliases", "hidden_value_aliases", "refused_values"):
+        # the other spellings and refusals of every tool, not the first
+        # one's (GM-316 review C20); any_case must agree across the tools
+        # (test_allowed_values checks it)
+        merged = {}
+        for s in specs:
+            merged.update(s.get(key) or {})
+        if merged:
+            out[key] = merged
     if every and len({repr(s.get("applies_when")) for s in specs}) == 1:
         # every tool takes it on the same condition: the selector adds
         # nothing
@@ -1510,7 +1645,14 @@ def _package_parameters(package: str) -> dict:
         params[name] = {
             "type": "bool" if isinstance(default, bool) else "str",
             "required": False, "default": default,
-            "allowed_values": list(tools), "description": doc}
+            "allowed_values": list(tools),
+            # the older spellings _selector_value puts under a value
+            # (GM-317; review B3: aliases, not values of their own)
+            "value_aliases": {v: t for v, t in
+                              spec.get("selector_values", {}).items()
+                              if v not in tools},
+            # _selector_value strips and lower-cases a string (GM-317)
+            "any_case": "strip", "description": doc}
     entries = {}
     for value, tool in tools.items():
         for pname, pspec in info[tool]["parameters"].items():
@@ -1572,6 +1714,9 @@ def _generate_lateral_pile_package(params: dict) -> dict:
             "y_top_mm": round(result.y_top * 1000, 2),
             "max_moment_kNm": round(result.max_moment, 1),
             "converged": result.converged,
+            # what the user must be told (GM-318)
+            **({"warnings": list(result.warnings)}
+               if getattr(result, "warnings", None) else {}),
         },
     )
 
@@ -1588,27 +1733,51 @@ def _build_slope_geom(params: dict, method: str):
     did-you-mean instead of being dropped (a layer given 'c' ran with
     c' = 0), and ru, strength_model and every SHANSEP / Hoek-Brown /
     anisotropic / R-envelope field pass through."""
-    from slope_stability.geometry import SlopeGeometry
-    from funhouse_agent.adapters.slope_stability import build_soil_layer
+    from funhouse_agent.adapters.slope_stability import (
+        build_soil_layer, _build_geometry)
 
-    soil_layers = [
+    # the package's required layer keys checked first (its own message)
+    for i, ld in enumerate(params["soil_layers"]):
         build_soil_layer(ld, i, method=method,
-                         required=("name", "top_elevation", "bottom_elevation",
-                                   "gamma"))
-        for i, ld in enumerate(params["soil_layers"])]
+                         required=("name", "top_elevation",
+                                   "bottom_elevation", "gamma"))
+    # The rest as analyze_slope and the search build it (GM-140 step 10,
+    # GM-346): the tension crack (step 4), water_line_kind (step 5a) and the
+    # supports with their Method A or B and pullout (step 8) reach the
+    # packages; left out, each is its default, as before.
+    return _build_geometry(params, method=method)
 
-    surface_points = [tuple(p) for p in params["surface_points"]]
-    gwt_points = None
-    if params.get("gwt_points"):
-        gwt_points = [tuple(p) for p in params["gwt_points"]]
 
-    return SlopeGeometry(
-        surface_points=surface_points,
-        soil_layers=soil_layers,
-        gwt_points=gwt_points,
-        surcharge=params.get("surcharge", 0.0),
-        kh=params.get("kh", 0.0),
-    )
+def _slope_fos_extra(result, analysis_dict) -> dict:
+    """The slope packages' headline: the method's own factor of safety, or
+    no number where the method has no solution on the surface (GM-140 step
+    2): FOS and is_stable are then None and ``no_solution`` says why."""
+    if result.FOS is None:
+        why = [w for w in result.warnings if "no solution" in w
+               or "no equilibrium solution" in w]
+        return {
+            "FOS": None, "method": result.method, "is_stable": None,
+            "method_solved": False,
+            "no_solution": (why[0] if why else
+                            f"{result.method} has no solution on this "
+                            f"surface, so no factor of safety is reported."),
+        }
+    out = {
+        "FOS": round(result.FOS, 3),
+        "method": result.method,
+        "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
+    }
+    # The printed acceptability checks (GM-140 step 3): the checks the
+    # surface does not meet, and Bishop's own value where the Ordinary
+    # Method of Slices value was taken for the circle (Duncan 1996, p. 580).
+    flags = list(getattr(result, "flags", None) or [])
+    if flags:
+        out["flags"] = flags
+    if getattr(result, "method_used", ""):
+        out["method_used"] = result.method_used
+        if result.FOS_bishop is not None:
+            out["FOS_bishop"] = round(result.FOS_bishop, 3)
+    return out
 
 
 def _generate_slope_stability_package(params: dict) -> dict:
@@ -1620,29 +1789,181 @@ def _generate_slope_stability_package(params: dict) -> dict:
 
     geom = _build_slope_geom(params, "slope_stability_package")
 
+    from funhouse_agent.adapters.slope_stability import (
+        _slip_surface_from, _check_choice)
+    from slope_stability.gle import BASE_TENSION_RULES
     result = analyze_slope(
         geom,
         xc=params["xc"], yc=params["yc"], radius=params["radius"],
+        # the arc's two ends where given ("where a circle ends", GM-343)
+        slip_surface=_slip_surface_from(params),
         method=params.get("method", "bishop"),
         n_slices=params.get("n_slices", 30),
         include_slice_data=True,
         compare_methods=params.get("compare_methods", False),
+        base_in_tension=_check_choice(
+            params.get("base_in_tension", "as_printed"), BASE_TENSION_RULES,
+            name="base_in_tension", method="slope_stability_package"),
     )
+
+    # inputs given that did nothing in this case, said (Q4)
+    inert = _say_inputs_without_effect(
+        _inputs_without_effect(params, geom, result), result)
 
     # slope_stability calc_steps expects a dict with "geom" + optional metadata
     analysis_dict = {
         "geom": geom,
         "FOS_required": params.get("FOS_required", 1.5),
     }
+    extra = _slope_fos_extra(result, analysis_dict)
+    if inert:
+        extra["inputs_without_effect"] = inert
     return _build_response(
         "slope_stability", result, analysis_dict, params,
         analysis_type="Slope Stability", package="slope_stability_package",
-        extra={
-            "FOS": round(result.FOS, 3),
-            "method": result.method,
-            "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
-        },
+        extra=extra,
     )
+
+
+#: What ``tol`` does in the slope solvers (``slope_stability.solution.
+#: solve_method``): Bishop's simplified method takes it as given; Janbu's
+#: simplified method and the GLE behind Spencer, Morgenstern-Price and GLE
+#: run at min(tol, 1e-4) / 10, so a value above 1e-4 changes nothing for
+#: them; the Ordinary Method of Slices does not iterate (GM-140 step 10,
+#: D45).
+SLOPE_TOL_RULE = (
+    "tol is the convergence tolerance of Bishop's simplified method as "
+    "given; Janbu's simplified method and Spencer's, Morgenstern-Price and "
+    "GLE run at min(tol, 1e-4) / 10, and the Ordinary Method of Slices does "
+    "not iterate")
+
+
+def _check_slope_tol(tol, method: str) -> None:
+    """Refuse a ``tol`` that would change nothing (GM-140 step 10, D45): a
+    value above 1e-4 with any method but Bishop's simplified method."""
+    if tol is not None and tol > 1e-4 and method != "bishop":
+        raise ValueError(
+            f"tol={tol:g} changes nothing with method '{method}': "
+            f"{SLOPE_TOL_RULE}. Give tol at most 1e-4, or leave it out.")
+
+
+#: The methods ``base_in_tension`` acts on (``analysis._GLE_SYSTEM_METHODS``).
+_BASE_TENSION_METHODS = ("janbu", "spencer", "morgenstern_price", "gle")
+
+
+def _inputs_without_effect(params: dict, geom, result, search=None,
+                           package: str = "slope_stability_package") -> list:
+    """Inputs given that could act and did nothing in this case (the
+    orchestrator's ruling on GM-140 step 10's review, Q4): accepted, and
+    the report says so and why. Only a value other than the package's
+    default: one equal to it is what the package does without it, and
+    gives the same result as leaving it out. ``[(name, value, why)]``:
+    ``tol`` with the
+    Ordinary Method of Slices, which does not iterate, where it scored the
+    surface reported; ``base_in_tension`` where no slice base was in
+    tension on the surface reported (nor on any trial of the search);
+    ``reverse_curvature`` where no circle had reverse curvature (the
+    circle analysed, or every trial of a search, where a reverse-curvature
+    circle would have been counted). A value that could never act is
+    refused before (``_check_slope_tol``)."""
+    from slope_stability.solution import METHOD_TEXT
+    specs = METHOD_INFO[package]["parameters"]
+
+    def chosen(name):
+        return (name in params
+                and params[name] != specs.get(name, {}).get("default"))
+    out = []
+    method = params.get("method", specs["method"].get("default"))
+    if (search is not None and chosen("tol") and method == "fellenius"
+            and not search.method_used):
+        others = sorted({r["method"] for r in search.candidate_methods
+                         if r["method"] != "fellenius"})
+        why = ("the Ordinary Method of Slices, which scored the surface "
+               "reported, does not iterate, so tol did not act on its "
+               "factor of safety; it acts on the other methods of the "
+               "method comparison")
+        if others:
+            why += (" and on the families "
+                    + " and ".join(METHOD_TEXT.get(m, m) for m in others)
+                    + " scored in its place")
+        out.append(("tol", params["tol"], why))
+    if chosen("base_in_tension") and method in _BASE_TENSION_METHODS:
+        on_surface = any(f.get("check") == "base_tension" and f.get("flag")
+                         for f in getattr(result, "acceptability", None) or [])
+        on_trials = sum(r.get("by_check", {}).get("base_tension", 0)
+                        for r in (getattr(search, "trial_flags", None) or [])
+                        ) if search is not None else 0
+        if not on_surface and not on_trials:
+            where = ("on the surface reported or on any trial the search "
+                     "scored" if search is not None
+                     else "on the surface analysed")
+            out.append((
+                "base_in_tension", params["base_in_tension"],
+                f"no slice base was in tension (a negative effective normal "
+                f"force) {where} by {METHOD_TEXT.get(method, method)}, so "
+                f"the rule had nothing to act on (the other methods of a "
+                f"method comparison are not checked for it)"))
+    if chosen("reverse_curvature"):
+        value = params["reverse_curvature"]
+        none_met = False
+        if search is None:
+            from slope_stability.slip_surface import circle_of
+            try:
+                slip = circle_of(result)
+                none_met = slip.reverse_curvature_crack(geom) is None
+            except (ValueError, AttributeError, TypeError):
+                none_met = False
+        else:
+            asked = (getattr(geom, "tension_crack_depth", 0) > 0
+                     or getattr(geom, "tension_crack_depth_basis", "given")
+                     != "given")
+            # every reverse-curvature circle is counted where it is
+            # discarded, or refused for want of a crack; one a crack
+            # closes is not counted, so with a crack asked and
+            # 'tension_crack' nothing can be said
+            none_met = (not getattr(search, "n_discarded_reverse_curvature",
+                                    0)
+                        and (value == "discard" or not asked))
+        if none_met:
+            what = ("the circle analysed is not a reverse-curvature circle"
+                    if search is None else
+                    "no trial circle of the search was a reverse-curvature "
+                    "circle")
+            out.append((
+                "reverse_curvature", value,
+                f"{what} (one whose centre is below the ground where it "
+                f"ends), so there was none to close with a crack or "
+                f"discard"))
+    return out
+
+
+def _say_inputs_without_effect(found: list, result, search=None) -> list:
+    """Put each input of ``_inputs_without_effect`` in the choices the
+    package's Method Choices section prints (the result's own, or, where
+    it has none, the search's: ``calc_package.tables.package_choices``)
+    and return the statements for the response."""
+    from geotech_common.choices import choice
+    target = (result if getattr(result, "choices", None) or search is None
+              else search)
+    lines = []
+    for name, value, why in found:
+        text = f"{name} = {value!r} (given) did nothing in this case: {why}."
+        target.choices.append(choice(
+            f"{name}, given: what it did in this case", value, "given",
+            f"Nothing in this case: {why}."))
+        lines.append(text)
+    return lines
+
+
+#: The slope tools' later inputs the two slope packages take as the tools
+#: do (GM-140 step 10, GM-346): the tension crack (step 4), the reading of
+#: the water line (step 5a), the supports and how their force is taken
+#: (step 8).
+_SLOPE_PACKAGE_INPUTS = (
+    "tension_crack_depth", "tension_crack_water_depth", "tension_crack_side",
+    "tension_crack_model", "tension_crack_depth_basis", "reverse_curvature",
+    "water_line_kind", "nails", "anchors", "geosynthetics",
+    "stabilizing_piles", "assisting_support")
 
 
 def _generate_slope_report_package(params: dict) -> dict:
@@ -1671,6 +1992,10 @@ def _generate_slope_report_package(params: dict) -> dict:
             "method", "surface_type", "n_slices", "tol", "x_range", "y_range",
             "nx", "ny", "x_entry_range", "x_exit_range", "n_trials", "n_points",
             "seed", "f_interslice", "FOS_required", "time_budget_s",
+            "base_in_tension",
+            # the later inputs (GM-140 step 10): tension crack, water line,
+            # supports
+            *_SLOPE_PACKAGE_INPUTS,
             # probabilistic annex
             "variables", "fosm", "monte_carlo", "n", "research_surface",
             # output + header metadata; the caller's assumptions and the
@@ -1695,6 +2020,17 @@ def _generate_slope_report_package(params: dict) -> dict:
     surface_type = params.get("surface_type", "circular")
     n_slices = params.get("n_slices", 30)
     tol = params.get("tol", 1e-4)
+    # An unknown method or interslice function is refused before the search
+    # (GM-140 step 2; f_interslice used to accept any string, D45).
+    from slope_stability.solution import check_method, check_interslice
+    check_method(method)
+    check_interslice(params.get("f_interslice", "half_sine"))
+    _check_slope_tol(tol, method)
+    from funhouse_agent.adapters.slope_stability import _check_choice
+    from slope_stability.gle import BASE_TENSION_RULES
+    base_in_tension = _check_choice(
+        params.get("base_in_tension", "as_printed"), BASE_TENSION_RULES,
+        name="base_in_tension", method="slope_report_package")
 
     def _range(key):
         return tuple(params[key]) if params.get(key) else None
@@ -1711,35 +2047,61 @@ def _generate_slope_report_package(params: dict) -> dict:
         n_points=params.get("n_points", 5),
         seed=params.get("seed"),
         time_budget_s=time_budget_s,
+        f_interslice=params.get("f_interslice", "half_sine"),
+        base_in_tension=base_in_tension,
     )
     budget_is_default(search.choices, params)
 
     crit = search.critical
     if crit is None:
-        return {
-            "status": "error",
-            "analysis_type": "Slope Stability Report",
-            "error": (
+        stopped = (search.search_ranges or {}).get("time_budget")
+        if stopped:
+            # the time budget stopped the search before it scored a
+            # surface: say so, not "widen the grid" (GM-140 step 10's
+            # review, D6; D45: refused with its reason)
+            from slope_stability.search import TIME_BUDGET_MAX_S
+            why = (
+                f"The critical-surface search was stopped by its time "
+                f"budget, time_budget_s = {stopped['time_budget_s']:g} s "
+                f"(it ran {stopped['elapsed_s']:g} s), after "
+                f"{search.n_surfaces_evaluated} surfaces evaluated and "
+                f"before it scored an admissible one, so there is no "
+                f"critical surface to report. Raise time_budget_s (at most "
+                f"{TIME_BUDGET_MAX_S:g} s) and run it again.")
+        else:
+            why = (
                 "Critical-surface search found no admissible surface "
                 f"({search.n_surfaces_evaluated} evaluated). Widen the search "
                 "grid (x_range/y_range for circular, or x_entry_range/"
-                "x_exit_range) or check the geometry."
-            ),
+                "x_exit_range) or check the geometry.")
+        return {
+            "status": "error",
+            "analysis_type": "Slope Stability Report",
+            "error": why,
         }
 
     # Re-analyze the critical surface with method comparison + slice data so the
     # report carries the FOS-by-method table and, for a rigorous method, the
-    # interslice-force / line-of-thrust figure. Uses the SAME method the search
-    # minimized, so the reported critical FOS stays consistent with the search.
+    # interslice-force / line-of-thrust figure. Uses the method that scored
+    # the governing surface in the search (GM-140 step 6): the method named,
+    # or, where the governing family was scored by another (Bishop's
+    # simplified method and the Ordinary Method of Slices do not apply to a
+    # plane or a polyline), that one, so the reported critical FOS is the
+    # search's own; the response says so (method_used).
+    method_named = method
+    method = search.method_used or method
     if crit.is_circular:
-        surf_kwargs = dict(xc=crit.xc, yc=crit.yc, radius=crit.radius)
+        # the governing arc's two ends kept (GM-343)
+        from slope_stability.slip_surface import circle_of
+        surf_kwargs = dict(slip_surface=circle_of(crit))
     else:
         from slope_stability.slip_surface import PolylineSlipSurface
         surf_kwargs = dict(slip_surface=PolylineSlipSurface(crit.slip_points))
     result = analyze_slope(
         geom, method=method, n_slices=n_slices, tol=tol,
         f_interslice=params.get("f_interslice", "half_sine"),
-        include_slice_data=True, compare_methods=True, **surf_kwargs,
+        include_slice_data=True, compare_methods=True,
+        base_in_tension=base_in_tension, **surf_kwargs,
     )
 
     analysis_dict = {
@@ -1753,7 +2115,7 @@ def _generate_slope_report_package(params: dict) -> dict:
     variables = params.get("variables")
     if variables:
         analysis_dict["variables"] = variables
-        prob_surf = (dict(xc=crit.xc, yc=crit.yc, radius=crit.radius)
+        prob_surf = (dict(slip_surface=circle_of(crit))
                      if crit.is_circular
                      else dict(slip_surface=PolylineSlipSurface(crit.slip_points)))
         if params.get("fosm", True):
@@ -1771,17 +2133,34 @@ def _generate_slope_report_package(params: dict) -> dict:
                                if params.get("research_surface") else None),
                 **prob_surf)
 
-    extra = {
-        "FOS": round(result.FOS, 3),
-        "method": result.method,
-        "n_surfaces_evaluated": search.n_surfaces_evaluated,
-        "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
-    }
+    extra = _slope_fos_extra(result, analysis_dict)
+    extra["n_surfaces_evaluated"] = search.n_surfaces_evaluated
+    inert = _say_inputs_without_effect(
+        _inputs_without_effect(params, geom, result, search,
+                               package="slope_report_package"),
+        result, search)
+    if inert:
+        extra["inputs_without_effect"] = inert
+    if search.no_solution:
+        # trials the method has no solution on, by family and method
+        extra["search_no_solution"] = [dict(r) for r in search.no_solution]
     # Which kind of surface governs and what the search could not be sure
     # of -- also printed in the package's search section.
     if search.governing_surface:
         extra["governing_surface"] = search.governing_surface
         extra["candidates"] = dict(search.candidates)
+        extra["candidate_methods"] = [dict(r) for r in
+                                      search.candidate_methods]
+    if search.method_used:
+        # the governing family was scored by another method than the one
+        # named: both are stated (GM-140 step 6, item 5)
+        extra["method_named"] = method_named
+        extra["method_used"] = search.method_used
+        extra["named_method_lowest"] = dict(search.named_method_lowest or {})
+    if search.screen_unsolved:
+        extra["screen_unsolved"] = dict(search.screen_unsolved)
+    if search.circle_check:
+        extra["circle_check"] = dict(search.circle_check)
     if search.warnings:
         extra["warnings"] = list(search.warnings)
     return _build_response(
@@ -1827,6 +2206,9 @@ def _generate_axial_pile_package(params: dict) -> dict:
             "Q_allowable_kN": round(result.Q_allowable, 1),
             "Q_skin_kN": round(result.Q_skin, 1),
             "Q_tip_kN": round(result.Q_tip, 1),
+            # what the user must be told (GM-318)
+            **({"warnings": list(result.warnings)}
+               if getattr(result, "warnings", None) else {}),
         },
     )
 
@@ -1847,6 +2229,9 @@ def _generate_drilled_shaft_package(params: dict) -> dict:
             "Q_allowable_kN": round(result.Q_allowable, 1),
             "Q_skin_kN": round(result.Q_skin, 1),
             "Q_tip_kN": round(result.Q_tip, 1),
+            # what the user must be told (GM-318)
+            **({"warnings": list(result.warnings)}
+               if getattr(result, "warnings", None) else {}),
         },
     )
 
@@ -1984,6 +2369,24 @@ def _generate_retaining_wall_package(params: dict) -> dict:
     def _r2(x):
         return None if x is None else round(x, 2)
 
+    if run.value == "cantilever_reinforced":
+        # GM-312: the stability sections and the structural design; the
+        # package ends with the reinforcement sheet (GM-313, the join)
+        st = result.stability
+        return _build_response(
+            "retaining_walls", result, analysis, params, run=run,
+            analysis_type="Retaining Wall (stability and structural "
+                          "design)",
+            extra={
+                "verdict": result.verdict,
+                "checks_failed": result.checks_failed,
+                "checks_not_run": result.checks_not_run,
+                "FOS_sliding": _r2(st.FOS_sliding),
+                "FOS_overturning": _r2(st.FOS_overturning),
+                "FOS_bearing": _r2(st.FOS_bearing),
+                **_reinforced_numbers(result)},
+            drawing=_wall_drawing_description(result, analysis))
+
     # The verdict travels with the package (GM-100): a failed check or a
     # check not run must reach the user, not only the file.
     extra = {
@@ -2003,6 +2406,28 @@ def _generate_retaining_wall_package(params: dict) -> dict:
         analysis_type="MSE Wall" if run.value == "mse" else "Retaining Wall",
         extra=extra,
     )
+
+
+def _reinforced_numbers(result) -> dict:
+    """The structural design's numbers beside the file (GM-312), as the
+    cantilever_wall_structural_design tool returned them: each element's
+    factored moment and shear, its bar and its capacities, what was not
+    designed and the reinforcement description."""
+    d = result.to_dict()
+    keep = ("Mu_kNm_per_m", "Mu_kipft_per_ft", "Vu_kN_per_m",
+            "Vu_kip_per_ft", "d_mm", "As_required_mm2_per_m",
+            "As_provided_mm2_per_m", "bar", "phi_Mn_kNm_per_m",
+            "phi_Vc_kN_per_m", "passes")
+    return {
+        "basis": d["basis"],
+        "recommendations_not_met": d["recommendations_not_met"],
+        **{name: ({k: d[name][k] for k in keep} if d[name] else None)
+           for name in ("stem", "toe", "heel")},
+        "development": {k: d["development"][k] for k in
+                        ("computed", "ldh_mm", "available_mm")},
+        "not_designed": [n["what"] for n in d["not_designed"]],
+        "reinforcement": d["reinforcement"],
+    }
 
 
 def _mse_lrfd_numbers(result: dict) -> dict:
@@ -2085,6 +2510,152 @@ def _shear_key_place(own: dict, geom) -> dict:
             f"base (B = {geom.base_width:g} m); give key_distance_from_toe "
             f"+ key_width up to B.")
     return out
+
+
+# ---------------------------------------------------------------------------
+# The reinforced wall's sheet at the end of its package (GM-313, the join):
+# the structural design's reinforcement description (GM-312), drawn by
+# dxf_export, handed to generate_calc_package(sheets=...) and written
+# beside the package as a DXF and a PNG. Neither module imports the other;
+# this layer joins them.
+# ---------------------------------------------------------------------------
+
+#: A wall that fits a letter sheet at 1:50 or larger is drawn on letter (the
+#: package's own page size); a taller one goes to tabloid, so it is not drawn
+#: at 1:100 where a larger sheet avoids it.
+_LETTER_LEAST_SCALE = 50
+
+
+def _wall_drawing_description(result, analysis: dict) -> dict:
+    """The design's ``reinforcement`` description for the sheet, with the
+    shear key's place and width the package was given (its own
+    ``key_distance_from_toe`` and ``key_width``, GM-216), so the sheet
+    draws the key where the package's wall section figure draws it. One
+    not given stays null: the sheet then draws it as the figure does (its
+    front face under the stem's, as wide as the stem) and says so."""
+    import copy
+    desc = copy.deepcopy(getattr(result, "reinforcement", None))
+    geometry = desc.get("geometry") if isinstance(desc, dict) else None
+    if isinstance(geometry, dict) and geometry.get("has_shear_key"):
+        for name in ("key_distance_from_toe", "key_width"):
+            if analysis.get(name) is not None:
+                geometry[name] = analysis[name]
+    return desc
+
+
+def _sheet_title_block(params: dict):
+    """The sheet's title block from the package's own header inputs:
+    project name and number, engineer (drawn by), checker (checked by) and
+    the date the package prints (today's when none is given). Each is cut
+    to the title block's field length. ``(fields, warnings)``; the title,
+    the stamp and the layout stay the drawing code's."""
+    from dxf_export.drawing import MAX_FIELD
+    meta = _extract_metadata(params)
+    fields = {"project": meta["project_name"],
+              "project_number": meta["project_number"],
+              "drawn_by": meta["engineer"], "checked_by": meta["checker"],
+              "date": meta["date"] or datetime.now().strftime("%Y-%m-%d")}
+    warnings = []
+    for name, value in fields.items():
+        text = " ".join(str("" if value is None else value).split())
+        if len(text) > MAX_FIELD:
+            text = text[:MAX_FIELD - 3].rstrip() + "..."
+            warnings.append(f"The sheet's title block: {name} cut to "
+                            f"{MAX_FIELD} characters.")
+        fields[name] = text
+    return fields, warnings
+
+
+def _wall_sheet(description: dict, params: dict, dxf_name: str = None):
+    """The reinforced wall section drawn for the package's end.
+
+    Letter when the wall fits it at 1:50 or larger, else tabloid; the
+    scale each sheet gives is ``wall_section_drawing``'s own choice (the
+    largest standard scale at which the section, its dimensions and its
+    callouts fit). Returns ``{"sheet": SheetData, "files": {"dxf", "pdf",
+    "png", ...}, "size", "scale", "warnings"}``; raises whatever the
+    drawing raises."""
+    import base64
+
+    from calc_package import SheetData
+    from dxf_export import DrawingError, render_sheet, wall_section_drawing
+
+    block, warnings = _sheet_title_block(params)
+    try:
+        drawing = wall_section_drawing(description, sheet={"size": "letter"},
+                                       title_block=block)
+    except DrawingError:
+        drawing = None          # letter takes it at no standard scale
+    if drawing is None or drawing.sheet.scale > _LETTER_LEAST_SCALE:
+        drawing = wall_section_drawing(description,
+                                       sheet={"size": "tabloid"},
+                                       title_block=block)
+    files = render_sheet(drawing)
+    info = files["info"]
+    scale = f"1:{info.scale}"
+    caption = (f"{drawing.title_block.title}: {info.sheet} sheet at "
+               f"{scale}" + (f"; the same drawing is {dxf_name}, beside "
+                             "this package" if dxf_name else "") + ".")
+    return {
+        "sheet": SheetData(
+            title="Reinforcement sheet", caption=caption,
+            pdf_bytes=files["pdf"],
+            image_base64=base64.b64encode(files["png"]).decode("ascii")),
+        "files": files, "size": info.sheet, "scale": scale,
+        # the title block's, then the layout's, then the sheet's own
+        "warnings": (warnings + list(getattr(drawing, "layout_warnings",
+                                             []))
+                     + list(info.warnings)),
+    }
+
+
+def _sheet_failed(exc: Exception, what: str = "drawn") -> str:
+    return (f"The reinforcement sheet could not be {what} "
+            f"({type(exc).__name__}: {exc}); the package was written "
+            "without it.")
+
+
+def _sheet_stem(package_path: str) -> str:
+    """``<package stem>_reinforcement``, in the package's folder."""
+    return (os.path.splitext(os.path.abspath(package_path))[0]
+            + "_reinforcement")
+
+
+def _sheet_response(drawn, problem, package_path: str = None) -> dict:
+    """The result's drawing keys. With ``package_path``, the sheet's DXF
+    and PNG are written beside the package (verified saves). A sheet that
+    failed leaves them null and says why under ``warnings``."""
+    out = {"drawing_sheet": drawn["size"] if drawn else None,
+           "drawing_scale": drawn["scale"] if drawn else None,
+           "drawing_warnings": list(drawn["warnings"]) if drawn else []}
+    if package_path is not None:
+        out["drawing_dxf_path"] = out["drawing_png_path"] = None
+        stem = _sheet_stem(package_path)
+        for ext in ("dxf", "png") if drawn else ():
+            path = f"{stem}.{ext}"
+            saved = save_verified(path, drawn["files"][ext])
+            if saved.get("file_exists"):
+                out[f"drawing_{ext}_path"] = saved.get(
+                    "saved", os.path.abspath(path))
+            else:
+                problem = ((problem + " ") if problem else "") + (
+                    f"The reinforcement sheet's {os.path.basename(path)} "
+                    f"did not save ({saved.get('error')}).")
+    if problem:
+        out["warnings"] = [problem]
+    return out
+
+
+def _add_sheet_keys(response: dict, keys: dict) -> None:
+    """``keys`` into ``response``, a ``warnings`` list added to any the
+    response already has."""
+    keys = dict(keys)
+    extra = keys.pop("warnings", None)
+    response.update(keys)
+    if extra:
+        have = response.get("warnings")
+        response["warnings"] = (list(have) if isinstance(have, list)
+                                else [have] if have else []) + extra
 
 
 # ---------------------------------------------------------------------------
@@ -2536,7 +3107,16 @@ def _generate_reliability_package(params: dict) -> dict:
         extra.update(beta=round(result.beta, 4), pf=result.pf,
                      converged=result.converged)
     elif run.value == "monte_carlo":
+        # what the package's note says, given to the agent too (GM-322
+        # review): N is the realizations kept, not the ones run
         extra.update(pf=result.pf, n_failed=result.n_failed, n=result.n,
+                     n_requested=result.n_requested or result.n,
+                     n_dropped=result.n_dropped,
+                     pf_bounds_dropped=(
+                         None if result.pf_bounds_dropped is None
+                         else list(result.pf_bounds_dropped)),
+                     pf_ci95=list(result.pf_ci95),
+                     pf_ci95_method=result.pf_ci95_method,
                      beta_normal=round(result.beta_normal, 3))
     else:
         extra.update(beta_normal=round(result.beta_normal, 3),
@@ -2544,10 +3124,78 @@ def _generate_reliability_package(params: dict) -> dict:
         if result.beta_lognormal is not None:
             extra.update(beta_lognormal=round(result.beta_lognormal, 3),
                          pf_lognormal=result.pf_lognormal)
+    if getattr(result, "warnings", None):
+        extra["warnings"] = list(result.warnings)
     return _build_response(
         "reliability", result, used, params,
         run=run,
         analysis_type="Reliability Analysis",
+        extra=extra,
+    )
+
+
+def _fem2d_numbers(result) -> dict:
+    """The single numbers of a fem2d result (its tool's own keys), the
+    notes and the warnings: what the package's response says beside the
+    file. Arrays and per-node tables stay in the package and its CSVs."""
+    from funhouse_agent.adapters import clean_result
+    d = clean_result(result.to_dict())
+    if getattr(result, "analysis_type", None) == "srm":
+        # the slope tool adds the failure basis beside to_dict (GM-328
+        # review B1): which bound, if any, the FOS is
+        d.setdefault("fos_basis", getattr(result, "fos_basis", None))
+    out = {k: v for k, v in d.items()
+           if k != "analysis_type"
+           and (v is None or isinstance(v, (bool, int, float, str)))}
+    for key in ("warnings", "notes"):
+        if d.get(key):
+            out[key] = d[key]
+    return out
+
+
+def _generate_fem2d_package(params: dict) -> dict:
+    if "FOS_required" in params:
+        # refused before the FEM run, not after it (GM-328 review B2)
+        req = params["FOS_required"]
+        if (isinstance(req, bool) or not isinstance(req, (int, float))
+                or not math.isfinite(req) or req < 1.0):
+            raise ValueError(
+                f"fem2d_package: FOS_required takes a finite number at or "
+                f"above 1.0 (the factor of safety the package's check sets "
+                f"the strength-reduction FOS against; default 1.5); got "
+                f"{req!r}.")
+    run = _run_tool("fem2d_package", params)
+    result, model = run.out
+    analysis = dict(model)
+    if run.value == "slope_srm":
+        analysis["FOS_required"] = run.own.get(
+            "FOS_required",
+            _PACKAGE_TOOLS["fem2d_package"]["own"]["FOS_required"]["default"])
+    elif "FOS_required" in run.own:
+        raise ValueError(
+            f"fem2d_package: FOS_required is for analysis_type 'slope_srm' "
+            f"(the strength-reduction factor of safety); analysis_type "
+            f"{run.value!r} reports none.")
+    extra = _fem2d_numbers(result)
+    if run.value == "slope_srm":
+        # the package's own check, said beside the file as it is printed
+        # true to the bound a run that did not bracket the failure gives
+        # (GM-328 review A1)
+        from fem2d.calc_steps import srm_meets
+        extra["FOS_required"] = analysis["FOS_required"]
+        meets, note = srm_meets(result, analysis["FOS_required"])
+        extra["meets_FOS_required"] = meets
+        if note:
+            extra["FOS_required_note"] = note
+    return _build_response(
+        "fem2d", result, analysis, params,
+        run=run,
+        analysis_type={
+            "slope_srm": "FEM Slope Stability (Strength Reduction)",
+            "excavation": "FEM Staged Excavation",
+            "consolidation": "FEM Coupled Consolidation",
+            "seepage": "FEM Steady-State Seepage",
+            "staged": "FEM Staged Construction"}[run.value],
         extra=extra,
     )
 
@@ -3125,6 +3773,7 @@ METHOD_REGISTRY = {
     "sheet_pile_package": _generate_sheet_pile_package,
     "soe_package": _generate_soe_package,
     "reliability_package": _generate_reliability_package,
+    "fem2d_package": _generate_fem2d_package,
 }
 
 
@@ -3376,7 +4025,7 @@ METHOD_INFO = {
             "renderer": "'story' (pure-Python PyMuPDF engine).",
             "images_embedded": "How many local image files were inlined into the PDF.",
             "included": "The HTML files a data-include put in the PDF.",
-            "include_problems": ("On error: each data-include that could not be "
+            "include_problems": ("Only on error: each data-include that could not be "
                                  "filled, and why."),
             "pages": "How many pages the PDF has.",
             "page_contents": "What landed on each page, read back from the PDF: "
@@ -3415,18 +4064,18 @@ METHOD_INFO = {
     "lateral_pile_package": {
         "category": "Calculation Package",
         "brief": "Run lateral pile analysis and generate LPILE-style calc package, with tables (CSV + printed) of y, slope, M, V, p and Es at every node and each layer's p-y curve.",
-        "returns": {**_COMMON_RETURNS, "y_top_mm": "Top deflection (mm).", "max_moment_kNm": "Max moment (kN-m)."},
+        "returns": {**_COMMON_RETURNS, "y_top_mm": "Top deflection (mm).", "max_moment_kNm": "Max moment (kN-m).", "warnings": "What the engineer must know about the result (the last layer carried on to the toe, extend_last_layer; a cracked-section EI iteration that did not converge), then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "slope_stability_package": {
         "category": "Calculation Package",
         "brief": "Run slope stability analysis and generate calc package with cross-section plot, and tables (CSV) of the stresses on the slip surface, the forces on every slice, FOS by method and the line of thrust.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "List of [x, z] ground surface coordinates."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode)."},
+            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' and 'top_boundary_points' ([[x,z],...]) define a non-horizontal layer base or top (e.g. a weak seam). One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
             "xc": {"type": "float", "required": True, "description": "Circle center x (m)."},
             "yc": {"type": "float", "required": True, "description": "Circle center y (m)."},
             "radius": {"type": "float", "required": True, "description": "Circle radius (m)."},
-            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": ["bishop", "fellenius", "spencer"], "description": "Limit-equilibrium method."},
+            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": ["bishop", "fellenius", "spencer", "janbu", "morgenstern_price", "gle"], "description": "Limit-equilibrium method."},
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
             "gwt_points": {"type": "array", "required": False, "description": "List of [x, z] GWT coordinates."},
             "kh": {"type": "float", "required": False, "default": 0.0, "description": "Seismic coefficient."},
@@ -3435,15 +4084,15 @@ METHOD_INFO = {
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Factor of safety.", "method": "Method used.", "is_stable": "Whether FOS >= required."},
+        "returns": {**_COMMON_RETURNS, "inputs_without_effect": "Only when an input given did nothing in this case: each, and why (also in Method Choices).", "FOS": "Factor of safety: the method's own converged solution on the circle; null where the method has none (no_solution says why, and the package prints no number).", "method": "Method used.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on this surface.", "flags": "Present when the surface does not meet a printed acceptability check (low_m_alpha, bishop_below_oms, negative_frictional_term, base_tension, side_tension, thrust_outside): the package's Printed Acceptability Checks table names the slices and values. Report the flags with the factor of safety.", "method_used": "Present when FOS is not the method's own value: with Bishop's method on a circle with no supports and no seismic coefficient, where Bishop's value (FOS_bishop) is below the Ordinary Method of Slices value, FOS is the Ordinary Method of Slices value (Duncan 1996, p. 580)."},
     },
     "slope_report_package": {
         "category": "Calculation Package",
-        "brief": "One-call slope stability REPORT for a critical-surface SEARCH: input echo, search story (surfaces tried + rejection diagnostics + critical surface/FOS), FOS-by-method table, slice-force + interslice/thrust-line figures, reinforcement summary, a probabilistic annex (FOSM/Monte Carlo) when 'variables' is supplied, and CSV tables (every slice, every trial surface). No fixed circle needed — the search finds the critical surface.",
+        "brief": "One-call slope stability REPORT for a critical-surface SEARCH (no fixed circle): input echo, the search (surfaces tried, refused, critical), FOS by method, slice-force and interslice/thrust-line figures, supports, a FOSM/Monte Carlo annex with 'variables', CSV tables of every slice and trial surface.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "List of [x, z] ground surface coordinates."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' ([[x,z],...]) defines a non-horizontal layer base (e.g. a weak seam)."},
-            "method": {"type": "str", "required": False, "default": "spencer", "allowed_values": ["spencer", "morgenstern_price", "gle", "bishop", "janbu", "fellenius"], "description": "Limit-equilibrium method the search minimizes and the report highlights. Default 'spencer' (rigorous — populates the interslice-force / line-of-thrust figure)."},
+            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' and 'top_boundary_points' ([[x,z],...]) define a non-horizontal layer base or top (e.g. a weak seam). One material per point: where two layers cover the same ground the one listed FIRST holds it, for weight and strength (reported in layer_overlaps); ground above the deepest layer's bottom that no layer covers is refused."},
+            "method": {"type": "str", "required": False, "default": "spencer", "allowed_values": ["spencer", "morgenstern_price", "gle", "bishop", "janbu", "fellenius"], "description": "Limit-equilibrium method the search minimizes and the report highlights: every family of surfaces is scored by it. Default 'spencer' (rigorous — populates the interslice-force / line-of-thrust figure). 'bishop' and 'fellenius' are for circles: planes and polylines are then scored by Spencer's method and reported apart (candidate_methods); where such a family governs the report analyses the governing surface by the method that scored it and says so (method_used)."},
             "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": ["circular", "entry_exit", "noncircular", "noncircular_de", "pso", "weak_layer"], "description": "Trial-surface family for the search. 'circular' grids circle centres over x_range/y_range and keeps only circles whose ends fall in x_entry_range/x_exit_range; the others draw their surfaces between x_entry_range and x_exit_range. Ranges not given are set from the slope (toe, crest, height, depth to the base). 'weak_layer' biases trials toward a defined weak seam."},
             "x_range": {"type": "array", "required": False, "description": "[min, max] circle-center x for the search grid (circular)."},
             "y_range": {"type": "array", "required": False, "description": "[min, max] circle-center y for the search grid (circular)."},
@@ -3461,15 +4110,15 @@ METHOD_INFO = {
             "monte_carlo": {"type": "bool", "required": False, "default": False, "description": "If True (and 'variables' given), also run a Monte Carlo simulation on the critical surface for the annex."},
             "n": {"type": "int", "required": False, "default": 1000, "description": "Monte Carlo realizations (when monte_carlo=True)."},
             "research_surface": {"type": "bool", "required": False, "default": False, "description": "Monte Carlo: re-search the critical surface each realization (slower) instead of holding it fixed."},
-            "time_budget_s": {"type": "float", "required": False, "default": 180.0, "description": "Time budget of EACH critical-surface search in seconds (at most 600), as slope_stability search_critical_surface: the report's search, and with research_surface each Monte Carlo realization's (per search, not for the run). A search cut short reports the lowest surface in what it covered and says so in its warnings."},
+            "time_budget_s": {"type": "float", "required": False, "default": 180.0, "description": "Time budget of EACH critical-surface search, in seconds (at most 600): the report's search and, with research_surface, each Monte Carlo realization's. A search cut short reports the lowest surface in what it covered and says so in its warnings."},
             "fosm": {"type": "bool", "required": False, "default": True, "description": "With 'variables': run the FOSM annex."},
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
-            "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance for the iterative methods."},
-            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "description": "Interslice force function for the rigorous re-analysis of the critical surface."},
+            "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance: Bishop's simplified method takes it as given; Janbu's simplified, Spencer's, Morgenstern-Price and GLE run at min(tol, 1e-4) / 10; the Ordinary Method of Slices does not iterate. Above 1e-4 it is refused except with 'bishop' (it would change nothing)."},
+            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": ["constant", "half_sine", "clipped_sine", "trapezoidal"], "description": "Interslice force function of morgenstern_price and gle, in every family of the search and in the re-analysis of the critical surface. Another name is refused."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of (also printed in the package). Report every one."},
+        "returns": {**_COMMON_RETURNS, "inputs_without_effect": "Only when an input given did nothing in this case: each, and why (also in Method Choices).", "FOS": "Critical factor of safety: the converged solution on the governing surface by the method that scored it in the search. That is the method named, except where the governing family was scored by another (Bishop's simplified method and the Ordinary Method of Slices do not apply to a plane or a polyline, which Spencer's method then scores; a family the method solves none of is scored by the next in order: planes and polylines Spencer's method, then Janbu's simplified method; circles Spencer's, then Bishop's simplified method, then Janbu's): method_used then names it, method_named the method asked for and named_method_lowest that method's own lowest value. Tell the user both. Null where that method has no solution on the surface: no_solution says why and the package prints no number.", "candidate_methods": "What scored each family in candidates: [{family, method, f_interslice, FOS, named, reason}].", "method_used": "Present when the governing surface was scored by another method than the one named (with method_named and named_method_lowest), or, with Bishop's method, when the Ordinary Method of Slices value was taken (Duncan 1996, p. 580).", "named_method_lowest": "Present with method_named: the lowest factor of safety by the method named ({method, f_interslice, FOS, family}), or FOS null with a note when it scored no family.", "screen_unsolved": "Present when a screen by another method scored surfaces below the reported minimum that the method named has no solution on: {n, lowest_screen_FOS, by_family} (UFC 3-220-10 p. 362). Tell the user.", "circle_check": "Present only with a noncircular search: the minimum against the critical circle by the same method ({checked, circle, FOS_as_polyline, noncircular_minimum, governs, note}).", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required (null with FOS).", "no_solution": "Present when FOS is null: why the method has no solution on the governing surface.", "search_no_solution": "The search's trial surfaces left without a solution, by family and method: [{family, method, n, not_converged, no_driving, below_0_05}] (present when there are any; they were not scored; below_0_05: solved with a value below 0.05, which a search does not take as a factor of safety).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "settlement_package": {
         "category": "Calculation Package",
@@ -3479,12 +4128,12 @@ METHOD_INFO = {
     "axial_pile_package": {
         "category": "Calculation Package",
         "brief": "Run axial pile capacity analysis and generate APILE-style calc package, with tables (CSV + printed) of side resistance per layer, load transfer at the ultimate load and capacity against pile length.",
-        "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity."},
+        "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity.", "warnings": "What the engineer must know about the result (for example the last layer carried on to the toe, extend_last_layer; a GEC-12 chart read past its end; a pile wider than the methods' database), then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "drilled_shaft_package": {
         "category": "Calculation Package",
         "brief": "Run drilled shaft capacity analysis and generate SHAFT-style calc package, with tables (CSV + printed) of side resistance per layer, load transfer at the ultimate load and capacity against shaft length.",
-        "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity."},
+        "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity.", "warnings": "What the engineer must know about the result (the last layer carried on to the base, extend_last_layer), then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one."},
     },
     "downdrag_package": {
         "category": "Calculation Package",
@@ -3500,7 +4149,7 @@ METHOD_INFO = {
                     "pile_weight_basis": "One sentence saying whether the pile's own weight is in the load curve, naming the references; also printed in the package.",
                     "below_toe_basis": "How deep the settlement below the toe was counted and why it stopped (the toe load per influence_depth_criterion, the fill / drawdown to the bottom of the soil profile); also printed in the package.",
                     "neutral_plane_comparison": "Every method on the same inputs, each with its source (also tabulated in the package).",
-                    "warnings": "What the engineer must know about the result; also printed in the package. Report every one.",
+                    "warnings": "What the engineer must know about the result, then any warning the code raised while it ran: all printed in the package (one raised while the package itself was being drawn is listed here only). Report every one.",
                     "dragload_kN": "Dragload (kN).",
                     "max_pile_load_kN": "Maximum pile load at the neutral plane (kN).",
                     "pile_settlement_mm": "Pile settlement (mm)."},
@@ -3512,8 +4161,8 @@ METHOD_INFO = {
     },
     "retaining_wall_package": {
         "category": "Calculation Package",
-        "brief": "Run a cantilever retaining wall (cantilever_wall), MSE wall (mse_wall, ASD) or MSE LRFD external stability (mse_lrfd_external_stability) analysis and generate its calc package.",
-        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user.", "(MSE LRFD numbers)": "wall_type 'mse_lrfd' only, in place of verdict and the FOS: passes, checks_failed, checks_not_run, sliding_CDR_governing and sliding_CDR_strength_min, eL_governing_m, eL_strength_min_m and e_limit_m, bearing_CDR_governing, bearing_CDR_strength_min and sigma_v_strength_min_kPa, as the mse_lrfd_external_stability tool works them out (null: not checked). Report them to the user."},
+        "brief": "Run a cantilever retaining wall (cantilever_wall), MSE wall (mse_wall, ASD) or MSE LRFD external stability (mse_lrfd_external_stability) analysis, or a cantilever wall's stability with the structural design of its concrete (cantilever_wall_structural_design), and generate its calc package.",
+        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (cantilever: sliding, overturning, bearing, eccentricity; MSE: sliding, overturning, bearing, local shear, internal, grid spacing). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked).", "(structural design numbers)": "wall_type 'cantilever_reinforced' only: basis, stem, toe and heel (each Mu, Vu, d, the steel required and provided, the bar, phi Mn, phi Vc, passes), development (the stem bars' hook), recommendations_not_met, not_designed and reinforcement (the reinforced wall section a drawing takes), as the cantilever_wall_structural_design tool works them out; checks_failed then lists the concrete's failed checks too. Report them to the user, with what was not designed.", "(MSE numbers)": "wall_type 'mse' only: sigma_v_kPa (the bearing pressure on L - 2e), n_levels, FOS_pullout_min, FOS_rupture_min, passes_internal and failed_level_depths_m, as the mse_wall tool works them out. Report them to the user.", "(MSE LRFD numbers)": "wall_type 'mse_lrfd' only, in place of verdict and the FOS: passes, checks_failed, checks_not_run, sliding_CDR_governing and sliding_CDR_strength_min, eL_governing_m, eL_strength_min_m and e_limit_m, bearing_CDR_governing, bearing_CDR_strength_min and sigma_v_strength_min_kPa, as the mse_lrfd_external_stability tool works them out (null: not checked). Report them to the user.", "drawing_dxf_path": "wall_type 'cantilever_reinforced' only: the reinforcement sheet as a DXF, written beside the package as <name>_reinforcement.dxf (null: not drawn, warnings says why). The package's last page (pdf) or its Drawings section (html, latex) is the same sheet.", "drawing_png_path": "wall_type 'cantilever_reinforced' only: the same sheet as a PNG, <name>_reinforcement.png beside the package (null: not drawn).", "drawing_sheet": "wall_type 'cantilever_reinforced' only: the sheet's size: 'letter', or 'tabloid' for a wall letter would draw smaller than 1:50.", "drawing_scale": "wall_type 'cantilever_reinforced' only: the sheet's scale, '1:N', the largest standard scale at which the section fits the sheet.", "drawing_warnings": "What the reader of the sheet should know (an assumed shear key place, a hook that does not fit, a bar drawn wider than to scale). Tell the user.", "warnings": "wall_type 'cantilever_reinforced': why the reinforcement sheet is missing, when it could not be drawn (the package is written without it); and any warning the code raised while it ran."},
     },
     "ground_improvement_package": {
         "category": "Calculation Package",
@@ -3538,12 +4187,35 @@ METHOD_INFO = {
     "soe_package": {
         "category": "Calculation Package",
         "brief": "Run a support-of-excavation wall analysis (cantilever, braced/anchored at support levels, or FHWA apparent-pressure anchored wall) and generate its calc package: earth pressures, embedment, moments and the strut or anchor loads, with tables (CSV + printed) of pressure, shear and moment along the wall.",
-        "returns": {**_COMMON_RETURNS, "embedment_m": "Required embedment below the excavation (null: no moment balance; see notes).", "max_moment_kNm_per_m": "Max wall moment.", "support_loads_kN_per_m": "Braced: the load on each support level.", "anchor_design_loads_kN": "FHWA anchored: each anchor's design load.", "notes": "The analysis's notes (also printed in the package). Report every one."},
+        "returns": {**_COMMON_RETURNS, "embedment_m": "Required embedment below the excavation (null: no moment balance; see notes).", "max_moment_kNm_per_m": "Max wall moment.", "support_loads_kN_per_m": "Braced only: the load on each support level.", "anchor_design_loads_kN": "FHWA anchored only: each anchor's design load.", "notes": "The analysis's notes (also printed in the package). Report every one."},
     },
     "reliability_package": {
         "category": "Calculation Package",
         "brief": "Run a reliability analysis (FOSM, point estimates, Monte Carlo or FORM) on a performance function of random variables and generate its calc package: the variables and their distributions, the moments of g, the reliability index beta and the probability of failure, and which variable matters.",
-        "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure."},
+        "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure.", "n_failed": "Monte Carlo only: realizations with g below the threshold.", "n": "Monte Carlo only: realizations kept (finite g); pf is n_failed / n.", "n_requested": "Monte Carlo only: realizations run.", "n_dropped": "Monte Carlo only: realizations left out because g was not finite.", "pf_bounds_dropped": "Monte Carlo: [pf if no dropped realization had failed, pf if all had]; null when nothing was dropped.", "pf_ci95": "Monte Carlo only: 95% interval on pf.", "pf_ci95_method": "Monte Carlo: 'normal_approximation', or the Clopper-Pearson bound with no failure or only failures.", "warnings": "What the engine could not resolve (dropped realizations, a count at the edge, bounds FOSM or PEM did not apply), then any warning the code raised while it ran. Report every one."},
+    },
+    "fem2d_package": {
+        "category": "Calculation Package",
+        "brief": ("Run a 2D plane-strain finite element analysis "
+                  "(strength-reduction slope stability, staged excavation "
+                  "with a wall, coupled consolidation, steady seepage or "
+                  "staged construction) and generate its calc package: "
+                  "the mesh and materials, the analysis's steps and "
+                  "results, the convergence check (and, for slope_srm, "
+                  "the FOS against FOS_required), mesh and contour "
+                  "figures, and tables (CSV + printed). The parameters of "
+                  "the fem2d tool analysis_type names."),
+        "returns": {**_COMMON_RETURNS,
+                    "extra": "The fem2d tool's own single-number results "
+                             "under its own keys (FOS, converged and the "
+                             "largest movements, as the analysis has "
+                             "them), with its notes and warnings. Report "
+                             "every warning.",
+                    "FOS_required": "slope_srm only: the required factor of "
+                                    "safety the package's check used.",
+                    "meets_FOS_required": "slope_srm only: whether the "
+                                          "strength-reduction FOS is at "
+                                          "least FOS_required."},
     },
 }
 
@@ -3594,8 +4266,8 @@ declare_applies_when(METHOD_INFO, {
         "n_points": {"surface_type": _RANDOM_POLYLINES + ["noncircular_de"]},
         "fosm": {"variables": "set"},
         "monte_carlo": {"variables": "set"},
-        "n": {"variables": "set", "monte_carlo": [True]},
-        "research_surface": {"variables": "set", "monte_carlo": [True]},
+        "n": {"variables": "set", "monte_carlo": "set"},
+        "research_surface": {"variables": "set", "monte_carlo": "set"},
     },
 })
 
@@ -3626,4 +4298,51 @@ for _name in ("x_range", "y_range"):
     _report[_name]["applies_when"] = {"surface_type": _CIRCLES_GRID}
 _report["seed"]["applies_when"] = [
     {"surface_type": _RANDOM_POLYLINES + ["noncircular_de"]},
-    {"variables": "set", "monte_carlo": [True]}]
+    {"variables": "set", "monte_carlo": "set"}]
+
+
+# The later inputs reach the slope packages (GM-140 step 10, GM-346): the
+# tools' own specs, so one text says what each does; when each applies as
+# in the tools.
+def _slope_package_inputs():
+    from funhouse_agent.adapters.slope_stability import (
+        _GEOMETRY_PARAMS, _SURFACE_SPEC_PARAMS, METHOD_INFO as _SLOPE_INFO)
+
+    def bare(spec):
+        return {k: v for k, v in spec.items() if k != "applies_when"}
+    base = bare(_SLOPE_INFO["analyze_slope"]["parameters"]["base_in_tension"])
+    for package in ("slope_stability_package", "slope_report_package"):
+        params = METHOD_INFO[package]["parameters"]
+        for name in _SLOPE_PACKAGE_INPUTS:
+            params[name] = bare(_GEOMETRY_PARAMS[name])
+        params["base_in_tension"] = dict(base)
+    for name in ("arc_x_start", "arc_x_end"):
+        METHOD_INFO["slope_stability_package"]["parameters"][name] = bare(
+            _SURFACE_SPEC_PARAMS[name])
+    crack = [{"tension_crack_depth": "set"},
+             {"tension_crack_depth_basis": ["rankine", "min_fos"]}]
+    supports = [{"nails": "set"}, {"anchors": "set"},
+                {"geosynthetics": "set"}, {"stabilizing_piles": "set"}]
+    common = {
+        "tension_crack_water_depth": crack, "tension_crack_side": crack,
+        "tension_crack_model": crack,
+        "tension_crack_depth_basis": {"tension_crack_depth": "set"},
+        "water_line_kind": {"gwt_points": "set"},
+        "assisting_support": supports,
+    }
+    rigorous = ["janbu", "spencer", "morgenstern_price", "gle"]
+    declare_applies_when(METHOD_INFO, {
+        "slope_stability_package": {
+            **common,
+            "base_in_tension": [{"method": rigorous},
+                                {"compare_methods": "set"}]},
+        "slope_report_package": {
+            **common,
+            "reverse_curvature": {"surface_type": ["circular",
+                                                   "entry_exit"]},
+            # the report compares every method on the critical surface
+            "base_in_tension": {}},
+    })
+
+
+_slope_package_inputs()

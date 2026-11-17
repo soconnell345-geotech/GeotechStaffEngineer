@@ -114,3 +114,31 @@ class TestBuildSlicesWithPolyline:
         assert len(slices) > 0
         # Near x=0 (boundary at z=8), deep slices should be in Clay
         # Near x=40 (boundary at z=2.8), shallow slices should be in Sand
+
+    def test_two_layer_bishop_and_mass_by_hand_areas(self):
+        """The same section (made-up values), circle (15, 20), R 18: the
+        sliding mass by its two areas and the Simplified Bishop factor of
+        safety. The boundary z = 8 - 0.12 x cuts the mass into 37.763 m2
+        of sand above it and 63.379 m2 of clay below: 18 (37.763) + 17
+        (63.379) = 679.7 + 1,077.4 = 1,757 kN/m. Before GM-140 step 1 (one
+        material per point) the clay was weighed from its flat top at el.
+        8 as well: 2,017 kN/m and Bishop 2.488."""
+        from slope_stability.methods import bishop_fos
+        layers = [
+            SlopeSoilLayer(
+                "Sand", top_elevation=10, bottom_elevation=0, gamma=18,
+                phi=35, c_prime=0,
+                bottom_boundary_points=[(0, 8), (50, 2)]),
+            SlopeSoilLayer(
+                "Clay", top_elevation=8, bottom_elevation=-10, gamma=17,
+                phi=0, c_prime=0, cu=50, analysis_mode="undrained"),
+        ]
+        geom = SlopeGeometry(
+            surface_points=[(0, 10), (10, 10), (30, 0), (50, 0)],
+            soil_layers=layers)
+        slip = CircularSlipSurface(xc=15, yc=20, radius=18)
+        slices = build_slices(geom, slip, n_slices=30)
+        assert sum(s.weight for s in slices) == pytest.approx(1757.0, abs=2.0)
+        fos = bishop_fos(slices, slip)
+        fos = fos[0] if isinstance(fos, tuple) else fos
+        assert fos == pytest.approx(2.849, abs=0.005)

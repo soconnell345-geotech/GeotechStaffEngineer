@@ -286,7 +286,8 @@ def test_read_reference_figure_runs_at_the_chart_budget(monkeypatch, tmp_path,
     # Held to the 2,048 px a host delivers (Funhouse shrinks anything
     # larger), still at detail "original" ...
     assert max(w, h) == vision_view.DEFAULT_MAX_PX
-    assert out["source"] == str(pdf) and out["page"] == 0
+    assert out["source"] == str(pdf) and out["pdf_page_index"] == 0
+    assert "page" not in out          # review F5: only labelled page numbers
     assert vision_view.detail() == "high"  # restored after the call
     # ... and past it where the owner lifts the cap.
     monkeypatch.setenv(vision_view.MAX_PX_ENV, "none")

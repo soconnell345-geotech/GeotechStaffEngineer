@@ -24,8 +24,8 @@ wick drains, surcharge preloading, and vibro-compaction.
 ## Public API
 ```python
 analyze_aggregate_piers(column_diameter, spacing, pattern="triangular", E_column=None,
-    E_soil=5000.0, n=5.0, q_unreinforced=0.0, S_unreinforced=0.0,
-    settlement_method="stress_ratio") -> AggregatePierResult
+    E_soil=5000.0, n=None, q_unreinforced=0.0, S_unreinforced=0.0,
+    settlement_method="stress_ratio", column_type=None) -> AggregatePierResult
 analyze_wick_drains(spacing, ch, cv, Hdr, time, dw=DW_DEFAULT_M, pattern="triangular",
     smear_ratio=1.0, kh_ks_ratio=1.0, n_time_points=50) -> WickDrainResult
 analyze_surcharge_preloading(S_ultimate, surcharge_kPa, cv, Hdr, target_U=90.0, ch=None,
@@ -88,8 +88,17 @@ evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
   equal-strain stress-concentration factor 1 + as·(n−1) (GI-2). It is not
   the Priebe curve, which GEC-13 prints as a settlement ratio (Fig. 5-21).
 - `equivalent_drain_diameter = 2(w+t)/π` (GEC-13 Eq. 2-3; GI-1 fixed in 5.0)
-- Aggregate piers state their choices (GM-142, 2026-10-18): n (default
-  5.0; GEC-13 for stone columns: measured "between 2.0 and 5.0", p. 5-31,
+- **n by column type (GM-310, the call for OWN-108 of 2026-11-12).** n has
+  no default: left out, `column_type` 'stone_column' takes 2.5 (GEC-13 p.
+  5-32, "often conservatively used" for preliminary design; 2.0 to 5.0
+  measured, p. 5-31) and 'rammed_aggregate_pier' takes 5 (p. 5-43, 5 to 10
+  under flexible embankment loading, the low end); with neither given, and
+  n used, the call is refused, naming `column_type`. Before it one default
+  of 5.0 was the top of one range and the bottom of the other. At an area
+  ratio of 0.2 a stone column's settlement reduction factor goes from 0.56
+  (n 5) to 0.77 (n 2.5). `COLUMN_TYPE_N`, `N_NEEDS_COLUMN_TYPE`.
+- Aggregate piers state their choices (GM-142, 2026-10-18): n (5.0 by
+  default before GM-310; GEC-13 for stone columns: measured "between 2.0 and 5.0", p. 5-31,
   and "a ratio of 2.5 is often conservatively used" for preliminary
   design, p. 5-32; for rammed aggregate piers 5 to 10 under embankments and
   10 under rigid footings, p. 5-43; "stress concentration ratios range

@@ -17,7 +17,7 @@ def test_the_slope_tool_points_at_a_method_that_exists():
     assert _NAME in R and _NAME in METHOD_INFO
     from funhouse_agent.adapters import fem2d_adapter
     import inspect
-    assert _NAME in inspect.getsource(fem2d_adapter._run_analyze_slope_srm)
+    assert _NAME in inspect.getsource(fem2d_adapter.run_fem2d_slope_srm)
 
 
 def test_every_declared_parameter_is_one_the_handler_takes():

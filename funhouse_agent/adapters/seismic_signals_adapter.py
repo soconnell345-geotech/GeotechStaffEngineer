@@ -53,6 +53,7 @@ def _run_intensity_measures(params: dict) -> dict:
         target_pga_g=params.get("target_pga_g"),
         sig_dur_start=params.get("sig_dur_start", 0.05),
         sig_dur_end=params.get("sig_dur_end", 0.95),
+        bracketed_threshold_g=params.get("bracketed_threshold_g"),
     )
     return clean_result(result.to_dict())
 
@@ -138,7 +139,7 @@ METHOD_INFO = {
     },
     "intensity_measures": {
         "category": "Seismic Signals",
-        "brief": "Compute earthquake intensity measures (Arias intensity, CAV, significant duration).",
+        "brief": "Compute earthquake intensity measures (PGA, PGV, PGD, Arias intensity, CAV, significant duration, and bracketed duration above a threshold you give).",
         "parameters": {
             "motion": {"type": "str", "brief": "Built-in motion name.", "default": None},
             "accel_history": {"type": "array", "brief": "Custom acceleration time history (g).", "default": None},
@@ -146,6 +147,7 @@ METHOD_INFO = {
             "target_pga_g": {"type": "float", "brief": "Scale the motion linearly so its PGA equals this value (g) before the analysis (the built-in motions have fixed PGAs: synthetic_pulse 0.30 g, synthetic_long 0.15 g). Frequency content and duration are kept.", "default": None},
             "sig_dur_start": {"type": "float", "brief": "Husid start fraction for significant duration.", "default": 0.05},
             "sig_dur_end": {"type": "float", "brief": "Husid end fraction for significant duration.", "default": 0.95},
+            "bracketed_threshold_g": {"type": "float", "brief": "Threshold acceleration (g) for the bracketed duration: the time between the first and the last sample whose absolute acceleration exceeds it. No default (no reference in the library prints one); left out, bracketed_duration_s is null and bracketed_duration_note says why.", "default": None},
         },
         "returns": {
             "motion_name": "Name of input motion (notes any PGA scaling).",
@@ -155,7 +157,9 @@ METHOD_INFO = {
             "arias_intensity_m_per_s": "Arias intensity (m/s).",
             "cav_m_per_s": "Cumulative absolute velocity (m/s).",
             "significant_duration_s": "Significant duration (s).",
-            "bracketed_duration_s": "Bracketed duration (s).",
+            "bracketed_duration_s": "Bracketed duration (s) above bracketed_threshold_g, or null when it could not be computed (no threshold given, or the record never exceeds it); never 0 for that.",
+            "bracketed_threshold_g": "The threshold given (g), or null.",
+            "bracketed_duration_note": "Present when bracketed_duration_s is null: why.",
         },
     },
     "rotd_spectrum": {
@@ -252,7 +256,12 @@ _PERIODS = ("200 periods from 0.01 to 10 s, evenly spaced on a log scale",
             "the module's period list")
 declare_when_absent(METHOD_INFO, {
     "response_spectrum": {"target_pga_g": _UNSCALED, "periods": _PERIODS},
-    "intensity_measures": {"target_pga_g": _UNSCALED},
+    "intensity_measures": {
+        "target_pga_g": _UNSCALED,
+        "bracketed_threshold_g": (
+            "no bracketed duration",
+            "bracketed_duration_s is null, with the reason in "
+            "bracketed_duration_note")},
     "signal_processing": {"target_pga_g": _UNSCALED},
     "rotd_spectrum": {"periods": _PERIODS,
                       "percentiles": ("0, 50 and 100",

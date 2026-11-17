@@ -95,13 +95,14 @@ def run_seismic_earth_pressure(params: dict, *,
     # wall friction; GM-120)
     ka_given = params.get("KA") is not None
     KA = float(params["KA"]) if ka_given else rankine_Ka(phi)
-    # KPE's wall friction: as given, else 0.4 phi, the most UFC 3-220-20
-    # Fig. 4-8 allows a planar passive wedge (GM-293 and its review; it took
-    # the active delta, 2/3 phi by default, then phi / 2)
+    # KPE's wall friction: as given, else phi / 3, above which NHI-06-089
+    # p. 10-19 finds a planar passive wedge unreliable (GM-310, OWN-114;
+    # it took the active delta, 2/3 phi by default, then phi / 2, then
+    # 0.4 phi, UFC 3-220-20 Fig. 4-8's limit, from GM-293's review)
     delta_p = params.get("delta_passive")
     delta_p_given = delta_p is not None
     if not delta_p_given:
-        delta_p = 0.4 * phi
+        delta_p = phi / 3.0
     KPE = (mononobe_okabe_KPE(phi, delta_p, kh, kv, beta, i)
            if include_passive else 0.0)
     gamma = params.get("gamma")
@@ -345,7 +346,7 @@ METHOD_INFO = {
             "S1": {"type": "float", "required": False, "description": "1-second spectral acceleration."},
             "pga": {"type": "float", "required": False, "description": "Mapped peak ground acceleration (g). If provided with Ss/S1, also returns Fpga (read against PGA, GEC-12 Table 7-27) and As = Fpga PGA (GEC-12 Eq. 7-78)."},
         },
-        "returns": {"site_class": "AASHTO site class A-E (Table 7-26: 1524 / 762 / 365.76 / 182.88 m/s, N-bar 50 / 15, su-bar 95.76 / 47.88 kPa, the printed ft/s and ksf converted exactly; Site Class F and the soft-clay rule for E are not checked).", "Fa": "Short-period coefficient.", "Fv": "Long-period coefficient.", "Fpga": "Zero-period coefficient; null without pga.", "As_g": "Fpga PGA, with pga."},
+        "returns": {"site_class": "AASHTO site class A-E (Table 7-26: 1524 / 762 / 365.76 / 182.88 m/s, N-bar 50 / 15, su-bar 95.76 / 47.88 kPa, the printed ft/s and ksf converted exactly; Site Class F and the soft-clay rule for E are not checked).", "Fa": "Short-period coefficient, with Ss and S1.", "Fv": "Long-period coefficient, with Ss and S1.", "Fpga": "Zero-period coefficient, with Ss and S1; null without pga.", "As_g": "Fpga PGA, with pga."},
     },
     "seismic_earth_pressure": {
         "category": "Seismic Earth Pressure",
@@ -358,7 +359,7 @@ METHOD_INFO = {
             "beta": {"type": "float", "required": False, "default": 0.0, "description": "Wall back face batter from vertical (degrees), positive when the back face leans toward the backfill (lowers KAE). UFC 3-220-20 Eq. 4-15 and Fig. 4-8 measure their theta the other way: theta = -beta."},
             "i": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees); UFC 3-220-20 Eq. 4-15's beta."},
             "include_passive": {"type": "bool", "required": False, "default": False, "description": "Also return KPE (passive seismic coefficient, GEC-4 Eq. 44)."},
-            "delta_passive": {"type": "float", "required": False, "description": "Wall friction angle behind KPE (deg). Not given: 0.4 phi, the most UFC 3-220-20 Fig. 4-8 (p. 187) allows a planar (Coulomb) passive wedge (\"unconservative for delta/phi' > 0.4\"); FHWA NHI-06-089 p. 10-19 finds a planar passive wedge unreliable above phi'/3 and recommends log-spiral charts, with which its p. 10-17 maximum of phi/2 goes. Above 0.4 phi the result warns."},
+            "delta_passive": {"type": "float", "required": False, "description": "Wall friction angle behind KPE (deg). Not given: phi/3, above which FHWA NHI-06-089 p. 10-19 finds a planar passive wedge unreliable (it recommends log-spiral charts, with which its p. 10-17 maximum of phi/2 goes); the lower friction gives the lower passive resistance. UFC 3-220-20 Fig. 4-8 (p. 187) allows a planar (Coulomb) passive wedge up to 0.4 phi (\"unconservative for delta/phi' > 0.4\"): give delta_passive = 0.4*phi for that reading, which the result's choices name. Above 0.4 phi the result warns."},
             "gamma": {"type": "float", "required": False, "description": "Soil unit weight (kN/m3) for force calculation."},
             "H": {"type": "float", "required": False, "description": "Wall height (m) for force calculation."},
             "KA": {"type": "float", "required": False, "description": "Static active coefficient behind PA and delta-PAE. Not given: Rankine Ka from phi (vertical wall, level backfill, no wall friction)."},
@@ -369,15 +370,15 @@ METHOD_INFO = {
         "category": "Liquefaction",
         "brief": "Full liquefaction triggering evaluation (SPT-based, simplified method).",
         "parameters": {
-            "depths": {"type": "array", "required": True, "description": "Layer depths (m)."},
+            "depths": {"type": "array", "required": True, "description": "Depths (m below the ground surface) where (N1)60 was measured, increasing, the first below the surface; each is an evaluation point. The total vertical stress is summed down through them, the gamma given at a depth applying from the previous depth (the ground surface for the first) down to it. So give a depth at each change in unit weight (a layer's base, with that layer's N160, FC and gamma), the water table included where the unit weight changes there; otherwise the change is taken at the depth above it."},
             "N160": {"type": "array", "required": True, "description": "Corrected SPT blow counts."},
             "FC": {"type": "array", "required": True, "description": "Fines content (%)."},
-            "gamma": {"type": "array", "required": True, "description": "Unit weights (kN/m3)."},
+            "gamma": {"type": "array", "required": True, "description": "Total unit weight (kN/m3) at each depth. The value given at a depth applies from the previous depth (the ground surface for the first) down to that depth, and the total vertical stress is the sum of gamma x interval over the depths down to it (the same rule on the bi2014 and nceer2001 SPT procedures; see depths)."},
             "amax_g": {"type": "float", "required": True, "description": "Peak ground acceleration (g)."},
             "gwt_depth": {"type": "float", "required": True, "description": "Groundwater depth (m)."},
             "magnitude": {"type": "float", "required": False, "default": 7.5, "description": "Earthquake magnitude."},
         },
-        "returns": {"min_FOS_liq": "Minimum FOS against liquefaction.", "n_liquefiable": "Number of liquefiable layers.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
+        "returns": {"layer_results": "Per depth: depth_m, N160, N160cs, FC_pct, sigma_v_kPa, sigma_v_eff_kPa, rd, MSF, CSR, CRR, FOS_liq, liquefiable.", "min_FOS_liq": "Minimum FOS against liquefaction.", "n_liquefiable": "Number of depths with FOS below 1.0.", "magnitude": "Magnitude used.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "residual_strength": {
         "category": "Liquefaction",
@@ -429,9 +430,10 @@ declare_when_absent(METHOD_INFO, {
     "seismic_earth_pressure": {
         "delta": ("2/3 of phi", "wall friction delta = (2/3) phi; give "
                   "delta for the wall's interface"),
-        "delta_passive": ("0.4 phi", "the most UFC 3-220-20 Fig. 4-8 "
-                          "allows a planar passive wedge; NHI-06-089 "
-                          "p. 10-19 finds it unreliable above phi/3"),
+        "delta_passive": ("phi / 3", "NHI-06-089 p. 10-19 finds a planar "
+                          "passive wedge unreliable above phi/3; UFC "
+                          "3-220-20 Fig. 4-8 allows up to 0.4 phi, which "
+                          "gives the higher KPE"),
         "KA": ("Rankine Ka from phi",
                "a vertical wall, level backfill and no wall friction; give "
                "KA for another case")},

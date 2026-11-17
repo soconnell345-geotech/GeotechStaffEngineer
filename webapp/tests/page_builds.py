@@ -195,6 +195,15 @@ def build(name: str, model=None, files_dir=None, capture: bool = False,
              _wrap("create_agent", lc_agents.create_agent)),
         ]
     saved = [(obj, attr, getattr(obj, attr)) for obj, attr, _ in patches]
+    docs = None
+    if page == "geotech":
+        # The geotech page with its reference PDFs reachable (the SharePoint
+        # fetcher on Databricks, or a docs folder), whatever this machine
+        # holds: the prompts and the references helper's tools depend on it
+        # (2026-11-10 reach audit). The page without them is tested in
+        # funhouse_agent/tests/test_references_reach.py.
+        from funhouse_agent import reference_docs as docs
+        docs.pin_chart_reads(True)
     with page_environment(switch, **(settings or {})):
         for obj, attr, fn in patches:
             setattr(obj, attr, fn)
@@ -213,6 +222,8 @@ def build(name: str, model=None, files_dir=None, capture: bool = False,
         finally:
             for obj, attr, real in saved:
                 setattr(obj, attr, real)
+            if docs is not None:
+                docs.pin_chart_reads(None)
     return agent, calls, files_dir
 
 

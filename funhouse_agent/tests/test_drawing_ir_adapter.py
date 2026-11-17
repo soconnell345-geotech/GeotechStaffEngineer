@@ -136,7 +136,7 @@ class TestErrors:
         r = call_agent("drawing_ir", "digitize_drawing", {"file_path": dxf_path})
         q = call_agent("drawing_ir", "query_drawing",
                        {"handle": r["handle"], "query": "frobnicate"})
-        assert "error" in q and "Unknown query" in q["error"]
+        assert "error" in q and "query='frobnicate' is not one of" in q["error"]
 
     def test_query_missing_required_param(self, dxf_path):
         r = call_agent("drawing_ir", "digitize_drawing", {"file_path": dxf_path})

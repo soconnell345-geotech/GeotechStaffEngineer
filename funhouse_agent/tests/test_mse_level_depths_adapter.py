@@ -104,7 +104,7 @@ def test_without_depths_the_bottom_level_runs_to_the_base():
     (dict(sigma_H_average="midpoint"),
      "sigma_H_average applies to level depths given"),
     (dict(level_depths=_Z, sigma_H_average="mean"),
-     "takes 'trapezoidal'"),
+     "sigma_H_average='mean' is not one of the values"),
 ])
 def test_what_is_refused(extra, words):
     r = _mse(**extra)

@@ -37,11 +37,117 @@ def _validate_model_output(Y, n_samples):
         )
 
 
+def sobol_rows_per_base_sample(n_vars, calc_second_order):
+    """Rows of a Saltelli/Sobol design per base sample N: 2D+2 with
+    second-order indices, D+2 without."""
+    return 2 * n_vars + 2 if calc_second_order else n_vars + 2
+
+
+def _sobol_base_samples(n_outputs, n_vars, calc_second_order, n_samples):
+    """The base sample size N the outputs imply, checked against the
+    design (GM-323).
+
+    A Sobol design for D variables has N*(2D+2) rows with second-order
+    indices and N*(D+2) without. An output count that is not a whole
+    multiple was not made by that design (most often ``calc_second_order``
+    differs between the sampling and the analysis), and an ``n_samples``
+    that disagrees with the count is refused instead of being ignored.
+    """
+    per = sobol_rows_per_base_sample(n_vars, calc_second_order)
+    kind = (f"N*(2D+2) = N*{per} with second-order indices"
+            if calc_second_order else f"N*(D+2) = N*{per} without "
+            f"second-order indices")
+    if n_outputs == 0 or n_outputs % per:
+        other = sobol_rows_per_base_sample(n_vars, not calc_second_order)
+        hint = (f" It is a whole multiple of {other}: was the sample made "
+                f"with calc_second_order={not calc_second_order}?"
+                if n_outputs and n_outputs % other == 0 else "")
+        raise ValueError(
+            f"Y has {n_outputs} value(s), which is not a Sobol design for "
+            f"{n_vars} variables: sobol_sample gives {kind} rows, one "
+            f"output per row.{hint}")
+    n_base = n_outputs // per
+    if n_samples is not None and int(n_samples) != n_base:
+        raise ValueError(
+            f"n_samples={n_samples} does not match Y: a design with "
+            f"N={n_samples} for {n_vars} variables has "
+            f"{int(n_samples) * per} rows ({kind}), and Y has {n_outputs} "
+            f"values (N={n_base}). Give the n_samples and "
+            f"calc_second_order used in sobol_sample, or leave n_samples "
+            f"out to take N from Y.")
+    return n_base
+
+
+def _sobol_design_ambiguity(n_outputs, n_vars, calc_second_order,
+                            n_samples):
+    """With ``n_samples`` left out, a Y whose length fits both designs (a
+    whole multiple of both 2D+2 and D+2; for D = 1, 3, 7 and 15 every
+    power-of-two N does) cannot say which design made it. The analysis
+    takes the one ``calc_second_order`` names; this says so, with the
+    other reading (GM-323 review). Returns (warning, choice) or None."""
+    if n_samples is not None or n_outputs == 0:
+        return None
+    per = sobol_rows_per_base_sample(n_vars, calc_second_order)
+    other = sobol_rows_per_base_sample(n_vars, not calc_second_order)
+    if n_outputs % per or n_outputs % other:
+        return None
+    with_2nd = "with second-order indices, N*(2D+2)"
+    without = "without second-order indices, N*(D+2)"
+    taken, not_taken = ((with_2nd, without) if calc_second_order
+                        else (without, with_2nd))
+    n_taken, n_other = n_outputs // per, n_outputs // other
+    warning = (
+        f"Y's {n_outputs} values fit two Sobol designs for {n_vars} "
+        f"variables: N={n_taken} {taken}, taken because "
+        f"calc_second_order={calc_second_order}, and N={n_other} "
+        f"{not_taken}. If the sample was made with "
+        f"calc_second_order={not calc_second_order}, these indices come "
+        f"from the wrong design. Give n_samples (or check "
+        f"calc_second_order against sobol_sample) to settle it.")
+    choice = {
+        "what": "The Sobol design Y came from",
+        "chosen": f"N={n_taken} {taken}",
+        "how": "module",
+        "basis": (f"calc_second_order={calc_second_order}; n_samples was "
+                  f"not given, and Y's length fits both designs"),
+        "alternatives": [f"N={n_other} {not_taken} "
+                         f"(calc_second_order={not calc_second_order})"],
+    }
+    return warning, choice
+
+
+def _morris_trajectories(X, Y, n_vars, n_trajectories):
+    """The trajectories the sample matrix holds, checked against the
+    design (GM-323): morris_sample gives T*(D+1) rows of D columns, one
+    output per row."""
+    if X.ndim != 2 or X.shape[1] != n_vars:
+        raise ValueError(
+            f"X must be the morris_sample matrix, one row per sample point "
+            f"and one column per variable ({n_vars}); got shape "
+            f"{tuple(X.shape)}.")
+    _validate_model_output(Y, len(X))
+    per = n_vars + 1
+    if len(X) == 0 or len(X) % per:
+        raise ValueError(
+            f"X has {len(X)} row(s), which is not a Morris design for "
+            f"{n_vars} variables: morris_sample gives trajectories*(D+1) = "
+            f"trajectories*{per} rows.")
+    counted = len(X) // per
+    if n_trajectories is not None and int(n_trajectories) != counted:
+        raise ValueError(
+            f"n_trajectories={n_trajectories} does not match X: "
+            f"{n_trajectories} trajectories of {n_vars} variables are "
+            f"{int(n_trajectories) * per} rows, and X has {len(X)} "
+            f"({counted} trajectories). Give the n_trajectories used in "
+            f"morris_sample, or leave it out to count them from X.")
+    return counted
+
+
 def sobol_analyze(
     var_names,
     bounds,
     Y,
-    n_samples=1024,
+    n_samples=None,
     calc_second_order=True,
     seed=42,
 ) -> SobolResult:
@@ -59,20 +165,32 @@ def sobol_analyze(
         Bounds for each variable.
     Y : array-like
         Model output for each sample point.
-    n_samples : int
-        Base number of samples used for Sobol sampling. Default 1024.
+    n_samples : int, optional
+        The base sample size N given to sobol_sample. When given, Y must
+        have N*(2D+2) values (N*(D+2) without second-order indices) or the
+        call is refused. Left out, N is taken from the length of Y.
     calc_second_order : bool
-        Whether second-order indices were computed. Default True.
+        Whether the sample was made for second-order indices. Default True.
+        It must match the sampling: it sets the design's row count.
     seed : int
         Random seed for resampling. Default 42.
 
     Returns
     -------
     SobolResult
-        Sobol sensitivity indices.
+        Sobol sensitivity indices. ``n_samples`` is the number of outputs
+        analysed (the length of Y); ``n_base_samples`` is N.
     """
     _validate_problem(var_names, bounds)
     Y_arr = np.asarray(Y, dtype=float)
+    if Y_arr.ndim != 1:
+        raise ValueError(
+            f"Y must be a flat list, one output per sample row; got shape "
+            f"{tuple(Y_arr.shape)}.")
+    n_base = _sobol_base_samples(len(Y_arr), len(var_names),
+                                 calc_second_order, n_samples)
+    ambiguity = _sobol_design_ambiguity(len(Y_arr), len(var_names),
+                                        calc_second_order, n_samples)
 
     problem = {
         'num_vars': len(var_names),
@@ -93,6 +211,7 @@ def sobol_analyze(
 
     return SobolResult(
         n_samples=len(Y_arr),
+        n_base_samples=n_base,
         n_vars=len(var_names),
         var_names=list(var_names),
         S1=list(Si['S1']),
@@ -100,6 +219,8 @@ def sobol_analyze(
         ST=list(Si['ST']),
         ST_conf=list(Si['ST_conf']),
         S2=s2,
+        warnings=[ambiguity[0]] if ambiguity else [],
+        choices=[ambiguity[1]] if ambiguity else [],
     )
 
 
@@ -151,7 +272,7 @@ def morris_analyze(
     bounds,
     X,
     Y,
-    n_trajectories=20,
+    n_trajectories=None,
     num_levels=4,
     seed=42,
 ) -> MorrisResult:
@@ -167,8 +288,10 @@ def morris_analyze(
         Sample matrix from morris_sample().
     Y : array-like
         Model output for each sample point.
-    n_trajectories : int
-        Number of trajectories used in sampling.
+    n_trajectories : int, optional
+        The number of trajectories given to morris_sample. When given, X
+        must have n_trajectories*(D+1) rows or the call is refused. Left
+        out, the trajectories are counted from X.
     num_levels : int
         Number of grid levels used in sampling.
     seed : int
@@ -177,11 +300,14 @@ def morris_analyze(
     Returns
     -------
     MorrisResult
-        Morris elementary effects (mu*, sigma).
+        Morris elementary effects (mu*, sigma). ``n_trajectories`` is the
+        number counted from X: rows / (D+1).
     """
     _validate_problem(var_names, bounds)
     X_arr = np.asarray(X, dtype=float)
     Y_arr = np.asarray(Y, dtype=float)
+    n_counted = _morris_trajectories(X_arr, Y_arr, len(var_names),
+                                     n_trajectories)
 
     problem = {
         'num_vars': len(var_names),
@@ -197,7 +323,7 @@ def morris_analyze(
     )
 
     return MorrisResult(
-        n_trajectories=n_trajectories,
+        n_trajectories=n_counted,
         n_vars=len(var_names),
         var_names=list(var_names),
         mu_star=list(Si['mu_star']),

@@ -179,6 +179,24 @@ def _text(content: Any) -> str:
     return "" if content is None else str(content)
 
 
+def _check_stop() -> None:
+    """Raise ``TurnStopped`` when the user asked to stop the running turn
+    (BACKLOG TA-37; :mod:`aec_agent_core.deep.keep_work`)."""
+    from aec_agent_core.deep.keep_work import check_stop
+    check_stop()
+
+
+def _may_continue() -> bool:
+    """Whether one more continuation call fits the agent's budget (TA-38);
+    a turn the user asked to stop makes none."""
+    try:
+        from aec_agent_core.deep.keep_work import (stop_requested,
+                                                   take_extra_model_call)
+        return not stop_requested() and take_extra_model_call()
+    except Exception:  # noqa: BLE001 - an older core: as before
+        return True
+
+
 class OutputLimitGuard(AgentMiddleware):
     """Catch a reply cut off at the output-token limit (see the module
     docstring). Put it LAST among the app's middleware: innermost, it sees
@@ -220,12 +238,27 @@ class OutputLimitGuard(AgentMiddleware):
                                       "invalid_tool_calls": []})
 
     def _continue_text(self, request, response, msg: AIMessage, handler):
-        """A cut text reply, carried on where it stopped and joined."""
+        """A cut text reply, carried on where it stopped and joined. Each
+        continuation is a model call: in a turn whose budget is the whole
+        turn's it is counted against the agent's budget, and none is made
+        that would leave no call for the forced last reply (BACKLOG
+        TA-38). A continuation that fails ends the continuing: the text
+        already paid for is delivered as it is, instead of the error
+        sending the whole long call round again."""
         text = _text(msg.content)
         last = msg
         for _ in range(self.max_text_continues):
-            more = handler(request.override(messages=list(request.messages) + [
-                AIMessage(content=text), HumanMessage(content=CONTINUE_CUT_TEXT)]))
+            if not _may_continue():
+                break
+            try:
+                more = handler(request.override(
+                    messages=list(request.messages) + [
+                        AIMessage(content=text),
+                        HumanMessage(content=CONTINUE_CUT_TEXT)]))
+            except GraphBubbleUp:
+                raise
+            except Exception:  # noqa: BLE001 - the text paid for is kept
+                break
             nxt = _ai_of(more)
             if nxt is None:
                 break
@@ -240,10 +273,17 @@ class OutputLimitGuard(AgentMiddleware):
         text = _text(msg.content)
         last = msg
         for _ in range(self.max_text_continues):
-            more = await handler(request.override(
-                messages=list(request.messages) + [
-                    AIMessage(content=text),
-                    HumanMessage(content=CONTINUE_CUT_TEXT)]))
+            if not _may_continue():
+                break
+            try:
+                more = await handler(request.override(
+                    messages=list(request.messages) + [
+                        AIMessage(content=text),
+                        HumanMessage(content=CONTINUE_CUT_TEXT)]))
+            except GraphBubbleUp:
+                raise
+            except Exception:  # noqa: BLE001
+                break
             nxt = _ai_of(more)
             if nxt is None:
                 break
@@ -267,6 +307,7 @@ class OutputLimitGuard(AgentMiddleware):
         return response, msg
 
     def wrap_model_call(self, request, handler):
+        _check_stop()                      # TA-37: a stopped turn
         response = handler(request)
         response, cut_text = self._after(response)
         if cut_text is not None and self.max_text_continues:
@@ -282,6 +323,7 @@ class OutputLimitGuard(AgentMiddleware):
         return response
 
     async def awrap_model_call(self, request, handler):
+        _check_stop()
         response = await handler(request)
         response, cut_text = self._after(response)
         if cut_text is not None and self.max_text_continues:

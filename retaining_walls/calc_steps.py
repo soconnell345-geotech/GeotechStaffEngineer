@@ -119,6 +119,11 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     """
     wtype = _wall_type(result, analysis)
 
+    if wtype == "cantilever_reinforced":
+        # GM-312: the stability inputs, then the structural design's
+        from retaining_walls import structural_steps
+        return (_input_summary_cantilever(result.stability, analysis)
+                + structural_steps.input_items(result, analysis))
     if wtype == "mse_lrfd":
         return _input_summary_mse_lrfd(result, analysis)
     if wtype == "mse":
@@ -428,6 +433,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     """
     wtype = _wall_type(result, analysis)
 
+    if wtype == "cantilever_reinforced":
+        # GM-312: the stability sections as for 'cantilever', then the
+        # structural sections
+        from retaining_walls import structural_steps
+        return (_calc_steps_cantilever(result.stability, analysis)
+                + structural_steps.sections(result, analysis))
     if wtype == "mse_lrfd":
         return _calc_steps_mse_lrfd(result, analysis)
     if wtype == "mse":
@@ -2657,6 +2668,11 @@ def get_figures(result, analysis) -> List[FigureData]:
     """
     wtype = _wall_type(result, analysis)
     figures = []
+    if wtype == "cantilever_reinforced":
+        # GM-312: the stability figures; the reinforcement sheet is added
+        # by the agent layer as the package's last page (GM-335), not here
+        result = result.stability
+        wtype = "cantilever"
     if wtype == "mse_lrfd":
         # GM-307: the LRFD package reports external stability; its section
         # is the ASD package's (wall_type 'mse')
@@ -2994,9 +3010,13 @@ def _plot_cantilever_section(result, analysis):
             missing = ("position or width" if key_x is None
                        and key_w is None else
                        "position" if key_x is None else "width")
+            # "under the stem" only where its place is assumed (GM-335
+            # review)
             key_lines += [("Shear key drawn under the stem: an assumption, no "
                            "printed basis (UFC 3-220-20 Fig. 4-29 draws a "
-                           "gravity wall);"),
+                           "gravity wall);") if key_x is None else
+                          ("Shear key as wide as the stem's base: an "
+                           "assumption, no printed basis;"),
                           f"no key {missing} given."]
         key_x = t_toe if key_x is None else float(key_x)
         key_w = t_stem_b if key_w is None else float(key_w)

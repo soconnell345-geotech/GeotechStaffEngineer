@@ -1025,13 +1025,13 @@ def _srm_warnings(nodes, elements, z_toe, H, srm_result, srf_range):
     if basis == 'range_exhausted':
         warnings.append(
             f"The slope did not fail at any strength reduction factor up to "
-            f"{hi}: the factor of safety is at least {hi}. Raise srf_range "
-            "to find it.")
+            f"{hi}: the factor of safety is at least {hi} (the FOS reported "
+            "is that lower bound). Raise srf_range to find it.")
     elif not srm_result.get('converged', True):
         warnings.append(
             f"The slope already fails at the lowest strength reduction "
-            f"factor tried ({lo}): the factor of safety is below {lo}. Lower "
-            "srf_range to find it.")
+            f"factor tried ({lo}): the factor of safety is below {lo} (the "
+            "FOS reported is that upper bound). Lower srf_range to find it.")
     return warnings
 
 

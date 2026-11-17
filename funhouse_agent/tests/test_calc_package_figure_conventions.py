@@ -172,6 +172,7 @@ def _key(ax, depth):
     ({}, "no key position or width given."),
     ({"key_distance_from_toe": 2.4, "key_width": 0.5}, None),
     ({"key_width": 0.5}, "no key position given."),
+    ({"key_distance_from_toe": 2.4}, "no key width given."),
 ])
 def test_shear_key_drawn_where_given_else_under_the_stem_and_said(
         built, given, said):
@@ -188,7 +189,9 @@ def test_shear_key_drawn_where_given_else_under_the_stem_and_said(
     assert key.get_width() == pytest.approx(
         given.get("key_width", geom.stem_thickness_base))
     joined = "\n".join(_texts(fig))
-    assert ("Shear key drawn under the stem" in joined) == bool(said)
+    # "under the stem" only where its place is assumed (GM-335 review)
+    assert ("Shear key drawn under the stem" in joined) == (
+        "position" in (said or ""))
     if said:
         assert said in joined
     assert "the key is not counted" not in joined

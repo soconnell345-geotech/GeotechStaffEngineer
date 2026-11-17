@@ -45,6 +45,7 @@ from calc_package.data_model import (
     InputItem,
     CheckItem,
     FigureData,
+    SheetData,
     TableData,
 )
 from calc_package.renderer import render_html, save_html, figure_to_base64
@@ -52,7 +53,7 @@ from calc_package.latex_renderer import render_latex, save_latex, save_pdf, rend
 from calc_package.equation_converter import unicode_to_latex, escape_latex
 from calc_package.tables import (
     csv_file_names, export_tables, input_table, module_tables, tables_section,
-    choices_section, assumed_section, given_section,
+    choices_section, assumed_section, given_section, raised_warnings_section,
 )
 
 
@@ -186,7 +187,8 @@ def package_tables(module: str, result, analysis=None) -> list:
 def _package_sections(reg: dict, module: str, result, analysis, *,
                       tables=True, table_files=None, output_path=None,
                       render_report=None, given_inputs=None,
-                      assumed_inputs=None, with_figures=True) -> list:
+                      assumed_inputs=None, with_figures=True,
+                      raised_warnings=None) -> list:
     """The sections of ``module``'s calc package, in order (the arguments
     are :func:`generate_calc_package`'s). ``with_figures=False`` leaves
     the Figures section out (:func:`calculation_html`)."""
@@ -212,6 +214,12 @@ def _package_sections(reg: dict, module: str, result, analysis, *,
     choices_part = choices_section(result, analysis)
     if choices_part is not None:
         sections.append(choices_part)
+
+    # The warnings the code raised while the analysis ran (GM-316 review
+    # B4): before the steps, so they are read with the result.
+    raised_part = raised_warnings_section(raised_warnings)
+    if raised_part is not None:
+        sections.append(raised_part)
 
     # Section 2+: Calculation Steps (may return multiple sections)
     calc_sections = reg["get_calc_steps"](result, analysis)
@@ -281,6 +289,8 @@ def generate_calc_package(
     table_files: list = None,
     assumed_inputs: list = None,
     given_inputs: list = None,
+    raised_warnings: list = None,
+    sheets: list = None,
 ) -> str:
     """Generate a Mathcad-style calculation package.
 
@@ -341,6 +351,20 @@ def generate_calc_package(
         (GM-155, GM-167; ``words``: the user's own, when known). Printed
         first, as "Given Inputs"; an empty list says no input was named as
         the user's. ``None``: no such section.
+    raised_warnings : list of str, optional
+        The warnings the analysis code raised while it ran (GM-316: the
+        caller collects them, ``aec_agent_core.call_warnings.so_far``),
+        printed as "Warnings Raised by the Calculation" before the
+        calculation steps. ``None`` or empty: no such section.
+    sheets : list of SheetData, optional
+        Drawing sheets to end the package with (GM-313), each the PDF
+        page and the PNG of one drawing (``dxf_export.render`` draws
+        them; this package imports nothing of the drawing layer). PDF:
+        each sheet's own vector page is appended after the last page, at
+        the sheet's size, on either PDF leg, and ``render_report`` gains
+        ``"sheets"`` (each one's page number and size). HTML and LaTeX
+        source: a last section "Drawings" shows each PNG. ``None`` or
+        empty: the package is exactly as without this argument.
 
     Returns
     -------
@@ -357,7 +381,7 @@ def generate_calc_package(
         reg, module, result, analysis, tables=tables,
         table_files=table_files, output_path=output_path,
         render_report=render_report, given_inputs=given_inputs,
-        assumed_inputs=assumed_inputs)
+        assumed_inputs=assumed_inputs, raised_warnings=raised_warnings)
 
     # Assemble
     data = CalcPackageData(
@@ -370,7 +394,12 @@ def generate_calc_package(
         company=company,
         sections=sections,
         references=reg["references"],
+        sheets=list(sheets or []),
     )
+    for sheet in data.sheets:
+        if not isinstance(sheet, SheetData):
+            raise TypeError("sheets: each entry must be a "
+                            "calc_package.SheetData.")
 
     # ── Dispatch by format ──
     if format == "pdf":

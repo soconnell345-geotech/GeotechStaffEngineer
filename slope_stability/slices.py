@@ -71,6 +71,7 @@ from geotech_common.water import GAMMA_W
 from slope_stability.geometry import (
     SlopeGeometry, SlopeSoilLayer, build_pore_pressure_interpolator,
 )
+from slope_stability.pore_pressure import base_pore_pressure, pond_edges
 
 
 @dataclass
@@ -137,6 +138,12 @@ class Slice:
     pond_force: float = 0.0      # vertical pond water weight (also in weight)
     pond_hforce: float = 0.0     # signed horizontal pond thrust, +x (kN/m)
     pond_z: float = 0.0          # elevation of pond thrust line of action
+    # GM-140 step 5a (``pore_pressure.base_pore_pressure``): the water
+    # pressure at the base before the total-stress rule (kPa; equal to
+    # pore_pressure but on a total-stress layer, whose base carries none),
+    # and where it came from: 'none', 'line', 'line_cos2', 'ru' or 'grid'.
+    water_pressure: float = 0.0
+    pore_pressure_from: str = "none"
 
 
 @dataclass
@@ -275,18 +282,6 @@ def _circle_crossings(slip, xs: List[float], z_line) -> List[float]:
     return out
 
 
-def _crack_base(geom: SlopeGeometry, x_entry: float,
-                x_exit: float) -> Optional[float]:
-    """Elevation of the tension crack's base at the crest end of the
-    surface (the entry, or the exit with ``tension_crack_side='exit'``),
-    or None without a crack. A slice on that half of the surface whose
-    base lies above it is in the crack (``build_slices``)."""
-    if geom.tension_crack_depth <= 0:
-        return None
-    x_crest = x_entry if geom.tension_crack_side == "entry" else x_exit
-    return geom.ground_elevation_at(x_crest) - geom.tension_crack_depth
-
-
 def _surcharge_edges(geom: SlopeGeometry) -> List[float]:
     """The x of each end of each loaded surcharge zone."""
     xs = []
@@ -341,7 +336,9 @@ def slice_breaks(geom: SlopeGeometry, slip, x_entry: float,
             L.bottom_at(x) for L in geom.soil_layers) + 1e-9
 
     for layer in geom.soil_layers:
-        out += crossings_of([], layer.top_at)
+        tpts = layer.top_boundary_points
+        out += crossings_of([p[0] for p in tpts] if tpts else [],
+                            layer.top_at)
         bpts = layer.bottom_boundary_points
         out += [x for x in crossings_of([p[0] for p in bpts] if bpts else [],
                                         layer.bottom_at)
@@ -352,17 +349,65 @@ def slice_breaks(geom: SlopeGeometry, slip, x_entry: float,
     # The tension crack: slices on the crest half whose base is above its
     # base are in it, so it ends where the surface crosses that level on
     # the crest half, or at the middle of the surface.
-    z_crack = _crack_base(geom, x_entry, x_exit)
+    from slope_stability.cracks import crack_for_slices
+    crack = crack_for_slices(geom, slip, x_entry, x_exit)
+    z_crack = None if crack is None else crack["base"]
     if z_crack is not None:
         x_half = 0.5 * (x_entry + x_exit)
-        entry_side = geom.tension_crack_side == "entry"
+        entry_side = crack["side"] == "entry"
         out += [x for x in crossings_of([], lambda x: z_crack)
                 if (x <= x_half if entry_side else x >= x_half)]
         z_half = slip.slip_elevation_at(x_half)
         if z_half is not None and z_half >= z_crack:
             out.append(x_half)
     out += _surcharge_edges(geom)
+    # The pond's edge, where the water line comes down to the ground
+    # (GM-140 step 5a, account D16; ``pore_pressure.pond_edges``).
+    out += pond_edges(geom)
     return inside(out)
+
+
+def _kept_span(geom: SlopeGeometry, slip, bounds: List[float],
+               x_entry: float, x_exit: float
+               ) -> Optional[Tuple[float, float]]:
+    """The stretch of the surface a tension crack leaves, (x_low, x_high),
+    or None without a crack that ends the surface. EM 1110-2-1902 C-10c,
+    p. C-36: the slip surface is terminated where it reaches the bottom of
+    the crack. Walking from the middle of the surface towards its crest
+    end over the stretches between ``bounds`` (the crack's base is one of
+    them), the surface ends at the first stretch whose base lies above the
+    crack's bottom. Where that is already the stretch next to the middle,
+    the crack's bottom is not reached at the upper end and the surface is
+    refused (``cracks.bottom_not_reached_error``), never cut at its middle
+    into a stub carrying the crack's full water force."""
+    from slope_stability.cracks import (bottom_not_reached_error,
+                                        crack_for_slices)
+    crack = crack_for_slices(geom, slip, x_entry, x_exit)
+    if crack is None or not crack["truncate"]:
+        return None
+    x_half = 0.5 * (x_entry + x_exit)
+    # the walk below would end the surface at its middle (a boundary
+    # ``slice_breaks`` puts there exactly when the surface at the middle is
+    # not below the crack's bottom): refused instead of solved
+    z_half = slip.slip_elevation_at(x_half)
+    if z_half is None or z_half >= crack["base"]:
+        raise bottom_not_reached_error(geom, crack, x_entry, x_exit)
+    pairs = list(zip(bounds[:-1], bounds[1:]))
+    if crack["side"] == "entry":
+        for a, b in reversed(pairs):
+            if 0.5 * (a + b) > x_half:
+                continue
+            z = slip.slip_elevation_at(0.5 * (a + b))
+            if z is None or z >= crack["base"]:
+                return (b, x_exit)
+        return None
+    for a, b in pairs:
+        if 0.5 * (a + b) < x_half:
+            continue
+        z = slip.slip_elevation_at(0.5 * (a + b))
+        if z is None or z >= crack["base"]:
+            return (x_entry, a)
+    return None
 
 
 def slice_boundaries(geom: SlopeGeometry, slip, n_slices: int,
@@ -405,12 +450,19 @@ def slice_boundaries(geom: SlopeGeometry, slip, n_slices: int,
         if (x - bounds[i - 1] >= tol and bounds[i] - x >= tol):
             bounds.insert(i, x)
 
+    # A crack that ends the surface (GM-140 step 4): the slices run from
+    # the crack's vertical boundary to the other end, so the mass that is
+    # kept is cut into the slices asked for.
+    kept = _kept_span(geom, slip, bounds, x_entry, x_exit)
+    if kept is not None:
+        bounds = [b for b in bounds if kept[0] <= b <= kept[1]]
+
     widths = [b - a for a, b in zip(bounds[:-1], bounds[1:])]
     counts = [1] * len(widths)
     for _ in range(n_slices - len(widths)):
         k = max(range(len(widths)), key=lambda i: widths[i] / counts[i])
         counts[k] += 1
-    out = [x_entry]
+    out = [bounds[0]]
     for a, b, c in zip(bounds[:-1], bounds[1:], counts):
         out += [a + (b - a) * j / c for j in range(1, c)] + [b]
     return out
@@ -536,6 +588,51 @@ def base_depth(geom: SlopeGeometry, slip, x_entry: float,
     return best
 
 
+def _pond_thrust(d_left: float, d_right: float, z_left: float,
+                 z_right: float) -> Tuple[float, float]:
+    """(Fx, z): the horizontal resultant (kN/m, +x) of ponded water's
+    pressure on the ground across one slice, and the elevation it acts at.
+
+    ``d_left`` and ``d_right`` are the water line's height above the ground
+    at the slice's two sides (negative where the line is below the ground),
+    ``z_left`` and ``z_right`` the ground there. The ground and the line
+    are straight across a slice, so the depth d is linear and the pressure
+    gamma_w d acts on the ground's rise over the stretch where d > 0:
+
+        Fx = gamma_w (d_a + d_b) / 2 x (z_b - z_a)
+
+    a and b the ends of that stretch, acting at the centroid of the
+    pressure trapezoid on the rise, z_a + (z_b - z_a)(d_a + 2 d_b) /
+    (3 (d_a + d_b)). Boundary water pressures on the slope are the printed
+    way to carry external water with total weights (FHWA NHI-06-088
+    p. 6-13).
+
+    Under a level pool this is gamma_w (d_left^2 - d_right^2) / 2 at the
+    centroid of the trapezoid on the projected face, the form used before
+    GM-140 step 5a. That form took both depths from the line's elevation
+    at the slice's MIDDLE, which is the same thing under a level pool and
+    wherever the line is above the ground at both sides, but where a
+    sloping line is at or just under the ground (a water table at the
+    surface of a face) it read a pool at the slice's lower side, half the
+    slice's rise deep, and its thrust buttressed the slope.
+    """
+    if d_left <= 0.0 and d_right <= 0.0:
+        return 0.0, z_left
+    a, b = 0.0, 1.0
+    if d_left < 0.0:
+        a = d_left / (d_left - d_right)
+    if d_right < 0.0:
+        b = d_left / (d_left - d_right)
+    d_a, d_b = max(d_left, 0.0), max(d_right, 0.0)
+    z_a = z_left + a * (z_right - z_left)
+    z_b = z_left + b * (z_right - z_left)
+    if d_a + d_b <= 0.0:
+        return 0.0, z_left
+    force = GAMMA_W * 0.5 * (d_a + d_b) * (z_b - z_a)
+    z = z_a + (z_b - z_a) * (d_a + 2.0 * d_b) / (3.0 * (d_a + d_b))
+    return force, z
+
+
 def build_slices(geom: SlopeGeometry,
                  slip,
                  n_slices: int = 30,
@@ -598,9 +695,12 @@ def build_slices(geom: SlopeGeometry,
     # slip surface (entry = low-x by default, or exit = high-x). Only slices on
     # that half of the surface can be in the crack.
     x_midpoint = (x_entry + x_exit) / 2.0
-    crack_side = geom.tension_crack_side
-    crack_truncate = geom.tension_crack_model == "truncation"
-    crack_base_elev = _crack_base(geom, x_entry, x_exit)
+    from slope_stability.cracks import crack_for_slices
+    crack = crack_for_slices(geom, slip, x_entry, x_exit)
+    crack_side = crack["side"] if crack else "entry"
+    crack_truncate = bool(crack and crack["truncate"])
+    crack_base_elev = crack["base"] if crack else None
+    crack_water_depth = crack["water_depth"] if crack else 0.0
 
     slices = []
     for x_left, x_right, width in cuts:
@@ -652,19 +752,16 @@ def build_slices(geom: SlopeGeometry,
         if gwt_elev is not None and gwt_elev > z_top:
             pond_weight = GAMMA_W * (gwt_elev - z_top) * width
         if gwt_elev is not None:
-            d_l = max(gwt_elev - geom.ground_elevation_at(x_left), 0.0)
-            d_r = max(gwt_elev - geom.ground_elevation_at(x_right), 0.0)
-            if d_l > 0.0 or d_r > 0.0:
-                pond_hforce = 0.5 * GAMMA_W * (d_l * d_l - d_r * d_r)
-                if abs(pond_hforce) > 1e-12:
-                    # line of action: centroid of the trapezoidal pressure
-                    # diagram on the projected vertical face
-                    depth = (2.0 * (d_l ** 3 - d_r ** 3)
-                             / (3.0 * (d_l * d_l - d_r * d_r)))
-                    pond_z = gwt_elev - depth
-
-        # Pore pressure at base
-        pore_pressure = _pore_pressure_at_base(z_base, gwt_elev)
+            z_gl = geom.ground_elevation_at(x_left)
+            z_gr = geom.ground_elevation_at(x_right)
+            # The water's pressure on the ground over the slice, resolved
+            # horizontally, from the pool's depth at each side of the slice
+            # (GM-140 step 5a; ``_pond_thrust``).
+            pond_hforce, z_thrust = _pond_thrust(
+                geom.gwt_elevation_at(x_left) - z_gl,
+                geom.gwt_elevation_at(x_right) - z_gr, z_gl, z_gr)
+            if abs(pond_hforce) > 1e-12:
+                pond_z = z_thrust
 
         # Strength parameters from layer at base midpoint
         base_layer = geom.layer_at_point(x_mid, z_base)
@@ -677,27 +774,33 @@ def build_slices(geom: SlopeGeometry,
             else:
                 # Fallback: use bottom-most layer
                 base_layer = geom.soil_layers[-1]
-        # Apply Ru if no GWT pore pressure and layer has Ru > 0
-        if pp_interp is None and pore_pressure <= 0 and base_layer.ru > 0:
-            # u = Ru * gamma * h  where h = overburden depth
-            overburden_h = z_top - z_base
-            pore_pressure = base_layer.ru * base_layer.gamma * overburden_h
 
-        # Discrete pore-pressure field overrides the piezometric-line / ru value
-        # at the slice base (the ponded-water buttress above still uses gwt_elev).
-        if pp_interp is not None:
-            pore_pressure = pp_interp(x_mid, z_base)
+        # Pore pressure at the base, as printed for the kind of water
+        # input and the kind of strength the layer has (GM-140 step 5a,
+        # ``pore_pressure.base_pore_pressure``): the water line read as a
+        # piezometric line or as a water table (FHWA NHI-06-088 Eq. 6-16),
+        # ru on the total overburden stress of the soil column (weight is
+        # the soil's alone here; the pond's is added below), a
+        # pore-pressure grid in place of both, and none on a total-stress
+        # layer (EM 1110-2-1902 2-2c).
+        pp = base_pore_pressure(
+            geom, x_mid, z_base, z_top, base_layer,
+            weight / width if width > 0 else 0.0,
+            pp_interp=pp_interp, gwt_elev=gwt_elev)
+        pore_pressure = pp.u
 
         # Strength model evaluation (SHANSEP / Hoek-Brown need stress
         # estimates at the base: Fellenius normal and vertical effective)
         if base_layer.strength_model == "mohr_coulomb":
             c, phi = base_layer.shear_strength_params
         else:
-            sigma_v = (weight / width if width > 0 else 0.0) - pore_pressure
+            # the stresses these strengths are taken at keep the water
+            # pressure at the base (account D40, not changed by step 5a)
+            sigma_v = (weight / width if width > 0 else 0.0) - pp.u_water
             alpha_cos = math.cos(alpha)
             dl = width / max(abs(alpha_cos), 1e-10)
             sigma_n = (weight * alpha_cos / dl if dl > 0 else 0.0) \
-                - pore_pressure
+                - pp.u_water
             # alpha (base inclination) drives the 'anisotropic' su(alpha) model;
             # ignored by shansep / hoek_brown.
             c, phi = base_layer.strength_at(sigma_n, sigma_v, alpha=alpha)
@@ -752,6 +855,8 @@ def build_slices(geom: SlopeGeometry,
             pond_force=pond_weight,
             pond_hforce=pond_hforce,
             pond_z=pond_z,
+            water_pressure=pp.u_water,
+            pore_pressure_from=pp.source,
         ))
 
     # Tension crack water force: hydrostatic thrust on the retained face,
@@ -760,8 +865,8 @@ def build_slices(geom: SlopeGeometry,
     # adjacent to the crack face: the first non-cracked slice for an entry-side
     # crack, the last non-cracked for an exit-side crack (for truncation the
     # cracked slices are already gone, so this is the boundary retained slice).
-    if crack_base_elev is not None and geom.tension_crack_water_depth > 0 and slices:
-        z_w = geom.tension_crack_water_depth
+    if crack_base_elev is not None and crack_water_depth > 0 and slices:
+        z_w = crack_water_depth
         crack_water_f = 0.5 * GAMMA_W * z_w ** 2
         crack_water_elev = crack_base_elev + z_w / 3.0
         target = None
@@ -786,20 +891,17 @@ def _compute_slice_weight(geom: SlopeGeometry,
                           gwt_elev: Optional[float]) -> float:
     """Compute weight of a single slice through multiple soil layers.
 
-    Traverses layers from top to bottom within the slice height,
-    using gamma above GWT and gamma_sat below GWT.
+    Each stretch of the column at the slice's mid-point is weighed once,
+    with the layer that holds it (``SlopeGeometry.column_at``: where
+    layers overlap, the first listed), using gamma above GWT and gamma_sat
+    below GWT.
     """
     weight = 0.0
 
-    # Collect layers that overlap with (z_base, z_top)
-    for layer in geom.soil_layers:
-        # Clip layer to slice elevation range
-        lay_top = min(layer.top_at(x_mid), z_top)
-        lay_bot = max(layer.bottom_at(x_mid), z_base)
-
-        if lay_top <= lay_bot:
-            continue
-
+    # One material per point (GM-140 step 1): each stretch of the column
+    # with the one layer that holds it (``SlopeGeometry.column_at``), the
+    # lookup the strength at the base uses.
+    for layer, lay_bot, lay_top in geom.column_at(x_mid, z_base, z_top):
         layer_thickness = lay_top - lay_bot
 
         if gwt_elev is not None:
@@ -820,18 +922,12 @@ def _compute_slice_weight(geom: SlopeGeometry,
 
 def _pore_pressure_at_base(z_base: float,
                            gwt_elev: Optional[float]) -> float:
-    """Compute pore water pressure at the midpoint of the slice base.
-
-    u = gamma_w * (z_gwt - z_base) if z_base < z_gwt, else 0.
-
-    ASSUMPTION (SS-3): the piezometric head is taken as the full vertical
-    distance from the slice base to the GWT surface (hydrostatic, no-flow
-    conditions). For seepage parallel to an inclined phreatic surface the
-    rigorous head is reduced (factor ~cos^2(beta) of the phreatic slope,
-    or per a flownet), so this slightly OVERESTIMATES u — conservative —
-    on slopes with steeply inclined water tables. Use the layer ``ru``
-    coefficient as the alternative pore-pressure model when a calibrated
-    value is available.
+    """gamma_w x the vertical depth of ``z_base`` below a water line at
+    ``gwt_elev``: the full head, the reading of a piezometric line. The
+    slices take their pore pressure from
+    ``pore_pressure.base_pore_pressure`` (GM-140 step 5a), which gives
+    this under a piezometric line and FHWA NHI-06-088 Eq. 6-16 under a
+    water table; kept for callers of the old helper.
     """
     if gwt_elev is None:
         return 0.0

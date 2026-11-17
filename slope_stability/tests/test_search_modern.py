@@ -85,7 +85,18 @@ class TestACADS1a:
 class TestDifferentialEvolution:
 
     def test_de_refines_random_search(self):
-        """DE (seeded) must do at least as well as the random search."""
+        """DE (seeded) must do at least as well as the random search does
+        on surfaces that meet the printed acceptability checks.
+
+        GM-140 step 3 (item 5): the random search no longer refuses a FOS
+        below 1.5 on a jagged surface (the screen is removed: every surface
+        it refused carried a flag of the printed checks). On this slope
+        (ACADS 1(a), printed 1.00) its lowest solved surface is then a
+        zig-zag in tension with its line of thrust outside the mass, kept
+        and flagged; its lowest surface without a flag is the 1.09 it
+        reported before. DE penalises bumps, so it does not follow the
+        zig-zag: it is compared with the random search's lowest unflagged
+        surface."""
         geom = _acads_geom()
         rand = search_noncircular(
             geom, x_entry_range=(20.0, 32.0), x_exit_range=(46.0, 68.0),
@@ -98,7 +109,12 @@ class TestDifferentialEvolution:
         )
         assert de.critical is not None
         assert rand.critical is not None
-        assert de.critical.FOS <= rand.critical.FOS + 0.01
+        (rec,) = rand.trial_flags
+        unflagged = rec["lowest_unflagged"]["FOS"]
+        assert rand.critical.FOS <= unflagged
+        assert de.critical.FOS <= unflagged + 0.01
+        # printed 1.00 (ACADS 1(a); Slide2 0.987): DE within 5 %
+        assert de.critical.FOS == pytest.approx(1.00, rel=0.05)
 
     def test_de_close_to_circular_optimum(self):
         """For a homogeneous slope the noncircular optimum is close to

@@ -208,7 +208,13 @@ def evaluate_liquefaction(
     Parameters
     ----------
     layer_depths : list of float
-        Depth to midpoint of each evaluation layer (m).
+        Depths (m below the ground surface) where (N1)60 was measured,
+        increasing and positive; each is an evaluation point. The total
+        vertical stress is summed down through them (``layer_gamma``), so
+        a change in unit weight between two depths is taken at the upper
+        one: give a depth at each change in unit weight (a layer's base,
+        with that layer's values), the water table included where the
+        unit weight changes there.
     layer_N160 : list of float
         Corrected SPT (N1)60 at each depth.
     layer_FC : list of float
@@ -245,6 +251,11 @@ def evaluate_liquefaction(
     """
     if any(z2 <= z1 for z1, z2 in zip(layer_depths, layer_depths[1:])):
         raise ValueError("layer_depths must be in strictly increasing order")
+    if len(layer_depths) and layer_depths[0] <= 0:
+        # as the bi2014 route refuses it (GM-324 review): depth 0 gave the
+        # FOS 99.9 placeholder
+        raise ValueError(f"layer_depths must be positive (m below the "
+                         f"ground surface), got {layer_depths[0]}")
     if amax_g is None or amax_g <= 0:
         # With no shaking there is nothing to trigger; the FOS was a 99.9
         # placeholder (GM-104), as liquepy_agent already refuses.
@@ -300,9 +311,38 @@ def evaluate_liquefaction(
     return results
 
 
+#: The one total-stress rule both SPT procedures use (GM-324), in the
+#: words their results carry. liquepy_agent.spt_liquefaction holds the
+#: same text (the analysis modules do not import each other); a test
+#: compares the two.
+TOTAL_STRESS_RULE = (
+    "summed through the layers above",
+    "each gamma applies from the previous evaluation depth (the ground "
+    "surface for the first) down to its own depth: sigma_v(z_k) = sum of "
+    "gamma_i x h_i. A change in unit weight between two given depths is "
+    "therefore taken at the upper one, so the depths should include each "
+    "change in unit weight (a layer's base). sigma_v is the total "
+    "vertical overburden of the simplified procedure's CSR (FHWA GEC-13 "
+    "Vol I Eq. 5-9). The same rule on both SPT procedures (bi2014 and "
+    "nceer2001)")
+
+
 def _msf_applied(M: float) -> float:
     """The MSF ``compute_CSR`` divides by (1 at M 7.5)."""
     return magnitude_scaling_factor(M) if abs(M - 7.5) > 0.01 else 1.0
+
+
+def _deep_note(layer_results) -> str:
+    """Which evaluation depths the missing K_sigma touches (GM-324, the
+    module audit's seismic_geotech row 1): those with sigma'v above
+    100 kPa, where the factor of safety is on the high side for it."""
+    deep = [r["depth_m"] for r in layer_results
+            if r.get("sigma_v_eff_kPa", 0) > 100.0]
+    if not deep:
+        return "; no depth here has sigma'v above 100 kPa"
+    return ("; here sigma'v is above 100 kPa at "
+            + ", ".join(f"{d:g}" for d in deep)
+            + " m, so CRR and FOS_liq there are on the high side")
 
 
 def liquefaction_choices(layer_results: List[Dict[str, Any]],
@@ -325,8 +365,11 @@ def liquefaction_choices(layer_results: List[Dict[str, Any]],
                "(layer_results)"),
         choice("overburden correction K_sigma", "not applied (1.0)", MODULE,
                "CRR is the clean-sand curve with no K_sigma; Youd et al. "
-               "(2001) reduce CRR by K_sigma where sigma'v > 100 kPa"),
+               "(2001) reduce CRR by K_sigma where sigma'v > 100 kPa"
+               + _deep_note(layer_results)),
     ]
+    out.append(choice("total vertical stress", TOTAL_STRESS_RULE[0], MODULE,
+                      TOTAL_STRESS_RULE[1]))
     dense = [r["depth_m"] for r in layer_results if r.get("N160cs", 0) >= 30]
     if dense:
         out.append(choice(

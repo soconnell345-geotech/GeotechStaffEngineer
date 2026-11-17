@@ -926,3 +926,536 @@ class TestLateralLoadGuards:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# GM-319: batter carried in full; the simple method's refusals
+# ---------------------------------------------------------------------------
+
+class TestBatterInFull:
+    """A statically determinate group of axial-only piles (kl = 0) has pile
+    forces statics alone gives, whatever the stiffness (UFC 3-220-20
+    Sec. 6-6.3: batter piles taken to carry axial load only). Made-up
+    values."""
+
+    def _group(self, ka_c=2e5):
+        return [GroupPile(x=-1, y=0, axial_stiffness=2e5, label="A"),
+                GroupPile(x=1, y=0, axial_stiffness=2e5, label="B"),
+                GroupPile(x=0, y=0, batter_x=15, axial_stiffness=ka_c,
+                          label="C")]
+
+    @pytest.mark.parametrize("ka_c", [2e5, 5e4])
+    def test_matches_statics(self, ka_c):
+        r = analyze_group_6dof(self._group(ka_c),
+                               GroupLoad(Vx=100, Vz=1000, My=200))
+        s, c = math.sin(math.radians(15)), math.cos(math.radians(15))
+        Pc = 100 / s                      # only C has a horizontal component
+        Pa = (1000 - Pc * c - 200) / 2    # vertical and moment equilibrium
+        Pb = (1000 - Pc * c + 200) / 2
+        got = {h["label"]: h["axial_kN"] for h in r.pile_head_response}
+        assert got["C"] == pytest.approx(Pc, rel=1e-9)
+        assert got["A"] == pytest.approx(Pa, rel=1e-9)
+        assert got["B"] == pytest.approx(Pb, rel=1e-9)
+
+    def test_axial_forces_balance_the_loads(self):
+        piles = [GroupPile(x=-1.5, y=-1, batter_x=-10, axial_stiffness=3e5,
+                           lateral_stiffness=8e3, label="1"),
+                 GroupPile(x=1.5, y=-1, batter_x=10, axial_stiffness=3e5,
+                           lateral_stiffness=8e3, label="2"),
+                 GroupPile(x=-1.5, y=1, batter_y=8, axial_stiffness=2e5,
+                           lateral_stiffness=8e3, label="3"),
+                 GroupPile(x=1.5, y=1, axial_stiffness=2e5,
+                           lateral_stiffness=8e3, label="4")]
+        load = GroupLoad(Vx=120, Vy=-60, Vz=2400, Mx=150, My=-220, Mz=40)
+        r = analyze_group_6dof(piles, load)
+        F = np.zeros(6)
+        for p, h in zip(piles, r.pile_head_response):
+            f = np.array([h["Fx_kN"], h["Fy_kN"], h["Fz_kN"]])
+            F += np.array([f[0], f[1], f[2], -p.y * f[2], p.x * f[2],
+                           -p.y * f[0] + p.x * f[1]])
+            # the head force's component along the pile is its axial force
+            l = np.array(p.direction_cosines())
+            assert float(f @ l) == pytest.approx(h["axial_kN"], rel=1e-9)
+        assert F == pytest.approx(
+            [load.Vx, load.Vy, load.Vz, load.Mx, load.My, load.Mz], abs=1e-6)
+
+    def test_vertical_group_unchanged(self):
+        piles = create_rectangular_layout(2, 3, 1.2, 1.2, axial_stiffness=1e5,
+                                          lateral_stiffness=1e4)
+        r = analyze_group_6dof(piles, GroupLoad(Vx=50, Vz=1200, My=300))
+        s = analyze_vertical_group_simple(piles, GroupLoad(Vz=1200, My=300))
+        for a, b in zip(r.pile_forces, s.pile_forces):
+            assert a["axial_kN"] == pytest.approx(b["axial_kN"], abs=0.05)
+
+    def test_notes_say_pinned_heads(self):
+        r = analyze_group_6dof(self._group(), GroupLoad(Vz=500))
+        assert "pinned" in r.to_dict()["notes"][0]
+
+
+class TestSimpleRefusals:
+    def test_battered_pile_refused(self):
+        piles = [GroupPile(x=-1, y=0), GroupPile(x=1, y=0, batter_x=5)]
+        with pytest.raises(ValueError, match="vertical piles"):
+            analyze_vertical_group_simple(piles, GroupLoad(Vz=1000))
+
+    def test_unequal_stiffness_refused(self):
+        piles = [GroupPile(x=-1, y=0, axial_stiffness=1e5),
+                 GroupPile(x=1, y=0, axial_stiffness=2e5)]
+        with pytest.raises(ValueError, match="equal piles"):
+            analyze_vertical_group_simple(piles, GroupLoad(Vz=1000))
+        piles[1].axial_stiffness = None
+        with pytest.raises(ValueError, match="equal piles"):
+            analyze_vertical_group_simple(piles, GroupLoad(Vz=1000))
+
+    def test_no_stiffness_no_displacements(self):
+        piles = [GroupPile(x=-1, y=0), GroupPile(x=1, y=0)]
+        r = analyze_vertical_group_simple(piles, GroupLoad(Vz=1000))
+        assert r.cap_displacements == {}
+        assert "not calculated" in r.notes[0]
+        assert "not calculated" in r.summary()
+
+    def test_equal_stiffness_displacements_match_6dof(self):
+        piles = create_rectangular_layout(2, 2, 2.0, 1.5, axial_stiffness=1e5)
+        load = GroupLoad(Vz=1000, Mx=120, My=-80)
+        s = analyze_vertical_group_simple(piles, load).cap_displacements
+        d = analyze_group_6dof(piles, load).cap_displacements
+        for k in ("dz", "rx", "ry"):
+            assert s[k] == pytest.approx(d[k], rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# GM-319 review: piles on one line, batter both ways, opposed batter
+# ---------------------------------------------------------------------------
+
+def _row(**kw):
+    """Three piles on y = 0, one row along x. Made-up values."""
+    return [GroupPile(x=x, y=0.0, **kw) for x in (-1.2, 0.0, 1.2)]
+
+
+def _column(**kw):
+    """Three piles on x = 0, one column along y. Made-up values."""
+    return [GroupPile(x=0.0, y=y, **kw) for y in (-1.2, 0.0, 1.2)]
+
+
+class TestOneLineOfPiles:
+    """A moment about the one line every pile is on has no lever arm: both
+    methods refuse it (the simple method dropped it before); a zero moment,
+    or a moment across the line, runs."""
+
+    def test_simple_refuses_mx_on_a_row(self):
+        with pytest.raises(ValueError, match=r"Mx = 240 kN-m cannot be "
+                           r"carried: every pile is on y = 0"):
+            analyze_vertical_group_simple(_row(), GroupLoad(Vz=960, Mx=240))
+
+    def test_simple_refuses_my_on_a_column(self):
+        with pytest.raises(ValueError, match=r"My = -180 kN-m cannot be "
+                           r"carried: every pile is on x = 0"):
+            analyze_vertical_group_simple(_column(),
+                                          GroupLoad(Vz=960, My=-180))
+
+    def test_simple_zero_moment_runs_as_before(self):
+        for piles, load in ((_row(), GroupLoad(Vz=960, Mx=0.0)),
+                            (_column(), GroupLoad(Vz=960, My=0.0))):
+            r = analyze_vertical_group_simple(piles, load)
+            assert [p["axial_kN"] for p in r.pile_forces] == pytest.approx(
+                [320.0] * 3)
+
+    def test_simple_moment_across_the_row_runs(self):
+        # My on a row along x: P = Vz/n + My x / SUM(x^2), 288 x 1.2 / 2.88
+        r = analyze_vertical_group_simple(_row(), GroupLoad(Vz=960, My=288))
+        assert [p["axial_kN"] for p in r.pile_forces] == pytest.approx(
+            [200.0, 320.0, 440.0])
+
+    def test_6dof_refuses_mx_on_a_row_and_says_why(self):
+        piles = _row(axial_stiffness=2e5, lateral_stiffness=6e3)
+        with pytest.raises(ValueError) as e:
+            analyze_group_6dof(piles, GroupLoad(Vz=960, Mx=240))
+        msg = str(e.value)
+        assert "Mx: every pile is on y = 0" in msg and "no lever arm" in msg
+        # no pointer to the simple method, which cannot carry it either
+        assert "simple" not in msg
+
+    def test_6dof_refuses_my_on_a_column(self):
+        piles = _column(axial_stiffness=2e5, lateral_stiffness=6e3)
+        with pytest.raises(ValueError, match="My: every pile is on x = 0"):
+            analyze_group_6dof(piles, GroupLoad(Vz=960, My=150))
+
+    def test_6dof_says_why_load_by_load(self):
+        with pytest.raises(ValueError) as e:
+            analyze_group_6dof(_row(axial_stiffness=2e5),
+                               GroupLoad(Vx=40, Vz=960, Mx=240))
+        msg = str(e.value)
+        assert "Vx: no pile has stiffness along x" in msg
+        assert "Mx: every pile is on y = 0" in msg
+
+    def test_6dof_row_without_mx_runs(self):
+        r = analyze_group_6dof(_row(axial_stiffness=2e5, lateral_stiffness=6e3),
+                               GroupLoad(Vz=960, My=288))
+        assert [p["axial_kN"] for p in r.pile_forces] == pytest.approx(
+            [200.0, 320.0, 440.0])
+
+
+class TestBatterBothWays:
+    """Direction cosines (sin bx, sin by, the rest): squared sines at or
+    above 1 leave no vertical component and are refused (before, lz was
+    clamped to 0 and the vector was not of unit length)."""
+
+    def test_squared_sines_at_or_above_one_refused(self):
+        p = GroupPile(batter_x=50, batter_y=50, axial_stiffness=2e5,
+                      label="B1")
+        with pytest.raises(ValueError, match="at or above 1"):
+            p.direction_cosines()
+        with pytest.raises(ValueError, match="at or above 1"):
+            GroupPile(batter_x=90).direction_cosines()
+        piles = [p, GroupPile(x=1.0, axial_stiffness=2e5),
+                 GroupPile(y=1.0, axial_stiffness=2e5)]
+        with pytest.raises(ValueError, match="B1"):
+            analyze_group_6dof(piles, GroupLoad(Vz=600))
+
+    def test_below_one_is_a_unit_vector(self):
+        l = np.array(GroupPile(batter_x=40, batter_y=40).direction_cosines())
+        assert float(np.linalg.norm(l)) == pytest.approx(1.0, rel=1e-12)
+
+
+class TestOpposedBatter:
+    """Two piles battered outward at x = +/-1.2 m (12 degrees, axial only),
+    whose axes meet h = 1.2 / tan 12 deg above the cap, and two vertical
+    piles on the y axis with lateral stiffness. Under Vz the result is
+    symmetric; under Vx the battered pair gives no stiffness to the cap's
+    turn about the point where their axes meet, so the vertical piles'
+    lateral springs carry Vx: dx = Vx / SUM(kl), ry = -dx / h, and the
+    battered piles' axial forces do not change. Made-up values."""
+
+    KA, KL, BATTER, A = 2.5e5, 4.0e3, 12.0, 1.2
+
+    def _piles(self):
+        ka, kl, b, a = self.KA, self.KL, self.BATTER, self.A
+        return [GroupPile(x=-a, y=0, batter_x=-b, axial_stiffness=ka,
+                          label="W"),
+                GroupPile(x=a, y=0, batter_x=b, axial_stiffness=ka,
+                          label="E"),
+                GroupPile(x=0, y=0.9, axial_stiffness=ka,
+                          lateral_stiffness=kl, label="N"),
+                GroupPile(x=0, y=-0.9, axial_stiffness=ka,
+                          lateral_stiffness=kl, label="S")]
+
+    @staticmethod
+    def _axial(r):
+        return {h["label"]: h["axial_kN"] for h in r.pile_head_response}
+
+    def test_vertical_load_is_symmetric(self):
+        r = analyze_group_6dof(self._piles(), GroupLoad(Vz=1600))
+        assert r.cap_displacements["dx"] == pytest.approx(0.0, abs=1e-12)
+        assert r.cap_displacements["ry"] == pytest.approx(0.0, abs=1e-12)
+        f = self._axial(r)
+        assert f["W"] == pytest.approx(f["E"], rel=1e-12)
+        assert f["N"] == pytest.approx(f["S"], rel=1e-12)
+
+    def test_lateral_load_goes_to_the_vertical_piles(self):
+        r = analyze_group_6dof(self._piles(), GroupLoad(Vx=120))
+        d = r.cap_displacements
+        h = self.A / math.tan(math.radians(self.BATTER))
+        assert d["dx"] == pytest.approx(120 / (2 * self.KL), rel=1e-9)
+        assert d["ry"] == pytest.approx(-d["dx"] / h, rel=1e-9)
+        f = self._axial(r)
+        assert f["W"] == pytest.approx(0.0, abs=1e-6)
+        assert f["E"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_lateral_load_leaves_the_battered_forces(self):
+        vz = self._axial(analyze_group_6dof(self._piles(), GroupLoad(Vz=1600)))
+        both = self._axial(analyze_group_6dof(self._piles(),
+                                              GroupLoad(Vx=120, Vz=1600)))
+        assert both["W"] == pytest.approx(vz["W"], rel=1e-9)
+        assert both["E"] == pytest.approx(vz["E"], rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# GM-319 review: the simple method measures x and y from the piles' centroid
+# ---------------------------------------------------------------------------
+
+def _forces(r):
+    return [p["axial_kN"] for p in r.pile_forces]
+
+
+class TestOffCentreLayout:
+    """The simplified method takes Vz, Mx and My at the piles' centroid and
+    measures each pile's x and y from it (statics of the rigid cap). Before,
+    from the origin: piles at x = -1, 1, 3 m with Vz 900 kN and My 200 kN-m
+    gave 281.8, 318.2 and 354.5 kN, summing to 954.5. Made-up values."""
+
+    OFF = (-1.0, 1.0, 3.0)
+    CENTRED = (-2.0, 0.0, 2.0)
+
+    @staticmethod
+    def _line(xs, y=0.0, **kw):
+        return [GroupPile(x=x, y=y, **kw) for x in xs]
+
+    def test_off_centre_gives_the_recentred_forces_summing_to_vz(self):
+        load = GroupLoad(Vz=900, My=200)
+        off = analyze_vertical_group_simple(self._line(self.OFF), load)
+        cen = analyze_vertical_group_simple(self._line(self.CENTRED), load)
+        # P = 300 + 200 (x - 1)/8
+        assert _forces(off) == pytest.approx([250.0, 300.0, 350.0])
+        assert _forces(off) == pytest.approx(_forces(cen))
+        assert sum(_forces(off)) == pytest.approx(900.0)
+        assert off.centroid == {"x": 1.0, "y": 0.0}
+
+    def test_warning_off_centre_only(self):
+        load = GroupLoad(Vz=900, My=200)
+        off = analyze_vertical_group_simple(self._line(self.OFF), load)
+        assert len(off.warnings) == 1
+        w = off.warnings[0]
+        assert "taken at the centroid of the piles, (x, y) = (1.000, " \
+               "0.000) m, not at the origin" in w
+        assert "Vz x (xa - 1.000 m) to My (+My compresses the +x side)" in w
+        # Vz at the origin: 900 x (0 - 1) = -900 kN-m about the centroid
+        assert "add 900 kN x (-1.000 m) = -900.0 kN-m to My" in w
+        assert "Mx" not in w
+        assert "1.000, 0.000" in off.notes[-1]
+        assert off.to_dict()["warnings"] == off.warnings
+        cen = analyze_vertical_group_simple(self._line(self.CENTRED), load)
+        assert cen.warnings == []
+        assert "warnings" not in cen.to_dict()
+        assert cen.to_dict()["centroid_m"] == {"x": 0.0, "y": 0.0}
+        assert "the origin of the coordinates" in cen.notes[-1]
+
+    def test_warning_tolerance_is_1_mm(self):
+        load = GroupLoad(Vz=900)
+        near = analyze_vertical_group_simple(
+            self._line((-2.0, 0.0, 2.0024)), load)       # 0.8 mm off
+        assert near.warnings == []
+        past = analyze_vertical_group_simple(
+            self._line((-2.0, 0.0, 2.006)), load)        # 2 mm off
+        assert len(past.warnings) == 1
+
+    def test_the_warnings_moment_gives_the_load_at_the_origin(self):
+        """The warning's -900 kN-m added to My is Vz applied at the origin:
+        the 6-DOF method, which takes its loads there, gives the same
+        forces (equal axial stiffness)."""
+        six = analyze_group_6dof(self._line(self.OFF, axial_stiffness=2e5),
+                                 GroupLoad(Vz=900))
+        simple = analyze_vertical_group_simple(self._line(self.OFF),
+                                               GroupLoad(Vz=900, My=-900))
+        assert _forces(simple) == pytest.approx([525.0, 300.0, 75.0])
+        assert _forces(six) == pytest.approx(_forces(simple))
+
+    def test_rows_off_centre_in_y_name_mx(self):
+        piles = [GroupPile(x=x, y=y) for y in (1.0, 3.0) for x in (-1.0, 1.0)]
+        r = analyze_vertical_group_simple(piles, GroupLoad(Vz=800, Mx=100))
+        # P = 200 - 100 (y - 2)/4
+        assert _forces(r) == pytest.approx([225.0, 225.0, 175.0, 175.0])
+        w = r.warnings[0]
+        assert "-Vz x (ya - 2.000 m) to Mx (+Mx uplifts the +y side)" in w
+        assert "-(800 kN x -2.000 m) = 1,600.0 kN-m to Mx" in w
+        assert "to My" not in w
+
+    def test_centred_layouts_give_the_numbers_before(self):
+        """Three cases of the tests above, with the forces and cap
+        displacements the method gave before this change."""
+        r = analyze_vertical_group_simple(_row(), GroupLoad(Vz=960, My=288))
+        assert _forces(r) == [200.0, 320.0, 440.0]
+        r = analyze_vertical_group_simple(
+            create_rectangular_layout(3, 3, 2.0, 2.0, axial_stiffness=50000),
+            GroupLoad(Vz=2700, My=500, Mx=200))
+        assert _forces(r) == [275.0, 316.7, 358.3, 258.3, 300.0, 341.7,
+                              241.7, 283.3, 325.0]
+        r = analyze_vertical_group_simple(
+            create_rectangular_layout(2, 2, 2.0, 1.5, axial_stiffness=1e5),
+            GroupLoad(Vz=1000, Mx=120, My=-80))
+        assert _forces(r) == [310.0, 270.0, 230.0, 190.0]
+        d = r.cap_displacements
+        # dz = 1000/(4e5); rx = 120/(1e5 x 2.25); ry = -80/(1e5 x 4)
+        assert d["dz"] == pytest.approx(2.5e-3, rel=1e-12)
+        assert d["rx"] == pytest.approx(120 / 2.25e5, rel=1e-12)
+        assert d["ry"] == pytest.approx(-80 / 4e5, rel=1e-12)
+        assert r.warnings == []
+
+    def test_single_row_off_the_origin_refuses_mx(self):
+        row = self._line((-1.5, 0.0, 1.5), y=2.0)
+        with pytest.raises(ValueError, match=r"Mx = 300 kN-m cannot be "
+                           r"carried: every pile is on y = 2, one line"):
+            analyze_vertical_group_simple(row, GroupLoad(Vz=900, Mx=300))
+        r = analyze_vertical_group_simple(row, GroupLoad(Vz=900, My=300))
+        assert _forces(r) == pytest.approx([200.0, 300.0, 400.0])
+
+    def test_cap_displacements_agree_with_6dof(self):
+        """With equal axial stiffness the simple method's displacements are
+        the 6-DOF method's for the same loads moved to the origin: Mx - Vz yc
+        and My + Vz xc (dz at the origin, the module's kinematics)."""
+        piles = [GroupPile(x=x, y=y, axial_stiffness=2e5)
+                 for x, y in ((-1.0, 0.5), (1.0, 0.5), (3.0, 0.5), (1.0, 2.5))]
+        s = analyze_vertical_group_simple(
+            piles, GroupLoad(Vz=1000, Mx=120, My=-80))
+        xc, yc = s.centroid["x"], s.centroid["y"]
+        assert (xc, yc) == (1.0, 1.0)
+        g = analyze_group_6dof(piles, GroupLoad(
+            Vz=1000, Mx=120 - 1000 * yc, My=-80 + 1000 * xc))
+        assert _forces(s) == pytest.approx(_forces(g))
+        for k in ("dz", "rx", "ry"):
+            assert s.cap_displacements[k] == pytest.approx(
+                g.cap_displacements[k], rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# GM-319 re-check: the product term, and where the 6-DOF loads act
+# ---------------------------------------------------------------------------
+
+_S = 1.5
+
+
+def _less_a_corner():
+    """3 x 3 at 1.5 m less the (+x, +y) corner pile. Made-up values."""
+    return [GroupPile(x=x * _S, y=y * _S) for y in (-1, 0, 1)
+            for x in (-1, 0, 1) if not (x == 1 and y == 1)]
+
+
+def _two_by_three_less_a_corner():
+    return [GroupPile(x=x, y=y) for x, y in
+            ((0.0, 0.0), (1.5, 0.0), (3.0, 0.0), (0.0, 1.5), (1.5, 1.5))]
+
+
+def _moments_about_centroid(piles, forces):
+    n = len(piles)
+    xc = sum(p.x for p in piles) / n
+    yc = sum(p.y for p in piles) / n
+    my = sum(f * (p.x - xc) for p, f in zip(piles, forces))
+    mx = -sum(f * (p.y - yc) for p, f in zip(piles, forces))
+    return mx, my
+
+
+class TestProductTerm:
+    """A layout not symmetric about its centroidal axes (SUM dx dy not 0):
+    the general rigid-cap form, P = Vz/n + a dx + b dy, gives back Mx and
+    My and equals the 6-DOF method with equal ka (loads moved to the
+    origin). Before (9606b66), Eq. 8-79 without the product term: the
+    2 x 3 less a corner gave 409.5 / 481.0 / 552.4 / 242.9 / 314.3 kN, the
+    3 x 3 less a corner with My 600 a 392.3 kN maximum (400.0 by statics).
+    Made-up values."""
+
+    CASES = (
+        (_two_by_three_less_a_corner, dict(Vz=2000, Mx=300, My=300),
+         [426.7, 466.7, 506.7, 280.0, 320.0]),
+        (_less_a_corner, dict(Vz=2400, My=600),
+         [206.7, 293.3, 380.0, 226.7, 313.3, 400.0, 246.7, 333.3]),
+        (_less_a_corner, dict(Vz=2400, Mx=400, My=600),
+         [268.9, 342.2, 415.6, 231.1, 304.4, 377.8, 193.3, 266.7]),
+    )
+
+    @pytest.mark.parametrize("make, load, expected", CASES)
+    def test_agrees_with_6dof_and_gives_back_the_moments(self, make, load,
+                                                         expected):
+        piles = make()
+        r = analyze_vertical_group_simple(piles, GroupLoad(**load))
+        f = _forces(r)
+        assert f == pytest.approx(expected, abs=0.051)
+        xc, yc = r.centroid["x"], r.centroid["y"]
+        stiff = [GroupPile(x=p.x, y=p.y, axial_stiffness=2e5) for p in piles]
+        g = analyze_group_6dof(stiff, GroupLoad(
+            Vz=load["Vz"], Mx=load.get("Mx", 0.0) - load["Vz"] * yc,
+            My=load.get("My", 0.0) + load["Vz"] * xc))
+        assert f == pytest.approx(_forces(g), abs=0.1)
+        exact = [h["axial_kN"] for h in g.pile_head_response]
+        assert sum(f) == pytest.approx(load["Vz"], abs=0.3)
+        mx, my = _moments_about_centroid(piles, exact)
+        assert mx == pytest.approx(load.get("Mx", 0.0), abs=1e-6)
+        assert my == pytest.approx(load.get("My", 0.0), abs=1e-6)
+        mx, my = _moments_about_centroid(piles, f)   # rounded forces
+        assert mx == pytest.approx(load.get("Mx", 0.0), abs=0.5)
+        assert my == pytest.approx(load.get("My", 0.0), abs=0.5)
+
+    def test_the_result_says_the_product_term_is_included(self):
+        r = analyze_vertical_group_simple(_two_by_three_less_a_corner(),
+                                          GroupLoad(Vz=2000, Mx=300, My=300))
+        note = r.notes[-1]
+        assert note.startswith("The piles are not symmetric about their "
+                               "centroidal axes: SUM dx dy = -1.350 m^2")
+        assert "Eq. 8-79 (p. 468) is the case SUM dx dy = 0" in note
+        assert ("equilibrium of a rigid cap on pinned piles of equal axial "
+                "stiffness") in note
+
+    def test_cap_displacements_with_the_product_term_agree_with_6dof(self):
+        piles = [GroupPile(x=p.x, y=p.y, axial_stiffness=2e5)
+                 for p in _two_by_three_less_a_corner()]
+        s = analyze_vertical_group_simple(piles, GroupLoad(Vz=2000, Mx=300,
+                                                           My=300))
+        g = analyze_group_6dof(piles, GroupLoad(Vz=2000, Mx=300 - 2000 * 0.6,
+                                                My=300 + 2000 * 1.2))
+        for k in ("dz", "rx", "ry"):
+            assert s.cap_displacements[k] == pytest.approx(
+                g.cap_displacements[k], rel=1e-9)
+        # the point dz is reported at, and the settlement under the centroid
+        assert any("dz = 2.133 mm is the cap's settlement at the origin of "
+                   "the coordinates" in n and "Vz/(n ka) = 2.000 mm" in n
+                   for n in s.notes)
+
+    @pytest.mark.parametrize("piles, load, before", (
+        (create_rectangular_layout(3, 3, 2.0, 2.0),
+         dict(Vz=2700, My=500, Mx=200),
+         [275.0, 316.7, 358.3, 258.3, 300.0, 341.7, 241.7, 283.3, 325.0]),
+        ([GroupPile(x=x, y=y) for x, y in
+          ((0, -1), (0, 1), (2, -1), (2, 1), (5, 0))],
+         dict(Vz=1500, Mx=120, My=-200),
+         [351.4, 291.4, 327.6, 267.6, 261.9]),
+        ([GroupPile(x=x, y=y) for x, y in
+          ((-1.2, -1.2), (1.2, -1.2), (0, 0), (-1.2, 1.2), (1.2, 1.2))],
+         dict(Vz=1000, Mx=-90, My=150),
+         [150.0, 212.5, 200.0, 187.5, 250.0]),
+    ))
+    def test_symmetric_layouts_keep_their_numbers(self, piles, load, before):
+        """Three layouts symmetric about a centroidal axis (SUM dx dy = 0),
+        one off the origin: the forces of 9606b66, and no product note."""
+        r = analyze_vertical_group_simple(piles, GroupLoad(**load))
+        assert _forces(r) == before
+        assert not any("not symmetric" in n for n in r.notes)
+
+    def test_one_line_still_refuses_with_the_same_message(self):
+        with pytest.raises(ValueError, match="Mx = 240 kN-m cannot be "
+                           "carried: every pile is on y = 0, one line"):
+            analyze_vertical_group_simple(_row(), GroupLoad(Vz=960, Mx=240))
+        col = [GroupPile(x=-3.0, y=y) for y in (-1.5, 0.0, 1.5)]
+        with pytest.raises(ValueError) as e:
+            analyze_vertical_group_simple(col, GroupLoad(Vz=900, My=50))
+        assert "every pile is on x = -3, one line along the y axis" in \
+            str(e.value)
+        assert "SUM((x + 3)^2) = 0 about the piles' centroid" in str(e.value)
+
+    def test_a_line_not_along_x_or_y(self):
+        diag = [GroupPile(x=t, y=t) for t in (0.0, 1.0, 2.0)]
+        # the moment across the line runs: SUM P dx = My, SUM P dy = -Mx
+        r = analyze_vertical_group_simple(diag, GroupLoad(Vz=900, Mx=-100,
+                                                          My=100))
+        assert _forces(r) == pytest.approx([250.0, 300.0, 350.0])
+        with pytest.raises(ValueError, match="every pile is on one line "
+                           "through the piles' centroid"):
+            analyze_vertical_group_simple(diag, GroupLoad(Vz=900, Mx=100,
+                                                          My=100))
+
+
+class TestSixDofLoadPoint:
+    """The 6-DOF method takes its loads at the origin of the coordinates,
+    and its result says so (GM-319 re-check)."""
+
+    def test_note_names_the_origin_and_the_centroid(self):
+        piles = [GroupPile(x=x, y=y, axial_stiffness=2e5)
+                 for x, y in ((0.0, 0.0), (1.2, 0.0), (2.4, 0.0),
+                              (0.0, 1.8), (1.2, 1.8), (2.4, 1.8))]
+        r = analyze_group_6dof(piles, GroupLoad(Vz=1800, Mx=90, My=-120))
+        assert "pinned" in r.notes[0]
+        assert ("taken to act at the origin of the coordinates, (x, y) = "
+                "(0, 0), at the cap (not at the piles' centroid, (1.200, "
+                "0.900) m)") in r.notes[1]
+        assert "Vz x xa to My, -Vz x ya to Mx" in r.notes[1]
+        # the same input, the simple method's loads at the centroid
+        s = analyze_vertical_group_simple(
+            [GroupPile(x=p.x, y=p.y) for p in piles],
+            GroupLoad(Vz=1800, Mx=90, My=-120))
+        assert r.max_compression == pytest.approx(1091.7, abs=0.05)
+        assert s.max_compression == pytest.approx(341.7, abs=0.05)
+        assert "pile_group_6dof takes its loads at the origin" in \
+            s.warnings[0]
+
+    def test_centred_layout_note(self):
+        r = analyze_group_6dof(
+            create_rectangular_layout(2, 2, 2.0, 2.0, axial_stiffness=1e5),
+            GroupLoad(Vz=1000))
+        assert "(the piles' centroid too)" in r.notes[1]

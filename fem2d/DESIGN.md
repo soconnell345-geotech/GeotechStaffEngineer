@@ -988,7 +988,8 @@ fem2d/
   results.py           # FEMResult, BeamForceResult, SeepageResult,
                        #   ConsolidationResult, PhaseResult,
                        #   StagedConstructionResult with summary()/to_dict()
-  calc_steps.py        # calc-package steps and figures
+  calc_steps.py        # calc-package steps and figures (the agent's
+                       # route: calc_package.fem2d_package, GM-328)
   plotting.py          # PLAXIS-style plots
   hs_correlations.py   # HS parameters from correlations (Brinkgreve et al. 2010)
   DESIGN.md

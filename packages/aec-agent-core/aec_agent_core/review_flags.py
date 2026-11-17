@@ -140,16 +140,32 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     text, which the main model never saw past. Not measured on the review
     suite yet; the ``show_me`` arm does (EV-40).
 
+``GEOTECH_REVIEW_TODOS_WITH_CALLS`` (default off)
+    ``1`` adds one sentence to the Document Review page's rule on the to-do
+    list (and to its reading helper's prompt): update the list in the same
+    step as the next tool call, not in a step of its own, because every
+    step sends the whole conversation again. Nothing else changes: not the
+    to-do tool, not the framework's texts about it, not the geotech page.
+    Unset, the prompts are byte-identical. BACKLOG DR-43 part 2: steps whose
+    only call was ``write_todos`` took 13 % to 25 % of input tokens in
+    brief 7's runs. Not measured yet; the ``todos_with_calls`` arm does
+    (EV-43).
+
 ``GEOTECH_REVIEW_SHEET_TOOLS`` (default off)
-    ``1`` gives the Document Review page planlens' two sheet tools, where
+    ``1`` gives the Document Review page planlens' sheet tools, where
     the installed planlens has them (after 0.15.1; otherwise the page is
     the default build): ``sheet_index``, a drawing set's sheets read from
     their title blocks (number, title, revision, views), and
     ``check_cross_references``, every callout checked against the sheet it
-    names, the unresolved first, each with the box to view. Code does the
-    looking-up that is the same on every set; the agent views what the
-    check flags and judges it. BACKLOG PL-37, DR-07. Not measured; the
-    ``sheet_tools`` arm does (EV-40).
+    names, the unresolved first, each with the box to view; and, where
+    the installed planlens has it, ``check_schedule_marks``, the set's
+    schedules checked against the marks drawn on every sheet both ways
+    (a mark with no row, a row on no sheet, either where sheets could not
+    be read, and what it cannot tell), with ``open_document`` bringing the
+    sheet index and that check with the document's map (BACKLOG PL-42).
+    Code does the looking-up that is the same on every set; the agent
+    views what the check flags and judges it. BACKLOG PL-37, DR-07. Not
+    measured; the ``sheet_tools`` arm does (EV-40).
 """
 
 from __future__ import annotations
@@ -169,11 +185,12 @@ STEP_CAP_ANSWER_ENV = "GEOTECH_STEP_CAP_ANSWER"
 JUDGMENT_CALLS_ENV = "GEOTECH_JUDGMENT_CALLS"
 SHOW_ME_ENV = "GEOTECH_VISION_SHOW_ME"
 SHEET_TOOLS_ENV = "GEOTECH_REVIEW_SHEET_TOOLS"
+TODOS_WITH_CALLS_ENV = "GEOTECH_REVIEW_TODOS_WITH_CALLS"
 
 ALL_ENVS = (AGENT_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
             FIGURE_HELPER_ENV, PLOT_CODE_ENV, STEP_CAP_ANSWER_ENV,
             CITED_DOCUMENTS_ENV, JUDGMENT_CALLS_ENV, REPORT_INGEST_ENV,
-            SHOW_ME_ENV, SHEET_TOOLS_ENV)
+            SHOW_ME_ENV, SHEET_TOOLS_ENV, TODOS_WITH_CALLS_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -210,6 +227,12 @@ def minimal_agent() -> bool:
     (:mod:`funhouse_agent.deep.minimal_agent`) — a measuring stick, not a
     product: page and zoom tools, helpers, and the two output tools."""
     return str(os.environ.get(AGENT_ENV, "")).strip().lower() == "minimal"
+
+
+def todos_with_calls() -> bool:
+    """Whether the review page's rule tells the agent to update its to-do
+    list in the same step as its next tool call."""
+    return _on(TODOS_WITH_CALLS_ENV)
 
 
 def show_me() -> bool:
@@ -344,6 +367,9 @@ ARMS: Dict[str, Dict[str, str]] = {
     # 2026-11-10). On the DEFAULT agent; the default build where the
     # installed planlens does not have them.
     "sheet_tools": {SHEET_TOOLS_ENV: "1"},
+    # To-do updates in the same step as the next call (DR-43 part 2,
+    # 2026-11-14). On the DEFAULT agent.
+    "todos_with_calls": {TODOS_WITH_CALLS_ENV: "1"},
 }
 
 
@@ -390,6 +416,7 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "FIGURE_HELPER_ENV", "PLOT_CODE_ENV", "STEP_CAP_ANSWER_ENV",
            "CITED_DOCUMENTS_ENV", "JUDGMENT_CALLS_ENV", "REPORT_INGEST_ENV",
            "SHOW_ME_ENV", "show_me", "SHEET_TOOLS_ENV", "sheet_tools",
+           "TODOS_WITH_CALLS_ENV", "todos_with_calls",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",

@@ -156,7 +156,7 @@ specific check, the governing reference, and the corrective action.
 - **`gec12`** — driven piles (Nordlund, β, static methods, resistance factors).
 - **`gec13`** — ground modification (aggregate columns, PVDs, deep mixing).
 - **`micropile`** — micropile bond stress / structural capacity.
-- **`ufc_expansive`** — foundations on expansive soils (heave, pier design).
+- **`ufc_expansive`** — foundations on expansive soils (swell potential, active zone, heave prediction, Table 6-1 foundation systems).
 - **`reference_db` / `figure_db`** search the WHOLE library (reachable through
   the reference adapters, or by reading `geotech-references/geotech_references/<ref>/`),
   so a provision or chart in any reference stays reachable. Read chart values off

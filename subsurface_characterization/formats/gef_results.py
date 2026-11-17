@@ -49,6 +49,13 @@ class CPTParseResult:
         Friction ratio (%). Empty if not in file.
     available_columns : list
         Column names present in the original file.
+    missing_values : dict
+        {column: count} of readings the file does not have (null, void or
+        non-finite), for each of q_c_kPa, f_s_kPa, u_2_kPa and Rf_pct that
+        the file carries. A missing reading is NaN in its array and null in
+        ``to_dict``; it is never 0.0.
+    notes : list of str
+        Anything the reader has to say about how the file was read.
     """
 
     # Scalars
@@ -68,13 +75,30 @@ class CPTParseResult:
     u_2_kPa: np.ndarray = field(default_factory=lambda: np.array([]))
     Rf_pct: np.ndarray = field(default_factory=lambda: np.array([]))
     available_columns: list = field(default_factory=list)
+    missing_values: dict = field(default_factory=dict)
+    notes: list = field(default_factory=list)
+
+    def _missing_counts(self) -> dict:
+        """{column: count of non-finite readings}, counted from the arrays
+        themselves so a result built by hand reports the same way."""
+        counts = {}
+        for name in ("q_c_kPa", "f_s_kPa", "u_2_kPa", "Rf_pct"):
+            arr = np.asarray(getattr(self, name), dtype=float)
+            if len(arr) > 0:
+                counts[name] = int((~np.isfinite(arr)).sum())
+        return counts
 
     def summary(self) -> str:
         """One-line summary of results."""
         gwl_str = f", GWL={self.gwl_m:.1f}m" if self.gwl_m is not None else ""
+        missing = {k: v for k, v in self._missing_counts().items() if v}
+        miss_str = ""
+        if missing:
+            miss_str = "; missing readings: " + ", ".join(
+                f"{k} {v}" for k, v in missing.items())
         return (
             f"CPT '{self.alias}': {self.n_points} pts, "
-            f"depth=0-{self.final_depth_m:.1f}m{gwl_str}"
+            f"depth=0-{self.final_depth_m:.1f}m{gwl_str}{miss_str}"
         )
 
     def to_dict(self) -> dict:
@@ -90,17 +114,33 @@ class CPTParseResult:
             "srs_name": self.srs_name,
             "available_columns": self.available_columns,
         }
-        # Include data arrays for Foundry transfer
+        # Include data arrays for Foundry transfer. A missing reading is
+        # null, so it cannot be taken for a measured zero.
+        def _col(arr, ndigits):
+            return [round(v, ndigits) if np.isfinite(v) else None
+                    for v in np.asarray(arr, dtype=float).tolist()]
+
         if len(self.depth_m) > 0:
-            d["depth_m"] = [round(v, 3) for v in self.depth_m.tolist()]
+            d["depth_m"] = _col(self.depth_m, 3)
         if len(self.q_c_kPa) > 0:
-            d["q_c_kPa"] = [round(v, 1) for v in self.q_c_kPa.tolist()]
+            d["q_c_kPa"] = _col(self.q_c_kPa, 1)
         if len(self.f_s_kPa) > 0:
-            d["f_s_kPa"] = [round(v, 2) for v in self.f_s_kPa.tolist()]
+            d["f_s_kPa"] = _col(self.f_s_kPa, 2)
         if len(self.u_2_kPa) > 0:
-            d["u_2_kPa"] = [round(v, 2) for v in self.u_2_kPa.tolist()]
+            d["u_2_kPa"] = _col(self.u_2_kPa, 2)
         if len(self.Rf_pct) > 0:
-            d["Rf_pct"] = [round(v, 2) for v in self.Rf_pct.tolist()]
+            d["Rf_pct"] = _col(self.Rf_pct, 2)
+        counts = self._missing_counts()
+        d["missing_values"] = counts
+        warnings = list(self.notes)
+        if any(counts.values()):
+            warnings.append(
+                "Readings the file does not have are null in the arrays "
+                "(not 0, and not interpolated): " + ", ".join(
+                    f"{k} {v} of {self.n_points}"
+                    for k, v in counts.items() if v) + ".")
+        if warnings:
+            d["warnings"] = warnings
         return d
 
     def to_liquepy_inputs(self) -> dict:
@@ -108,15 +148,39 @@ class CPTParseResult:
 
         Returns dict with keys: depth, q_c, f_s, u_2, gwl.
         All in kPa (consistent with liquepy convention).
+
+        A depth whose q_c is missing, or whose f_s or u_2 is missing in a
+        column the file carries, is LEFT OUT (a triggering calculation
+        cannot run on a reading that is not there, and a zero in its place
+        would be read as very loose ground). ``rows_dropped`` says how many
+        and ``rows_dropped_reason`` why; both are absent when none were.
+        A file with no f_s or u_2 column at all gets zeros for it, as
+        before, and ``columns_assumed_zero`` names the column.
         """
-        d = {
-            "depth": self.depth_m,
-            "q_c": self.q_c_kPa,
-            "f_s": self.f_s_kPa if len(self.f_s_kPa) > 0 else np.zeros_like(self.depth_m),
-            "u_2": self.u_2_kPa if len(self.u_2_kPa) > 0 else np.zeros_like(self.depth_m),
-        }
+        depth = np.asarray(self.depth_m, dtype=float)
+        keep = np.ones(len(depth), dtype=bool)
+        cols = {"q_c": self.q_c_kPa, "f_s": self.f_s_kPa, "u_2": self.u_2_kPa}
+        assumed_zero = []
+        for key, arr in cols.items():
+            arr = np.asarray(arr, dtype=float)
+            if len(arr) == len(depth) and len(arr) > 0:
+                keep &= np.isfinite(arr)
+            elif key != "q_c":
+                assumed_zero.append(key)
+        d = {"depth": depth[keep]}
+        for key, arr in cols.items():
+            arr = np.asarray(arr, dtype=float)
+            d[key] = (arr[keep] if len(arr) == len(depth) and len(arr) > 0
+                      else np.zeros(int(keep.sum())))
         if self.gwl_m is not None:
             d["gwl"] = self.gwl_m
+        n_dropped = int((~keep).sum())
+        if n_dropped:
+            d["rows_dropped"] = n_dropped
+            d["rows_dropped_reason"] = (
+                "q_c, f_s or u_2 is missing at these depths in the file")
+        if assumed_zero:
+            d["columns_assumed_zero"] = assumed_zero
         return d
 
     # ------------------------------------------------------------------

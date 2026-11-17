@@ -65,6 +65,7 @@ from report_ingest.model import (
     GENERAL_FIELDS, GeneralFacts, LIQUEFACTION_VALUES, Mention,
     NATURAL_HAZARD_FIELDS, NarrativeFacts, NaturalHazardFacts,
     OUTSIDE_PROJECT_VALUES, PROJECT_PHASE_VALUES, PROPERTY_TYPE_VALUES,
+    SOIL_CORROSION_VALUES,
     Quantity, SUMMARY_FIELDS, SUMMARY_WORD_LIMITS, Stratum, YES_NO_UNCLEAR,
 )
 from report_ingest.record_facts import caption_labels
@@ -167,7 +168,7 @@ VOCABULARIES: Dict[str, Tuple[str, ...]] = {
     "liquefactionPotential": LIQUEFACTION_VALUES,
     "earthHazardsExposed": EARTH_HAZARD_VALUES,
     "geophysicalTestingMention": YES_NO_UNCLEAR,
-    "soilCorrosion": YES_NO_UNCLEAR,
+    "soilCorrosion": SOIL_CORROSION_VALUES,
     "siteResponseMention": YES_NO_UNCLEAR,
     "hazardAnalysisMention": YES_NO_UNCLEAR,
 }

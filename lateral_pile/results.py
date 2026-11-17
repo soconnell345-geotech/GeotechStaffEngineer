@@ -55,6 +55,18 @@ class Results:
         reinforced concrete sections with cracked-EI iteration.
     ei_iterations : int
         Number of outer EI iterations (0 for non-RC piles).
+    ei_converged : bool or None
+        Whether the cracked-section EI iteration converged (GM-318); None
+        for a pile with no cracked-section iteration.
+    ei_last_change : float or None
+        The last pass's largest change in EI as a fraction of the largest
+        EI, set beside ``ei_tolerance``; None with no iteration.
+    ei_tolerance : float or None
+        The tolerance ``ei_last_change`` was held to.
+    warnings : list of str
+        What the user must be told (GM-318): an EI iteration that did not
+        converge; a last layer carried on to the pile toe
+        (``extend_last_layer``).
     stickup : float
         Above-ground free length (m) included in the model. 0 when the
         head load is applied at the ground surface.
@@ -85,6 +97,10 @@ class Results:
     stickup: float = 0.0
     choices: list = field(default_factory=list)
     message: Optional[str] = None
+    ei_converged: Optional[bool] = None
+    ei_last_change: Optional[float] = None
+    ei_tolerance: Optional[float] = None
+    warnings: list = field(default_factory=list)
 
     @property
     def y_top(self) -> float:
@@ -151,6 +167,8 @@ class Results:
         ]
         if self.message:
             lines += [self.message, ""]
+        for w in self.warnings:
+            lines += [f"WARNING: {w}", ""]
         lines.append(f"Pile length:          {self.pile_length:.2f} m")
         if self.stickup > 0:
             lines.append(f"Stickup above grade:  {self.stickup:.2f} m")
@@ -172,6 +190,9 @@ class Results:
         ]
         if self.ei_iterations > 0:
             lines.append(f"EI iterations:        {self.ei_iterations}")
+            if self.ei_converged is not None:
+                lines.append(f"EI converged:         {self.ei_converged}"
+                             f" (last change {self.ei_last_change:.2e})")
             if self.EI_profile is not None:
                 EI_min = float(np.min(self.EI_profile))
                 EI_max = float(np.max(self.EI_profile))
@@ -205,6 +226,12 @@ class Results:
         if self.EI_profile is not None:
             d['EI_profile_kNm2'] = self.EI_profile.tolist()
             d['ei_iterations'] = self.ei_iterations
+            if self.ei_converged is not None:
+                d['ei_converged'] = self.ei_converged
+                d['ei_last_change'] = self.ei_last_change
+                d['ei_tolerance'] = self.ei_tolerance
+        if self.warnings:
+            d = {'warnings': list(self.warnings), **d}
         if self.choices:
             d['choices'] = [dict(c) for c in self.choices]
         return d

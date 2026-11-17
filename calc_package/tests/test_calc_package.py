@@ -511,8 +511,13 @@ class TestDm7FigureHelper:
         from geotech_references.dm7_2.chapter4 import plot_figure_4_36
         from calc_package.dm7_figures import dm7_figure
 
-        fd = dm7_figure(plot_figure_4_36, log_rho=-2.0,
-                        soil_type="dense_sand",
-                        caption="Rowe reduction for dense sand")
+        # The library's corrected Figure 4-36 (UFC 3-220-20, review of
+        # 2026-11-10) takes rho itself (5 to 200 in^2/lb) and the figure's
+        # own soil words, and refuses the old log_rho with soil_type
+        # "dense_sand"; this is the figure's printed example (rho 9.5, very
+        # dense sand).
+        fd = dm7_figure(plot_figure_4_36, rho=9.5,
+                        soil_type="very_dense_coarse_grained",
+                        caption="Rowe reduction for very dense sand")
         assert isinstance(fd, FigureData)
-        assert "dense sand" in fd.caption
+        assert "very dense sand" in fd.caption

@@ -33,10 +33,19 @@ helper did:
   retyping them (BACKLOG RI-31).
   It also caps the helpers that run at once in one conversation
   (:func:`max_helpers`; BACKLOG TA-22).
+  A page can name its READING helpers (``KeepWork(readers=...)``; BACKLOG
+  DR-46). Each of their returns keeps the whole record in ``kept/`` too, as
+  ``reader_<what>_<id>.md`` (gave up: ``helper_...`` as above), names the
+  file in the result, and adds the open items the helper's own tools
+  flagged (:func:`open_items`: what was not read), whether or not its
+  answer named them. Only a helper that stopped or gave up is noted on the
+  turn (:attr:`TurnScope.kept_files`).
+  Document Review names its reader; the geotech page names none, so its
+  helpers get what they always got.
 
 Nothing here changes a tool's result except a ``task`` result that kept a
-file or whose helper saved files (their names are added, BACKLOG RI-31), and
-nothing here ever fails a call.
+file, whose helper saved files (their names are added, BACKLOG RI-31) or
+whose helper is a named reader (DR-46), and nothing here ever fails a call.
 """
 
 from __future__ import annotations
@@ -110,11 +119,44 @@ def _float_env(name: str, default: float) -> float:
         return default
 
 
-class TurnScope:
-    """What one turn shares across its agents (see the module docstring)."""
+class TurnStopped(Exception):
+    """Raised before a model call, a wait or a pass of a turn the user has
+    asked to stop (BACKLOG TA-37). An ``Exception``, so a helper that meets
+    it has its work kept like any helper that stopped
+    (:class:`KeepWork`), and the primary's next model call raises it out of
+    the run, where the host keeps the turn's work as it keeps an
+    interrupted turn's."""
 
-    def __init__(self, busy_limit_s: Optional[float] = None):
+    def __init__(self, message: str = "the turn was stopped by the user"):
+        super().__init__(message)
+
+
+class TurnScope:
+    """What one turn shares across its agents (see the module docstring).
+
+    ``stop_event`` (a :class:`threading.Event`, optional): set by the host
+    when the user asks to stop the turn; every agent's next model call,
+    every wait for a busy model or a helper place, and the host's next pass
+    then raise :class:`TurnStopped` (BACKLOG TA-37). ``None`` (the default)
+    = no stop, and nothing here waits differently.
+
+    ``whole_turn_budget``: the primary agent's model-call budget is counted
+    over the whole turn, all its passes, with the continuations of a reply
+    cut off at the output limit counted too (BACKLOG TA-38). Off by default,
+    so a host that does not ask keeps the per-pass count."""
+
+    def __init__(self, busy_limit_s: Optional[float] = None,
+                 stop_event: Optional[threading.Event] = None,
+                 whole_turn_budget: bool = False):
         self.started = time.time()
+        self.stop_event = stop_event
+        self.whole_turn_budget = bool(whole_turn_budget)
+        # the primary's model calls this turn, all passes (whole_turn_budget)
+        self.primary_model_calls = 0
+        # continuation calls of the primary's cut-off replies (whole turn)
+        self.primary_extra_calls = 0
+        # the primary's budget, noted by its budget middleware
+        self.primary_budget: Optional[int] = None
         self.busy_limit_s = (_float_env(BUSY_TURN_MAX_ENV,
                                         DEFAULT_BUSY_TURN_MAX_S)
                              if busy_limit_s is None else float(busy_limit_s))
@@ -141,9 +183,26 @@ class TurnScope:
             if path not in self.kept_files:
                 self.kept_files.append(path)
 
+    @property
+    def stop_requested(self) -> bool:
+        """The user asked to stop this turn (TA-37)."""
+        ev = self.stop_event
+        return bool(ev is not None and ev.is_set())
+
+    def request_stop(self) -> None:
+        """Ask the turn to stop (a scope made without a ``stop_event`` gets
+        one)."""
+        with self._lock:
+            if self.stop_event is None:
+                self.stop_event = threading.Event()
+        self.stop_event.set()
+
     def spend_busy(self, seconds: float) -> bool:
         """Whether the turn may still spend ``seconds`` on a busy model; if
-        so, they are counted. ``busy_limit_s <= 0`` means no bound."""
+        so, they are counted. ``busy_limit_s <= 0`` means no bound. A turn
+        the user asked to stop may not wait at all (TA-37)."""
+        if self.stop_requested:
+            return False
         with self._lock:
             if self.busy_limit_s > 0 and \
                     self.busy_spent_s + seconds > self.busy_limit_s:
@@ -177,6 +236,21 @@ def turn_scope(scope: Optional[TurnScope] = None) -> Iterator[TurnScope]:
             pass
 
 
+def stop_requested() -> bool:
+    """Whether the user asked to stop the running turn (TA-37); ``False``
+    outside a turn or where the turn has no stop."""
+    scope = _TURN.get()
+    return bool(scope is not None and scope.stop_requested)
+
+
+def check_stop() -> None:
+    """Raise :class:`TurnStopped` when the user asked to stop the running
+    turn; nothing otherwise (TA-37). Called before each model call of every
+    agent and before each wait."""
+    if stop_requested():
+        raise TurnStopped()
+
+
 # ---------------------------------------------------------------------------
 # One helper
 # ---------------------------------------------------------------------------
@@ -194,6 +268,10 @@ class HelperRecord:
         self.read_chars = 0
         self.arg_chars = 0
         self.budget_reached = False
+        # its budget and the continuation calls of its cut-off replies,
+        # counted in a turn whose budget is the whole turn's (TA-38)
+        self.budget: Optional[int] = None
+        self.extra_model_calls = 0
         self.error: Optional[BaseException] = None
         # its figures' draws when no turn is open (BACKLOG GM-151)
         self.figures: dict = {}
@@ -260,6 +338,92 @@ def note_budget_reached() -> None:
         scope.budget_reached = True
 
 
+# ---------------------------------------------------------------------------
+# A budget counted over the whole turn (BACKLOG TA-38)
+# ---------------------------------------------------------------------------
+
+def _whole_turn() -> Optional[TurnScope]:
+    scope = _TURN.get()
+    return scope if scope is not None and scope.whole_turn_budget else None
+
+
+def note_budget(limit: Optional[int]) -> None:
+    """A model-call budget says its limit before a call: on the running
+    helper's record, or on the turn for the primary. Only in a turn whose
+    budget is the whole turn's."""
+    if _whole_turn() is None or not limit:
+        return
+    rec = _HELPER.get()
+    if rec is not None:
+        rec.budget = int(limit)
+    else:
+        _TURN.get().primary_budget = int(limit)
+
+
+def note_primary_model_call() -> None:
+    """The primary agent made a model call (its budget middleware counts it
+    once per call, after the call); counted on the turn so a later pass
+    goes on from it."""
+    scope = _whole_turn()
+    if scope is None or _HELPER.get() is not None:
+        return
+    with scope._lock:
+        scope.primary_model_calls += 1
+
+
+def turn_model_calls() -> Optional[int]:
+    """The primary's model calls over the whole turn so far, or ``None``
+    (a helper, or a turn that does not count over its passes)."""
+    scope = _whole_turn()
+    if scope is None or _HELPER.get() is not None:
+        return None
+    return scope.primary_model_calls
+
+
+def extra_model_calls() -> int:
+    """Continuation calls of cut-off replies counted against the running
+    agent's budget (0 where none are counted)."""
+    if _whole_turn() is None:
+        return 0
+    rec = _HELPER.get()
+    if rec is not None:
+        return rec.extra_model_calls
+    return _TURN.get().primary_extra_calls
+
+
+def take_extra_model_call() -> bool:
+    """Whether the running agent may make one more call to continue a reply
+    cut off at the output limit; if so, it is counted against its budget.
+    One call is always left for the forced last reply: a continuation is
+    refused when, after it, the next call would not fit. ``True`` where no
+    budget is known (nothing counted)."""
+    scope = _whole_turn()
+    if scope is None:
+        return True
+    rec = _HELPER.get()
+    if rec is not None:
+        if rec.budget is None:
+            return True
+        if rec.budget_reached:
+            return False
+        # this call is not on the record yet (HelperRecorder records it
+        # once it returns): done + this one + extra + next >= budget
+        if rec.model_calls + 1 + rec.extra_model_calls + 1 >= rec.budget:
+            return False
+        rec.extra_model_calls += 1
+        return True
+    if scope.primary_budget is None:
+        return True
+    with scope._lock:
+        if scope.budget_reached:
+            return False
+        if (scope.primary_model_calls + 1 + scope.primary_extra_calls + 1
+                >= scope.primary_budget):
+            return False
+        scope.primary_extra_calls += 1
+        return True
+
+
 def _json(obj: Any) -> str:
     try:
         return json.dumps(obj, ensure_ascii=False, default=str)
@@ -280,6 +444,7 @@ class HelperRecorder(AgentMiddleware):
 
     def wrap_model_call(self, request, handler):
         rec = _HELPER.get()
+        check_stop()                       # TA-37: a stopped turn
         try:
             response = handler(request)
         except GraphBubbleUp:
@@ -297,6 +462,7 @@ class HelperRecorder(AgentMiddleware):
 
     async def awrap_model_call(self, request, handler):
         rec = _HELPER.get()
+        check_stop()
         try:
             response = await handler(request)
         except GraphBubbleUp:
@@ -504,27 +670,32 @@ def _relative(path: str) -> str:
     return path
 
 
-def _stem(rec: HelperRecord) -> str:
-    """The kept files' common name for this helper, ``helper_<what>_<id>``
-    (made once, so its ``.md`` and its records file match)."""
+def _stem(rec: HelperRecord, kind: str = "helper") -> str:
+    """The kept files' common name for this helper, ``<kind>_<what>_<id>``
+    (made once, so its ``.md`` and its records file match). ``kind`` is
+    ``helper`` (it stopped or gave up) or :data:`READER_STEM`."""
     stem = getattr(rec, "_kept_stem", None)
     if not stem:
         tail = re.sub(r"[^A-Za-z0-9]", "", rec.task_id)[-6:] or \
             str(int(time.time()))[-6:]
-        stem = f"helper_{_slug(rec.brief)}_{tail}"
+        stem = f"{kind}_{_slug(rec.brief)}_{tail}"
         rec._kept_stem = stem
     return stem
 
 
 def helper_file_text(rec: HelperRecord, why: str,
                      answer: Optional[str] = None,
-                     records: Optional[dict] = None) -> str:
+                     records: Optional[dict] = None,
+                     items: Optional[List[str]] = None,
+                     title: Optional[str] = None) -> str:
     """The kept file: what the helper was asked, why it was kept, the
-    summary, its answer, an index of its calls with where each result
-    starts in the file, then every step in full. ``records``: the records
-    file saved beside it (:func:`save_held_records`), named at the top."""
+    summary, its answer, the open items its tools flagged (``items``,
+    :func:`open_items`, all of them), an index of its calls with where each
+    result starts in the file, then every step in full. ``records``: the
+    records file saved beside it (:func:`save_held_records`), named at the
+    top. ``title``: the heading (a reader kept every time did not stop)."""
     head = [
-        "# What a helper read and wrote before it stopped",
+        f"# {title or 'What a helper read and wrote before it stopped'}",
         "",
         f"Helper: {rec.subagent} (task call {rec.task_id or 'unknown'})",
         f"Kept because: {why}.",
@@ -543,6 +714,8 @@ def helper_file_text(rec: HelperRecord, why: str,
     ]
     if answer and answer.strip():
         head += ["", "## Its answer", answer.strip()]
+    if items:
+        head += ["", f"## {OPEN_ITEMS_HEADING}", *items]
     head += ["", "## Index (character offsets count from the start of this "
              "file; read_text_file with that offset starts there)"]
 
@@ -596,27 +769,36 @@ def helper_file_text(rec: HelperRecord, why: str,
     return head_text + index(offset) + body_text
 
 
-def _write_kept(path: str, text: str) -> str:
+def _write_kept(path: str, text: str, note: bool = True) -> str:
+    """Write a kept file; ``note``: count it on the turn as the work of a
+    helper that stopped (a reader's record kept every time is not)."""
     tmp = path + ".part"
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(text)
     os.replace(tmp, path)
     scope = current_turn()
-    if scope is not None:
+    if scope is not None and note:
         scope.note_kept_file(path)
     return path
 
 
 def write_helper_file(rec: HelperRecord, why: str,
                       answer: Optional[str] = None,
-                      records: Optional[dict] = None) -> Optional[str]:
+                      records: Optional[dict] = None,
+                      items: Optional[List[str]] = None,
+                      title: Optional[str] = None,
+                      reader: bool = False) -> Optional[str]:
     """Write the kept file; its absolute path, or ``None`` if it could not
-    be written."""
+    be written. ``reader``: a reader's record kept every time
+    (:data:`READER_STEM`, not noted on the turn)."""
     try:
         folder = kept_folder()
         os.makedirs(folder, exist_ok=True)
-        path = os.path.join(folder, f"{_stem(rec)}.md")
-        return _write_kept(path, helper_file_text(rec, why, answer, records))
+        stem = _stem(rec, READER_STEM if reader else "helper")
+        path = os.path.join(folder, f"{stem}.md")
+        return _write_kept(path, helper_file_text(rec, why, answer, records,
+                                                  items, title),
+                           note=not reader)
     except Exception:  # noqa: BLE001 - keeping never fails the call
         return None
 
@@ -678,6 +860,237 @@ def _records_note(records: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# A reading helper's boundary (BACKLOG DR-46)
+# ---------------------------------------------------------------------------
+#
+# Trace review of a 40-sheet whole-set review (2026-11-13): the main agent
+# split the set into reading helpers by page range; the plans and the
+# schedules they must agree with fell to different helpers, and what each
+# read (the tags, the rows) and each look that came back cut off or partly
+# unread died with it. The reader's prompt now asks for what must be
+# compared with other pages; this keeps, in code, what the prompt cannot
+# guarantee: the whole record, named, and the tools' own flags.
+
+#: Why a named reader's record is kept when it did not give up.
+READER_KEPT_WHY = ("it is a reading helper: its whole record is kept every "
+                   "time, so what it read stays open to the agent that asked")
+
+#: The kept file's heading for such a reader.
+READER_KEPT_TITLE = "What a reading helper read and wrote"
+
+#: The heading of the open items, in the kept file and in the result.
+OPEN_ITEMS_HEADING = "Open items its tools flagged"
+
+#: Words of open items added to a reader's result at most. Past it the
+#: rest are counted, and every one is in the kept file under
+#: :data:`OPEN_ITEMS_HEADING`.
+OPEN_ITEMS_MAX_WORDS = 300
+
+#: The argument names that say which file a call read, in order.
+_SOURCE_KEYS = ("attachment_key", "path", "file_path", "source", "document",
+                "file", "name")
+
+#: The looking tools of a PDF page (:mod:`aec_agent_core.vision_tools`); a
+#: zoom is told apart by its box.
+_LOOK_TOOLS = frozenset({"analyze_pdf_page", "render_region"})
+_ZOOM_TOOLS = frozenset({"render_region"})
+
+#: The stem of a reader's record kept every time (a helper that stopped or
+#: gave up keeps ``helper_``), so the page can tell them apart: the files
+#: note labels it, and it makes no card under the reply.
+READER_STEM = "reader"
+
+#: The order open items are listed in, most serious first, so the cap of
+#: :data:`OPEN_ITEMS_MAX_WORDS` cuts the least serious.
+_FLAG_ORDER = ("error", "overview_not_read", "tiles_not_read", "cut_off",
+               "scanned", "edge_note")
+
+
+def _clause(text: Any, room: int = 140) -> str:
+    """The first clause of a tool's note (up to its first ``"; "``), on one
+    line, at most ``room`` characters."""
+    s = " ".join(str(text or "").split()).lstrip("! ")
+    s = s.split("; ", 1)[0].rstrip(" .")
+    return s if len(s) <= room else s[:room].rstrip() + " ..."
+
+
+def _result_dict(text: str) -> Optional[dict]:
+    """A tool result's JSON object, or ``None`` (plain text). A result that
+    opens with a line of its own before the object is read from the
+    object's start."""
+    s = (text or "").strip()
+    if not s:
+        return None
+    for start in (0, s.find("\n{") + 1):
+        if start < 0 or (start == 0 and not s.startswith("{")):
+            continue
+        try:
+            data = json.loads(s[start:])
+        except ValueError:
+            continue
+        return data if isinstance(data, dict) else None
+    return None
+
+
+def _calls_by_id(rec: HelperRecord) -> dict:
+    out = {}
+    for s in rec.steps:
+        if s["kind"] == "model":
+            for c in s["calls"]:
+                if c.get("id"):
+                    out[c["id"]] = c
+    return out
+
+
+def _source_of(args: dict) -> str:
+    for k in _SOURCE_KEYS:
+        v = args.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _page_of(data: Optional[dict], args: dict) -> Optional[int]:
+    """The page as a viewer counts it: the result's ``pdf_page``, else the
+    call's ``pdf_page``, else its 0-based ``page`` + 1."""
+    for v, plus in (((data or {}).get("pdf_page"), 0),
+                    (args.get("pdf_page"), 0), (args.get("page"), 1)):
+        if isinstance(v, bool):
+            continue
+        try:
+            return int(v) + plus
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _look_flags(data: dict) -> dict:
+    """``{flag: short words}`` for what one look says it did not read -- its
+    own fields, never its prose. Left out: things found only in the tiles
+    (``found`` rows marked ``tiles_only``; the normal result of tiling, which
+    the tool says to treat as found) and the ``legibility`` caution. In the
+    saved runs of the 40-sheet review the first were on 87-97 % of the
+    readers' looks and the second on about 30 % of zooms, so they would
+    bury the holes; the kept file holds both."""
+    out = {}
+    if data.get("overview_not_read"):
+        out["overview_not_read"] = "the whole-page view was not read"
+    if data.get("tiles_not_read"):
+        out["tiles_not_read"] = ("part not read in close-up: "
+                                 + _clause(data["tiles_not_read"]))
+    if data.get("cut_off"):
+        head = str(data["cut_off"]).partition(":")[0].strip()
+        where = f" ({head})" if head and len(head) < 80 else ""
+        out["cut_off"] = ("the vision answer was cut off at its output "
+                          f"limit{where}, so the end of that reading is "
+                          "missing")
+    if data.get("edge_note"):
+        out["edge_note"] = _clause(data["edge_note"])
+    return out
+
+
+def open_items(rec: HelperRecord) -> List[str]:
+    """The open items a helper's own tools flagged, one line per file and
+    page, the most serious first: a call that failed; a look whose
+    whole-page view or tiles were not read, or whose answer was cut off;
+    pages a text read found with no text layer; lettering that ran past a
+    zoom's edges (:func:`_look_flags`). Made from the record's tool results
+    (the same results the page readings keep), never from the helper's
+    words: how well pages were read, not what a reading asked to check.
+
+    A flag is dropped when the helper read the thing again: a later result
+    of the same tool on the same file and page (for a zoom, the same box)
+    without it; for a page with no text layer, a later look at it. The
+    helper may still have settled an item in its own words; its kept file
+    shows everything."""
+    calls = _calls_by_id(rec)
+    flagged: dict = {}           # (key, flag) -> (label, words)
+    for s in rec.steps:
+        if s["kind"] != "result":
+            continue
+        call = calls.get(s.get("id")) or {}
+        tool = str(call.get("name") or s.get("name") or "tool")
+        args = call.get("args") if isinstance(call.get("args"), dict) else {}
+        data = _result_dict(s.get("text") or "")
+        source = _source_of(args)
+        page = _page_of(data, args)
+        box = (_json(args.get("bbox")) if tool in _ZOOM_TOOLS
+               and args.get("bbox") is not None else None)
+        key = (tool, source, page, box)
+        label = " ".join(x for x in (
+            source or tool, f"page {page}" if page is not None else "",
+            "(a zoom)" if tool in _ZOOM_TOOLS else "") if x)
+        error = (data or {}).get("error")
+        if s.get("status") == "error" or error:
+            flags = {"error": f"{tool} failed: "
+                              + _clause(error or s.get("text"), 120)}
+        else:
+            flags = _look_flags(data) if data else {}
+            if tool in _LOOK_TOOLS and page is not None:
+                for k in list(flagged):
+                    (k_tool, k_source, k_page, _b), _flag = k
+                    if (k_tool == "(text layer)" and k_source == source
+                            and k_page == page):
+                        flagged.pop(k)
+        for k in [k for k in flagged if k[0] == key and k[1] not in flags]:
+            flagged.pop(k)
+        for flag, words in flags.items():
+            flagged[(key, flag)] = (label, words)
+        for p in (data or {}).get("scanned_pages") or () if not flags else ():
+            try:
+                n = int(p) + 1
+            except (TypeError, ValueError):
+                continue
+            k = (("(text layer)", source, n, None), "scanned")
+            flagged[k] = (" ".join(x for x in (source, f"page {n}") if x),
+                          "no text layer, so a text read saw nothing there "
+                          "(only a look reads it)")
+    rank = {f: i for i, f in enumerate(_FLAG_ORDER)}
+    lines: dict = {}             # label -> [rank, [words]]
+    for (_key, flag), (label, words) in flagged.items():
+        entry = lines.setdefault(label, [len(rank), []])
+        entry[0] = min(entry[0], rank.get(flag, len(rank)))
+        entry[1].append((rank.get(flag, len(rank)), words))
+    ordered = sorted(lines.items(), key=lambda kv: kv[1][0])
+    return [f"- {label}: " + "; ".join(w for _r, w in sorted(entry[1],
+                                                             key=lambda x: x[0]))
+            for label, entry in ordered]
+
+
+def open_items_note(items: List[str], kept_name: Optional[str]) -> str:
+    """What the primary is told of a reader's open items, at most
+    :data:`OPEN_ITEMS_MAX_WORDS` words of them; the rest are counted and
+    left to the kept file."""
+    shown: List[str] = []
+    words = 0
+    for line in items:
+        n = len(line.split())
+        if shown and words + n > OPEN_ITEMS_MAX_WORDS:
+            break
+        shown.append(line)
+        words += n
+    more = len(items) - len(shown)
+    tail = ""
+    if more:
+        tail = (f"\n{more} more open item(s) are not shown here"
+                + (f"; every one is in '{kept_name}' under "
+                   f"'{OPEN_ITEMS_HEADING}'." if kept_name else "."))
+    return (f"[{OPEN_ITEMS_HEADING}, listed in code from its record whether "
+            "or not its answer names them (it may have settled some in its "
+            "own words):\n" + "\n".join(shown) + tail + "]")
+
+
+def reader_note(rec: HelperRecord, path: str) -> str:
+    """What the primary is told about a reader's kept record."""
+    return (f"[This reading helper's whole record ({rec.n_results} tool "
+            f"results, {rec.read_chars:,} characters) is kept in the file "
+            f"'{_relative(path)}' in the working folder. Read it with "
+            "read_text_file -- its index gives the offset of each result -- "
+            "to compare what it read with other pages, instead of reading "
+            "the same pages again.]")
+
+
+# ---------------------------------------------------------------------------
 # Helpers at once (BACKLOG TA-22)
 # ---------------------------------------------------------------------------
 
@@ -706,8 +1119,10 @@ class _HelperPlaces:
         self._running = 0
         self._queue: list = []
 
-    def acquire(self) -> float:
-        """Wait for a place; the seconds waited."""
+    def acquire(self, stoppable: bool = False) -> float:
+        """Wait for a place; the seconds waited. ``stoppable``: the turn can
+        be stopped by the user, so the wait looks every half second and
+        raises :class:`TurnStopped` once asked (TA-37)."""
         t0 = time.monotonic()
         with self._cond:
             me = object()
@@ -715,7 +1130,11 @@ class _HelperPlaces:
             try:
                 while not (self._running < self.limit
                            and self._queue[0] is me):
-                    self._cond.wait()
+                    if stoppable:
+                        check_stop()
+                        self._cond.wait(0.5)
+                    else:
+                        self._cond.wait()
             except BaseException:
                 self._queue.remove(me)
                 self._cond.notify_all()
@@ -753,11 +1172,18 @@ class KeepWork(AgentMiddleware):
     docstring), cap the helpers running at once, and keep the full text of
     very large tool results on the turn scope. Put it just inside
     :class:`~funhouse_agent.deep.tool_guards.ToolErrorGuard`, so a helper's
-    error reaches it first."""
+    error reaches it first.
 
-    def __init__(self, max_at_once: Optional[int] = None):
+    ``readers``: the names of the page's reading helpers (BACKLOG DR-46).
+    Each of their returns keeps the whole record and adds its open items
+    (see the module docstring); none named, every helper is kept as
+    before."""
+
+    def __init__(self, max_at_once: Optional[int] = None,
+                 readers=()):
         super().__init__()
         self._limit = max_at_once
+        self.readers = frozenset(str(n) for n in (readers or ()))
         self._places: dict = {}
         self._lock = threading.Lock()
 
@@ -836,10 +1262,13 @@ class KeepWork(AgentMiddleware):
                            status="error")
 
     def _finished(self, rec: HelperRecord, result):
-        """A helper that returned: keep its work when it gave up."""
+        """A helper that returned: keep its work when it gave up, or every
+        time for a named reader (DR-46)."""
         msgs = _result_messages(result)
         answer = "\n".join(_text(m.content) for m in msgs)
         why = gave_up(rec, answer)
+        if rec.subagent in self.readers and rec.n_results:
+            return self._reader_returned(rec, result, answer, why)
         if why is None:
             # A helper that saved files: their names reach the primary in
             # code, whether or not its reply named them (RI-31).
@@ -857,6 +1286,40 @@ class KeepWork(AgentMiddleware):
         note = kept_note(rec, path, why, records)
         return _with_note(result, note)
 
+    def _reader_returned(self, rec: HelperRecord, result, answer: str,
+                         why: Optional[str]):
+        """A named reader that returned: its whole record goes to
+        ``kept/``, the file is named in the result, and the open items its
+        tools flagged are added (DR-46). One that gave up is kept as any
+        helper that gave up is, with its open items added."""
+        try:
+            items = open_items(rec)
+        except Exception:  # noqa: BLE001 - keeping never fails the call
+            items = []
+        records = save_held_records(rec, answer) if why else None
+        path = write_helper_file(
+            rec, why or READER_KEPT_WHY, answer, records, items,
+            None if why else READER_KEPT_TITLE, reader=not why)
+        notes: List[str] = []
+        if path:
+            _event("helper_kept", {"task_id": rec.task_id,
+                                   "subagent": rec.subagent,
+                                   "path": _relative(path),
+                                   "why": why or READER_KEPT_WHY,
+                                   "read_chars": rec.read_chars,
+                                   "open_items": len(items)})
+            notes.append(kept_note(rec, path, why, records) if why
+                         else reader_note(rec, path))
+        elif records:
+            notes.append(_records_note(records))
+        files = saved_files(rec)
+        if files and not why:
+            notes.append(saved_note(files))
+        if items:
+            notes.append(open_items_note(
+                items, _relative(path) if path else None))
+        return _with_note(result, "\n".join(notes)) if notes else result
+
     # -- the wrapper ------------------------------------------------------
     def _begin(self, request):
         call = getattr(request, "tool_call", None) or {}
@@ -864,7 +1327,12 @@ class KeepWork(AgentMiddleware):
         rec = HelperRecord(call.get("id") or "", args.get("subagent_type"),
                            args.get("description"))
         places = self._places_for()
-        waited = places.acquire() if places is not None else 0.0
+        scope = current_turn()
+        stoppable = scope is not None and scope.stop_event is not None
+        if stoppable:
+            check_stop()                   # TA-37: before the helper starts
+        waited = (places.acquire(stoppable=stoppable) if places is not None
+                  else 0.0)
         if waited >= 0.5:
             _event("helper_queued", {"task_id": rec.task_id,
                                      "subagent": rec.subagent,
@@ -948,11 +1416,18 @@ def _with_note(result, note: str):
 
 
 __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
+           "TurnStopped", "stop_requested", "check_stop", "note_budget",
+           "note_primary_model_call", "turn_model_calls",
+           "extra_model_calls", "take_extra_model_call",
            "current_helper", "HelperRecorder", "KeepWork",
            "note_budget_reached", "gave_up", "summary_paragraph",
            "saved_files", "saved_note", "save_held_records",
            "helper_file_text", "write_helper_file", "kept_note",
-           "kept_folder", "max_helpers", "KEPT_DIR", "KEEP_ON_GIVE_UP",
+           "kept_folder", "max_helpers", "open_items",
+           "open_items_note", "reader_note", "READER_KEPT_WHY",
+           "READER_STEM",
+           "OPEN_ITEMS_HEADING", "OPEN_ITEMS_MAX_WORDS", "KEPT_DIR",
+           "KEEP_ON_GIVE_UP",
            "KEEP_MIN_READ_CHARS", "SHORT_ANSWER_CHARS",
            "FULL_RESULT_MIN_CHARS", "MAX_HELPERS_ENV", "DEFAULT_MAX_HELPERS",
            "BUSY_TURN_MAX_ENV", "DEFAULT_BUSY_TURN_MAX_S"]

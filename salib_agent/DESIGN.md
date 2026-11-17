@@ -73,3 +73,36 @@ salib_agent_foundry.py  # Foundry wrapper (project root)
   geotechnical parameters (e.g., phi and c) need transformation first.
 - **Sample size**: Sobol needs N*(2D+2) evaluations; with many variables,
   Morris screening first reduces dimensionality.
+
+## Counts are checked against the design (GM-323)
+
+A sample matrix fixes how many outputs an analysis must be given, so the
+two-step methods check the data against the design instead of taking a
+count on trust:
+
+- `sobol_analyze`: a Saltelli/Sobol design for D variables has N*(2D+2)
+  rows with second-order indices and N*(D+2) without. The length of Y must
+  be a whole multiple; N is read from it (`n_base_samples` in the result;
+  `n_samples` stays the number of outputs analysed). `n_samples`, when
+  given, must equal that N or the call is refused. Until GM-323 it was
+  never read.
+- `morris_analyze`: a Morris design has T*(D+1) rows of D columns, one
+  output per row. X and Y are checked, T is counted from X and returned as
+  `n_trajectories`; an `n_trajectories` that disagrees is refused. Until
+  GM-323 the given value was copied into the result unchecked.
+- One ambiguity the check cannot see: a length that is a whole multiple of
+  both 2D+2 and D+2 fits either design, so `calc_second_order` must still
+  match the sampling. Giving `n_samples` removes the ambiguity. Without
+  it, the result's `warnings` and `choices` name the design taken and the
+  other reading (GM-323 review).
+
+## Expression limits (GM-323)
+
+`salib_agent/expression.py` takes the reliability engines' limits (the same
+numbers as `aec_agent_core.safe_expr` and `pystra_agent.pystra_utils`): at
+most 10,000 characters, at most 200 levels of nesting, and every power
+through `_bounded_pow`, which refuses an exact integer result above about
+1e308 before computing it. The numbers are restated here because an
+analysis module imports no other module's code;
+`salib_agent/tests/test_gm323_counts_and_limits.py` pins the three copies
+together.

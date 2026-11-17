@@ -32,6 +32,7 @@ import random
 import re
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
@@ -45,8 +46,24 @@ log = logging.getLogger(__name__)
 #: call holds its slot (:func:`call_slot`), so queueing behind other calls is
 #: not counted. ``0`` = wait as long as the engine does. The primary agent's
 #: own calls never pass through here and keep the engine's timeout.
+#:
+#: The limit is set from the measured tail (BACKLOG VIS-31, 2026-11-13). It
+#: was 180 s. Foundry brief 7 (2026-11-12): 15,545 tile calls took 5 s at
+#: the median and under 22 s for 99 %, and each of 34 stalled tiles held
+#: its batch for the whole 180 s before a second ask that answered in 1 to
+#: 2 s (about 350 s of one 841 s run). Brief 5 (another deployment,
+#: 2026-10-08) had a 99th percentile of 74 s. 90 s is above both tails, so
+#: on neither deployment is a call that would have answered given up as a
+#: matter of course: about four times brief 7's 99th percentile and 1.2
+#: times brief 5's. The trace review suggested 60 s; that is under brief
+#: 5's 74 s, where more than one call in a hundred would be abandoned while
+#: still working, asked a second time on an endpoint already slow, and
+#: would keep its slot until it ended. Each timeout and each late end is
+#: now an event (:data:`TIMEOUT_EVENT`, :data:`LATE_END_EVENT`; the late
+#: end's ``held_s`` is how long the abandoned call really took), so the
+#: next suite run measures whether 60 s would have cost any answer.
 TIMEOUT_ENV = "GEOTECH_VISION_CALL_TIMEOUT_S"
-DEFAULT_TIMEOUT_S = 180.0
+DEFAULT_TIMEOUT_S = 90.0
 #: How many more times a side call that timed out is asked.
 TIMEOUT_RETRIES = 1
 
@@ -54,6 +71,44 @@ TIMEOUT_RETRIES = 1
 class VisionCallTimeout(TimeoutError):
     """A vision side call that did not answer within its time, every time it
     was asked: the image was not read."""
+
+
+class VisionSlotTimeout(VisionCallTimeout):
+    """No vision call slot came free within the wait bound
+    (:func:`slot_wait_s`): the image was not read, and the call was never
+    sent. Its text is the one plain line a tool result gives
+    (:func:`describe_error`). Never asked again by the ladders here: the
+    wait it reports is already the bound."""
+
+
+#: The longest one look waits for a vision call slot (BACKLOG TA-24, a
+#: repair: the wait had no bound). The process has :data:`INFLIGHT_ENV`
+#: slots, and a call given up at its time limit keeps its slot until its
+#: connection ends, so with every slot held by a stuck call the looks of
+#: every tester queued with no end and no word. After this many seconds
+#: the look is reported as not read, because the vision model is busy with
+#: other looks. 600 s: at the measured 5 s median a side call takes (brief
+#: 7), eight slots serve about 960 calls in that time, more than fifty
+#: whole-page looks of 17 calls queued ahead, so a queue that is only long
+#: does not reach it; a queue behind stuck calls does. ``0`` = no bound.
+SLOT_WAIT_ENV = "GEOTECH_VISION_SLOT_WAIT_S"
+DEFAULT_SLOT_WAIT_S = 600.0
+
+#: The app event of a look that gave up waiting for a slot: ``waited_s``,
+#: ``limit_s``, the calls ``in_flight`` then, and the look's ``kind``,
+#: ``page`` and ``tile``.
+SLOT_TIMEOUT_EVENT = "vision_slot_timeout"
+
+
+def slot_wait_s() -> Optional[float]:
+    """The bound on one look's wait for a vision slot in seconds
+    (:data:`SLOT_WAIT_ENV`), or ``None`` for none."""
+    raw = (os.environ.get(SLOT_WAIT_ENV) or "").strip()
+    try:
+        limit = float(raw) if raw else DEFAULT_SLOT_WAIT_S
+    except ValueError:
+        limit = DEFAULT_SLOT_WAIT_S
+    return limit if limit > 0 else None
 
 
 def call_timeout_s() -> Optional[float]:
@@ -123,13 +178,27 @@ class FairSlots:
             return None
         return min(ready, key=lambda w: (self._by_conv.get(w[1], 0), w[0]))
 
-    def acquire(self, conversation="") -> None:
+    def acquire(self, conversation="", timeout: Optional[float] = None
+                ) -> bool:
+        """Take a slot, waiting for one. With ``timeout`` (seconds) the
+        wait is bounded: ``False`` when no slot came in that time, and the
+        caller holds none (BACKLOG TA-24). ``True`` otherwise."""
+        deadline = (None if timeout is None
+                    else time.monotonic() + max(0.0, float(timeout)))
         with self._cond:
             me = (next(self._tickets), conversation)
             self._waiting.append(me)
             try:
                 while not (self._in_use < self.limit and self._next() is me):
-                    self._cond.wait()
+                    if deadline is None:
+                        self._cond.wait()
+                        continue
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        self._waiting.remove(me)
+                        self._cond.notify_all()   # the next may be served
+                        return False
+                    self._cond.wait(left)
             except BaseException:
                 self._waiting.remove(me)
                 self._cond.notify_all()      # the next in line may be served
@@ -140,6 +209,7 @@ class FairSlots:
                 self._by_conv.get(conversation, 0) + 1
             # Another slot may still be free for the next waiter in line.
             self._cond.notify_all()
+            return True
 
     def release(self, conversation="") -> None:
         with self._cond:
@@ -237,7 +307,9 @@ def call_slot(conversation: Optional[str] = None) -> Iterator[None]:
     Wrap only the request itself, never work that makes further calls, so a
     holder never waits on a slot it needs to finish. ``conversation``
     defaults to this context's (:func:`conversation_key`); slots are shared
-    fairly between conversations (:class:`FairSlots`)."""
+    fairly between conversations (:class:`FairSlots`). The wait is bounded
+    (:func:`slot_wait_s`): past it :class:`VisionSlotTimeout` is raised,
+    with a :data:`SLOT_TIMEOUT_EVENT` in the run record."""
     slots = _semaphore()
     if slots is None:
         _note_side_call(queued_s=0.0)
@@ -245,7 +317,17 @@ def call_slot(conversation: Optional[str] = None) -> Iterator[None]:
         return
     conv = conversation_key() if conversation is None else conversation
     t0 = time.monotonic()
-    slots.acquire(conv)
+    bound = slot_wait_s()
+    if not slots.acquire(conv, timeout=bound):
+        waited = round(time.monotonic() - t0, 3)
+        _note_side_call(queued_s=waited)
+        _event(SLOT_TIMEOUT_EVENT, {
+            **_look_facts(), "waited_s": waited, "limit_s": bound,
+            "in_flight": slots.in_flight()})
+        raise VisionSlotTimeout(
+            f"the vision model is busy with other looks: no vision call "
+            f"could start within {bound:g} s; this image was NOT read — "
+            f"try again in a minute")
     # The wait for the slot, on the call's record (EV-14): a slow tool is
     # told apart from a queued one.
     _note_side_call(queued_s=round(time.monotonic() - t0, 3))
@@ -273,6 +355,9 @@ MAX_RETRY_AFTER_S = 30.0
 
 #: The wait between tries (tests replace it).
 _sleep = time.sleep
+#: The clock an ask's running time is read off, from its slot to its end
+#: (:data:`SLOW_TRY_S`, a late end's ``held_s``; tests replace it).
+_clock = time.monotonic
 
 _BUSY_TYPES = {
     "ratelimiterror", "internalservererror", "overloadederror",
@@ -361,6 +446,88 @@ def busy_kind(exc) -> Optional[str]:
         if isinstance(e, (ConnectionError, TimeoutError)):
             return "connection"
     return None
+
+
+#: Error classes that mean "the request got no answer in time": the OpenAI
+#: and Anthropic clients' ``APITimeoutError``, httpx's and requests'
+#: timeouts.
+_TIMEOUT_TYPES = {"apitimeouterror", "timeoutexception", "readtimeout",
+                  "connecttimeout", "writetimeout", "pooltimeout", "timeout",
+                  "readtimeouterror"}
+#: HTTP statuses that mean the same seen from a gateway: it gave up waiting.
+#: Only after a slow try (:data:`SLOW_TRY_S`): see :func:`is_timeout`.
+_TIMEOUT_STATUSES = (408, 504)
+
+#: How long a try must have lasted, in seconds, before a 408 or 504 counts
+#: as a timeout (review of BACKLOG TA-24, 2026-11-13). A gateway that
+#: answers 408 or 504 QUICKLY is refusing, not timing out, and keeps the
+#: whole busy ladder, as before TA-24; one that answers it after a long wait
+#: has cost about what a timeout costs. 20 s is a judgment, not a
+#: measurement: it is about the 99th percentile of a side call in Foundry
+#: brief 7 (under 22 s), so a try that lasted longer was waiting, not
+#: working. No gateway's own time limit has been measured.
+SLOW_TRY_S = 20.0
+
+
+def is_timeout(exc, took_s: Optional[float] = None) -> bool:
+    """Whether ``exc`` is a model request that got no answer IN TIME, as
+    against one refused quickly (a rate limit, an overload): the client's
+    own timeout, an error a service names a timeout, or a gateway's 408 or
+    504 after a try that lasted at least :data:`SLOW_TRY_S` (``took_s``,
+    the seconds the try took; a 408 or 504 with ``took_s`` unknown or
+    shorter is a quick refusal). Read off the error's type, status and
+    name, never its text.
+
+    A timeout is the slow way to fail: each ask costs the whole limit. So
+    one is asked again at most once in all, by the client and the ladders
+    together (:func:`may_ask_timeout_again`; BACKLOG TA-24)."""
+    if isinstance(exc, VisionSlotTimeout):
+        return False
+    for e in _chain(exc):
+        if isinstance(e, TimeoutError):
+            return True
+        if type(e).__name__.lower() in _TIMEOUT_TYPES:
+            return True
+        if "timeout" in str(getattr(e, "error_name", "") or "").lower():
+            return True
+    if took_s is None or took_s < SLOW_TRY_S:
+        return False
+    return any(_status_of(e) in _TIMEOUT_STATUSES for e in _chain(exc))
+
+
+def client_retries(model) -> int:
+    """How many times ``model``'s own client asks a failed request again
+    (its ``max_retries``); 0 for a model that keeps no such count."""
+    value = getattr(model, "max_retries", None)
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return 0
+
+
+def may_ask_timeout_again(model, timeouts: int) -> bool:
+    """Whether a ladder may ask again after its ``timeouts``-th timed-out
+    try of one call: only while the client's own retries and the ladder's
+    come to at most :data:`TIMEOUT_RETRIES` (one) in all. A client that
+    already asks again by itself (``max_retries`` of 1 or more) has used
+    the one retry inside the try, so the ladder asks no more; with a
+    client that does not, the ladder asks once.
+
+    What the rule bounds is the asks a ladder sees. A vision side call
+    given up at its own limit (:data:`TIMEOUT_ENV`, shorter than the
+    client's request timeout) is asked once more by
+    :func:`invoke_side_call` whatever the client's retries, and each ask
+    given up keeps running on its thread, where the client may still send
+    its request once more: with the client asking again once, up to four
+    requests reach the service for one look. Each ask given up is a
+    :data:`TIMEOUT_EVENT` and each that ends a :data:`LATE_END_EVENT`, but
+    the record cannot count the client's re-sends inside an ask: a request
+    that timed out got no response, so the Tiny Apps route's per-call HTTP
+    list (``http_tries``, :mod:`aec_agent_core.http_trace`) never sees it.
+
+    Before (the deployment review of 2026-11-10): the Prompter client asked
+    a timed-out request four more times at 180 s each inside every try of
+    the agent's ladder, 15 minutes before the tester saw a word."""
+    return int(timeouts) + client_retries(model) <= TIMEOUT_RETRIES
 
 
 def _budget_spent(exc):
@@ -465,7 +632,46 @@ def refused_detail(exc) -> bool:
     return bool(_DETAIL_WORD.search(str(exc)))
 
 
-def _invoke_once(model, messages, timeout: Optional[float]):
+#: The app events a side call writes to the run record (the activity log's
+#: ``APP_EVENTS``; BACKLOG INF-75). Foundry brief 7 (2026-11-12): 44 side
+#: calls in 84 records were given up at the limit with only a log line, so
+#: each left a ``model_start`` with no ``model_end`` and nothing said why.
+#:
+#: * ``side_call_timeout``: an ask got no answer within ``limit_s`` and was
+#:   given up: the look's ``kind``, ``page`` and ``tile``, which ``ask`` of
+#:   the side call it was and its ``ask_id`` (also on that ask's
+#:   ``model_start``, in ``vision``), ``attempt`` (the timeouts so far) and
+#:   ``asked_again`` (false: the image was reported as not read).
+#: * ``side_call_late_end``: an ask that was given up ended after all,
+#:   having held its vision slot ``held_s`` seconds: ``outcome``
+#:   (``answered`` or ``error``, with the error's class) and the same
+#:   ``ask_id``. An abandoned ask with no such event was still running, and
+#:   still holding its slot, when the record stopped.
+TIMEOUT_EVENT = "side_call_timeout"
+LATE_END_EVENT = "side_call_late_end"
+
+
+def _event(name: str, data: dict) -> None:
+    """Write one app event to the run record, as
+    :func:`aec_agent_core.deep.busy_retry._event` does. Never raises: a
+    caller outside a run (a library call) has no record to write to."""
+    try:
+        from langchain_core.callbacks.manager import dispatch_custom_event
+        dispatch_custom_event(name, data)
+    except Exception:  # noqa: BLE001 - the record never fails a call
+        pass
+
+
+def _look_facts() -> dict:
+    """What the look in this context is, for an event: ``kind``, ``page``
+    and ``tile`` off its label (:func:`current_side_call`)."""
+    info = _SIDE_CALL.get() or {}
+    return {k: info[k] for k in ("kind", "page", "tile") if k in info}
+
+
+def _invoke_once(model, messages, timeout: Optional[float],
+                 facts: Optional[dict] = None,
+                 timing: Optional[dict] = None):
     """``model.invoke(messages)`` holding a call slot, given up after
     ``timeout`` seconds of running.
 
@@ -473,31 +679,62 @@ def _invoke_once(model, messages, timeout: Optional[float]):
     context, so the run's callbacks (the activity log, the token count) still
     see it. A call given up is left to finish on that thread — it still holds
     its slot, so a stalled connection keeps counting against the process's
-    cap rather than letting more calls pile onto the client's pool."""
+    cap rather than letting more calls pile onto the client's pool. When it
+    does end, a :data:`LATE_END_EVENT` says how long it held the slot
+    (``facts``: what the event says of the ask). A call that ends in time
+    puts its running time, slot to end, in ``timing["ran_s"]``."""
     if timeout is None:
         with call_slot():
-            return model.invoke(messages)
+            t_run = _clock()
+            try:
+                return model.invoke(messages)
+            finally:
+                if timing is not None:
+                    timing["ran_s"] = _clock() - t_run
     box: dict = {}
     started, done = threading.Event(), threading.Event()
+    # Whether the caller gave the call up is settled under this lock, so a
+    # call that ends as the limit passes is either returned or reported as
+    # a late end, never both and never neither.
+    settle = threading.Lock()
 
     def run():
         try:
             with call_slot():
+                box["t_slot"] = _clock()
                 started.set()
                 box["value"] = model.invoke(messages)
         except BaseException as exc:  # noqa: BLE001 - handed to the caller
             box["error"] = exc
         finally:
             started.set()
-            done.set()
+            if box.get("t_slot") is not None:
+                box["ran_s"] = _clock() - box["t_slot"]
+            with settle:
+                done.set()
+                abandoned = bool(box.get("abandoned"))
+            if abandoned:
+                error = box.get("error")
+                ran = box.get("ran_s")
+                _event(LATE_END_EVENT, {
+                    **(facts or {}), "limit_s": timeout,
+                    "held_s": round(ran, 3) if ran is not None else None,
+                    "outcome": "error" if error is not None else "answered",
+                    **({"error": type(error).__name__}
+                       if error is not None else {})})
 
     ctx = contextvars.copy_context()
     threading.Thread(target=ctx.run, args=(run,), daemon=True,
                      name="vision-side-call").start()
     started.wait()                      # queueing for a slot is not counted
     if not done.wait(timeout):
-        raise VisionCallTimeout(
-            f"the vision call gave no answer within {timeout:g} s")
+        with settle:
+            if not done.is_set():
+                box["abandoned"] = True
+                raise VisionCallTimeout(
+                    f"the vision call gave no answer within {timeout:g} s")
+    if timing is not None and "ran_s" in box:
+        timing["ran_s"] = box["ran_s"]
     if "error" in box:
         raise box["error"]
     return box["value"]
@@ -527,26 +764,48 @@ def invoke_side_call(model, messages):
     """One vision side call: :func:`_invoke_once` under the side-call limit
     (:func:`call_timeout_s`), asked once more if it times out, and asked
     again with backoff — up to :func:`busy_tries` times in all, honouring a
-    ``retry-after`` — while the model answers busy (:func:`busy_kind`). The
-    waits are spent holding no slot. Raises :class:`VisionCallTimeout` when
+    ``retry-after`` — while the model answers busy (:func:`busy_kind`). A
+    timeout of the client's own, or a 408 or 504 after a slow ask
+    (:func:`is_timeout`), is asked again at most once in all, client and
+    ladder together (:func:`may_ask_timeout_again`). An ask given up at the
+    side-call limit is asked once more whatever the client's retries, and
+    its client may still re-send it on its own thread: up to four requests
+    for one look with the client asking again once. The waits are spent
+    holding no slot. Raises :class:`VisionCallTimeout` when
     no ask answered in time, and a busy error that outlasted its tries with
     ``vision_tries`` set on it — the caller reports that image as not read
-    (:func:`describe_error`) instead of waiting on it."""
+    (:func:`describe_error`) instead of waiting on it.
+
+    Each ask given up at the limit is a :data:`TIMEOUT_EVENT` in the run
+    record, and each ask carries its number and an id on its own
+    ``model_start`` (``vision.ask``, ``vision.ask_id``), so a start with no
+    end can be matched to the timeout that left it (BACKLOG INF-75)."""
     timeout = call_timeout_s()
     timeouts = 0
     busy = 0
     tries = busy_tries()
+    ask = 0
     while True:
         # Room on this key under the token pacer, when one is set
         # (funhouse_agent.deep.pacing; BACKLOG TA-22): waited for before
         # the slot, so a paced call holds none.
         pacer, ticket = _pace(model, messages)
+        ask += 1
+        ask_id = uuid.uuid4().hex[:12]
+        _note_side_call(ask=ask, ask_id=ask_id)
+        facts = {**_look_facts(), "ask": ask, "ask_id": ask_id}
+        timing: dict = {}
         try:
-            response = _invoke_once(model, messages, timeout)
+            response = _invoke_once(model, messages, timeout, facts, timing)
             _settle(pacer, ticket, response)
             return response
+        except VisionSlotTimeout:
+            raise                         # the wait was the bound: not asked
         except VisionCallTimeout:
             timeouts += 1
+            _event(TIMEOUT_EVENT, {
+                **facts, "limit_s": timeout, "attempt": timeouts,
+                "asked_again": timeouts <= TIMEOUT_RETRIES})
             if timeouts > TIMEOUT_RETRIES:
                 raise VisionCallTimeout(
                     f"the vision call gave no answer within {timeout:g} s, "
@@ -558,7 +817,15 @@ def invoke_side_call(model, messages):
             if kind is None:
                 raise
             busy += 1
-            if busy >= tries:
+            # The client's own timeout (reached where the side-call limit
+            # is off or longer), or a 408 or 504 after a slow ask: counted
+            # with the side-call timeouts, and asked again at most once in
+            # all (TA-24). A quick 408 or 504 keeps every try.
+            timed_out = is_timeout(exc, timing.get("ran_s"))
+            if timed_out:
+                timeouts += 1
+            if busy >= tries or (
+                    timed_out and not may_ask_timeout_again(model, timeouts)):
                 try:
                     exc.vision_tries = busy
                 except Exception:  # noqa: BLE001 - a frozen exception type
@@ -849,4 +1116,7 @@ __all__ = ["LangChainVisionEngine", "call_slot", "INFLIGHT_ENV",
            "conversation_key", "busy_kind", "busy_tries", "describe_error",
            "refused_detail", "BUSY_TRIES_ENV", "DEFAULT_BUSY_TRIES",
            "VisionAnswer", "was_cut_off", "capped_model", "side_call",
-           "current_side_call"]
+           "current_side_call", "TIMEOUT_EVENT", "LATE_END_EVENT",
+           "VisionSlotTimeout", "SLOT_WAIT_ENV", "DEFAULT_SLOT_WAIT_S",
+           "SLOT_TIMEOUT_EVENT", "slot_wait_s", "is_timeout",
+           "SLOW_TRY_S", "client_retries", "may_ask_timeout_again"]

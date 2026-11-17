@@ -73,7 +73,10 @@ z = elevation. Field names deliberately mirror `SlopeSoilLayer` /
 or the layer above's bottom; its bottom is a flat `bottom_elevation` or a
 named `bottom_boundary` polyline (representative elevation = the polyline's
 max z, the dxf_import convention; the polyline itself becomes
-`bottom_boundary_points` / `layer_polylines` downstream).
+`bottom_boundary_points` / `layer_polylines` downstream). For limit
+equilibrium (`to_slope_geometry`) the same polyline is also the
+`top_boundary_points` of the layer below, so each point has one layer
+(slope_stability's rule, GM-140 step 1).
 
 **Serialization**: `to_json()` / `Project.from_json()`. Documents carry
 `schema_version`; unknown keys at ANY depth are tolerated (dropped) on load.

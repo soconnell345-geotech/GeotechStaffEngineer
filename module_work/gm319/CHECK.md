@@ -1,0 +1,195 @@
+# GM-319: pile_group, three things the tools say and do not do
+
+Branch `claude/gm-319-pile-group-interface`, from master 2feea3d. Source: the module audit of 2026-11-12, section 4 `pile_group` (scout file `results/deep_axial.md`).
+
+## Findings taken
+
+| Audit row | Finding | Confirmed on master? | What was done |
+|---|---|---|---|
+| 1 (A) | The manual offers an equivalent-footing settlement; `group_settlement_equivalent_raft` exists and no tool reaches it | Yes | **Fixed.** Function read against the print (below): it matches. New tool `equivalent_footing_settlement`, with its description, two probes and the manual rows. |
+| 2 (A) | `pile_group_6dof` takes batter angles and leaves out the kxz/kyz terms; the tool text does not say so | Yes (`rigid_cap.py` assembled `k3` with zeros in the x-z and y-z places) | **Fixed**: the terms are assembled (a call, see "Calls made"). What is still left out (pinned pile heads) is said in the tool text and in the result's `notes`. |
+| 3 (A) | `pile_group_simple` takes per-pile `batter_x/batter_y` and stiffness and ignores them; cap `dz` from `piles[0]`'s stiffness times n | Yes | **Refused.** A `piles[]` entry with a batter other than 0, `axial_stiffness` or `lateral_stiffness` is refused by the tool, as the top-level stiffness already was. The library function refuses a battered pile and unequal stiffness. |
+| 3, second half (same function) | `dz` reported as 0.0 when no stiffness is given (always, on the agent's path) | Yes | **Stated.** With no stiffness the library returns no cap displacements and a note; the tool returns `cap_displacements: null`. With one equal stiffness on every pile (library callers only) dz, rx and ry are worked out and match the 6-DOF analysis. |
+| 5 (B) | `block_failure_capacity` and the raft function exported with no adapter method | Yes | The raft function is row 1. `block_failure_capacity` is a wrapper of `block_failure_resistance`, which `group_efficiency` reaches: **not done**, nothing is missing from the agent. |
+| 4 (B to C) | DESIGN.md's "Public API" names `analyze_pile_group` | No: today's DESIGN.md lists the real exports (fixed by DOC-24) | Wrong on today's master; nothing to do. |
+
+## What the print says
+
+**Equivalent-footing settlement** (item 1).
+
+- FHWA GEC-12 (FHWA-NHI-16-009) Vol. I Sec. 7.3.5.3, pp. 320-325: the equivalent footing at 1/3 D above the pile toe (Fig. 7-44), plan area B x Z the perimeter of the group (Fig. 7-31), the load spread at 1H:2V, and Eq. 7-55 (p. 320): `delta_sigma = Q / [(B + z)(Z + z)]`, Q the unfactored permanent load. Step 1c (p. 324) sums to where the increase is under 10 % of the existing vertical effective stress. Step 3 adds the pile's elastic compression.
+- UFC 3-220-20 Sec. 6-5.8.4.1: Eq. 6-51, the same 2V:1H spread. Sec. 6-5.8.4.3: Eq. 6-54, `delta = (H0 / Es) [(1 + nu)(1 - 2 nu) / (1 - nu)] delta_sigma` for coarse-grained soil, summed by sublayers, to the depth "where the change in stress is less than 10% of the bearing stress of the equivalent footing".
+
+The function does exactly this: footing to the outer pile faces at 2/3 D, Eq. 7-55 at each sublayer's mid-depth, `delta_sigma dz / M` with M the constrained modulus (Eq. 6-54's `Es (1 - nu) / [(1 + nu)(1 - 2 nu)]`), summed to UFC's 10 % depth or to a given depth. Checked against the closed form of Eq. 7-55 for a square footing, `S = (Q/M)[1/B - 1/(B + z)]` (test `test_equivalent_footing_settlement_is_the_printed_sum`). No change to its numbers. One change: its depth choice read "given" by its own word; it now asks `how_given`, as GM-180 requires.
+
+What the function does not do, and the tool says so (`not_included`, the footing's `choices` entry, the description): the piles' own elastic compression (step 3), a clay's consolidation settlement (GEC-12 Eqs. 7-56 to 7-58; UFC Eq. 6-53), the other footing positions of GEC-12 Figs. 7-45 and 7-46 and UFC Table 6-32, the neutral-plane footing (UFC Sec. 6-5.8.4.2), batter (GEC-12 step 1b).
+
+**Batter in the 6-DOF analysis** (item 2).
+
+- The method's source is USACE EM 1110-2-2906 Ch. 4. It is **not held in the reference library**. The repo's own earlier check against the owner's copy (`module_work/wiki_verification/wave7_em2906_pti_mo.md`) records para. 4-5b(2), pp. 4-28/4-29: `[K] = SUM [K]_i`, "[K]_i = stiffness of ith pile transformed to global coordinates", and Saul's method "incorporates position and batter of piles". The EM's equations there are unnumbered. I could not re-read those pages in this session.
+- Held print: UFC 3-220-20 Sec. 6-6.3, "Lateral capacity can be conservatively approximated by assuming that the piles only carry axial load as depicted in Figure 6-20" (force decomposition along the batter).
+
+The transformation itself is plain arithmetic. A spring ka along the unit vector l and a spring kl across it have the global stiffness `k = kl I + (ka - kl) l l^T`. The code already used its xx, yy, zz and xy terms and already took the axial force as `ka (u . l)`; it left the xz and yz terms at zero. So the assembled head forces and the reported axial forces disagreed for a battered pile.
+
+## What changed
+
+- `pile_group/rigid_cap.py`
+  - `analyze_group_6dof`: `k3 = kl I + (ka - kl) l l^T`, all terms. `PileGroupResult.notes` (new, in `to_dict` and `summary`) says the piles are pinned to the cap and batter is carried in full.
+  - `analyze_vertical_group_simple`: refuses a battered pile and unequal (or partly given) `axial_stiffness`. Cap `dz = Vz/(n ka)`, `ry = My/(ka SUM x^2)`, `rx = Mx/(ka SUM y^2)` only when every pile carries the same ka (the displacements that give the formula's own forces; they match the 6-DOF analysis). Otherwise `cap_displacements` is empty and `notes` says why.
+- `pile_group/group_efficiency.py`: the depth choice's "given" through `how_given`.
+- `pile_group/calc_steps.py`: the 6-DOF step says how a pile is modelled; the simple method's section says the cap displacements are not calculated in place of a table of zeros.
+- `funhouse_agent/adapters/pile_group.py`: the new tool; the `piles[]` refusal for the simple method; the briefs, the `piles` descriptions and the `returns` of both group tools (the 6-DOF `returns` named a key `cap_displacement` that does not exist).
+- `funhouse_agent/tests/method_probes.json`: two probes for the new tool; the simple probe's battered pile taken out (it is now refused).
+- Tests: `pile_group/tests/test_pile_group.py` (9 new), `funhouse_agent/tests/test_gm319_pile_group.py` (14 new), one case of `test_nested_keys.py` moved to the 6-DOF tool.
+- `docs/user_manual/manual_content.py` and the matching rows of `manual.html` (rendered with the builder's own table functions; no rebuild). `pile_group/DESIGN.md`.
+
+No fingerprint re-record was needed: `webapp/tests/test_page_fingerprints.py` passes unchanged.
+
+## Before and after (made-up values)
+
+Three piles on the x axis, ka = 200,000 kN/m, no lateral stiffness: A at x = -1 m and B at x = +1 m vertical, C at x = 0 battered 15 degrees toward +x. Loads Vx = 100 kN, Vz = 1,000 kN, My = 200 kN-m. The group is statically determinate: only C has a horizontal component, so P_C = 100 / sin 15 = 386.4 kN; then P_A + P_B = 1,000 - 386.4 cos 15 = 626.8 and P_B - P_A = 200.
+
+| | P_A (kN) | P_B (kN) | P_C (kN) | Vertical sum of the axial forces (kN) | dx (mm) |
+|---|---|---|---|---|---|
+| Statics | 213.4 | 413.4 | 386.4 | 1,000 | |
+| Before (master) | 240.9 | 440.9 | 715.7 | 1,373 | 7.46 |
+| After | 213.4 | 413.4 | 386.4 | 1,000 | 1.62 |
+
+A second test checks, for a four-pile group with batter in both directions and lateral stiffness under all six loads, that the head forces sum to the applied loads and that each head force's component along its pile is the reported axial force.
+
+Vertical groups: unchanged (the worked example in the manual, V-060 and the module's existing tests give the same numbers).
+
+Equivalent footing, 3 x 3 group, s = 0.9 m, b = 0.3 m, D = 12 m, Q = 3,000 kN, M = 40,000 kPa: footing 2.1 m x 2.1 m at 8 m, bearing stress 680.3 kPa, summed to 4.54 m, settlement 24.3 mm (closed form to that depth: 24.4 mm). The function's value is the same before and after; before, no tool returned it.
+
+`pile_group_simple` with `piles: [{x: -1, y: 0}, {x: 1, y: 0, batter_x: 5}]`, Vz = 1,000: before, 500 kN each with `cap_displacements.dz = 0.0`; after, refused, naming `piles[1]`, `batter_x` and `pile_group_6dof`. Without the batter: 500 kN each, `cap_displacements: null`, and the note.
+
+## Calls made
+
+1. **Batter terms added, not only stated.** The section says to add them if the print gives them, otherwise to say they are left out. The EM is not in the reference library, so I could not cite its page from the print itself; I relied on the repo's recorded reading of EM pp. 4-28/4-29 ("stiffness of ith pile transformed to global coordinates") and on plain arithmetic, checked against statics. The other form, keeping the old numbers and stating the omission, would have left a tool whose axial forces do not balance its loads. The earlier owner decision (calc-QC PG-1) deferred a "full CPGA-style coupled rewrite" for want of a benchmark; this is not that rewrite: no rotational head stiffness is added, and GM-28's CPGA benchmark is still open. If the owner prefers the old behaviour until that benchmark, the change is the two lines that build `k3`.
+2. **The simple method refuses** per-pile batter and stiffness rather than using them. Its formula has no place for either; `pile_group_6dof` takes both.
+3. **No stiffness, no displacement**: `cap_displacements` is null for the simple tool, not zeros. The library still works out dz, rx, ry when given one equal stiffness, since that is the same arithmetic as the forces.
+4. **The settlement tool takes M, or Es with nu** (UFC Eq. 6-54 is printed in Es and nu). No default for either; nu = 0.5 is refused (Eq. 6-54 then gives no compression).
+5. **The tool's name** is `equivalent_footing_settlement`, the manual's and the references' words; the library function keeps its name.
+
+## Tests run
+
+Venv per COMMON_MODULES (Python 3.12). Judged by pytest's exit code.
+
+- `webapp/tests/test_public_text.py` and `webapp/tests/test_page_fingerprints.py`: 18 passed.
+- `module_work/doc10/check_manual.py` (the manual's name check): OK.
+- Wide run, `funhouse_agent/tests webapp/tests calc_package validation_examples pile_group`: 6,317 passed, 43 skipped, 1 xfailed, 3 failed (12 min). One of the three was mine and is fixed: `test_citations.py` read "UFC Eq. 6-54" in the new tool's brief as a GEC-12 cite; the brief now says "UFC 3-220-20 Eq. 6-54". Re-run after the fix, `test_citations.py`, `test_gm319_pile_group.py`, `test_defaults_used.py`, the public-text and fingerprint tests and `pile_group`: 1,011 passed, 23 skipped, 1 failed (the `plot_data` one below).
+
+Two tests fail on master 2feea3d as well, in this environment, and are not touched by this branch: `test_defaults_used.py::test_every_default_a_run_lists_changes_its_result[profile_figure|plot_data]` (logx/logy) and `test_calc_package_figure_conventions.py::test_large_pile_group_leaves_the_forces_to_the_table` (a figure-layout note; it fails the same way with this branch's changes stashed).
+
+## Review round (2026-11-13)
+
+Independent review of 7ddbd73 (verdict: merge after fixes), fixed on `fix/gm319-review` from 9e5f439 (7ddbd73 with that morning's master merged in). The lead's rulings are taken as given.
+
+| # | Grade | Finding | What it became |
+|---|---|---|---|
+| 1 | A (older than the branch) | `pile_group_simple` skipped Mx when every pile is on y = 0 (one row) and My on one column, without a word; the 6-DOF refusal of the same layout said "lateral force or torsion" and pointed to the simple method | **Fixed.** `analyze_vertical_group_simple` refuses a non-zero Mx when SUM(y²) = 0 and My when SUM(x²) = 0: "piles pinned to the cap on one line cannot carry a moment about that line; give piles off that line, or leave Mx out if the cap is restrained against that rotation another way". A zero moment runs. `analyze_group_6dof` says load by load what the group cannot carry and why (Vx/Vy: no stiffness along that axis; Mz: no horizontal stiffness; Mx/My: the one-line reason) and no longer points to the simple method. Both tools' Mx/My descriptions say so. Tests both directions, zero moment, moment across the row, both tools. |
+| 2 | B | The settlement tool did not say Eq. 6-54 is for coarse-grained soil; it cited GEC-12 Sec. 7.3.5.3 (cohesive soils, consolidation) for it; nu up to 0.49 passed silently | **Fixed.** Brief, `constrained_modulus_kPa`, `youngs_modulus_kPa` and `poissons_ratio` say "coarse-grained (drained) soil" (UFC 3-220-20 Eq. 6-54, pp. 448-449) and send a group in cohesive soil to consolidation, GEC-12 Sec. 7.3.5.3, with the settlement module's `consolidation_settlement` (it takes each layer's `delta_sigmas`, so the footing's Q/[(B + z)(Z + z)] can be given). Sec. 7.3.5.3 is cited only as that method; the footing cites GEC-12 Fig. 7-44 and Eq. 7-55, the piles' compression Sec. 7.3.5.1, Eq. 7-48. No new refusal below 0.5. With Es and nu the modulus choice states M and M/Es. Above nu = 0.40 a `warnings` entry (printed basis below). Library docstring, DESIGN.md and the manual narrative follow. |
+| 3 | C | `num_sublayers` 2.7 ran as 2 | **Fixed.** Refused unless a whole number of 1 or more, as `n_rows`/`n_cols`. |
+| 4 | C | Spacing below the pile diameter accepted | **Fixed.** `group_settlement_equivalent_raft` refuses s < b when the group has more than one pile in a direction (the tool reaches it). |
+| 5 | C | sin²bx + sin²by > 1 clamped lz to 0 | **Fixed.** `GroupPile.direction_cosines` refuses sin²bx + sin²by ≥ 1, naming the pile and the sum; the 6-DOF `piles` description says the limit. |
+| 6 | C | Simple note "…and none was given" | **Fixed.** "…use no pile stiffness (the pile_group_simple tool takes none). The 6-DOF analysis (pile_group_6dof) gives the cap's displacements…" |
+| 7 | C | Alias `soil_modulus_kPa` read a "soil modulus" as M; `D` for `pile_length` | **Fixed.** Both dropped (nothing else used them; grep of tests, probes, manual, worked examples). The library keyword `soil_modulus_kPa` of `group_settlement_equivalent_raft` is unchanged. |
+| 8 | C | CHECK said 15 new tests in `test_gm319_pile_group.py` | **Fixed**: 14 (above). |
+| 9 | C | No opposed-batter symmetry test | **Added** (`TestOpposedBatter`): battered piles at x = ±1.2 m, 12° outward, axial only; vertical piles at (0, ±0.9) m with kl = 4,000 kN/m. Vz alone: dx = ry = 0, equal pairs. Vx = 120 kN alone: dx = 120/(2 × 4,000) = 15.0 mm, ry = −dx/h with h = 1.2/tan 12° = 5.65 m, battered axial forces 0; with Vz added they equal the Vz-alone forces. |
+| 10 | C | Simple tool refuses an equal per-pile stiffness | Nothing (the review says none is needed). |
+
+**Before and after** (made-up values; "before" is 9e5f439):
+
+| Call | Before | After |
+|---|---|---|
+| `pile_group_simple` n_rows 1, n_cols 3, s 1.5, Vz 900, Mx 300 | 300 / 300 / 300 kN, no word | refused: "Mx = 300 kN-m cannot be carried: every pile is on y = 0, one line along the x axis…" |
+| the same with n_rows 3, n_cols 1, My 300 | 300 / 300 / 300 kN, no word | refused, the same for My on x = 0 |
+| the same with Mx 0 | 300 / 300 / 300 kN | 300 / 300 / 300 kN |
+| `pile_group_6dof` n_rows 1, n_cols 3, ka 2e5, Vz 900, Mx 300 | refused: "…cannot carry lateral force or torsion… or use analyze_vertical_group_simple" | refused: "…cannot carry the applied Mx. Mx: every pile is on y = 0…" |
+| `pile_group_6dof`, a pile at 50° and 50° | lz clamped to 0 (singular in the review's layout) | refused: "sin^2(batter_x) + sin^2(batter_y) = 1.174, at or above 1" |
+| `equivalent_footing_settlement` 3 x 3, s 0.9, b 0.3, D 12, Q 3,000, Es 20,000 kPa, nu 0.49 | 2.84 mm, M 342,282 kPa, no word | 2.84 mm, choice "342,282 kPa = 17.11 Es", and the warning |
+| the same with nu 0.3 | 36.09 mm | 36.09 mm, choice "26,923 kPa = 1.35 Es", no warning |
+| the same with M 40,000 kPa, `num_sublayers` 2.7 | 21.89 mm (run as 2) | refused |
+| the same with s 0.2 m | 72.9 mm (0.7 m footing) | refused: "Spacing 0.2 m is less than the pile diameter 0.3 m" |
+| the same with `soil_modulus_kPa` 40,000 | run as M, "given" | refused as an unknown parameter |
+
+No calculated value of a call that was right changes.
+
+**Calls made in this round**
+
+6. **The Poisson's ratio warning has a printed basis.** FHWA GEC-5 (FHWA-NHI-16-072, 2016) p. 8-26, Table 8-10 (after AASHTO 2014, read from the rendered page): sand 0.2 to 0.36 (loose) to 0.3 to 0.4 (dense), gravel 0.2 to 0.35 to 0.3 to 0.4; the same page: "approximately 0.1 to 0.2 for drained loading of coarse-grained soils". The warning starts above 0.40, the top of the table's coarse-grained rows (the text's 0.1 to 0.2 would flag the table's own values). So the lead's no-basis fallback was not needed; the threshold is the same 0.40.
+7. **Eq. 6-54's page.** Its scope sentence ("Elastic compression of coarse-grained soil can be approximated…") is at the foot of UFC 3-220-20 p. 448 and the equation on p. 449 (checked in the PDF), so the tool cites pp. 448-449.
+8. **Where the refusals sit.** The one-line moment in the library (both tools reach it; "on the line" is SUM(y²) or SUM(x²) at or below 1e-12 m²); the batter limit in `GroupPile.direction_cosines` (every caller); the spacing in the library function, only when a direction has more than one pile (a single pile has no spacing); `num_sublayers` in the tool.
+9. **The manual's cover counts** were copied in with the rows, so the rebuild differs from the committed manual only at line 1596 (formerly 1594), the older difference on master.
+
+**Tests run in this round** (venv `C:\dev\GeotechStaffEngineer\.venv`, PYTHONPATH the worktree and its `packages/aec-agent-core`, one file at a time, judged by exit code): `pile_group/tests/test_pile_group.py` 100 passed (13 new); `funhouse_agent/tests/test_gm319_pile_group.py` 29 passed (15 new); `funhouse_agent/tests/test_nested_keys.py` 66 passed; `funhouse_agent/tests/test_adapter_ergonomics.py` 170 passed; `funhouse_agent/tests/test_defaults_used.py -k pile_group` 42 passed; `webapp/tests/test_page_fingerprints.py` 13 passed (no re-record needed); `webapp/tests/test_public_text.py` 5 passed; `funhouse_agent/tests/test_citations.py` 5 passed (run for the new cites, against the installed reference library). `module_work/doc10/check_manual.py`: OK, exit 0; `--rebuild`: differs at line 1596 only.
+
+**Fixed after the round (the lead's ruling): off-centre piles in the simple method.** Found in this round (pre-existing, not in the review): `pile_group_simple` takes its loads at the piles' centroid (`GroupLoad`) but measured each pile's x and y from the origin of the coordinates given, so an off-centre layout's forces did not sum to Vz. The lead ruled it fixed here, not filed: the method keeps its basis (loads at the centroid of the pile group) and now measures x and y from the piles' centroid (`analyze_vertical_group_simple`, `pile_group/rigid_cap.py`), in the forces, the one-line moment refusal, the rotations and the calc package's steps. A layout centred on the origin gives the same numbers as before.
+
+| Call (made-up values) | Before (7ecfe1e) | After |
+|---|---|---|
+| `pile_group_simple` piles at x = −1, 1, 3 m (y = 0), Vz 900 kN, My 200 kN-m | 281.8 / 318.2 / 354.5 kN, sum 954.5, no word | 250 / 300 / 350 kN, sum 900 (the re-centred x = −2, 0, 2 gives the same); `centroid_m` {x 1.0, y 0.0}; the warning: "The loads are taken at the centroid of the piles, (x, y) = (1.000, 0.000) m, not at the origin of the coordinates given (more than 1 mm from it). A load applied at another point (xa, ya) needs its moment about the centroid added: Vz x (xa - 1.000 m) to My (+My compresses the +x side). For Vz = 900 kN applied at the origin, add 900 kN x (-1.000 m) = -900.0 kN-m to My." |
+| the same with My 0 | 300 / 300 / 300 kN, no word | 300 / 300 / 300 kN and the warning; with its −900 kN-m added to My, 525 / 300 / 75 kN, what `pile_group_6dof` (equal ka) gives for Vz at the origin |
+| piles at x = ±1 m, y = 1 and 3 m, Vz 800 kN, Mx 100 kN-m | 195 / 195 / 185 / 185 kN, sum 760 | 225 / 225 / 175 / 175 kN, sum 800; the warning names Mx: "add -(800 kN x -2.000 m) = 1,600.0 kN-m to Mx" |
+| a single row at y = 2 m (x = −1.5, 0, 1.5), Vz 900 kN, Mx 300 kN-m | 250 / 250 / 250 kN, sum 750 | refused: "Mx = 300 kN-m cannot be carried: every pile is on y = 2, one line along the x axis… (SUM((y - 2)^2) = 0 about the piles' centroid, no lever arm)…"; with My 300 instead, 200 / 300 / 400 kN |
+| library, equal ka 2e5 kN/m, piles at (−1, 0.5), (1, 0.5), (3, 0.5), (1, 2.5) m, Vz 1000 kN, Mx 120, My −80 kN-m | 248.1 / 234.8 / 221.4 / 200.5 kN (sum 904.8); dz 1.25 mm, rx 0.0857, ry −0.0333 mrad | 290 / 270 / 250 / 190 kN (sum 1000); dz 1.50 mm (at the origin), rx 0.200, ry −0.050 mrad: the 6-DOF method's for the same loads moved to the origin (Mx − Vz yc, My + Vz xc) |
+| centred layouts (six checked against 7ecfe1e, among them 3 x 3 at s 2.0 m with Vz 2700 kN, My 500 and Mx 200 kN-m, and 2 x 2 at 2.0 by 1.5 m with ka 1e5 kN/m) | | the same forces and cap displacements; no warning |
+
+**Calls made (off-centre fix)**
+
+10. **The basis is statics.** No held reference prints the method with the distances from the piles' centroid. GEC-12 Vol I Sec. 8.8 Step 3 prints it as Eq. 8-79 (p. 468, read from the rendered page) with x and y "from the center of the column to each pile center": the point that carries the loads, which is the piles' centroid only when the column stands over it (GEC-12 adds that an unsymmetrical cap may be desirable). Searched as well: GEC-12 Vols II and III, UFC 3-220-20, FHWA NHI-06-089. Basis stated: statics of the rigid cap (with distances from the centroid SUM(x − xc) = 0, so the forces sum to Vz; they give back Mx and My only where SUM dx dy = 0, which the re-check round below fixed). Eq. 8-79 is now cited for the formula (the calc step cited "described, not printed" in EM 1110-2-2906 before), with where its x and y are measured.
+11. **The warning's tolerance is 1 mm**, in x or y (`CENTROID_TOL_M`); the re-centring itself is always made. The warning names only the moment(s) whose offset passes it, with the product for a load at the origin, in the tool's sign convention (+My compresses the +x side, +Mx uplifts the +y side). Checked against the 6-DOF method: it gives 525 / 300 / 75 kN for Vz at the origin, and the simple method with the warning's My −900 kN-m added gives the same.
+12. **The warning does not point to `pile_group_6dof`.** Its description (brief and parameters) does not say where its loads act. Its code takes them at the origin of the coordinates (its kinematics use x and y as given; the 525 / 300 / 75 kN above), which the `GroupLoad` docstring now says; the tool text is unchanged.
+13. **Where it is said.** The result carries `centroid_m` and a note on every simple run, and `warnings` when off the origin (in the result dict: GM-316's routing of Python warnings is not on this branch). The same sentence is in the tool's brief (so the manual row), DESIGN.md and, shorter, the manual narrative; Mx and My say they act at the piles' centroid. The calc package adds a "Centroid of the Piles" step for the simplified method (with the warning in its notes when off the origin), and its sums and substitution use x − xc; centred, their text is as before. Its layout table is now titled "Pile Coordinates" (it said "relative to cap centroid", which an off-centre layout is not); the 6-DOF package's steps are otherwise unchanged.
+14. **dz with equal stiffness** is reported at the origin of the coordinates, Vz/(n ka) + rx yc − ry xc, so the module's kinematics (s = dz − rx y + ry x, x and y as given) hold for both methods. Centred, it is Vz/(n ka) as before.
+15. **The 6-DOF method is not changed.** A single row off the origin is a mechanism there (rotation about the row) and it already refuses it ("stiffness matrix is singular"), so no wrong number; the message could name the row.
+
+**Tests run (off-centre fix)**, one file at a time, judged by exit code: `pile_group/tests/test_pile_group.py` 108 passed (8 new, `TestOffCentreLayout`); `pile_group/tests/test_calc_steps.py` 32 passed (3 new, `TestCentroidSteps`; one title updated); `funhouse_agent/tests/test_gm319_pile_group.py` 33 passed (4 new); `pile_group/tests/test_calc_tables.py` 6; `calc_package/tests/test_steps_from_a_minimal_analysis.py` 17; `validation_examples/test_published_v060_pile_group.py` 18; `funhouse_agent/tests/test_gm289_group_uplift.py` 17; `funhouse_agent/tests/test_nested_keys.py` 66; `funhouse_agent/tests/test_calc_package_tool_parity.py -k pile_group` 12; `funhouse_agent/tests/test_adapter_ergonomics.py` 170; `funhouse_agent/tests/test_defaults_used.py -k pile_group` 42; `funhouse_agent/tests/test_citations.py` 5; `webapp/tests/test_page_fingerprints.py` 13; `webapp/tests/test_public_text.py` 5; all passed. `check_manual.py` OK, exit 0; `--rebuild` differs at line 1596 only.
+
+## Re-check round (2026-11-13)
+
+Independent re-check of the rounds above (verdict: merge after fixes; all nine review findings closed, the off-centre fix and both extra calls checked by hand). Two older problems remained and were fixed on the same branch, on 9606b66 (c842a0a with master merged in, the dispatch fix with it), with three small ones. The lead's rulings are taken as given.
+
+| # | Grade | Finding | What it became |
+|---|---|---|---|
+| R1 | A (older than the branch) | Eq. 8-79 without the product term does not give back Mx and My where the piles are not symmetric about their centroidal axes (SUM dx dy ≠ 0: a group that has lost a corner pile, an L-shaped cap); the text said it does | **Fixed** (the lead's call). The general rigid-cap form, P = Vz/n + a dx + b dy, a = (My Syy + Mx Sxy)/D, b = −(Mx Sxx + My Sxy)/D, D = Sxx Syy − Sxy² (`simple_load_plane`, `pile_group/rigid_cap.py`), in the forces, rx = −b/ka and ry = a/ka, and the calc package (the sums step shows Σxy; the load step shows D, a, b and P_i). Eq. 8-79 is its case Sxy = 0, used as before (the same arithmetic) wherever Sxy is zero. A note says when the product term is used. The three places that said "give back Mx and My" now say it only with the product term. |
+| R2 | A (older than the branch) | `pile_group_6dof` takes its loads at the origin of the coordinates and its tool text never said so | **Fixed.** The brief: "Vx, Vy, Vz, Mx, My and Mz act at the origin of the coordinates (x = 0, y = 0), at the cap, the point the piles' x and y are measured from, not at the piles' centroid; a load applied at another point (xa, ya) needs its moment about the origin added, Vz x xa to My, -Vz x ya to Mx and xa x Vy - ya x Vx to Mz (+My compresses the +x side, +Mx uplifts the +y side)." Each load's description says "at the origin of the coordinates"; the result has a second note saying the same and naming the piles' centroid; the 6-DOF calc step says so; DESIGN.md, the manual narrative and rows follow. The simple tool's off-centre warning now ends "pile_group_6dof takes its loads at the origin of the coordinates." |
+| C1 | C | Eq. 8-79 is printed as a maximum with the terms added, and its vertical load includes the cap's and the soil's weight (Wc, Ws) | **Fixed.** The brief, the calc step's reference and DESIGN.md say "printed as the maximum with the terms added; signs here by this tool's convention"; both tools' Vz say to include the cap's weight and the soil's over it (the tool adds none). |
+| C2 | C | "SUM((x - -3)^2)" in the one-line message | **Fixed**: "SUM((x + 3)^2) = 0 about the piles' centroid"; the package's substitution reads "(x_i + 1.000)" for a negative centroid. |
+| C3 | C | With equal ka, dz is reported at the origin and the result did not say so (library only) | **Fixed**: a note, e.g. "dz = 2.133 mm is the cap's settlement at the origin of the coordinates, (x, y) = (0, 0), the point of the rigid-cap kinematics (w = dz - rx y + ry x); under the piles' centroid it is Vz/(n ka) = 2.000 mm." |
+
+**Before and after** (made-up values; "before" is 9606b66):
+
+| Call | Before | After |
+|---|---|---|
+| `pile_group_simple` 2 x 3 at 1.5 m less a corner, (0, 0), (1.5, 0), (3, 0), (0, 1.5), (1.5, 1.5) m; Vz 2000 kN, Mx 300, My 300 kN-m | 409.5 / 481.0 / 552.4 / 242.9 / 314.3 kN; moments about the centroid My 450 and Mx 364 | 426.7 / 466.7 / 506.7 / 280.0 / 320.0 kN, as `pile_group_6dof` with equal ka and the loads moved to the origin (0.0 kN apart); moments 300 and 300; the product-term note (SUM dx dy = −1.350 m²) |
+| 3 x 3 at 1.5 m less the (+x, +y) corner, Vz 2400 kN, My 600 kN-m | 228.2 / 310.3 / 392.3 / 228.2 / 310.3 / 392.3 / 228.2 / 310.3 kN, max 392.3 (unsafe side) | 206.7 / 293.3 / 380.0 / 226.7 / 313.3 / 400.0 / 246.7 / 333.3 kN, max 400.0 |
+| the same with Mx 400 kN-m | max 440.2, min 166.7 kN | max 415.6, min 193.3 kN (the 6-DOF method's) |
+| an L-shaped cap, (0, 0), (1.2, 0), (2.4, 0), (3.6, 0), (0, 1.2), (0, 2.4) m, Vz 1800 kN, Mx −150, My 250 kN-m | 256.1 / 282.1 / 308.2 / 334.2 / 291.8 / 327.5 kN | 199.1 / 257.2 / 315.4 / 373.5 / 284.6 / 370.2 kN, the 6-DOF method's to 0.0 kN, displacements equal |
+| symmetric layouts: 3 x 3 at 2.0 m (Vz 2700, My 500, Mx 200); five piles symmetric about y = 0 off the origin in x (Vz 1500, Mx 120, My −200); a quincunx (Vz 1000, Mx −90, My 150); x = −1, 1, 3 m (Vz 900, My 200) | 275.0 … 325.0; 351.4 / 291.4 / 327.6 / 267.6 / 261.9; 150.0 / 212.5 / 200.0 / 187.5 / 250.0; 250 / 300 / 350 kN | the same, no product note |
+| three piles on the line y = x, Vz 900, Mx −100, My 100 (the moment across the line) | 200 / 300 / 400 kN (SUM P dx = 200, twice My); with Mx 100, My 100 (a moment about the line) 300 / 300 / 300 kN, the moment dropped without a word | 250 / 300 / 350 kN (SUM P dx = My, SUM P dy = −Mx); Mx 100, My 100 refused, naming the line |
+| `pile_group_6dof`, piles at x 0, 1.2, 2.4 and y 0, 1.8 m, ka 2e5, Vz 1800, Mx 90, My −120 | 1091.7 kN max; nothing said where the loads act | the same numbers; the note "Vx, Vy, Vz, Mx, My and Mz are taken to act at the origin of the coordinates, (x, y) = (0, 0), at the cap (not at the piles' centroid, (1.200, 0.900) m) …" (the simple tool gives 341.7 kN max for the same input, its loads at the centroid) |
+
+**Calls made in the re-check round**
+
+16. **The product term is the lead's call, for the owner to revisit.** No held reference prints the general form; GEC-12 Vol I Eq. 8-79 (p. 468) is its case SUM dx dy = 0. Basis: statics, the equilibrium of a rigid cap on pinned piles of equal axial stiffness (the linear distribution P = Vz/n + a dx + b dy with SUM P dx = My and SUM P dy = −Mx). It equals `pile_group_6dof` with equal ka in every case tried (four layouts, forces and cap displacements).
+17. **The product term's tolerance:** |SUM dx dy| at or below 1e-9 of sqrt(SUM dx² SUM dy²), about the centroid, is taken as zero (`PRODUCT_TOL`), and Eq. 8-79 runs with its own arithmetic, so a symmetric layout gives bit-for-bit the numbers it gave before (rounding in a symmetric layout is near 1e-16).
+18. **One line not along x or y** (D = 0 with SUM dx² and SUM dy² both above the one-line tolerance; the smaller principal second moment at or below 1e-12 m²): the method carries the moment across the line and refuses the one about it, naming the line's direction. A line along x or y keeps its refusal and message unchanged ("every pile is on y = 0, one line along the x axis…").
+19. **Mz in the 6-DOF sentence:** the brief and the note give the torsion a horizontal load at (xa, ya) adds, xa Vy − ya Vx (right-hand rule about +z, the module's convention), since the 6-DOF tool also carries Vx, Vy and Mz.
+
+**Tests run in the re-check round** (one file at a time, judged by exit code; Python 3.14 venv): `pile_group/tests/test_pile_group.py` 120 passed (12 new: `TestProductTerm`, `TestSixDofLoadPoint`); `pile_group/tests/test_calc_steps.py` 35 passed (3 new, `TestProductTermSteps`); `funhouse_agent/tests/test_gm319_pile_group.py` 36 passed (3 new; one assertion turned round: the warning now names `pile_group_6dof`); `funhouse_agent/tests/test_adapter_ergonomics.py` 170; `funhouse_agent/tests/test_defaults_used.py -k pile_group` 42; `funhouse_agent/tests/test_probe_warnings.py` 8; `funhouse_agent/tests/test_citations.py` 5; `webapp/tests/test_page_fingerprints.py` 13; `webapp/tests/test_public_text.py` 5; also `pile_group/tests/test_calc_tables.py` 6, `calc_package/tests/test_steps_from_a_minimal_analysis.py` 17, `validation_examples/test_published_v060_pile_group.py` 18, `funhouse_agent/tests/test_gm289_group_uplift.py` 17, `funhouse_agent/tests/test_nested_keys.py` 66, `funhouse_agent/tests/test_calc_package_tool_parity.py -k pile_group` 12; all passed. `check_manual.py` OK, exit 0; `--rebuild` differs at line 1596 only. A package rendered for the 2 x 3 less a corner shows Σxy, D, a, b and P_i.
+
+## Release note
+
+pile_group, 6-DOF analysis with battered piles: the pile forces and cap displacements change. Each pile's stiffness is now turned to the global axes in full; before, the terms between the horizontal and vertical head components were left out and a battered pile's axial force did not balance the applied loads (in the example above, 715.7 kN where statics gives 386.4 kN). Groups of vertical piles are unchanged. `pile_group_simple` now refuses a pile entry with a batter or a stiffness, and returns no cap displacement (null) where it returned zeros. Both rigid-cap tools refuse a moment about the one line every pile is on (Mx with every pile on y = 0, My with every pile on x = 0); before, `pile_group_simple` returned equal shares as if the moment were not there. A pile battered both ways with sin²(batter_x) + sin²(batter_y) at or above 1 is refused. `pile_group_simple` now measures each pile's x and y from the piles' centroid, where it takes the loads; before, from the origin of the coordinates, so a layout not centred on the origin gave forces that did not sum to Vz (piles at x = −1, 1, 3 m with Vz 900 kN and My 200 kN-m: 281.8 / 318.2 / 354.5 kN, now 250 / 300 / 350 kN). A centred layout is unchanged. The result gives the centroid and warns when it is more than 1 mm from the origin, with the moment a load at the origin needs added; a moment about any one line of piles is refused. Where the piles are not symmetric about their centroidal axes (a group that has lost a corner pile, an L-shaped cap), `pile_group_simple` now includes the product term, so the forces give back Mx and My and equal `pile_group_6dof`'s with equal stiffness (a 3 x 3 group less a corner with My 600 kN-m: maximum 400.0 kN, where it gave 392.3); symmetric layouts are unchanged. `pile_group_6dof` now says that its loads act at the origin of the coordinates, in its description and its result; its numbers are unchanged. New tool `equivalent_footing_settlement`: the elastic compression of coarse-grained soil below the equivalent footing (UFC 3-220-20 Sec. 6-5.8.4, Eq. 6-54; the footing of GEC-12 Fig. 7-44 and Eq. 7-55); it sends a group in cohesive soil to consolidation (`consolidation_settlement`), warns above a Poisson's ratio of 0.40, and states M/Es when M is worked out from Es and nu. Both group tools' results carry a new `notes` list.
+
+## Noted, not fixed
+
+- The manual's cover and KPI counts were one short after the first round; the review round copied the rebuilt counts in (1535 methods, 5818 parameters).
+- `docs/user_manual/worked_examples.json`'s `pile_group_6dof` result has no `notes` key until the examples are regenerated; its numbers are unchanged.
+- `foundry/pile_group_agent_foundry.py` (retired route) still describes the old behaviour.
+- `pile_group_6dof` refuses a single row off the origin as a singular stiffness matrix, without naming the row (no wrong number; the re-check found the same). Where its loads act is now said (re-check round).
+- The calc package has no section for the equivalent-footing settlement (audit row 6, C).
+- `analyze_vertical_group_simple`'s Python warning for Vx, Vy, Mz is left as it is (the agent's tool refuses them first; GM-316/317 owns warnings).
+- A fixed-head (moment-carrying) pile model and the CPGA benchmark stay with GM-28.
+- Batter direction cosines are (sin batter_x, sin batter_y, rest), now said in the tool text; a pile battered in both directions at once is read that way, not as two successive rotations.

@@ -143,21 +143,46 @@ def test_v043_sand_default_search_finds_the_critical_circle():
 
 
 @functools.lru_cache(maxsize=1)
-def _sand_de():
-    """Differential evolution on the sand fill, 30 slices, seeds 1-3: the
-    noncircular minima."""
+def _sand_de_results():
+    """Differential evolution on the sand fill, 30 slices, seeds 1-3."""
     return tuple(search_critical_surface(
         _geom("sand"), method="spencer", surface_type="noncircular_de",
-        n_slices=30, seed=seed).candidates["noncircular"]
-        for seed in (1, 2, 3))
+        n_slices=30, seed=seed) for seed in (1, 2, 3))
+
+
+@functools.lru_cache(maxsize=1)
+def _sand_random_results():
+    """The random search on the sand fill, 2000 trials, 30 slices, seeds 1
+    and 2."""
+    return {seed: search_critical_surface(
+        _geom("sand"), method="spencer", surface_type="noncircular",
+        n_trials=2000, n_slices=30, seed=seed) for seed in (1, 2)}
+
+
+def _sand_de():
+    """The noncircular minima the three searches report."""
+    return tuple(r.candidates["noncircular"] for r in _sand_de_results())
 
 
 def test_v043_sand_no_reinforcement_noncircular():
     """Sand-fill embankment, no reinforcement, noncircular Spencer (Slide2
-    1.188 / Tandjiria 1.192): what the searches reach. The comparison with
-    the published is the known gap below.
+    1.188 / Tandjiria 1.192): what the searches report.
 
-    Differential evolution on 30 slices reaches 1.234 from seeds 1, 2 and 3,
+    GM-140 step 6 (a noncircular minimum checked against the circle): the
+    circular search runs first and its critical circle (Spencer 1.186), as
+    the polyline of its 30 slice bases, is one of the trials: 1.194 from
+    every seed. The polylines differential evolution generated itself
+    stayed above it (1.237, 1.234 and 1.233). GM-140 step 7a: every start
+    (the search's own best, the locally critical circles, a wedge along
+    each layer) is refined one point at a time; the critical circle's start
+    refines to 1.183 from every seed, below the circle, and the random
+    search reaches the same surface. Its fix round: the final increment is
+    the lesser of 10 % of the thinnest stratum and a quarter of the
+    starting increment, here the quarter, so the refinement halves once
+    more: 1.180.
+
+    Differential evolution on 30 slices reached 1.234 from seeds 1, 2 and 3
+    (1.237 from seed 1 since GM-344),
     and its surface reads 1.233-1.234 on 31, 60 and 120 slices. Before
     GM-131 cut a slice at every corner, DE reported 1.09-1.10 on surfaces
     that dip steeply into the soft clay and read 1.24-1.32 with one slice
@@ -168,32 +193,99 @@ def test_v043_sand_no_reinforcement_noncircular():
     state held about one moment axis at 30 slices only; see
     test_search_robustness.)"""
     de = list(_sand_de())
-    assert de == pytest.approx([1.234] * 3, abs=0.002)
-    for seed in (1, 2):
-        r = search_critical_surface(_geom("sand"), method="spencer",
-                                    surface_type="noncircular", n_trials=2000,
-                                    n_slices=30, seed=seed)
+    # GM-140 step 7a: 1.194 -> 1.183 -> 1.180 (its fix round: the final
+    # increment a quarter of the starting one); printed 1.188 (Slide2
+    # Verification #39, the sand embankment with no reinforcement,
+    # noncircular Spencer; -0.7 %), 1.192 (Tandjiria; -1.0 %). Every seed
+    # refines the same start, the critical circle on ten slices, to the
+    # same surface (EM 1110-2-1902 C-1g(3), p. C-10), so the value is
+    # deterministic and is pinned.
+    assert de == pytest.approx([1.180] * 3, abs=0.002)
+    for r in _sand_de_results():
+        cc = r.circle_check
+        assert cc["checked"] and not cc["governs"]
+        # the circle by the same method, and the search's own minimum
+        # no longer above it (GM-117 closed by step 7a)
+        assert cc["circle"]["FOS"] == pytest.approx(1.186, abs=0.002)
+        assert cc["noncircular_minimum"] <= cc["circle"]["FOS"]
+        assert r.local_minima[0]["FOS"] == pytest.approx(
+            r.candidates["noncircular"], abs=1e-4)
+    for r in _sand_random_results().values():
+        # the random search refines the same starts (GM-140 step 7a); the
+        # fix round (D9): a band, not the sample's own number: no more than
+        # the circle by the same method, or than DE's lowest + 0.002
+        assert r.candidates["noncircular"] <= max(
+            r.circle_check["circle"]["FOS"], min(de) + 0.002)
+
+
+def test_v043_sand_lowest_de_seed_and_the_random_search_above_it():
+    """The LOWEST of the three noncircular minima (differential evolution,
+    seeds 1 to 3, 30 slices) read 1.194 from GM-140 step 6, the critical
+    circle as a polyline, and 1.180 since step 7a's fix round, the
+    critical circle's start refined. The random search (2000 trials, seeds
+    1 and 2) refines the same starts, so it is no lower, and the same seed
+    run twice gives the same value (published: Slide2 1.188 / Tandjiria
+    1.192)."""
+    de = list(_sand_de())
+    # GM-140 step 7a: 1.194 -> 1.183 -> 1.180 (its fix round); printed
+    # 1.188 (Slide2), -0.7 %
+    assert min(de) == pytest.approx(1.180, abs=0.002)
+    runs = _sand_random_results()
+    for r in runs.values():
+        # the fix round (D9): the bound restored from -0.002 to -1e-9
         assert r.candidates["noncircular"] >= min(de) - 1e-9
+    again = search_critical_surface(_geom("sand"), method="spencer",
+                                    surface_type="noncircular", n_trials=2000,
+                                    n_slices=30, seed=1)
+    assert again.candidates["noncircular"] == runs[1].candidates[
+        "noncircular"]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "GM-117: the noncircular search falls short. Its best, 1.234, is above "
-    "our own critical circle (1.190 converged; GM-138) and a 41-point "
-    "polyline inscribed in the pinned circle (1.2145), so DE misses "
-    "surfaces it should reach or beat; Slide2 1.188"))
 def test_v043_sand_noncircular_reaches_the_published():
-    """Known gap: the noncircular minimum within 0.04 of Slide2's 1.188 /
-    Tandjiria's 1.192 (it was, at 1.19, only through even slices across the
-    corners of surfaces diving into the soft clay, before GM-131)."""
+    """The noncircular minimum within 0.04 of Slide2's 1.188 / Tandjiria's
+    1.192 (it was, at 1.19, only through even slices across the corners of
+    surfaces diving into the soft clay, before GM-131).
+
+    A strict xfail until GM-140 step 6 (GM-117: the search's best, 1.234,
+    was above the module's own critical circle). It passes now because the
+    critical circle is one of the noncircular search's trials (1.194 as a
+    polyline), not because the generator improved: nothing was tuned, and
+    the polylines differential evolution generates itself still end at
+    1.233 to 1.237, which the result reports beside the circle
+    (`circle_check`). That gap is the generator's, step 7 (D12)."""
     assert statistics.median(_sand_de()) == pytest.approx(1.19, abs=0.04)
+
+
+def test_v043_sand_de_seeds_own_minima_reach_the_circle_and_repeat():
+    """The search's own minimum (`circle_check.noncircular_minimum`): until
+    GM-140 step 7a the polylines differential evolution generated itself
+    ended at 1.233 to 1.237, above the critical circle (GM-117). Refined
+    from several starts (EM C-1g(3), p. C-10; 4-2e(1)(b)) each seed's own
+    minimum is now no more than the circle by the same method, and the
+    same seed run twice gives the same value."""
+    own = [r.circle_check["noncircular_minimum"] for r in _sand_de_results()]
+    for r, v in zip(_sand_de_results(), own):
+        assert v <= r.circle_check["circle"]["FOS"]
+    again = search_critical_surface(
+        _geom("sand"), method="spencer", surface_type="noncircular_de",
+        n_slices=30, seed=1)
+    assert again.circle_check["noncircular_minimum"] == own[0]
 
 
 def test_v043_sand_reinforcement_force_brackets_published():
     """CONVENTION: the geosynthetic force to raise the pinned sand circle to
-    FS=1.35 is 41 kN/m, 7% below the published circular 44-45 kN/m
+    FS=1.35 is 45 kN/m, against the published circular 44-45 kN/m
     (critical-surface sensitive; on the critical circle, GM-138, 57 kN/m,
     matching the published noncircular 56; see module note). ~55 kN/m
-    before GM-134."""
+    before GM-134, 41 kN/m until GM-343.
+
+    The geosynthetic (z = 3) meets the slip surface on a slice boundary,
+    x 8.388 (the same level is a layer top). Until GM-140 step 8 a
+    rounding decided which slice it acted on: 40.88 kN/m at R and
+    45.22 kN/m at R + 1e-8 m (GM-353). The rule now
+    (``supports.slice_index_for``): the slice that holds the part of the
+    support inside the sliding mass. It gives 45.22 at R and at R +- 1e-8 m
+    (checked below); the slice on the anchorage side would give 40.88."""
     xc, yc, r = _SAND_CIRC
     slip = CircularSlipSurface(xc=xc, yc=yc, radius=r)
     lo, hi = 0.0, 300.0
@@ -206,7 +298,15 @@ def test_v043_sand_reinforcement_force_brackets_published():
         else:
             hi = mid
     T = 0.5 * (lo + hi)
-    assert T == pytest.approx(40.9, abs=1.0)            # ours (pinned)
+    # GM-140 step 8 (GM-353): 45.22 at every radius (40.88 or 45.22
+    # before); printed 44-45 (Tandjiria et al. 2002; Slide2 Verification
+    # #39, manual pp. 147 to 150): +0.5 % to +2.8 %
+    assert T == pytest.approx(45.22, abs=0.05)          # ours (pinned)
+    for dr in (-1e-8, 1e-8):
+        near = CircularSlipSurface(xc=xc, yc=yc, radius=r + dr)
+        assert analyze_slope(_geom("sand", T=T), slip_surface=near,
+                             method="spencer").FOS == pytest.approx(
+                                 1.35, abs=1e-4)
     assert T == pytest.approx(44.0, rel=0.1)    # within 10% of published 44
     # the solved force does raise this surface to the target
     fs_at_T = analyze_slope(_geom("sand", T=T), slip_surface=slip,
@@ -223,6 +323,28 @@ def test_v043_clay_no_reinforcement_no_crack_is_high():
                         method="spencer").FOS
     assert fos == pytest.approx(1.041, abs=0.01)
     assert fos > 0.975                  # higher than the water-crack value
+
+
+def test_v043_clay_with_the_printed_crack_rule():
+    """GM-140 step 4 (GM-18's crack item): the problem has a water-filled
+    tension crack in the clay embankment's crest and prints no depth for
+    it. With Rankine's depth with the developed strengths (EM 1110-2-1902
+    Eq. C-36, p. C-36, at the surface's own F; 2.14 m in the 6 m
+    embankment), full of water, the surface ended at the crack (2-2f(3),
+    p. 2-6), the recovered circle reads Spencer 0.964."""
+    xc, yc, r = _CLAY_CIRC
+    g = _geom("clay")
+    g.tension_crack_depth_basis = "rankine"
+    g.tension_crack_water_depth = 99.0          # full
+    res = analyze_slope(g, xc=xc, yc=yc, radius=r, method="spencer")
+    # GM-140 step 4: 1.041 (no crack) -> 0.964; printed 0.975 (Slide2
+    # Verification #39, Table 39.2 "Circular - Clay embankment with no
+    # reinforcement", manual pp. 147-150), -1.1 % where it was +6.8 %. The
+    # crack is asked for, so the step 4 review's F1 does not move it.
+    assert res.FOS == pytest.approx(0.964, abs=0.005)    # module's own
+    assert res.FOS == pytest.approx(0.975, rel=0.02)     # the print
+    assert res.tension_crack["depth_basis"] == "rankine"
+    assert res.tension_crack["depth_m"] == pytest.approx(2.14, abs=0.02)
 
 
 def test_v043_clay_circle_as_recovered_touches_the_base():

@@ -219,6 +219,9 @@ class TestAgentAdapterPipeline:
                           dict({"parse_result": parsed,
                                 "soil_properties": props}, **extra))
         assert "error" not in geom, geom
+        # what stood in for an input left out is the build's own report,
+        # not an input of the next tool (GM-327)
+        self.defaults_used = geom.pop("defaults_used", {})
         return geom
 
     def test_result_runs_analyze_slope_as_the_direct_pipeline_does(
@@ -236,6 +239,11 @@ class TestAgentAdapterPipeline:
         assert geom["surface_points"][0] == [0.0, 10.0]
         assert geom["gwt_points"]
         assert "nails" not in geom
+        assert self.defaults_used == {
+            "soil_properties[Surface].analysis_mode": "drained",
+            "soil_properties[Surface].gamma_sat": 18.0,
+            "soil_properties[Clay].analysis_mode": "drained",
+            "soil_properties[Clay].gamma_sat": 19.0}
 
         r = call_agent("slope_stability", "analyze_slope",
                        dict(geom, xc=15.0, yc=18.0, radius=12.0,
@@ -270,6 +278,8 @@ class TestAgentAdapterPipeline:
             nail_defaults={"fy": 500.0})
         assert len(geom["nails"]) == 3
         assert all(n["fy"] == 500.0 for n in geom["nails"])
+        assert "nail_defaults.fy" not in self.defaults_used
+        assert self.defaults_used["nail_defaults.bond_stress"] == 100.0
         r = call_agent("slope_stability", "analyze_slope",
                        dict(geom, xc=12.0, yc=14.0, radius=10.0,
                             method="bishop"))

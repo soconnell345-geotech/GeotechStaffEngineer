@@ -6,7 +6,7 @@ Produces bearing graphs (capacity vs blow count) and drivability analyses.
 
 ## References
 - Smith (1960) — original wave equation formulation
-- FHWA GEC-12 (FHWA-NHI-16-009) Vol 2, Chapter 12 — the wave equation, its
+- FHWA GEC-12 Vol 2 (FHWA-NHI-16-010), Chapter 12 — the wave equation, its
   inputs and examples; Vol 1 Chapter 8 — driving stress limits
 - UFC 3-220-20 (2025), Sec. 6-9.2 — quake, Smith and Smith viscous damping
 

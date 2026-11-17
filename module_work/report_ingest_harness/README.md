@@ -113,6 +113,13 @@ that the schema has no slot for is listed in the sheet's `ags_unslotted`.
 Everything goes under the set's gitignored `raw/`. `run_claude_local run
 --raw-dir <set>/raw --reports-dir <set>/raw/assembled` then scores the
 reader on them, every item blind. Its tests use a made-up AGS4 file.
+Since RI-79's scorer conventions (2026-11-13): a sample's id is its type and
+reference together (`D1`), a driven tube's blows are marked
+`blows_kind: "sampler"`, and the sheet lists the header fields it took from
+the data (`fields_from_data`) beside an empty `fields_struck` a reviewer
+fills with the ones the form does not print (a rebuild keeps the strikes).
+`ags_truth rescore <out dir> --truth-dir <sheets>` re-scores a saved logs
+run with the current scorer, no model call (`log_scoring.rescore_run`).
 
 `run_range_labels` (2026-10-24, BACKLOG RI-73) runs the range voter on
 Claude the same way: one model describes every page (`--describe-model`,

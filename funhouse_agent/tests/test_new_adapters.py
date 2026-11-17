@@ -647,7 +647,8 @@ class TestDxfImportCalls:
                         "boundary_profiles": {},
                     },
                     "soil_properties": [
-                        {"name": "Sand", "gamma": 18, "phi": 35, "c": 0, "E": 30000},
+                        {"name": "Sand", "gamma": 18, "phi": 35, "c": 0,
+                         "E": 30000, "nu": 0.3},
                     ],
                 })
                 assert result["soil_layers"][0]["name"] == "Sand"

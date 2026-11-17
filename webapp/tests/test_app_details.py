@@ -1,13 +1,15 @@
 """GeotechStaffEngineer hands the core its own name (INF-33 step 13), so
 the run record, the Word and markup authors and the runtime messages read
-as before the core stopped naming it: from each of its three doors."""
+as before the core stopped naming it: from each of its doors (report_ingest
+since BACKLOG RI-209, whose report tables go to the dataset under the
+application's top folder)."""
 
 import subprocess
 import sys
 
 import pytest
 
-DOORS = ("funhouse_agent", "webapp", "calc_package")
+DOORS = ("funhouse_agent", "webapp", "calc_package", "report_ingest")
 
 
 @pytest.mark.parametrize("door", DOORS)

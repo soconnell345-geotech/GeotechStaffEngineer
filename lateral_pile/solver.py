@@ -372,11 +372,17 @@ def _head_load_capacity(n, h, EI, soil_weight, Q, Vt, Mt, head_condition,
     def factor(s, Es):
         lam_prev = None
         for it in range(300):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                Y = _assemble_and_solve(n, h, EI, Es * soil_weight, Q, Vt,
-                                        Mt, head_condition,
-                                        rotational_stiffness)
+            # A trial solve: a singular system gives zero deflections (a
+            # factor of 0) without the solver's warning, and numpy's
+            # floating-point notices are off for this thread only. No
+            # warnings.catch_warnings: it swaps the process's filters, and
+            # two calls in threads whose blocks interleaved left every
+            # warning silenced for good (GM-316 review A1).
+            with np.errstate(all="ignore"):
+                Y = _solve_system(n, h, EI, Es * soil_weight, Q, Vt, Mt,
+                                  head_condition, rotational_stiffness)
+            if Y is None:
+                Y = np.zeros(n + 5)
             y_unit = Y[2:n + 3]
             if not np.all(np.isfinite(y_unit)) or y_unit[0] == 0.0:
                 return 0.0, Es
@@ -486,18 +492,25 @@ def _assemble_and_solve(
     numpy.ndarray
         Full solution array Y of length n+5.
     """
+    Y = _solve_system(n, h, EI, Es, Q, Vt, Mt, head_condition,
+                      rotational_stiffness)
+    if Y is None:
+        warnings.warn("Singular matrix in solver. Returning zero deflections.")
+        Y = np.zeros(n + 5)
+    return Y
+
+
+def _solve_system(n, h, EI, Es, Q, Vt, Mt, head_condition,
+                  rotational_stiffness):
+    """:func:`_assemble_and_solve`'s system solved (banded LAPACK gbsv),
+    or None where it is singular; raises no warning of its own."""
     ab, F = _assemble_banded(
         n, h, EI, Es, Q, Vt, Mt, head_condition, rotational_stiffness
     )
-
-    # --- Solve (banded LAPACK gbsv) ---
     try:
-        Y = solve_banded((_BAND, _BAND), ab, F)
+        return solve_banded((_BAND, _BAND), ab, F)
     except np.linalg.LinAlgError:
-        warnings.warn("Singular matrix in solver. Returning zero deflections.")
-        Y = np.zeros(n + 5)
-
-    return Y
+        return None
 
 
 # Half-bandwidth of the assembled system (set by the head/tip shear

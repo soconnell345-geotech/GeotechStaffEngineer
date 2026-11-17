@@ -63,10 +63,13 @@ def test_one_document_by_any_of_its_names(text):
     ("AASHTO T 99", "AASHTO T 99", "aashto-t99"),
     ("UFC 3-220-10N", "UFC 3-220-10N", "ufc-3-220-10"),
     ("UFS 3-220-10", "UFS 3-220-10", "ufc-3-220-10"),
+    ("UFC 3-220-04FA", "UFC 3-220-04FA", "ufc-3-220-04"),
     ("NAVFAC DM 7.01", "NAVFAC DM 7.01", "ufc-3-220-10"),
-    ("DM7.2", "NAVFAC DM 7.02", "ufc-3-220-20"),
-    ("DM7 §6-7.4", "NAVFAC DM 7 §6-7.4", "dm7"),
+    ("DM 7.1", "DM 7.1", "ufc-3-220-10"),
+    ("DM7.2", "DM 7.2", "ufc-3-220-20"),
+    ("DM7 §6-7.4", "DM 7 §6-7.4", "dm7"),
     ("EM 1110-2-1902", "EM 1110-2-1902", "em-1110-2-1902"),
+    ("EM 1110-1-1905", "EM 1110-1-1905", "em-1110-1-1905"),
     ("TM 5-818-1", "TM 5-818-1", "tm-5-818-1"),
     ("ASTM D1586-11", "ASTM D1586", "astm-d1586"),
     ("ASTM D 4318", "ASTM D4318", "astm-d4318"),
@@ -93,6 +96,21 @@ def test_one_document_by_any_of_its_names(text):
 ])
 def test_designations(text, shown, key):
     assert _found(text) == [(shown, key)]
+
+
+def test_each_reference_module_serves_what_its_title_names():
+    """A lookup on a reference module counts for the documents its title
+    names (UFC 3-220-04FA for ufc_backfill; DM 7.1 / 7.2 for dm7)."""
+    from funhouse_agent import dispatch
+    from funhouse_agent.adapters import MODULE_REGISTRY
+    missing, named = [], 0
+    for name in sorted(dispatch.REFERENCE_MODULES):
+        for shown, key in _found(MODULE_REGISTRY[name].get("title", "")):
+            named += 1
+            if not cd.covered(key, cd.module_documents(name)):
+                missing.append(f"{name}: {shown} ({key})")
+    assert named
+    assert not missing, missing
 
 
 @pytest.mark.parametrize("text,shown,key", [
@@ -167,7 +185,8 @@ def test_every_reference_module_names_its_own_documents():
     names a document the module serves (``MODULE_DOCUMENTS``)."""
     from funhouse_agent.adapters import MODULE_REGISTRY
     from funhouse_agent.dispatch import REFERENCE_MODULES
-    for module in sorted(REFERENCE_MODULES - {"reference_db", "figure_db"}):
+    for module in sorted(REFERENCE_MODULES - {"reference_db", "figure_db",
+                                              "table_db"}):
         served = cd.module_documents(module)
         assert served, module
         brief = MODULE_REGISTRY[module]["brief"]
@@ -363,6 +382,24 @@ def test_a_reference_module_call_looks_up_its_document(tmp_path):
          "result": {"Ci": 0.67, "F_star": 1.2}}])
     res = cd.check_text(ANSWER, record_folder=str(conv), user_words=[USER])
     assert "GEC-11" not in _not_looked_up(res)
+
+
+def test_an_em_1905_lookup_looks_up_em_1110_1_1905_only(tmp_path):
+    """``call_agent`` on ``em_1905`` looks EM 1110-1-1905 (2025) up, keyed
+    as EM 1110-2-2104 and -2107 are; EM 1110-1-1904, which it supersedes,
+    stays a document of its own."""
+    assert cd.module_documents("em_1905") == {"em-1110-1-1905"}
+    conv = _conv(tmp_path)
+    _write_events(conv, [
+        {"name": "call_agent", "agent": "references",
+         "args": {"agent_name": "em_1905",
+                  "method": "equation_5_23_factor_of_safety",
+                  "parameters": {"q_ult": 15.0, "q_eq": 5.0}},
+         "result": {"FS": 3.0}}], prompt="Footing bearing check")
+    res = cd.check_text(
+        "Bearing FS 3.0 per EM 1110-1-1905; EM 1110-1-1904 gave the same.",
+        record_folder=str(conv), user_words=[])
+    assert _not_looked_up(res) == ["EM 1110-1-1904"]
 
 
 def test_the_users_own_words_are_never_flagged(tmp_path):

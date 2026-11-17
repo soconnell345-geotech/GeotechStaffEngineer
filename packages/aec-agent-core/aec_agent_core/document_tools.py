@@ -108,6 +108,13 @@ OPTIONAL_DOCUMENT_TOOL_NAMES = (
 #: PL-37, DR-07): not measured yet, so not on by default.
 SHEET_TOOL_NAMES = ("sheet_index", "check_cross_references")
 
+#: Sheet tools a newer planlens added (the marks on a set's sheets checked
+#: against its schedules, BACKLOG PL-42): offered with the two above where
+#: the installed planlens publishes them, and never asked for otherwise.
+#: With them, planlens' ``open_document`` also brings the sheet index and
+#: that check for a host that asked for the sheet tools.
+OPTIONAL_SHEET_TOOL_NAMES = ("check_schedule_marks",)
+
 #: Who a comment this app writes onto a PDF is signed by. A reviewer opening
 #: the marked-up file has to be able to tell a drafted comment from a person's
 #: without asking, so the default says so in the name; a deployment that signs
@@ -223,6 +230,17 @@ def sheet_tools_available() -> bool:
     return (all(has_tool(name) for name in SHEET_TOOL_NAMES)
             and "toolkit_options" in {
                 f.name for f in dataclasses.fields(_review.ReviewHost)})
+
+
+def sheet_tool_names() -> tuple:
+    """The sheet tools to put on a page built with them: the two of
+    :data:`SHEET_TOOL_NAMES`, then each of
+    :data:`OPTIONAL_SHEET_TOOL_NAMES` the installed planlens publishes.
+    Empty where :func:`sheet_tools_available` is not."""
+    if not sheet_tools_available():
+        return ()
+    return SHEET_TOOL_NAMES + tuple(
+        name for name in OPTIONAL_SHEET_TOOL_NAMES if has_tool(name))
 
 
 def search_supports_fuzzy() -> bool:

@@ -187,6 +187,23 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     soil = analysis.soil
     sections = []
 
+    # the last layer carried on below the profile (GM-318): said first
+    _given = getattr(analysis, "profile_depth_given", None)
+    _notes = [w for w in (getattr(result, "warnings", None) or [])
+              if "extend_last_layer" in w]
+    if _given is not None and _notes:
+        sections.append(CalcSection(
+            title="Soil Below the Profile (Assumed)",
+            items=[CalcStep(
+                title="Last layer carried on to the base",
+                equation="", substitution="",
+                result_name="Profile given to",
+                result_value=f"{_given:g}",
+                result_unit="m",
+                notes=f"The base is at {analysis.shaft.length:g} m. WARNING: "
+                      + " ".join(_notes),
+            )]))
+
     # ── Section 1: Shaft Geometry ────────────────────────────────
     geom_steps = []
     geom_steps.append(CalcStep(
@@ -1109,6 +1126,49 @@ def get_figures(result, analysis) -> List[FigureData]:
 CAPACITY_TABLE_POINTS = 20
 
 
+def _skipped_note(skipped) -> str:
+    from drilled_shaft.capacity import skipped_depths_note
+    return skipped_depths_note(skipped, CAPACITY_TABLE_POINTS)
+
+
+def _capacity_curve(analysis, low, top, skipped) -> list:
+    """``analysis.capacity_vs_depth`` at the table's lengths from ``low``
+    to ``top``, less each length whose tip a run of that length refuses (a
+    cohesionless layer with no N60, GM-142), named in ``skipped``: a
+    shorter shaft can tip in a layer the design shaft only passes through
+    (a cased cover), which costs those rows, not the table (GM-328 review
+    C1). Each run of lengths left is the same sweep over its own span."""
+    import numpy as np
+    from drilled_shaft.capacity import require_tip_N60
+    depths = [float(d) for d in np.linspace(low, top, CAPACITY_TABLE_POINTS)]
+    ok = []
+    for d in depths:
+        tip = analysis.soil.layer_at_depth(d - 0.01)
+        try:
+            if tip.soil_type == "cohesionless":
+                require_tip_N60(tip, d)
+            ok.append(True)
+        except ValueError:
+            ok.append(False)
+            skipped.append({"depth_m": round(d, 2),
+                            "reason": "its tip is in a cohesionless layer "
+                                      "with no N60"})
+    curve, i = [], 0
+    while i < len(depths):
+        if not ok[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(depths) and ok[j + 1]:
+            j += 1
+        curve += analysis.capacity_vs_depth(
+            depth_min=depths[i], depth_max=depths[j], n_points=j - i + 1,
+            skipped=skipped)
+        i = j + 1
+    skipped.sort(key=lambda m: m["depth_m"])
+    return curve
+
+
 def get_tables(result, analysis) -> list:
     """SHAFT-style tables: the result's own (side resistance per layer,
     load transfer at the ultimate load, capacity summary), the ultimate
@@ -1122,20 +1182,33 @@ def get_tables(result, analysis) -> list:
     length = analysis.shaft.length
     top = max(length, analysis.soil.total_thickness)
     low = min(3.0, length)
+    not_built = ""
     if top > low:
         skipped = []
+        try:
+            curve = _capacity_curve(analysis, low, top, skipped)
+        except ValueError as exc:
+            # any other refusal of the sweep (Hoek-Brown layers) costs this
+            # table, never the package's other tables (GM-328)
+            curve = []
+            not_built = ("The table of ultimate capacity against shaft "
+                         f"length is not built: {exc}")
+        if not curve and not not_built:
+            not_built = ("The table of ultimate capacity against shaft "
+                         "length is not built: "
+                         + _skipped_note(skipped))
         rows = [[r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
-                 r["Q_ultimate_kN"]]
-                for r in analysis.capacity_vs_depth(
-                    depth_min=low, depth_max=top,
-                    n_points=CAPACITY_TABLE_POINTS, skipped=skipped)]
+                 r["Q_ultimate_kN"]] for r in curve]
         note = ("The same analysis re-run with the shaft length set to "
                 "each value (SHAFT's capacity against depth); FS is not "
                 "applied")
+        if any(r.get("warnings") for r in curve):
+            # GM-318 review A1
+            note += ("; the lengths past the soil profile take its last "
+                     "layer carried on to their base (extend_last_layer), "
+                     "ground nobody explored")
         if skipped:
-            from drilled_shaft.capacity import skipped_depths_note
-            note += ". " + skipped_depths_note(skipped,
-                                               CAPACITY_TABLE_POINTS)
+            note += ". " + _skipped_note(skipped)
         if rows:
             tables.append(CalcTable(
                 title="Ultimate capacity against shaft length",
@@ -1146,13 +1219,16 @@ def get_tables(result, analysis) -> list:
                 rows=rows,
                 note=note,
                 name="capacity_vs_length",
+                left_out=(_skipped_note(skipped) + "." if skipped else ""),
             ))
 
     layer_rows, depth = [], 0.0
+    given = getattr(analysis, "profile_depth_given", None)
     for i, layer in enumerate(analysis.soil.layers, 1):
         layer_rows.append([
             i, depth, depth + layer.thickness, layer.soil_type,
-            layer.description, layer.unit_weight, layer.cu, layer.phi,
+            _carried_on(layer.description, given, depth + layer.thickness),
+            layer.unit_weight, layer.cu, layer.phi,
             layer.N60, layer.qu, layer.RQD])
         depth += layer.thickness
     if layer_rows:
@@ -1171,10 +1247,34 @@ def get_tables(result, analysis) -> list:
                   + (f"{gwt:g} m" if gwt is not None else "none given")),
             name="soil_layers", printed=False,
         ))
+    if not_built:
+        # said in the note of the last table printed (else the last
+        # table), and in the agent's response, so it is not lost when no
+        # printed table is shown (GM-328 review C1)
+        from dataclasses import replace
+        shown = [i for i, t in enumerate(tables) if t.printed]
+        at = shown[-1] if shown else len(tables) - 1
+        if at >= 0:
+            last = tables[at]
+            tables[at] = replace(
+                last, note=(last.note.rstrip(". ") + ". "
+                            if last.note else "") + not_built,
+                left_out=((last.left_out + " ") if last.left_out else "")
+                + not_built.rstrip(".") + ".")
     return tables
 
 
 # ── Helper functions ──────────────────────────────────────────────
+
+
+def _carried_on(description: str, given, bottom: float) -> str:
+    """A layer's description, marked where ``extend_last_layer`` carried
+    it on below the depth the layers given reach (GM-318 review C6)."""
+    if given is None or bottom <= given + 1e-9:
+        return description
+    return ((f"{description} " if description else "")
+            + f"(given to {given:g} m, assumed below)")
+
 
 def _base(shaft, soil):
     """(name, diameter m, area m\u00b2) of the base the end bearing acts on,

@@ -343,6 +343,7 @@ AGGREGATE_PIER = {
         "spacing": 2.0,
         "E_column": 100000.0,
         "E_soil": 5000.0,
+        "column_type": "stone_column",     # GM-310: n by column type
     },
 }
 

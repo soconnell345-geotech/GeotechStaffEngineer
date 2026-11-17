@@ -7,6 +7,7 @@ import math
 import os
 import random
 import re
+import warnings
 
 import pytest
 
@@ -81,8 +82,11 @@ def test_empty_defaults_and_package_headers_are_left_out():
 def test_mo_without_a_solution_warns_in_the_result():
     r = D.call_agent("seismic_geotech", "seismic_earth_pressure",
                      {"phi": 20, "kh": 0.5, "kv": 0.0, "gamma": 19, "H": 6})
-    (w,) = r["warnings"]
+    # The module's own warning, then the Python warning it raised, which
+    # reaches the agent since GM-316.
+    w, raised = r["warnings"]
     assert "no solution" in w and "trial wedge" in w
+    assert "M-O not applicable" in raised
     assert r["choices"][0]["chosen"].startswith("Ka + 0.75 kh")
     kv = {c["what"]: c for c in r["choices"]}["kv"]
     assert kv["how"] == "given"          # typed, though it is 0
@@ -283,7 +287,10 @@ def test_the_weak_rock_curve_uses_rqd_and_lists_it():
     ("circular", {"nx", "ny"}, {"n_trials", "n_points", "bishop_screen"}),
     ("noncircular_de", {"n_points"}, {"nx", "ny", "n_trials",
                                       "bishop_screen"}),
-    ("weak_layer", {"n_trials", "n_points"}, {"nx", "ny"}),
+    # GM-140 step 7a: the weak-layer search is a wedge along each layer
+    # and draws no random trials, so n_trials and n_points do not apply
+    ("weak_layer", {"refine"},
+     {"nx", "ny", "n_trials", "n_points"}),
 ])
 def test_a_slope_search_lists_only_its_own_settings(surface_type, used,
                                                      unused):
@@ -644,6 +651,11 @@ _VOLATILE = frozenset({
     "seconds_per_evaluation",
     "dxf_base64", "notes", "warnings", "note"})
 _STAMP = re.compile(r"\d{8}_\d{6}(_\d+)?|\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d")
+#: What two identical runs in one session differ in (INF-77 review #5): a
+#: figure written again takes a number ('..._2.png'), and the session
+#: store renames a second load of a site ('Test', 'Test_1'; ``site_key``).
+_RENAMED = re.compile(r"_\d+(?=\.(?:png|svg|jpe?g|pdf)\b)")
+_SITE_COPY = re.compile(r"_\d+$")
 
 
 def _analysis_methods() -> set:
@@ -667,10 +679,11 @@ def _run(agent: str, method: str, params: dict):
 
 def _norm(x, where: str):
     if isinstance(x, str):
-        return _STAMP.sub("<t>", x.replace(where, "<cwd>"))
+        return _RENAMED.sub("", _STAMP.sub("<t>", x.replace(where, "<cwd>")))
     if isinstance(x, dict):
-        return {k: _norm(v, where) for k, v in x.items()
-                if k not in _VOLATILE}
+        return {k: _SITE_COPY.sub("", v) if k == "site_key"
+                and isinstance(v, str) else _norm(v, where)
+                for k, v in x.items() if k not in _VOLATILE}
     if isinstance(x, list):
         return [_norm({k: w for k, w in v.items() if k != "how"}
                       if isinstance(v, dict) and "what" in v and "how" in v
@@ -758,6 +771,55 @@ def _cases(agent: str, method: str, params: dict = None) -> dict:
     return {name: case for name, case in cases.items() if case}
 
 
+#: How a ``returns`` text says when its key comes back (INF-77 T1 a): a
+#: condition word (when, if, only, unless, without), a text that starts
+#: "For a ...", or "with" a declared parameter. A label and a colon
+#: ("Per strut: ...") or a loose word ("where") states no condition
+#: (review #3).
+_SAYS_WHEN = re.compile(r"\b(when|if|only|unless|without)\b|^for an? ",
+                        re.I)
+_WITH = re.compile(r"\bwith (\w+)", re.I)
+#: Keys a result carries only when there is something to say.
+_SAID_WHEN_ANY = re.compile(r"^(warnings|notes)$|_(notes?|warnings)$")
+
+
+def _promised_not_returned(agent: str, method: str, params: dict,
+                           result) -> list:
+    """The keys ``method``'s METHOD_INFO ``returns`` names that ``result``
+    lacks and whose text does not say when they come back, past
+    :data:`MP.RETURNED_SOMETIMES` (INF-77 T1 a). A key written ``a / b``
+    names both; one that is not a name ('...', '(method numbers)') names
+    none."""
+    told = D._load_adapter(agent).METHOD_INFO[method].get("returns")
+    if not isinstance(told, dict) or not isinstance(result, dict):
+        return []
+    declared = set(_specs(agent, method, params))
+    out = []
+    for key, text in told.items():
+        text = str(text)
+        if _SAYS_WHEN.search(text) or declared & set(_WITH.findall(text)):
+            continue
+        for one in (k.strip() for k in str(key).split(" / ")):
+            if re.fullmatch(r"[A-Za-z_]\w*", one) and one not in result \
+                    and not _SAID_WHEN_ANY.search(one) \
+                    and (f"{agent}|{method}", one) not in \
+                    MP.RETURNED_SOMETIMES:
+                out.append(one)
+    return out
+
+
+def test_the_returns_check_reads_conditions_and_pairs():
+    assert _SAYS_WHEN.search("Present when FOS is null.")
+    assert _SAYS_WHEN.search("Cohesive soil only: 2D(B+Z)su.")
+    assert _SAYS_WHEN.search("For a steel grid: the largest St.")
+    for plain in ("Designed drain spacing.", "Cohesive: 2D(B+Z)su.",
+                  "Factor where the flow exits.", "Gradient: the exit value.",
+                  "Per strut: the force."):
+        assert not _SAYS_WHEN.search(plain), plain
+    assert _SAID_WHEN_ANY.search("drawing_warnings")
+    assert not _SAID_WHEN_ANY.search("warnings_count")
+
+
 def test_every_method_has_a_probe_or_a_reason():
     methods = _analysis_methods()
     probed = {key.split("#")[0] for key in MP.listed(MP.PROBES)}
@@ -811,7 +873,12 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
                                                          monkeypatch):
     """GM-158: give a run its own defaults_used by name and the result
     does not move; where the result echoes a listed default, it echoes
-    the same value."""
+    the same value. GM-316: every warning the first run raises that must
+    reach the agent is in its result (``MP.lost_warnings``, checked on the
+    run this guard makes anyway). INF-77 T1 (a): every key METHOD_INFO
+    ``returns`` names is in that result too, or its text says when it
+    comes back (:func:`_promised_not_returned`); the probes of
+    :data:`MP.FROZEN` are left to their review."""
     if MP.skip_reason(key):
         pytest.skip(MP.skip_reason(key))
     monkeypatch.chdir(tmp_path)
@@ -821,8 +888,18 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
     for before in probe.get("before", ()):
         D.call_agent(before[0], before[1], copy.deepcopy(before[2]))
     params = probe["params"]
-    r0 = _run(agent, method, params)
+    with warnings.catch_warnings(record=True) as raised:
+        warnings.simplefilter("always")
+        r0 = _run(agent, method, params)
     assert isinstance(r0, dict) and "error" not in r0, (key, r0)
+    lost = MP.lost_warnings(raised, r0)
+    assert lost == [], (key, "raised but not in the result", lost)
+    if not (MP.FROZEN.get(agent) or MP.FROZEN.get(base)):
+        missing = _promised_not_returned(agent, method, params, r0)
+        assert missing == [], (
+            f"{key}: METHOD_INFO 'returns' names {missing}, which the "
+            f"result lacks and whose text does not say when it comes back: "
+            f"return it, say when, or stop naming it")
     used = r0.get("defaults_used") or {}
     # a left-out input listed as the case it stands for (GM-165) is not a
     # value to give back: the run had none
@@ -840,11 +917,16 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
             assert _same(echo, value), (
                 f"{key}: defaults_used says {name}={value!r}, the result "
                 f"says {echo!r}")
+    # a module default under a name the method does not declare (an
+    # adapter's MODULE_DEFAULTS, GM-140 step 10) is not an input to give
+    fixed = (getattr(D._load_adapter(agent), "MODULE_DEFAULTS", None)
+             or {}).get(method, {})
     back = {k: v for k, v in used.items() if not is_case(k, v)
-            and (base, k) not in MP.SHOWN_ONLY_WHEN_GIVEN}
+            and (base, k) not in MP.SHOWN_ONLY_WHEN_GIVEN
+            and k not in fixed}
     if not back:
         return
-    r1 = _run(agent, method, {**params, **back})
+    r1 = _run(agent, method, _given_back(params, back))
     assert "error" not in r1, (key, r1["error"])
     where = str(tmp_path)
     moved = _diff(_norm(r0, where), _norm(r1, where))
@@ -961,6 +1043,33 @@ def test_a_choice_made_from_an_input_follows_whether_it_was_stated(
     assert {w: by.get(w) for w in whats} == {w: "assumed" for w in whats}
 
 
+_NESTED = re.compile(r"^(\w+)(?:\[(.+)\])?\.(\w+)$")
+
+
+def _given_back(params: dict, back: dict) -> dict:
+    """``params`` with each of ``back`` given: a parameter by its name, and
+    a default an adapter lists for one item of a list parameter
+    (``soil_properties[Clay].c_prime``, the item by its name or index) or
+    one key of a dict parameter (``nail_defaults.fy``) put in that item or
+    dict (GM-327: dxf_import lists the per-layer values that stood in)."""
+    out = copy.deepcopy(params)
+    for name, value in back.items():
+        m = _NESTED.match(name)
+        if not m:
+            out[name] = value
+            continue
+        param, item, key = m.groups()
+        if item is None:
+            out[param] = {**(out.get(param) or {}), key: value}
+            continue
+        items = out[param]
+        target = next((it for it in items if it.get("name") == item), None)
+        if target is None:
+            target = items[int(item)]
+        target[key] = value
+    return out
+
+
 def _other_value(spec: dict, value):
     """A value other than ``value`` for an input declared by ``spec``: the
     next of its allowed values, the other boolean, a number moved by half
@@ -995,13 +1104,112 @@ def _without(x, name: str):
     return x
 
 
+#: A run that ends in one of these failed in Python, which the agent cannot
+#: act on, rather than refusing in words (INF-77 review #9). A ValueError,
+#: an adapter's own worded error, a module's error class, a missing file
+#: and a KeyError that says what is missing are refusals; a KeyError that
+#: names a bare key is not.
+_CRASH = re.compile(
+    r"^(IndexError|TypeError|AttributeError|ZeroDivisionError|NameError|"
+    r"UnboundLocalError|AssertionError|RecursionError|LinAlgError): "
+    r"|^KeyError: '[^' ]*'$")
+
+
 def _moved_by(name: str, r0, r1, where: str = ""):
     """Where the result moved when ``name`` took another value, or None.
-    A run the other value refuses has moved."""
+    A run the other value refuses in words has moved; one that crashes
+    (:data:`_CRASH`) has not."""
     if isinstance(r1, dict) and "error" in r1:
-        return "refused: " + str(r1["error"])[:80]
+        error = str(r1["error"])
+        return None if _CRASH.match(error) else "refused: " + error[:80]
     return _diff(_without(_norm(r0, where), name),
                  _without(_norm(r1, where), name))
+
+
+def _leaf_other(value):
+    """``value`` with every number moved (an integer doubled, or 1 for
+    0; a float by half, or 0.5 for 0) and every boolean flipped."""
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value * 2 if value else 1
+    if isinstance(value, float):
+        return value * 1.5 if value else 0.5
+    if isinstance(value, list):
+        return [_leaf_other(v) for v in value]
+    return value
+
+
+def _given_other(spec: dict, value):
+    """Another value for one a probe gives: :func:`_other_value`'s, but an
+    integer quantity moves as a number does (by half where it is declared
+    a float, else doubled), since + 1 on a value in the hundreds moves
+    nothing a run prints."""
+    if isinstance(value, int) and not isinstance(value, bool) \
+            and not spec.get("allowed_values"):
+        if str(spec.get("type")) in ("float", "number"):
+            return value * 1.5
+        return _leaf_other(value)
+    return _other_value(spec, value)
+
+
+def _given_changes(name: str, value, spec: dict, params: dict):
+    """(label, echo, params) of each change INF-77 T1 (b) makes to a
+    parameter a probe gives: its value (:func:`_given_other`), each number
+    or boolean of the first item of a list of dicts
+    (``layers[0].thickness``) or of a dict (``swelling.theta``), or every
+    number of a list at once. The echo set aside is the name changed."""
+    def num(v):
+        return isinstance(v, (int, float))
+
+    if isinstance(value, (bool, int, float, str)):
+        other = _given_other(spec, value)
+        if other is not None:
+            yield name, name, {**params, name: other}
+    elif isinstance(value, list) and value and isinstance(value[0], dict):
+        for field in sorted(value[0]):
+            if num(value[0][field]):
+                new = copy.deepcopy(params)
+                new[name][0][field] = _leaf_other(value[0][field])
+                yield f"{name}[0].{field}", field, new
+    elif isinstance(value, dict):
+        for field in sorted(value):
+            if num(value[field]):
+                new = copy.deepcopy(params)
+                new[name][field] = _leaf_other(value[field])
+                yield f"{name}.{field}", field, new
+    elif isinstance(value, list) and value:
+        other = _leaf_other(value)
+        if other != value:
+            yield name, name, {**params, name: other}
+
+
+def _set_aside(key: str, name: str) -> bool:
+    """Whether a probe's input is in a table of inputs that do not move
+    its result, each with why."""
+    base = key.split("#")[0]
+    return (base, name) in MP.LABEL_ONLY or (key, name) in MP.LABEL_ONLY \
+        or (key, name) in MP.NOT_REACHED or (base, name) in MP.KNOWN \
+        or (key, name) in MP.KNOWN
+
+
+def test_the_given_changes_reach_fields_and_lists():
+    params = {"layers": [{"thickness": 4, "name": "Clay", "wet": True}],
+              "swelling": {"theta": 0.1}, "depths": [1, 2.0], "n": 0,
+              "B": 2, "method": "a"}
+    specs = {"B": {"type": "float"}, "method": {"allowed_values": ["a", "b"]}}
+    got = {label: (echo, new) for name, value in params.items()
+           for label, echo, new in _given_changes(
+               name, value, specs.get(name) or {}, params)}
+    assert sorted(got) == ["B", "depths", "layers[0].thickness",
+                           "layers[0].wet", "method", "n", "swelling.theta"]
+    assert got["layers[0].thickness"][0] == "thickness"
+    assert got["layers[0].thickness"][1]["layers"][0]["thickness"] == 8
+    assert got["swelling.theta"][1]["swelling"]["theta"] == 0.15000000000000002
+    assert got["depths"][1]["depths"] == [2, 3.0]
+    assert got["n"][1]["n"] == 1 and got["B"][1]["B"] == 3.0
+    assert got["method"][1]["method"] == "b"
+    assert params["layers"][0]["thickness"] == 4
 
 
 def _with_computed_tables(result):
@@ -1037,7 +1245,17 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
     label only are in ``MP.LABEL_ONLY``; inputs whose effect this probe
     does not reach are in ``MP.NOT_REACHED``, each with why; a left-out
     input listed as the case it stands for (GM-165) has no value to
-    change. The probes of :data:`MP.FROZEN` are left to their review."""
+    change. The probes of :data:`MP.FROZEN` are left to their review.
+    INF-77 T1 (b): each parameter the probe gives is changed too
+    (:func:`_given_changes`, one change each, on the run above), set
+    aside by the same tables; the probes :data:`MP.GIVEN_LEFT_OUT` names
+    (slow runs) only for their defaults. Coverage (INF-77 review #4): of
+    the 2,227 parameters the probed methods declare, 814 (in 111 methods)
+    are neither given by a probe nor listed in its run's defaults_used,
+    so nothing here changes them; e.g. axial_pile_capacity's
+    extend_last_layer, inside_friction_ratio, open_pipe_method,
+    open_pipe_toe_limit, pile_area, pile_perimeter, pile_tip_area,
+    pile_weight and uplift_skin_fraction."""
     if MP.skip_reason(key):
         pytest.skip(MP.skip_reason(key))
     base = key.split("#")[0]
@@ -1068,25 +1286,75 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
         other = _other_value(info.get(name) or {}, value)
         if other is None:
             continue
-        if _moved_by(name, r0, run({**probe["params"], name: other}),
+        # a default listed for one item of a list or dict parameter
+        # (GM-327) is a property a build tool carries into that item of its
+        # output under the same name: there the value in the output is the
+        # effect, so only ``defaults_used`` itself is set aside
+        echo = "defaults_used" if _NESTED.match(name) else name
+        if _moved_by(echo, r0,
+                     run(_given_back(probe["params"], {name: other})),
                      where) is None:
             still.append(f"{name}: {value!r} -> {other!r}")
+    given = () if key in MP.GIVEN_LEFT_OUT else probe["params"].items()
+    specs = _specs(agent, method, probe["params"])
+    for name, value in given:
+        for label, echo, params in _given_changes(
+                name, value, specs.get(name) or {}, probe["params"]):
+            if not _set_aside(key, label) and _moved_by(
+                    echo, r0, run(params), where) is None:
+                still.append(f"{label} (given)")
     assert still == [], (
         f"{key}: these inputs changed nothing in the result; use them as "
         f"described, or say what they do and stop advertising them: {still}")
 
 
+def _label_in(params: dict, label: str) -> bool:
+    """Whether a probe's ``params`` give the field a nested label names
+    (``layers[0].thickness``, ``swelling.theta``); a plain name, True."""
+    m = _NESTED.match(label)
+    if not m:
+        return True
+    head, index, field = m.groups()
+    value = params.get(head)
+    if index is not None:
+        if not (isinstance(value, list) and index.isdigit()
+                and int(index) < len(value)):
+            return False
+        value = value[int(index)]
+    return isinstance(value, dict) and field in value
+
+
 def test_the_allow_lists_name_declared_inputs_of_probed_methods():
+    """Each entry names a declared input of a probed method, and a nested
+    label a field the probe gives, so a stale entry fails (review #11)."""
     for table in (MP.LABEL_ONLY, MP.NOT_REACHED, MP.KNOWN):
         for (key, name), why in table.items():
             if not MP.listed([key]):
                 continue
-            assert key in MP.PROBES or key in {
-                k.split("#")[0] for k in MP.PROBES}, key
+            probes = [p for k, p in MP.PROBES.items()
+                      if key in (k, k.split("#")[0])]
+            assert probes, key
             agent, method = key.split("#")[0].split("|")
             params = D._load_adapter(agent).METHOD_INFO[method][
                 "parameters"]
-            assert name in params and why, (key, name)
+            assert name.split("[")[0].split(".")[0] in params and why, (
+                key, name)
+            assert any(_label_in(p["params"], name) for p in probes), (
+                key, name, "no probe gives this field")
+
+
+def test_the_inf77_tables_name_probes_and_promised_keys():
+    """INF-77: a probe left out of the given-parameter sweep is a probe,
+    and a key returned only sometimes is one ``returns`` names."""
+    assert all(key in MP.PROBES and why
+               for key, why in MP.GIVEN_LEFT_OUT.items())
+    for (base, name), why in MP.RETURNED_SOMETIMES.items():
+        if not MP.listed([base]):
+            continue
+        agent, method = base.split("|")
+        told = D._load_adapter(agent).METHOD_INFO[method].get("returns")
+        names = {k.strip() for key in told for k in str(key).split(" / ")}
+        assert name in names and why, (base, name)
 
 
 def test_a_wrapped_function_and_its_method_info_agree():
@@ -1318,6 +1586,9 @@ _NO_CASE = {
         "the drawdown's pool levels set the water",
     "slope_stability|search_rapid_drawdown|pore_pressure_points":
         "the drawdown's pool levels set the water",
+    "slope_stability|search_critical_surface|seed_surface":
+        "a start the call adds to the refinement (GM-140 step 7a): left "
+        "out, there is none",
     "calc_package|slope_report_package|variables":
         "the reliability annex the call adds",
 }
@@ -1429,3 +1700,17 @@ def test_a_left_out_input_that_moves_the_result_states_its_case(
             if what is not None:
                 moved.append(f"{key}: without {name}, {what}")
     assert moved == []
+
+
+def test_a_module_default_under_an_undeclared_name_is_listed():
+    """GM-132's slope part (GM-140 step 10): rapid drawdown runs the
+    m_alpha check by m_alpha_rule 'frictional', which its tools do not
+    declare; the run's defaults_used says so, and giving the name is
+    refused (it is not an input of the tool)."""
+    for key in ("slope_stability|rapid_drawdown_fos",):
+        agent, method = key.split("|")
+        r = _run(agent, method, MP.PROBES[key]["params"])
+        assert r["defaults_used"]["m_alpha_rule"] == "frictional"
+        bad = _run(agent, method, {**MP.PROBES[key]["params"],
+                                   "m_alpha_rule": "every_slice"})
+        assert "error" in bad

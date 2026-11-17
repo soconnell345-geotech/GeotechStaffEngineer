@@ -209,9 +209,23 @@ class KeptWork:
                   "the conversation. Asked to continue, the agent picks up "
                   "from them instead of starting over.")
 
-    def history_note(self, error: str = "") -> str:
+    def history_note(self, error: str = "", why: Optional[str] = None
+                     ) -> str:
         """The assistant message that closes a stopped turn in the history
-        (what the MODEL reads on the next turn)."""
+        (what the MODEL reads on the next turn). ``why``: ``"user"`` for a
+        turn the user stopped (TA-37), ``"budget"`` for one whose model-call
+        budget ended on an empty reply (TA-38); otherwise an error."""
+        if why == "user":
+            return ("[The user stopped this turn before it finished. The "
+                    "tool calls and results above are kept: if asked to "
+                    "continue, pick up from them rather than doing them "
+                    "again, and say what is still missing.]")
+        if why == "budget":
+            return ("[This turn used its whole model-call budget before an "
+                    "answer was written. The tool calls and results above "
+                    "are kept: when asked to continue, pick up from them "
+                    "rather than doing them again, and say what is still "
+                    "missing.]")
         gist = " ".join(str(error or "").split())
         if len(gist) > 300:
             gist = gist[:300] + " ..."

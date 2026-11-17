@@ -6,6 +6,12 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+
+def _f(value, spec):
+    """``value`` formatted, or 'not reported' for None."""
+    return "not reported" if value is None else format(value, spec)
+
+
 @dataclass
 class FormResult:
     """
@@ -31,10 +37,26 @@ class FormResult:
         design_point_u: Design point in standard normal space (dict mapping variable
             name to float). Shortest distance point from origin to failure surface.
         n_iterations: Number of iterations to convergence
-        n_function_calls: Number of limit state function evaluations
-        converged: Whether analysis converged
+        n_function_calls: Limit state function evaluations: pystra's own
+            count where it keeps one (2.x), otherwise an estimate
+            (iterations x variables); see n_function_calls_counted
+        n_function_calls_counted: True when n_function_calls is pystra's
+            count, False when it is the estimate
+        converged: pystra's own convergence flag (2.x); on 1.x, which keeps
+            no flag, whether it stopped before its iteration limit. Never
+            inferred from the sign of beta: a converged run whose mean
+            point is in the failure domain has beta < 0
+        converged_source: Which of the two the flag is
+        message: pystra's status message
+        warnings: What the run could not give (an unconverged run has no
+            index or design point on pystra 2.x; an estimate in place of a
+            count). Empty for a clean run
         limit_state_expr: String representation of limit state function
         n_variables: Number of random variables in the analysis
+
+    ``beta``, ``pf``, ``alpha`` and the design point are None / empty when
+    pystra reports none (an unconverged run on pystra 2.x); ``warnings``
+    then says so.
 
     Methods:
         summary() -> str: Human-readable summary
@@ -52,6 +74,10 @@ class FormResult:
     converged: bool = False
     limit_state_expr: str = ""
     n_variables: int = 0
+    n_function_calls_counted: bool = False
+    converged_source: str = ""
+    message: str = ""
+    warnings: list = field(default_factory=list)
 
     def summary(self) -> str:
         """
@@ -63,16 +89,21 @@ class FormResult:
         lines = [
             "FORM Analysis Results",
             "=" * 60,
-            f"Reliability Index (beta):     {self.beta:.4f}",
-            f"Probability of Failure (Pf):  {self.pf:.6e}",
+            f"Reliability Index (beta):     {_f(self.beta, '.4f')}",
+            f"Probability of Failure (Pf):  {_f(self.pf, '.6e')}",
             f"Converged:                    {self.converged}",
             f"Iterations:                   {self.n_iterations}",
-            f"Function Calls:               {self.n_function_calls}",
+            f"Function Calls:               {self.n_function_calls}"
+            + ("" if self.n_function_calls_counted else " (estimate)"),
             f"Number of Variables:          {self.n_variables}",
             "",
             f"Limit State Function: {self.limit_state_expr}",
             "",
         ]
+        for w in self.warnings:
+            lines.append(f"WARNING: {w}")
+        if self.warnings:
+            lines.append("")
 
         if self.alpha:
             lines.append("Sensitivity Factors (alpha):")
@@ -105,7 +136,11 @@ class FormResult:
             "design_point_u": self.design_point_u.copy(),
             "n_iterations": self.n_iterations,
             "n_function_calls": self.n_function_calls,
+            "n_function_calls_counted": self.n_function_calls_counted,
             "converged": self.converged,
+            "converged_source": self.converged_source,
+            "message": self.message,
+            "warnings": list(self.warnings),
             "limit_state_expr": self.limit_state_expr,
             "n_variables": self.n_variables,
         }
@@ -195,8 +230,16 @@ class SormResult:
         design_point_x: Design point in physical space (inherited)
         design_point_u: Design point in standard normal space (inherited)
         n_iterations: Number of iterations (inherited)
-        n_function_calls: Number of limit state evaluations (inherited)
-        converged: Whether analysis converged (inherited)
+        n_function_calls: Limit state evaluations, FORM and SORM together:
+            pystra's count (2.x) or an estimate (see FormResult)
+        converged: FORM converged AND the second-order fit gave a value
+            (both pystra's own flags; see FormResult.converged)
+        form_converged, sorm_converged: The two flags apart
+        sorm_failed: True when there is no second-order result.
+            ``beta_breitung`` and ``pf_breitung`` are then None, never the
+            FORM values under the SORM names
+        sorm_message: pystra's message for the second-order stage
+        warnings: What the run could not give
         limit_state_expr: String representation of limit state (inherited)
         n_variables: Number of random variables (inherited)
 
@@ -206,8 +249,8 @@ class SormResult:
     """
 
     beta_form: float = 0.0
-    beta_breitung: float = 0.0
-    pf_breitung: float = 1.0
+    beta_breitung: Optional[float] = None
+    pf_breitung: Optional[float] = None
     kappa: list = field(default_factory=list)
     pf_form: float = 1.0
     alpha: dict = field(default_factory=dict)
@@ -218,6 +261,14 @@ class SormResult:
     converged: bool = False
     limit_state_expr: str = ""
     n_variables: int = 0
+    n_function_calls_counted: bool = False
+    form_converged: bool = False
+    sorm_converged: bool = False
+    sorm_failed: bool = True
+    converged_source: str = ""
+    message: str = ""
+    sorm_message: str = ""
+    warnings: list = field(default_factory=list)
 
     def summary(self) -> str:
         """
@@ -230,21 +281,28 @@ class SormResult:
             "SORM Analysis Results",
             "=" * 60,
             "First-Order (FORM):",
-            f"  Reliability Index (beta):   {self.beta_form:.4f}",
-            f"  Probability of Failure:     {self.pf_form:.6e}",
+            f"  Reliability Index (beta):   {_f(self.beta_form, '.4f')}",
+            f"  Probability of Failure:     {_f(self.pf_form, '.6e')}",
             "",
-            "Second-Order (SORM - Breitung):",
-            f"  Reliability Index (beta):   {self.beta_breitung:.4f}",
-            f"  Probability of Failure:     {self.pf_breitung:.6e}",
+            "Second-Order (SORM - Breitung):"
+            + ("  FAILED, no second-order result" if self.sorm_failed else ""),
+            f"  Reliability Index (beta):   {_f(self.beta_breitung, '.4f')}",
+            f"  Probability of Failure:     {_f(self.pf_breitung, '.6e')}",
             "",
-            f"Converged:                    {self.converged}",
+            f"Converged:                    {self.converged} "
+            f"(FORM {self.form_converged}, SORM {self.sorm_converged})",
             f"Iterations:                   {self.n_iterations}",
-            f"Function Calls:               {self.n_function_calls}",
+            f"Function Calls:               {self.n_function_calls}"
+            + ("" if self.n_function_calls_counted else " (estimate)"),
             f"Number of Variables:          {self.n_variables}",
             "",
             f"Limit State Function: {self.limit_state_expr}",
             "",
         ]
+        for w in self.warnings:
+            lines.append(f"WARNING: {w}")
+        if self.warnings:
+            lines.append("")
 
         if self.kappa:
             lines.append("Principal Curvatures:")
@@ -287,7 +345,15 @@ class SormResult:
             "design_point_u": self.design_point_u.copy(),
             "n_iterations": self.n_iterations,
             "n_function_calls": self.n_function_calls,
+            "n_function_calls_counted": self.n_function_calls_counted,
             "converged": self.converged,
+            "form_converged": self.form_converged,
+            "sorm_converged": self.sorm_converged,
+            "sorm_failed": self.sorm_failed,
+            "converged_source": self.converged_source,
+            "message": self.message,
+            "sorm_message": self.sorm_message,
+            "warnings": list(self.warnings),
             "limit_state_expr": self.limit_state_expr,
             "n_variables": self.n_variables,
         }
@@ -298,7 +364,7 @@ class MonteCarloResult:
     """
     Results from Crude Monte Carlo simulation for reliability analysis.
 
-    Monte Carlo provides an exact (asymptotic) estimate of failure probability
+    Monte Carlo estimates the failure probability, with no approximation of g,
     by sampling the joint distribution of random variables and counting failures.
     Accuracy improves with number of samples but computational cost is high.
 
@@ -306,11 +372,20 @@ class MonteCarloResult:
         beta: Reliability index, computed as Phi^-1(1 - pf) where Phi^-1 is
             the inverse standard normal CDF
         pf: Probability of failure, estimated as n_failures / n_samples
-        n_samples: Total number of Monte Carlo samples
+        n_samples: Monte Carlo samples run
+        n_samples_requested: Samples asked for (the same, unless pystra
+            ran a different number, which ``warnings`` then says)
         n_failures: Number of samples where limit state <= 0 (failure)
-        cov_pf: Coefficient of variation of pf estimate. Indicates uncertainty
-            in the Monte Carlo estimate. Smaller is better. Rule of thumb:
-            COV < 0.05 for reliable estimate.
+        cov_pf: Coefficient of variation of pf estimate,
+            sqrt((1 - pf) / (n pf)). None when no sample failed or every
+            one did (it is undefined there, not zero)
+        pf_upper95_no_failures: With no failure, the upper end of the
+            two-sided 95 % Clopper-Pearson interval on pf, 1 - 0.025^(1/n);
+            None otherwise
+        seed: The seed used; None means fresh entropy (not repeatable)
+        warnings: What the run could not give (no failures, no seed)
+
+    ``beta`` is None when no sample, or every sample, failed.
         limit_state_expr: String representation of limit state function
         n_variables: Number of random variables in the analysis
 
@@ -319,13 +394,17 @@ class MonteCarloResult:
         to_dict() -> dict: Convert to dictionary (JSON-serializable)
     """
 
-    beta: float = 0.0
+    beta: Optional[float] = 0.0
     pf: float = 1.0
     n_samples: int = 0
     n_failures: int = 0
-    cov_pf: float = 0.0
+    cov_pf: Optional[float] = 0.0
     limit_state_expr: str = ""
     n_variables: int = 0
+    n_samples_requested: int = 0
+    pf_upper95_no_failures: Optional[float] = None
+    seed: Optional[int] = None
+    warnings: list = field(default_factory=list)
 
     def summary(self) -> str:
         """
@@ -337,11 +416,12 @@ class MonteCarloResult:
         lines = [
             "Monte Carlo Simulation Results",
             "=" * 60,
-            f"Reliability Index (beta):     {self.beta:.4f}",
+            f"Reliability Index (beta):     {_f(self.beta, '.4f')}",
             f"Probability of Failure (Pf):  {self.pf:.6e}",
-            f"COV of Pf Estimate:           {self.cov_pf:.4f}",
+            f"COV of Pf Estimate:           {_f(self.cov_pf, '.4f')}",
             "",
-            f"Total Samples:                {self.n_samples:,}",
+            f"Total Samples:                {self.n_samples:,}"
+            + ("" if self.seed is None else f"  (seed {self.seed})"),
             f"Number of Failures:           {self.n_failures:,}",
             f"Number of Variables:          {self.n_variables}",
             "",
@@ -350,7 +430,7 @@ class MonteCarloResult:
         ]
 
         # Add guidance on COV
-        if self.cov_pf > 0:
+        if self.cov_pf is not None and self.cov_pf > 0:
             if self.cov_pf < 0.05:
                 status = "Excellent (COV < 0.05)"
             elif self.cov_pf < 0.10:
@@ -360,6 +440,8 @@ class MonteCarloResult:
             else:
                 status = "Poor (COV > 0.20) - Consider more samples"
             lines.append(f"Estimate Quality: {status}")
+        for w in self.warnings:
+            lines.append(f"WARNING: {w}")
 
         return "\n".join(lines)
 
@@ -374,8 +456,12 @@ class MonteCarloResult:
             "beta": self.beta,
             "pf": self.pf,
             "n_samples": self.n_samples,
+            "n_samples_requested": self.n_samples_requested or self.n_samples,
             "n_failures": self.n_failures,
             "cov_pf": self.cov_pf,
+            "pf_upper95_no_failures": self.pf_upper95_no_failures,
+            "seed": self.seed,
+            "warnings": list(self.warnings),
             "limit_state_expr": self.limit_state_expr,
             "n_variables": self.n_variables,
         }

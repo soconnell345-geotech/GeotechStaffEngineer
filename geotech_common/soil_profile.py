@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Literal, Dict, Any
 
 from geotech_common.water import GAMMA_W, pore_pressure, effective_unit_weight
+from geotech_common.alpha_method import PSF
 from geotech_common.soil_properties import (
     spt_overburden_correction, spt_to_cu, spt_to_phi,
 )
@@ -34,9 +35,13 @@ from geotech_common.validation import (
 )
 
 #: The undrained shear strength (kPa) from which ``to_lateral_pile_input``
-#: gives a clay a stiff clay p-y criterion: this module's own value
-#: (GM-217; neither GEC 9 nor COM624P prints a boundary).
-STIFF_CLAY_CU = 100.0
+#: gives a clay a stiff clay p-y criterion: 1,000 psf (47.88 kPa), where
+#: GEC 9 p. 219's stiff clays and COM624P's stiff clay Tables 3.2 and 3.3
+#: start (GM-310, the call for OWN-68 of 2026-11-12: "48 kPa"). Neither
+#: prints a boundary as such (GM-217). Before GM-310 it was 100 kPa, this
+#: module's own value (:data:`STIFF_CLAY_CU_BEFORE_GM310`).
+STIFF_CLAY_CU = round(1000 * PSF, 2)  # 47.88, as a caller enters it
+STIFF_CLAY_CU_BEFORE_GM310 = 100.0
 
 
 # ---------------------------------------------------------------------------
@@ -822,8 +827,8 @@ class SoilProfile:
             phi_est = spt_to_phi(N1_60)
             layer.phi = phi_est
             corr = (f"Peck et al. (1974) from N1,60 = {N1_60:.1f} (N60 = "
-                    f"{layer.N60:g}, C_N by Liao & Whitman at sigma'v = "
-                    f"{sv:.0f} kPa)")
+                    f"{layer.N60:g}, C_N by Liao & Whitman, at most 2.0 "
+                    f"(GEC-6 Fig. 5-18), at sigma'v = {sv:.0f} kPa)")
             layer.mark_estimated("phi", corr)
             log.append(f"{prefix}: estimated phi={phi_est:.1f}deg ({corr})")
 
@@ -1114,7 +1119,7 @@ class SoilProfile:
 
         Selects a p-y criterion for each layer:
         - Rock: WeakRock
-        - Clay with cu below ``stiff_clay_cu`` (100 kPa): SoftClayMatlock
+        - Clay with cu below ``stiff_clay_cu`` (47.88 kPa): SoftClayMatlock
         - Stiff clay (cu ``stiff_clay_cu`` and up) with free water: StiffClayBelowWT,
           Reese et al. (1975), "stiff clay with free water" (GEC 9 App. A.2)
         - Other stiff clay: StiffClayAboveWT, Welch & Reese (1972), "stiff
@@ -1158,10 +1163,14 @@ class SoilProfile:
         stiff_clay_cu : float, optional
             The undrained shear strength (kPa) from which a clay layer
             takes a stiff clay criterion; below it, Matlock's (1970) soft
-            clay. Default 100, this module's own value (GM-217): GEC 9
-            prints soft clays as 250-500 psf (12.0-23.9 kPa, p. 216) and
-            stiff as 1,000-2,000 psf (47.9-95.8 kPa, p. 219), and neither
-            it nor COM624P prints a boundary.
+            clay. Default 47.88 (1,000 psf; GM-310, OWN-68): GEC 9 prints
+            soft clays as 250-500 psf (12.0-23.9 kPa, p. 216) and stiff
+            as 1,000-2,000 psf (47.9-95.8 kPa, p. 219), and COM624P's
+            stiff clay Tables 3.2 and 3.3 start at 0.5 ton/ft^2 (47.9
+            kPa); neither prints a boundary, and the default is where
+            the stiff clay criteria's own print begins. It was 100 kPa
+            before GM-310, under which a 48-100 kPa clay took the softer
+            Matlock curve (the larger deflection).
 
         Returns
         -------
@@ -1338,7 +1347,7 @@ class SoilProfile:
                     f"p-y criterion {span}", "Matlock (1970) soft clay "
                     "(SoftClayMatlock)", MODULE,
                     f"cu {layer.cu:g} kPa, below stiff_clay_cu "
-                    f"{stiff_clay_cu:g} kPa (see the soft/stiff clay "
+                    f"{round(stiff_clay_cu, 2):g} kPa (see the soft/stiff clay "
                     "boundary)",
                     ["Welch & Reese (1972), stiff clay with no free water "
                      "(StiffClayAboveWT)", "Reese et al. (1975), stiff "
@@ -1365,7 +1374,7 @@ class SoilProfile:
             choices.insert(0, choice(
                 f"p-y criterion {span}", reese if with_water else welch,
                 how, f"cu {layer.cu:g} kPa, stiff clay from stiff_clay_cu "
-                f"{stiff_clay_cu:g} kPa; " + why,
+                f"{round(stiff_clay_cu, 2):g} kPa; " + why,
                 [welch, reese] if below_gwt else []))
             if with_water:
                 # The initial line p = (k x) y takes ks for static loading
@@ -1671,7 +1680,9 @@ class SoilProfile:
             phi = layer.phi if layer.phi is not None else 0.0
             N60 = layer.N60 if layer.N60 is not None else 0.0
             qu = layer.qu if layer.qu is not None else 0.0
-            RQD = layer.RQD if layer.RQD is not None else 100.0
+            # GM-310 (OWN-84): an RQD not given stays not given (None), so
+            # a base in rock is not taken to meet GEC-10 p. 10-22 by default
+            RQD = layer.RQD
 
             # Validate minimum requirements by soil type
             if soil_type == "cohesive" and cu <= 0:
@@ -2465,22 +2476,29 @@ def _stiff_clay_cu_choice(stiff_clay_cu: float, clays: List[tuple]) -> dict:
         return ", ".join(moved) + " would take " + side
 
     alternatives = []
-    if stiff_clay_cu != 47.9:
-        alternatives.append(
-            f"stiff_clay_cu 47.9 kPa (1,000 psf), where GEC 9's stiff clays "
-            f"and COM624P Tables 3.2 and 3.3 start: {changes(47.9)}")
     if stiff_clay_cu != STIFF_CLAY_CU:
         alternatives.append(
-            f"stiff_clay_cu {STIFF_CLAY_CU:g} kPa, this module's default: "
-            f"{changes(STIFF_CLAY_CU)}")
+            f"stiff_clay_cu {round(STIFF_CLAY_CU, 2):g} kPa (1,000 psf), this "
+            "module's default, where GEC 9's stiff clays and COM624P "
+            f"Tables 3.2 and 3.3 start: {changes(STIFF_CLAY_CU)}")
+    before = STIFF_CLAY_CU_BEFORE_GM310
+    if stiff_clay_cu != before:
+        alternatives.append(
+            f"stiff_clay_cu {before:g} kPa, this module's default before "
+            "GM-310, above GEC 9's stiff range (Matlock's soft clay gives "
+            f"the larger deflection): {changes(before)}")
     return choice(
         "soft/stiff clay boundary",
-        f"stiff clay from cu {stiff_clay_cu:g} kPa (stiff_clay_cu); below "
+        f"stiff clay from cu {round(stiff_clay_cu, 2):g} kPa (stiff_clay_cu); below "
         "it Matlock (1970) soft clay",
         how_given(stiff_clay_cu, STIFF_CLAY_CU, name="stiff_clay_cu"),
-        _GEC9_CLAY_RANGES + f". {STIFF_CLAY_CU:g} kPa is this module's own "
-        "value, above GEC 9's stiff range; a clay between the two ranges "
-        "is in neither",
+        _GEC9_CLAY_RANGES + f". The default, {round(STIFF_CLAY_CU, 2):g} kPa (1,000 "
+        "psf), is where the stiff clay criteria's own print begins; a clay "
+        "between GEC 9's two ranges (23.9 to 47.9 kPa) is in neither and "
+        "takes Matlock's soft clay. A stiff clay criterion gives a "
+        "stiffer response than Matlock's soft clay, so for a clay of 48 "
+        "to 100 kPa this default is the less conservative of the two "
+        "readings",
         alternatives)
 
 

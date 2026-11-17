@@ -194,7 +194,8 @@ class TestIntensityMeasuresResult:
         d = r.to_dict()
         expected = {"motion_name", "pga_g", "pgv_m_per_s", "pgd_m",
                     "arias_intensity_m_per_s", "significant_duration_s",
-                    "cav_m_per_s", "bracketed_duration_s"}
+                    "cav_m_per_s", "bracketed_duration_s",
+                    "bracketed_threshold_g"}
         assert set(d.keys()) == expected
 
     def test_to_dict_json_serializable(self):

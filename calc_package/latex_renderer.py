@@ -214,7 +214,30 @@ def _write_figures(prepared_sections, temp_dir: str):
 
 # ── Public API ────────────────────────────────────────────────────────
 
-def render_latex(data: CalcPackageData, figure_dir: str = None) -> str:
+def _prepare_sheets(sheets, figure_dir):
+    """The drawing sheets (GM-313) for the LaTeX template: each PNG
+    written to ``figure_dir`` as ``sheet_<n>.png`` (a placeholder path
+    without one)."""
+    prepared = []
+    for k, sheet in enumerate(sheets or [], start=1):
+        if not sheet.image_base64:
+            continue
+
+        class _Sheet:
+            pass
+        item = _Sheet()
+        item.caption = escape_latex(sheet.caption or sheet.title)
+        item.image_path = f"sheet_{k}.png"
+        if figure_dir:
+            path = Path(figure_dir) / f"sheet_{k}.png"
+            path.write_bytes(base64.b64decode(sheet.image_base64))
+            item.image_path = str(path).replace("\\", "/")
+        prepared.append(item)
+    return prepared
+
+
+def render_latex(data: CalcPackageData, figure_dir: str = None, *,
+                 with_sheets: bool = True) -> str:
     """Render a CalcPackageData object to a LaTeX document string.
 
     Parameters
@@ -225,6 +248,11 @@ def render_latex(data: CalcPackageData, figure_dir: str = None) -> str:
         Directory where figure PNGs will be written.  If None, figures
         reference placeholder paths (useful for .tex-only output without
         compilation).
+    with_sheets : bool
+        ``True`` (default): the drawing sheets (``data.sheets``, GM-313)
+        are shown as PNGs under a last section "Drawings". ``False``
+        leaves them out (the PDF leg appends each sheet's own vector page
+        instead).
 
     Returns
     -------
@@ -259,6 +287,8 @@ def render_latex(data: CalcPackageData, figure_dir: str = None) -> str:
         sections=prepared,
         references=[escape_latex(r) for r in data.references],
         section_number=1,
+        sheets=(_prepare_sheets(getattr(data, "sheets", None), figure_dir)
+                if with_sheets else []),
     )
 
 
@@ -308,7 +338,8 @@ def _save_pdf_latex(
         tex_path = Path(temp_dir) / "calc_package.tex"
 
         # Render .tex with figures in temp dir
-        tex_content = render_latex(data, figure_dir=temp_dir)
+        tex_content = render_latex(data, figure_dir=temp_dir,
+                                   with_sheets=False)
         tex_path.write_text(tex_content, encoding="utf-8")
 
         # Compile
@@ -788,7 +819,8 @@ def _save_pdf_story(data: CalcPackageData, filepath: str) -> dict:
     capabilities and limits, and for what it returns: the absolute PDF path
     and each figure's printed size and lettering.
     """
-    return render_html_pdf_story(render_html(data), filepath)
+    return render_html_pdf_story(render_html(data, with_sheets=False),
+                                 filepath)
 
 
 # ── Story PDF figure layout (BACKLOG GM-168) ──────────────────────────
@@ -1718,6 +1750,58 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
     return out
 
 
+def append_sheets(pdf_path: str, sheets) -> list:
+    """Append each drawing sheet's own PDF page to the PDF at ``pdf_path``
+    (BACKLOG GM-313), after its last page: a vector page of the sheet's
+    own size, not a picture of it. A PDF with no sheet is not touched.
+
+    Returns one ``{"title", "pdf_page" (from 1), "width_in",
+    "height_in"}`` per sheet appended. Raises ``RuntimeError`` when
+    PyMuPDF is missing or a sheet's PDF cannot be read."""
+    sheets = [s for s in (sheets or []) if s.pdf_bytes]
+    if not sheets:
+        return []
+    try:
+        import pymupdf
+    except Exception as exc:  # pragma: no cover - environment dependent
+        raise RuntimeError(
+            "PyMuPDF is not installed, so the drawing sheets cannot be "
+            "appended to the PDF.") from exc
+    out = []
+    path = Path(pdf_path)
+    package = pymupdf.open(stream=path.read_bytes(), filetype="pdf")
+    try:
+        for sheet in sheets:
+            with pymupdf.open(stream=sheet.pdf_bytes,
+                              filetype="pdf") as page_doc:
+                package.insert_pdf(page_doc, from_page=0, to_page=0)
+            rect = package[-1].rect
+            out.append({"title": sheet.title, "pdf_page": len(package),
+                        "width_in": round(rect.width / 72, 2),
+                        "height_in": round(rect.height / 72, 2)})
+        data = package.tobytes(garbage=3, deflate=True)
+    finally:
+        package.close()
+    path.write_bytes(data)
+    return out
+
+
+def _with_sheets(report: dict, data: CalcPackageData) -> dict:
+    """``report`` after the package's drawing sheets are appended to its
+    PDF (GM-313); unchanged for a package with none."""
+    sheets = getattr(data, "sheets", None)
+    if not sheets:
+        return report
+    try:
+        report["sheets"] = append_sheets(report["path"], sheets)
+    except Exception as exc:                               # noqa: BLE001
+        report["warnings"].append(
+            "The drawing sheet(s) could not be appended to the PDF "
+            f"({type(exc).__name__}: {exc}); the package is complete "
+            "without them. Tell the user the drawing is not in the PDF.")
+    return report
+
+
 def figures_not_printed_warning(rendered: dict) -> "str | None":
     """The warning for a Story PDF that left figures out
     (``rendered["figures_not_printed"]``, GM-198), else None."""
@@ -1751,7 +1835,11 @@ def render_pdf(
     dict
         ``{"path": str, "renderer": "pdflatex"|"pymupdf_story", "warnings": [str]}``,
         plus, from the Story engine, ``"figures"``: each figure's printed
-        size and lettering (see :func:`render_html_pdf_story`).
+        size and lettering (see :func:`render_html_pdf_story`), and, for a
+        package with drawing sheets (``data.sheets``, GM-313),
+        ``"sheets"``: each sheet's page number and size
+        (:func:`append_sheets`). Each sheet is appended as its own vector
+        page after the last page, on either leg.
 
     Raises
     ------
@@ -1772,7 +1860,8 @@ def render_pdf(
     if renderer == "pdflatex" or (renderer == "auto" and have_latex):
         path = _save_pdf_latex(data, filepath, keep_tex=keep_tex,
                                compiler=compiler)
-        return {"path": path, "renderer": "pdflatex", "warnings": warnings}
+        return _with_sheets({"path": path, "renderer": "pdflatex",
+                             "warnings": warnings}, data)
 
     # Pure-Python fallback.
     if renderer == "auto":
@@ -1795,8 +1884,9 @@ def render_pdf(
         warnings.append(missing)
     # each figure's printed size and lettering (GM-186), for the caller to
     # warn on one that prints too small
-    return {"path": rendered["path"], "renderer": "pymupdf_story",
-            "warnings": warnings, "figures": rendered.get("figures")}
+    return _with_sheets(
+        {"path": rendered["path"], "renderer": "pymupdf_story",
+         "warnings": warnings, "figures": rendered.get("figures")}, data)
 
 
 def save_pdf(

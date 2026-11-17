@@ -18,6 +18,15 @@ every engine (the Prompter key route's ``ChatOpenAI``, the Funhouse bridge,
 Foundry), because it sits in the agent, not the client; the client's own
 quick retries still run inside each try.
 
+* **A timeout is asked again at most once in all** (BACKLOG TA-24). A call
+  that got no answer in time (:func:`funhouse_agent.deep.vision_engine.
+  is_timeout`) costs its whole limit each time it is asked, so it is not
+  walked down the ladder like a quick refusal: the client's own retries
+  and this ladder's together ask it again once
+  (:func:`timeout_may_be_asked_again`). The deployment review of
+  2026-11-10 found the Prompter client asking a timed-out request four
+  more times at 180 s each inside every try here.
+
 * **Never a spent budget.** An AI budget or quota that is used up is not
   busy (:func:`funhouse_agent.error_text.budget_exhausted`): asking again
   cannot fix it, so it is raised at once (as the Prompter client's
@@ -64,6 +73,8 @@ DEFAULT_TRIES = len(LADDER_S) + 1
 #: The wait (tests replace them).
 _sleep = time.sleep
 _asleep = asyncio.sleep
+#: The clock a try is timed by (tests replace it).
+_clock = time.monotonic
 
 
 def tries() -> int:
@@ -82,6 +93,30 @@ def busy(exc: BaseException) -> Optional[str]:
         return busy_kind(exc)
     except Exception:  # noqa: BLE001 - unclassifiable: not retried
         return None
+
+
+def timed_out(exc: BaseException, took_s: Optional[float] = None) -> bool:
+    """Whether ``exc`` is a request that got no answer in time, as against
+    a quick refusal; ``took_s`` is how long the try took (a 408 or 504
+    counts only after a slow try, :data:`funhouse_agent.deep.vision_engine.
+    SLOW_TRY_S`)."""
+    try:
+        from aec_agent_core.deep.vision_engine import is_timeout
+        return bool(is_timeout(exc, took_s))
+    except Exception:  # noqa: BLE001 - unclassifiable: a refusal
+        return False
+
+
+def timeout_may_be_asked_again(model, timeouts: int) -> bool:
+    """Whether the ladder may ask again after its ``timeouts``-th timed-out
+    try of one call: the client's own retries and the ladder's come to at
+    most one in all (:func:`funhouse_agent.deep.vision_engine.
+    may_ask_timeout_again`)."""
+    try:
+        from aec_agent_core.deep.vision_engine import may_ask_timeout_again
+        return bool(may_ask_timeout_again(model, timeouts))
+    except Exception:  # noqa: BLE001 - the ladder's own bound still holds
+        return True
 
 
 def wait_s(exc: BaseException, attempt: int) -> float:
@@ -176,13 +211,22 @@ class AgentBusyRetry(AgentMiddleware):
         return tries() if self._tries is None else max(1, int(self._tries))
 
     def _decide(self, exc, attempt: int, n: int, spent: float,
-                waited: float) -> Optional[float]:
-        """The wait before the next try, or ``None`` to raise ``exc``."""
+                waited: float, timeouts: int = 0,
+                model=None) -> Optional[float]:
+        """The wait before the next try, or ``None`` to raise ``exc``.
+        ``timeouts`` is how many tries of this call have timed out, this
+        one included; ``model`` the model that was asked."""
         kind = busy(exc)
         if kind is None:
             return None
         if attempt >= n:
             _annotate(exc, attempt, waited, kind, "the ladder ran out")
+            return None
+        if timeouts and timed_out(exc, spent) and \
+                not timeout_may_be_asked_again(model, timeouts):
+            _annotate(exc, attempt, waited, kind,
+                      "the model gave no answer in time and had been "
+                      "asked again once")
             return None
         wait = wait_s(exc, attempt - 1)
         from aec_agent_core.deep.keep_work import current_turn
@@ -193,25 +237,29 @@ class AgentBusyRetry(AgentMiddleware):
             return None
         _event("model_busy", {"kind": kind, "attempt": attempt,
                               "tries": n, "wait_s": round(wait, 1),
+                              **({"timed_out": True} if timeouts
+                                 and timed_out(exc, spent) else {}),
                               **refusal_facts(exc)})
         return wait
 
     def wrap_model_call(self, request, handler):
         from aec_agent_core.deep.pacing import pace
         n = self._n()
-        attempt, waited = 0, 0.0
+        attempt, waited, timeouts = 0, 0.0, 0
         while True:
             pacer, ticket = pace(getattr(request, "model", None),
                                  _estimate(request))
-            t0 = time.monotonic()
+            t0 = _clock()
             try:
                 response = handler(request)
             except GraphBubbleUp:
                 raise
             except Exception as exc:
                 attempt += 1
-                wait = self._decide(exc, attempt, n,
-                                    time.monotonic() - t0, waited)
+                spent = _clock() - t0
+                timeouts += 1 if timed_out(exc, spent) else 0
+                wait = self._decide(exc, attempt, n, spent, waited, timeouts,
+                                    getattr(request, "model", None))
                 if wait is None:
                     raise
                 _sleep(wait)
@@ -223,19 +271,21 @@ class AgentBusyRetry(AgentMiddleware):
     async def awrap_model_call(self, request, handler):
         from aec_agent_core.deep.pacing import pace
         n = self._n()
-        attempt, waited = 0, 0.0
+        attempt, waited, timeouts = 0, 0.0, 0
         while True:
             pacer, ticket = await asyncio.to_thread(
                 pace, getattr(request, "model", None), _estimate(request))
-            t0 = time.monotonic()
+            t0 = _clock()
             try:
                 response = await handler(request)
             except GraphBubbleUp:
                 raise
             except Exception as exc:
                 attempt += 1
-                wait = self._decide(exc, attempt, n,
-                                    time.monotonic() - t0, waited)
+                spent = _clock() - t0
+                timeouts += 1 if timed_out(exc, spent) else 0
+                wait = self._decide(exc, attempt, n, spent, waited, timeouts,
+                                    getattr(request, "model", None))
                 if wait is None:
                     raise
                 await _asleep(wait)
@@ -263,6 +313,8 @@ def retry_policy() -> dict:
                 vision_engine.INFLIGHT_ENV,
                 vision_engine.DEFAULT_MAX_INFLIGHT),
             "vision_call_timeout_s": vision_engine.call_timeout_s(),
+            "vision_slot_wait_s": vision_engine.slot_wait_s(),
+            "timeout_asks_again": vision_engine.TIMEOUT_RETRIES,
         })
     except Exception:  # noqa: BLE001 - a record, never a failure
         pass
@@ -292,4 +344,5 @@ def engine_facts(model) -> dict:
 
 __all__ = ["AgentBusyRetry", "LADDER_S", "MAX_RETRY_AFTER_S", "TRIES_ENV",
            "DEFAULT_TRIES", "tries", "busy", "wait_s", "refusal_facts",
+           "timed_out", "timeout_may_be_asked_again",
            "retry_policy", "engine_facts"]

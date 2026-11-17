@@ -54,10 +54,19 @@ ranges.
 4. **Ground motions** — reuses `opensees_agent/ground_motions.py` (lazy import).
    That module has zero openseespy dependency.
 
-5. **stress_mean auto-calculation** — when Darendeli/Menq layers omit
-   `stress_mean`, it is computed from profile geometry:
-   `sigma_v_mid * (1 + 2*K0) / 3`, K0=0.5, floor at 5 kPa.
-
+5. **stress_mean auto-calculation** — when a Darendeli or Menq layer
+   omits `stress_mean`, it is computed at the layer's mid-depth
+   (`eql_site_response.layer_stress`): total stress from the layers'
+   unit weights, less hydrostatic pore pressure below `water_table_depth`
+   (9.81 kN/m3), then `sigma'm = sigma'v (1 + 2 K0) / 3` (NAVFAC DM7.2
+   Eq. 6-22, with `k0` for its 1 - sin(phi')), floor 5 kPa. Defaults:
+   NO water table (effective = total stress) and K0 = 0.5; with no water
+   table given the result's `warnings` and `choices` say so. Until GM-325
+   (2026-11-13) this was the same formula on total stress with K0 fixed
+   at 0.5 and no water table input. The result lists each curve layer's
+   stresses (`layer_stresses`). A total-stress analysis has no pore
+   pressure otherwise: the water table changes only this confining
+   stress.
 6. **Profile auto-discretization** — pystrata subdivides thick layers for
    numerical accuracy. Controlled by `max_freq_hz` (default 25 Hz) and
    `wave_frac` (default 0.2 = λ/5).
@@ -109,3 +118,68 @@ ranges.
 - **Linear bedrock**: The half-space is always linear elastic (no
   modulus reduction). Use `soil_model="linear"` with appropriate damping
   (typically 0.5-2% for rock).
+
+## What the tool result carries (GM-325, 2026-11-13)
+
+`to_dict()` returns, beside the scalars: the surface and input spectra at
+11 periods (`REPORTED_PERIODS_S`, read off the 500-period spectra on a log
+period axis), the largest surface ordinate and its period, and
+`depth_profile`, one row per sub-layer of the discretised profile (at most
+20; more are merged, keeping the largest strain and acceleration and the
+travel-time average Vs). pystrata's profile outputs do not share one depth
+array: the strain is at each sub-layer's middle after a leading surface
+point (pystrata 0.6 adds a last point at the base of the soil column,
+carrying the last sub-layer's value: `output._LayerMidProfile`), the
+acceleration at each sub-layer's top, and the two Vs profiles are in
+step-plot form (the first value twice, pystrata 0.5.4
+`output.InitialVelProfile`, the same in 0.6). `depth_profile` matches the
+strain by depth and reads Vs from entry i + 1; arrays not of that form
+give `depth_profile` null with the reason in `depth_profile_note`, instead
+of a shifted profile (until the GM-325 review it was left out without a
+word). Run on pystrata 0.5.4 (Python 3.14, the Windows venv) and 0.6.0
+(Python 3.13, in WSL). `max_shear_strain_pct` is the largest of
+pystrata's sub-layer strains, so it is still given when `depth_profile`
+is null.
+
+The input motion is applied as a rock outcrop motion at the top of the
+half-space; the tool text and `choices` say so.
+
+**Strains in a linear run (GM-325 review).** pystrata's
+`LinearElasticCalculator` never sets a layer's `strain_max`; only the
+equivalent-linear calculator does, after its last iteration, as
+`motion.calc_peak(calc_strain_tf(input, layer middle))`. So
+`MaxStrainProfile` reads None in a linear run, and until the review the
+module turned it into 0.0, in `max_shear_strain_pct` and in every
+`depth_profile` row. A linear run now adds pystrata's `StrainTSOutput` at
+each sub-layer's middle and takes the peak of each history: the same
+quantity, laid out on `MaxStrainProfile`'s depths for the version
+installed (each depth takes the strain of the sub-layer it lies in; the
+first build assumed 0.5's layout, and on 0.6 the counts disagreed and
+`depth_profile` came back null). Checked against the closed-form
+solution for one uniform damped layer on an elastic half-space
+(`tests/test_gm325.py`), and on a linear soil it equals the
+equivalent-linear run's strain. A sub-layer pystrata gives no strain for
+is null, never 0.0.
+
+pystrata's `auto_discretize` divides only layers with curves (Darendeli,
+Menq, custom: `nonlinear_only=True`), so a `soil_model: 'linear'` layer
+stays one sub-layer and its strain is the one at its middle, however
+thick it is. The peak inside a thick linear layer can be higher (the
+GM-325 re-check's made-up two-layer case: 0.0283 % with 'linear' layers,
+0.0497 % with the same soils as flat 'custom' curves, which pystrata
+divides). The tool text says so and that thinner layers resolve it; the
+module does not divide them itself (it would change saved strains: a
+follow-up in `module_work/gm324/CHECK.md`).
+
+**The water table and K0 in the result.** They enter only the confining
+stress computed for a Darendeli or Menq layer. The result echoes them as
+`water_table_depth_m` and `k0` (the input's own name, so the guard on
+unused inputs in `funhouse_agent/tests/test_defaults_used.py` can see the
+echo) only when such a layer used them; otherwise both are null and
+`stress_inputs_note` says why (no Darendeli or Menq layer, or each gave
+`stress_mean`). `defaults_used` follows the same rule: the adapter marks
+both inputs `applies_when: False`, so the table never lists them, and the
+module's own report (`stress_choices`, which calls their how "default"
+when a layer's stress was computed) puts them back on exactly those runs
+(GM-325 re-check, R1; before it a linear-only run listed `k0` 0.5 and the
+"no water table" case while the result said neither was used).

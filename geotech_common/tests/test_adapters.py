@@ -238,7 +238,7 @@ class TestLateralPileAdapter:
         result = profile.to_lateral_pile_input(pile_length=8.0,
                                                pile_diameter=0.6)
         layers = result["layers"]
-        # Clay layer (3-8m) should get SoftClayMatlock (cu=30 < 100)
+        # Clay layer (3-8m) should get SoftClayMatlock (cu=30 < 47.9)
         clay_layer = [l for l in layers if "clay" in l["description"].lower()][0]
         assert clay_layer["py_model_type"] == "SoftClayMatlock"
         assert clay_layer["py_model_params"]["c"] == 30
@@ -421,10 +421,27 @@ class TestLateralPileAdapter:
         assert [c["what"] for c in given["choices"]] == [
             "p-y criterion 0-10 m", "soft/stiff clay boundary"]
 
+    def test_stiff_clay_starts_at_1000_psf_47_88_kpa(self):
+        """1,000 psf is 47.88 kPa (GM-310 review): a clay given at 47.88
+        kPa takes a stiff clay criterion, one at 47.87 kPa Matlock's soft
+        clay. Made-up profile."""
+        from geotech_common.soil_profile import STIFF_CLAY_CU
+        assert STIFF_CLAY_CU == 47.88
+        for cu, model in ((47.88, "StiffClayAboveWT"),
+                          (47.87, "SoftClayMatlock")):
+            profile = SoilProfile(
+                layers=[SoilLayer(0, 12, "Clay", gamma=17.0, cu=cu,
+                                  is_cohesive=True, eps50=0.007)],
+                groundwater=GroundwaterCondition(depth=20.0))
+            r = profile.to_lateral_pile_input(12.0, 0.9)
+            assert r["layers"][0]["py_model_type"] == model
+
     def test_soft_stiff_boundary_is_a_stated_choice(self):
-        """GM-217: clay is stiff from 100 kPa, this module's own value; the
-        choice prints GEC 9's ranges (soft 250-500 psf, p. 216; stiff
-        1,000-2,000 psf, p. 219) and what 47.9 kPa would change here."""
+        """GM-310 (the call for OWN-68): clay is stiff from 47.88 kPa (1,000
+        psf), where GEC 9's stiff range (p. 219) and COM624P's stiff clay
+        tables start; 100 kPa before. The choice prints GEC 9's ranges
+        (soft 250-500 psf, p. 216; stiff 1,000-2,000 psf, p. 219) and what
+        the earlier 100 kPa would change here. Made-up profile."""
         profile = SoilProfile(
             layers=[SoilLayer(0, 5, "Clay", gamma=17.0, cu=60,
                               is_cohesive=True, eps50=0.007),
@@ -433,30 +450,39 @@ class TestLateralPileAdapter:
             groundwater=GroundwaterCondition(depth=20.0))
         r = profile.to_lateral_pile_input(12.0, 0.9)
         assert [l["py_model_type"] for l in r["layers"]] == [
-            "SoftClayMatlock", "StiffClayAboveWT"]
+            "StiffClayAboveWT", "StiffClayAboveWT"]
         b = [c for c in r["choices"]
              if c["what"] == "soft/stiff clay boundary"][0]
         assert b["how"] == "default"
-        assert b["chosen"].startswith("stiff clay from cu 100 kPa")
+        assert b["chosen"].startswith("stiff clay from cu 47.88 kPa")
         assert "250 to 500 psf" in b["basis"] and "p. 216" in b["basis"]
         assert "1,000 to 2,000 psf" in b["basis"] and "p. 219" in b["basis"]
-        assert "this module's own value" in b["basis"]
+        assert "less conservative" in b["basis"]
         assert b["alternatives"] == [
-            "stiff_clay_cu 47.9 kPa (1,000 psf), where GEC 9's stiff clays "
-            "and COM624P Tables 3.2 and 3.3 start: 0-5 m (cu 60 kPa) would "
-            "take a stiff clay criterion"]
-        assert "below stiff_clay_cu 100 kPa" in r["choices"][0]["basis"]
+            "stiff_clay_cu 100 kPa, this module's default before GM-310, "
+            "above GEC 9's stiff range (Matlock's soft clay gives the "
+            "larger deflection): 0-5 m (cu 60 kPa) would take Matlock's "
+            "soft clay"]
 
-        # the caller sets it: the 60 kPa clay takes a stiff clay criterion
-        r = profile.to_lateral_pile_input(12.0, 0.9, stiff_clay_cu=47.9)
+        # the caller sets it: at 100 the 60 kPa clay takes Matlock's
+        r = profile.to_lateral_pile_input(12.0, 0.9, stiff_clay_cu=100.0)
         assert [l["py_model_type"] for l in r["layers"]] == [
-            "StiffClayAboveWT", "StiffClayAboveWT"]
+            "SoftClayMatlock", "StiffClayAboveWT"]
         b = [c for c in r["choices"]
              if c["what"] == "soft/stiff clay boundary"][0]
         assert b["how"] == "given"
         assert b["alternatives"] == [
-            "stiff_clay_cu 100 kPa, this module's default: 0-5 m (cu 60 "
-            "kPa) would take Matlock's soft clay"]
+            "stiff_clay_cu 47.88 kPa (1,000 psf), this module's default, "
+            "where GEC 9's stiff clays and COM624P Tables 3.2 and 3.3 "
+            "start: 0-5 m (cu 60 kPa) would take a stiff clay criterion"]
+        assert "below stiff_clay_cu 100 kPa" in r["choices"][0]["basis"]
+        # a clay between GEC 9's ranges stays Matlock's
+        soft = SoilProfile(
+            layers=[SoilLayer(0, 12, "Clay", gamma=17.0, cu=40,
+                              is_cohesive=True, eps50=0.01)],
+            groundwater=GroundwaterCondition(depth=20.0))
+        assert soft.to_lateral_pile_input(12.0, 0.9)["layers"][0][
+            "py_model_type"] == "SoftClayMatlock"
         with pytest.raises(ValueError, match="stiff_clay_cu"):
             profile.to_lateral_pile_input(12.0, 0.9, stiff_clay_cu=0)
 

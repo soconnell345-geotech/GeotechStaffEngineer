@@ -29,7 +29,7 @@ All units are SI: meters, kPa, kN.
 import math
 from typing import Optional
 
-from geotech_common.choices import choice
+from geotech_common.choices import choice, how_given
 
 #: 1 ksf in kPa: GEC-12 and UFC set the eta_g rows at su = 2 ksf.
 _KPA_PER_KSF = 47.88
@@ -361,10 +361,12 @@ def block_failure_capacity(n_rows: int, n_cols: int,
 #: drilled displacement piles.
 GROUP_UPLIFT_PHI = {"driven": 0.50, "drilled_shaft": 0.45, "micropile": 0.50}
 #: A group of fewer piles than this is a small group, whose resistance
-#: factors are reduced by 20 %: GEC-12 p. 225 for driven piles (AASHTO
-#: 2014, "less than 3 piles per substructure unit in this manual"), UFC
-#: 3-220-20 Table 6-28 note A for the others (AASHTO 2020, "small pile
-#: groups (<5 piles)").
+#: factors are reduced by 20 %: UFC 3-220-20 Table 6-28 note A (AASHTO
+#: 2020, "small pile groups (<5 piles)"), the default for every pile type
+#: since GM-310 (the call for OWN-118 of 2026-11-12: of two printed
+#: readings the conservative one); GEC-12 p. 225 for driven piles (AASHTO
+#: 2014, "less than 3 piles per substructure unit in this manual"), the
+#: driven piles' default before GM-310 and given beside it.
 SMALL_GROUP_PILES = {"gec12": 3, "ufc": 5}
 #: 1H:4V, the slope of the block's sides in cohesionless soil (GEC-12 p.
 #: 291, Fig. 7-33; UFC 3-220-20 Fig. 6-16a): each side spreads 1/4 of the
@@ -374,10 +376,11 @@ _UPLIFT_SPREAD = 0.25
 
 def small_group_reduction(n_piles: int, pile_type: str,
                           rule: Optional[str] = None) -> float:
-    """1.0, or 0.8 for a small group: fewer than 3 piles for driven piles
-    (GEC-12 Vol I p. 225), fewer than 5 for the others (UFC 3-220-20 Table 6-28
-    note A); ``rule`` 'gec12' or 'ufc' takes that threshold instead."""
-    rule = rule or ("gec12" if pile_type == "driven" else "ufc")
+    """1.0, or 0.8 for a small group: fewer than 5 piles (UFC 3-220-20
+    Table 6-28 note A), whatever the pile type (GM-310, OWN-118; a driven
+    group took GEC-12 Vol I p. 225's fewer than 3 before); ``rule``
+    'gec12' or 'ufc' takes that threshold instead."""
+    rule = rule or "ufc"
     return 0.8 if n_piles < SMALL_GROUP_PILES[rule] else 1.0
 
 
@@ -652,7 +655,8 @@ def group_settlement_equivalent_raft(
     num_sublayers: int = 10,
     influence_depth_m: Optional[float] = None,
 ) -> dict:
-    """Group settlement by the equivalent footing (GEC-12 Sec. 7.3.5.3).
+    """Group settlement in coarse-grained soil by the equivalent footing
+    (UFC 3-220-20 Sec. 6-5.8.4; GEC-12 Fig. 7-44 and Eq. 7-55).
 
     Terzaghi and Peck's (1967) equivalent footing at 1/3 D above the pile
     toe, i.e. 2/3 D below the top of the embedded length (GEC-12 Vol I p. 320,
@@ -687,7 +691,10 @@ def group_settlement_equivalent_raft(
     GEC-12 Fig. 7-46 and UFC 3-220-20 Table 6-32 place the footing elsewhere
     for other profiles (soft over firm clay, toe-bearing piles over soft
     clay, sand over clay, layered soils); this function takes the uniform
-    case.
+    case. Eq. 6-54 is printed for coarse-grained soil (UFC pp. 448-449); a
+    group in cohesive soil settles by consolidation (GEC-12 Sec. 7.3.5.3,
+    Eqs. 7-56 to 7-58; UFC 3-220-20 Eq. 6-53), which this function does not
+    work.
 
     Parameters
     ----------
@@ -723,14 +730,22 @@ def group_settlement_equivalent_raft(
 
     References
     ----------
-    FHWA GEC-12 (FHWA-NHI-16-009), Sec. 7.3.5.3, Eq. 7-55, Fig. 7-44.
-    UFC 3-220-20 (2025), Sec. 6-5.8.4: Table 6-32, Eqs. 6-51, 6-54, p. 449.
+    FHWA GEC-12 (FHWA-NHI-16-009), Vol I p. 320: Eq. 7-55, Fig. 7-44 (the
+    footing; its section, 7.3.5.3, works a cohesive soil by consolidation).
+    UFC 3-220-20 (2025), Sec. 6-5.8.4: Table 6-32, Eqs. 6-51, 6-54
+    (coarse-grained soil, pp. 448-449), p. 449.
     """
     # --- Input validation ---
     if spacing <= 0:
         raise ValueError(f"Spacing must be positive, got {spacing}")
     if pile_diameter <= 0:
         raise ValueError(f"Pile diameter must be positive, got {pile_diameter}")
+    if max(n_rows, n_cols) > 1 and spacing < pile_diameter:
+        raise ValueError(
+            f"Spacing {spacing:g} m is less than the pile diameter "
+            f"{pile_diameter:g} m: the piles would overlap. Give the "
+            "centre-to-centre spacing s and the pile's diameter or width b, "
+            "s at least b (GM-319 review).")
     if pile_length <= 0:
         raise ValueError(f"Pile length must be positive, got {pile_length}")
     if load_kN <= 0:
@@ -782,7 +797,7 @@ def group_settlement_equivalent_raft(
     choices = [choice(
         "depth below the equivalent footing summed to",
         f"{influence_depth:.2f} m, as given" if given else ufc_rule,
-        "given" if given else "default",
+        how_given(influence_depth_m, None, "influence_depth_m"),
         basis=("UFC 3-220-20's rule is the default. GEC-12's step 1c, the "
                "procedure this method follows, and UFC's own worked example "
                "(App. B-5.7, 'as recommended by FHWA (2016)') take 10 % of "

@@ -325,6 +325,23 @@ def _listed_with(named: List[Tuple[str, Tuple[int, int]]], at: int,
     return named[lo:hi + 1]
 
 
+#: "between X and Y" names a place ("the wall between 203 and 205", "the
+#: cut between grids C and D"), unless a word before it compares the two
+#: ("a conflict between 4/A-501 and its title").
+_PLACE = re.compile(
+    r"(?<!mismatch )(?<!mismatches )(?<!conflict )(?<!conflicts )"
+    r"(?<!difference )(?<!differences )(?<!discrepancy )"
+    r"(?<!discrepancies )(?<!inconsistency )(?<!disagreement )"
+    r"(?<!contradiction )(?<!gap )(?<!comparison )(?<!compared )"
+    r"\bbetween\b[^.;:|]{0,60}?\band\s+[\w./-]+")
+
+
+def _row_cells(text: str) -> List[Tuple[int, int]]:
+    """The spans of a table row's cells in ``text``, left to right."""
+    cuts = [-1] + [i for i, ch in enumerate(text) if ch == "|"] + [len(text)]
+    return [(a + 1, b) for a, b in zip(cuts, cuts[1:]) if b > a + 1]
+
+
 def check_no_false_alarm(answer: str, sound: Dict[str, Any],
                          words: Any, problems: Sequence[Any] = (),
                          **_) -> Tuple[bool, str]:
@@ -348,6 +365,14 @@ def check_no_false_alarm(answer: str, sound: Dict[str, Any],
     resolve, after a sentence on the ones that do not, is not read as more
     of them.
 
+    A table row is the record of the item its first naming cell names: a
+    planted problem's row charges nothing, and a sound item's row charges
+    only that item (a first cell naming both is read as a sentence), so the rooms either side of a missing door or the last
+    mark a schedule holds, named in the problem's own row, are not charged
+    (Foundry brief 8: four correct rows and sentences failed). An item named
+    only as a place, "between X and Y", is not charged either, unless the
+    words before it compare the two ("a conflict between ...").
+
     Passes on an answer that names nothing at all; the planted problems'
     own checks score what was found."""
     flagged: Dict[str, List[str]] = {}
@@ -362,7 +387,27 @@ def check_no_false_alarm(answer: str, sound: Dict[str, Any],
             continue
         named += [("", span) for term in problems or ()
                   for span in _term_spans(term, s)]
+        places = [m.span() for m in _PLACE.finditer(s)]
+        named = [n for n in named
+                 if not any(a <= n[1][0] and n[1][1] <= b for a, b in places)]
+        if not any(label for label, _span in named):
+            continue
         named.sort(key=lambda n: n[1])
+        subject = None
+        if "|" in raw:
+            for a, b in _row_cells(s):
+                here = {label for label, span in named if a <= span[0] < b}
+                if here:
+                    subject = here
+                    break
+            if subject is not None and not subject - {""}:
+                continue                 # the planted problem's own row
+            if subject is not None and "" not in subject:
+                for label in sorted(subject):    # a sound item's own row
+                    if raw.strip() not in flagged.get(label, []):
+                        flagged.setdefault(label, []).append(raw.strip())
+                continue
+            # a row on a problem and sound items together: as a sentence
         for w0, w1 in hits:
             at = min(range(len(named)), key=lambda i: (
                 max(0, named[i][1][0] - w1, w0 - named[i][1][1]),

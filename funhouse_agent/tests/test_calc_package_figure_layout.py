@@ -39,6 +39,10 @@ CASES = [
     "pile_group_package#cap",
     "retaining_wall_package#key",
     "retaining_wall_package#surcharge",
+    # GM-140 step 10 (GM-186): the interslice-force figure at 4.0 pt, the
+    # cross-section's note on its title, the slice-forces key over N'/W
+    "slope_stability_package",
+    "slope_report_package",
 ]
 
 

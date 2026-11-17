@@ -39,7 +39,9 @@ from typing import Callable, Dict
 from reliability.fosm import _threshold
 from reliability.results import PEMResult
 from reliability.stats import beta_lognormal, pf_from_beta
-from reliability.variables import build_correlation, variables_from_spec
+from reliability.variables import (
+    build_correlation, refuse_truncated, variables_from_spec,
+)
 
 _MAX_FULL_VARS = 20  # 2^20 ~ 1e6 evaluations — hard stop above this
 
@@ -54,7 +56,9 @@ def pem(g: Callable[[Dict[str, float]], float],
     Parameters
     ----------
     g, variables, correlation, convention
-        As for :func:`reliability.fosm.fosm`.
+        As for :func:`reliability.fosm.fosm`. As there, a truncated normal
+        or lognormal variable is refused (the point estimates sit at
+        mean +/- std and take no truncation).
     scheme : str
         "full" (2^n points, supports correlation) or "multiplicative"
         (Rosenblueth's 2n+1-point reduced alternative; uncorrelated only,
@@ -69,6 +73,7 @@ def pem(g: Callable[[Dict[str, float]], float],
         raise ValueError(
             f"scheme must be 'full' or 'multiplicative', got '{scheme}'.")
     rvs = variables_from_spec(variables)
+    bound_notes = refuse_truncated(rvs, "PEM")
     R = build_correlation(rvs, correlation)
     correlated = correlation is not None
     n = len(rvs)
@@ -109,6 +114,7 @@ def pem(g: Callable[[Dict[str, float]], float],
         scheme="full_2n" if scheme == "full" else "multiplicative_2n_plus_1",
         n_points=n_points,
         correlated=correlated,
+        warnings=bound_notes,
     )
 
 

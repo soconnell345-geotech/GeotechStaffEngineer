@@ -183,7 +183,7 @@ it; whether to drop it is a packaging call).
 | Arias Intensity | Ia | m/s | π/(2g) ∫ a²(t) dt — cumulative energy measure |
 | Significant Duration | D5-95 | s | Time between 5% and 95% Arias intensity |
 | CAV | CAV | m/s | ∫ |a(t)| dt — Cumulative Absolute Velocity |
-| Bracketed Duration | Db | s | Time between first and last exceedance of 0.05g |
+| Bracketed Duration | Db | s | Time between the first and last exceedance of `bracketed_threshold_g`, an input with no default; None with the reason when no threshold is given or the record never exceeds it (GM-325) |
 | PGA | — | g | Peak ground acceleration |
 | PGV | — | m/s | Peak ground velocity |
 | PGD | — | m | Peak ground displacement |
@@ -218,3 +218,14 @@ geometric mean).
 
 - **Unequal record lengths for RotD**: Shorter record is zero-padded
   to match the longer one.
+
+## Bracketed duration (GM-325, 2026-11-13)
+
+Until GM-325 the module called `eqsig.im.calc_brac`, which does not exist
+(eqsig's function is `calc_brac_dur(asig, threshold)`), caught the
+`AttributeError` and returned 0.0 for every record. It is now computed in
+`intensity_measures.bracketed_duration` (first to last sample above the
+threshold; a test compares it with `eqsig.im.calc_brac_dur`). The
+threshold is an input, `bracketed_threshold_g`, with no default: no
+reference in the library prints one. A duration that cannot be computed is
+None, with `bracketed_duration_note` saying why; never 0.0.

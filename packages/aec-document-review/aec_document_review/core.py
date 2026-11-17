@@ -223,7 +223,9 @@ def assemble_user_message(pending_notes: Iterable[str], user_text: str) -> str:
 ATTACHMENT_NOTE = (
     "This file is now ATTACHED to this conversation — it appears as a download "
     "card in the chat and in the sidebar file list, so the user can already "
-    "open it. Tell the user it is attached; do NOT say you cannot attach files."
+    "open it. Tell the user it is attached; do NOT say you cannot attach files. "
+    "Tell the user the file name; a /tmp path or a sandbox: link would not "
+    "reach them."
 )
 
 
@@ -583,6 +585,22 @@ def is_cache_path(path, files_dir: str) -> bool:
     parts = os.path.relpath(ap, fd).split(os.sep)[:-1]
     return bool(parts) and (parts[0] in CACHE_DIRS
                             or any(p.startswith(".") for p in parts))
+
+
+def is_reader_record(path, files_dir: str) -> bool:
+    """True for a reading helper's record kept every time
+    (``kept/reader_*``, ``aec_agent_core.deep.keep_work.READER_STEM``;
+    BACKLOG DR-46): the agent opens it by the name its helper's result
+    gives, and it makes no card under the reply. It is mirrored like the
+    rest of the conversation, so a reopened conversation still has it."""
+    try:
+        rel = os.path.relpath(os.path.abspath(str(path)),
+                              os.path.abspath(files_dir))
+    except (TypeError, ValueError):
+        return False
+    parts = rel.replace(os.sep, "/").split("/")
+    return (len(parts) == 2 and parts[0] == KEPT_FOLDER
+            and parts[1].startswith(_READER_STEM + "_"))
 
 
 def mirror_skips_dir(rel_dir: str) -> bool:
@@ -1206,15 +1224,54 @@ def _note_step_cap(callbacks, config: dict) -> None:
                 pass
 
 
-def _turn_scope():
+def _turn_scope(stop=None):
     """The scope one turn's agents share (:mod:`funhouse_agent.deep.
-    keep_work`), or a no-op where it cannot be imported."""
+    keep_work`), or a no-op where it cannot be imported.
+
+    The page's model-call budget is counted over the whole turn, every
+    pass and the continuations of a cut-off reply included (BACKLOG
+    TA-38). ``stop`` (a :class:`threading.Event`, optional) is the turn's
+    Stop button (TA-37): once set, the turn's next model call, wait or pass
+    raises ``TurnStopped``."""
     try:
-        from aec_agent_core.deep.keep_work import turn_scope
-        return turn_scope()
+        from aec_agent_core.deep.keep_work import TurnScope, turn_scope
+        # Not for the minimal measuring agent (GEOTECH_REVIEW_AGENT=minimal,
+        # suite arm ``minimal``): its helper runs as a plain tool, outside
+        # KeepWork, so a whole-turn count would take the helper's budget and
+        # calls for the main agent's and force the helper to answer at once.
+        # That arm keeps the per-pass count, so its saved runs do not change.
+        try:
+            from aec_agent_core import review_flags
+            whole_turn = not review_flags.minimal_agent()
+        except Exception:  # noqa: BLE001
+            whole_turn = True
+        try:
+            scope = TurnScope(stop_event=stop, whole_turn_budget=whole_turn)
+        except TypeError:                  # an older core
+            scope = None
+        return turn_scope(scope)
     except Exception:  # noqa: BLE001 - the turn runs without it
         import contextlib
         return contextlib.nullcontext(None)
+
+
+def _check_stop() -> None:
+    """Raise ``TurnStopped`` before a pass of a turn the user asked to stop
+    (TA-37)."""
+    try:
+        from aec_agent_core.deep.keep_work import check_stop
+    except Exception:  # noqa: BLE001 - an older core: no stop
+        return
+    check_stop()
+
+
+def is_turn_stopped(exc: BaseException) -> bool:
+    """Whether ``exc`` is the stop the user asked for (TA-37)."""
+    try:
+        from aec_agent_core.deep.keep_work import TurnStopped
+    except Exception:  # noqa: BLE001
+        return False
+    return isinstance(exc, TurnStopped)
 
 
 def _budget_ended_turn() -> bool:
@@ -1232,8 +1289,19 @@ def stream_turn(agent, messages: list, thread_id: str,
                 recursion_limit: Optional[int] = None,
                 callbacks: Optional[list] = None,
                 turn_note: Optional[str] = None,
-                record=None):
+                record=None, stop=None):
     """Stream ONE turn from the compiled deep agent.
+
+    ``stop`` (optional, a :class:`threading.Event`): the turn's Stop button
+    (BACKLOG TA-37, behind ``GEOTECH_STOP_BUTTON``). Once it is set, the
+    next model call of any agent in the turn, the next wait for a busy
+    model or a helper place, and the next pass raise
+    ``aec_agent_core.deep.keep_work.TurnStopped`` out of this generator,
+    and the host keeps the turn's work as it keeps an interrupted turn's.
+
+    The page's model-call budget counts over the whole turn: an
+    auto-continue or the page check's pass goes on with what is left of it,
+    never a fresh one (BACKLOG TA-38).
 
     ``callbacks`` (optional) are LangChain callback handlers attached to the
     run config alongside the usage-metadata callback; they propagate into
@@ -1327,6 +1395,7 @@ def stream_turn(agent, messages: list, thread_id: str,
         nonlocal work_messages, continuations, saw_tool
         page_redo = False
         while True:
+            _check_stop()                  # TA-37: before each pass
             pass_parts: List[str] = []
             # The reply: the last AI message of this pass that asked for no
             # tool (None until one arrives). ``boundary``: a model call has
@@ -1428,7 +1497,9 @@ def stream_turn(agent, messages: list, thread_id: str,
                     said = None
                 if said:
                     told.append((check, said))
-            if told:
+            if told and not _budget_ended_turn():
+                # (a turn whose budget ended has no call left for the
+                # check's pass: TA-38)
                 page_redo = True
                 history = _history_after(run_state, added, work_messages,
                                          pass_text)
@@ -1452,7 +1523,7 @@ def stream_turn(agent, messages: list, thread_id: str,
         # pass's) on the error, for the host to show labelled as cut short
         # instead of the raw stream (turn_jobs, failed_turn_text).
         try:
-            with _turn_scope() as scope, _page_record_bound(page_check), \
+            with _turn_scope(stop) as scope, _page_record_bound(page_check), \
                     _citation_words_bound(citation_check):
                 if record is not None:
                     try:
@@ -1745,8 +1816,9 @@ def working_dir_for(thread_id: str, meta: Optional[dict] = None,
 
 
 def _shared_host() -> bool:
-    """One process serves several people: the proxy named a caller, and the
-    tools are bound per turn (``aec_agent_core._fileio.require_turn_binding``)."""
+    """One process serves several people (the proxy named a caller, or the
+    app is on Foundry: ``identity.current_identity``, BACKLOG INF-80), and
+    the tools are bound per turn (``aec_agent_core._fileio.require_turn_binding``)."""
     try:
         from aec_agent_core._fileio import turn_binding_required
         return bool(turn_binding_required())
@@ -2332,6 +2404,82 @@ def failed_turn_text(streamed: str = "", reply: Optional[str] = None,
     if len(body) >= USEFUL_PARTIAL_CHARS:
         return f"{CUT_SHORT_LABEL}\n\n{scrub_paths(body)}"
     return NOTHING_KEPT if retry else NOTHING_KEPT_NO_RETRY
+
+
+#: The label on a turn the user stopped with the Stop button (BACKLOG TA-37).
+STOPPED_LABEL = "*Stopped by you before the turn finished.*"
+
+
+def _tool_tally(messages) -> str:
+    """"3 calls to read_document, 1 to render_region": the tool calls a
+    turn's record holds, by name, in the order first used."""
+    counts: Dict[str, int] = {}
+    for m in messages or ():
+        if not isinstance(m, dict) or m.get("role") != "assistant":
+            continue
+        for c in m.get("tool_calls") or ():
+            name = (c.get("name") if isinstance(c, dict) else None) or "tool"
+            counts[name] = counts.get(name, 0) + 1
+    if not counts:
+        return ""
+    bits = [f"{n} call{'s' if n != 1 else ''} to {name}"
+            for name, n in counts.items()]
+    return ", ".join(bits)
+
+
+def stopped_turn_text(streamed: str = "", reply: Optional[str] = None,
+                      kept=None, messages=None) -> str:
+    """What a turn the user stopped shows as its answer (TA-37): that it
+    was stopped, what it did (the tool calls on its record and what is
+    kept, :meth:`turn_record.KeptWork.line`), and what it had written by
+    then, labelled. Paths are scrubbed."""
+    try:
+        from aec_agent_core.error_text import scrub_paths
+    except Exception:  # noqa: BLE001
+        def scrub_paths(t):
+            return t
+    parts = [STOPPED_LABEL]
+    did = _tool_tally(messages)
+    parts.append(f"Done before the stop: {did}." if did else
+                 "No tool had been called before the stop.")
+    if kept is not None:
+        try:
+            parts.append(kept.line())
+        except Exception:  # noqa: BLE001
+            pass
+    reply = str(reply or "").strip()
+    if not reply:
+        paras = [p.strip() for p in re.split(r"\n\s*\n", str(streamed or ""))
+                 if p.strip()]
+        body = "\n\n".join(p for p in paras if not _is_narration(p))
+        reply = body if len(body) >= USEFUL_PARTIAL_CHARS else ""
+    text = " ".join(parts)
+    if reply:
+        text += ("\n\nWhat had been written by then:\n\n"
+                 + scrub_paths(reply))
+    return text
+
+
+#: What a turn says when its model-call budget ended and the forced last
+#: reply came back empty (BACKLOG TA-38), in place of "(no answer text)".
+BUDGET_ENDED_LEAD = ("This turn used its whole model-call budget, and the "
+                     "model's last reply, which had to answer, came back "
+                     "empty.")
+
+
+def budget_ended_text(messages=None, kept=None) -> str:
+    """The answer of a turn whose budget ended on an empty reply (TA-38):
+    what the turn did, from its record."""
+    did = _tool_tally(messages)
+    parts = [BUDGET_ENDED_LEAD,
+             f"What it did: {did}." if did else "It called no tool."]
+    if kept is not None:
+        try:
+            parts.append(kept.line())
+        except Exception:  # noqa: BLE001
+            pass
+    parts.append("Ask the agent to continue, or ask a narrower question.")
+    return " ".join(parts)
 
 
 def depth_prompt(depth: str) -> str:
@@ -3285,6 +3433,10 @@ UNNAMED_FILES_NOTE_MAX = 10
 #: kept in the working folder (``aec_document_review.turn_record.KEPT_DIR``).
 KEPT_FOLDER = "kept"
 
+#: The stem of a reading helper's record kept every time
+#: (``aec_agent_core.deep.keep_work.READER_STEM``, BACKLOG DR-46).
+_READER_STEM = "reader"
+
 
 def load_downloads(conv_dir: str) -> List[dict]:
     """The conversation's download ledger, ``[]`` when there is none.
@@ -3642,6 +3794,8 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
         rel = _note_name(ap, fd)
         if rel.startswith(KEPT_FOLDER + "/helper_"):
             origin = "what a helper that stopped had gathered, kept"
+        elif rel.startswith(f"{KEPT_FOLDER}/{_READER_STEM}_"):
+            origin = "what a reading helper read, kept whole"
         elif rel.startswith(KEPT_FOLDER + "/"):
             origin = "a tool result kept whole from a turn that stopped"
         else:

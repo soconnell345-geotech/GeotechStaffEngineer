@@ -31,12 +31,19 @@ from slope_stability.slip_surface import (
 from slope_stability.slices import (base_clearance, base_depth, build_slices,
                                     model_height)
 from slope_stability.methods import (
-    fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
     M_ALPHA_MIN, M_ALPHA_RULES, m_alpha_checked, m_alpha_min,
+    NEGATIVE_TERM_RULES, negative_term,
 )
-from slope_stability.gle import janbu_fos
+from slope_stability.acceptability import (surface_findings, C10A_METHODS,
+                                           flags as _flags)
+from slope_stability.solution import (solve_method, check_method,
+                                      check_interslice)
 from slope_stability.results import SearchResult, SlopeStabilityResult
 
+
+from slope_stability.cracks import (
+    counts_reverse_discards, CrackRuleRefused,
+    count_discard as _count_crack_refusal)
 
 _FOS_MAX = 999.9
 # The differential evolution's score for a surface left out for m_alpha
@@ -44,19 +51,686 @@ _FOS_MAX = 999.9
 _DE_REFUSED = 100.0
 
 
+# ── One method across the search (GM-140 step 6) ─────────────────────────
+#
+# Every family of surfaces in a search is scored by the method named, with
+# the interslice function named, so the reported minimum compares like with
+# like (EM 1110-2-1902 4-3b(9)(a), p. 4-8: state the method used). A family
+# the named method cannot score is scored by another method and reported
+# apart, under that method.
+
+#: The interslice function of the Morgenstern-Price / GLE solves of the
+#: search running in this context (`gle.INTERSLICE_FUNCTIONS`). Half-sine
+#: unless the search was given another (`_applies_interslice`); Spencer's
+#: method is the constant function whatever is named.
+_INTERSLICE: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_search_interslice", default="half_sine")
+
+
+def interslice_in_force() -> str:
+    """The interslice function of the search running in this context."""
+    return _INTERSLICE.get()
+
+
+@contextlib.contextmanager
+def interslice(f_interslice: str):
+    """Run a block with ``f_interslice`` in force for every
+    Morgenstern-Price and GLE solve a search makes inside it; an unknown
+    name is refused."""
+    token = _INTERSLICE.set(check_interslice(f_interslice))
+    try:
+        yield
+    finally:
+        _INTERSLICE.reset(token)
+
+
+def _applies_interslice(fn):
+    """Run ``fn`` with its ``f_interslice`` argument in force for every
+    surface it scores, the searches and families run inside it included.
+    None (a search function's default) keeps the function already in
+    force: half-sine at the top, or the outer search's."""
+    sig = inspect.signature(fn)
+    default = sig.parameters["f_interslice"].default
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        name = sig.bind_partial(*args, **kwargs).arguments.get(
+            "f_interslice", default)
+        if name is None:
+            return fn(*args, **kwargs)
+        with interslice(name):
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+#: The methods that do not apply to a noncircular surface (a plane or a
+#: polyline). Bishop's simplified method takes moments about the centre of
+#: a circle (Bishop 1955, p. 10); the Ordinary Method of Slices "can only
+#: be used with circular slip surfaces" (EM 1110-2-1902 C-2b, p. C-16).
+CIRCLES_ONLY = ("bishop", "fellenius")
+
+#: The methods that score a family of planes or polylines in place of the
+#: method named, in order (a complete equilibrium method first: EM
+#: 1110-2-1902 C-5a, p. C-26, Spencer's method extended to noncircular
+#: surfaces; FHWA NHI-06-088 Table 6-1, p. 6-21, Spencer where available;
+#: then force equilibrium). The order is the module's (GM-140 step 6, a
+#: call for the owner).
+STAND_INS = ("spencer", "janbu")
+
+#: The same for a family of circles (the orchestrator's ruling on the step 6
+#: review's D1): Spencer's method, then Bishop's simplified method, then
+#: Janbu's simplified method. Bishop's is the method for circles: FHWA
+#: NHI-06-088 p. 6-20 ("For soils that have frictional strength, the Bishop
+#: Method should be used as a minimum") and Table 6-1, p. 6-21 (its Note 1:
+#: "More rigorous methods such as Spencer's method should be used when a
+#: computer program has such capabilities"). Janbu's stands in on circles
+#: last: on Slide2 #85 without its support it read 1.033 on a circle where
+#: Bishop's reads 0.937 (the review, D1).
+CIRCLE_STAND_INS = ("spencer", "bishop", "janbu")
+
+#: The complete equilibrium methods: named on circles, Bishop's simplified
+#: method stands in for them before Janbu's (Spencer's would add nothing).
+RIGOROUS = ("spencer", "morgenstern_price", "gle")
+
+#: A result's label for each method (as `analyze_slope` names them).
+METHOD_LABELS = {"fellenius": "Fellenius", "bishop": "Bishop",
+                 "janbu": "Janbu", "spencer": "Spencer",
+                 "morgenstern_price": "Morgenstern-Price", "gle": "GLE"}
+
+
+def method_label(method: str) -> str:
+    """The label a result carries for ``method`` ('Morgenstern-Price',
+    'GLE', ...); a name that is no method's is returned capitalised (a
+    rapid-drawdown search's per-surface solve)."""
+    return METHOD_LABELS.get(method, str(method).capitalize())
+
+
+def surface_method(method: str, circular: bool) -> str:
+    """The method that scores a surface when ``method`` is named: the
+    method itself, or Spencer's method on a noncircular surface where the
+    named method is for circles only (`CIRCLES_ONLY`)."""
+    if not circular and method in CIRCLES_ONLY:
+        return STAND_INS[0]
+    return method
+
+
+def scoring_order(method: str, circular: bool) -> List[str]:
+    """The methods that score a family when ``method`` is named, in order.
+    A family of planes or polylines: the method itself where it applies to
+    them, then Spencer's method, then Janbu's simplified method
+    (`STAND_INS`). A family of circles (``circular``): the method, then
+    Spencer's method, then Bishop's simplified method, then Janbu's
+    simplified method (`CIRCLE_STAND_INS`); the method, Bishop's, Janbu's
+    where the method named is a complete equilibrium method (`RIGOROUS`).
+    A family moves to the next only where the one before solved none of
+    its surfaces."""
+    if not circular:
+        order = [] if method in CIRCLES_ONLY else [method]
+        return order + [m for m in STAND_INS if m not in order]
+    stand = (("bishop", "janbu") if method in RIGOROUS
+             else CIRCLE_STAND_INS)
+    return [method] + [m for m in stand if m != method]
+
+
+def interslice_of(method: str) -> Optional[str]:
+    """The interslice function a method's solve uses in this context:
+    'constant' for Spencer's method, the function in force for
+    Morgenstern-Price and GLE, None for the methods that have none."""
+    if method == "spencer":
+        return "constant"
+    if method in ("morgenstern_price", "gle"):
+        return _INTERSLICE.get()
+    return None
+
+
+def stand_in_reason(named: str, scored_by: str, circular: bool) -> str:
+    """Why a family was scored by ``scored_by`` and not by the method
+    named ('' when it was the method named)."""
+    from slope_stability.solution import METHOD_TEXT
+    if scored_by == named:
+        return ""
+    name = METHOD_TEXT.get(named, named)
+    name = name[0].lower() + name[1:] if name.startswith("The ") else name
+    if not circular and named in CIRCLES_ONLY:
+        why = ("takes moments about the centre of a circle (Bishop 1955, "
+               "p. 10)" if named == "bishop" else
+               "can only be used with circular slip surfaces (EM "
+               "1110-2-1902 C-2b, p. C-16)")
+        text = f"{name} {why}, so it does not apply to these surfaces"
+    else:
+        text = (f"{name} solved none of the family's "
+                f"{'circles' if circular else 'surfaces'}")
+    # the methods tried before the one that scored it, in order
+    order = scoring_order(named, circular)
+    before = ([m for m in order[:order.index(scored_by)] if m != named]
+              if scored_by in order else [])
+    if before:
+        names = [_text_of(m) for m in before]
+        text += (f"; {' and '.join(names)} solved none of them either")
+    if circular and scored_by == "bishop":
+        text += ("; Bishop's simplified method is the method for circles "
+                 "and stands in before Janbu's simplified method (FHWA "
+                 "NHI-06-088 p. 6-20 and Table 6-1, p. 6-21)")
+    return text
+
+
+def _text_of(method: str) -> str:
+    """A method's plain name inside a sentence ("Spencer's method", "the
+    Ordinary Method of Slices")."""
+    from slope_stability.solution import METHOD_TEXT
+    name = METHOD_TEXT.get(method, method)
+    return name[0].lower() + name[1:] if name.startswith("The ") else name
+
+
+# Screen values of surfaces the named method could not solve (GM-140 step
+# 6; UFC 3-220-10 p. 362: critical surfaces can be missed through
+# non-convergence, and the engineer should be able to tell). A screen by
+# another method (the Bishop screen of the main search and of the toe
+# circles, the refinement walk's radius by Bishop) gives a value on a
+# surface the named method then has no solution on. The count says how
+# many were re-scored and how many the screen scored in all (the step 6
+# review's D2): [4] of the tally, a list of (family, screen method, screen
+# value, kind) for the screen's best circle of each centre, chord or
+# entry-exit pair, kind 'unsolved' (re-scored, the method has no solution
+# on it), 'solved' (re-scored and solved) or 'screen' (not handed on); and
+# [5], every circle Bishop's simplified method scored, by family, each once
+# with its lowest value (`_note_scored`), from which N, the circles the
+# screen scored below the minimum in all, is counted.
+def _note_screen(screen: str, fos: float, kind: str) -> None:
+    tally = _REFUSALS.get()
+    family = _FAMILY.get()
+    if (tally is not None and family is not None and fos is not None
+            and fos < _FOS_MAX):
+        tally[4].append((family, screen, fos, kind))
+
+
+def _note_screen_unsolved(screen: str, fos: float) -> None:
+    _note_screen(screen, fos, "unsolved")
+
+
+def _note_scored(method: str, fos: float, slip) -> None:
+    """A circle Bishop's simplified method scored, noted by family, each
+    circle once with its lowest value ([5] of the tally): the screen's
+    circles in all, for ``screen_unsolved``'s N. Bishop's is the only screen
+    by another method (`_screen_method`; the toe circles' scan)."""
+    if method != "bishop":
+        return
+    tally = _REFUSALS.get()
+    family = _FAMILY.get()
+    if tally is None or family is None:
+        return
+    key = (family, round(slip.xc, 6), round(slip.yc, 6),
+           round(slip.radius, 6))
+    seen = tally[5].get(key)
+    if seen is None or fos < seen:
+        tally[5][key] = fos
+
+
+def _screen_scored_so_far() -> Dict[tuple, float]:
+    tally = _REFUSALS.get()
+    return dict(tally[5]) if tally is not None else {}
+
+
+# Each family's lowest scored surfaces (GM-140 step 10's fix round, the
+# orchestrator's ruling on its review's D2 / Q3): [6] of the tally, a dict
+# {(family, method): {key: surface}} holding, for every family and the
+# method that scored a trial, the _KEEP_LOWEST lowest trials, each once:
+# the key is the surface's geometry to 0.01 m (a circle's centre and
+# radius, a polyline's points). Only what the search already scored is
+# stored, for the report's ordered list (FHWA NHI-06-088 p. 6-49); no
+# value is changed. `_LOWEST_OFF` stops the note while a crack is solved
+# for on copies of the geometry (the surface's own value is noted once,
+# after).
+_KEEP_LOWEST = 10
+_LOWEST_OFF: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_lowest_off", default=False)
+
+
+def _lowest_key(slip) -> Tuple[Optional[tuple], Optional[Dict[str, Any]]]:
+    """(key, surface) of a trial for [6] of the tally: a circle by its
+    centre and radius (with its arc's two ends where it carries them), a
+    polyline by its points; (None, None) for anything else."""
+    if getattr(slip, "is_circular", False):
+        surface = {"xc": float(slip.xc), "yc": float(slip.yc),
+                   "radius": float(slip.radius)}
+        if getattr(slip, "is_bound", False):
+            surface["arc"] = (float(slip.x_start), float(slip.x_end))
+        return ("c", round(slip.xc, 2), round(slip.yc, 2),
+                round(slip.radius, 2)), surface
+    pts = getattr(slip, "points", None)
+    if not pts:
+        return None, None
+    surface = {"points": [(float(x), float(z)) for x, z in pts]}
+    return ("p",) + tuple((round(float(x), 2), round(float(z), 2))
+                          for x, z in pts), surface
+
+
+def _keep_lowest(kept: Dict[tuple, Dict[str, Any]], key: tuple,
+                 surface: Dict[str, Any]) -> None:
+    """``surface`` (with its ``FOS``) into ``kept`` under ``key``, the
+    lower value kept for a key; ``kept`` cut back to the _KEEP_LOWEST
+    lowest when it grows past twice that."""
+    have = kept.get(key)
+    if have is not None and have["FOS"] <= surface["FOS"]:
+        return
+    kept[key] = surface
+    if len(kept) > 2 * _KEEP_LOWEST:
+        for k in sorted(kept, key=lambda k: kept[k]["FOS"])[_KEEP_LOWEST:]:
+            del kept[k]
+
+
+def _note_lowest(method: str, fos: float, slip) -> None:
+    """A trial ``method`` scored, noted by family ([6] of the tally)."""
+    tally = _REFUSALS.get()
+    family = _FAMILY.get()
+    if tally is None or family is None or _LOWEST_OFF.get():
+        return
+    if fos is None or not fos < _FOS_MAX:
+        return
+    key, surface = _lowest_key(slip)
+    if key is None:
+        return
+    surface["FOS"] = float(fos)
+    _keep_lowest(tally[6].setdefault((family, method), {}), key, surface)
+
+
+def family_lowest_record(methods_of: Dict[str, Any],
+                         rename: Optional[Dict[str, str]] = None
+                         ) -> Dict[str, List[Dict[str, Any]]]:
+    """``SearchResult.family_lowest`` from the tally of the search running
+    in this context: for each family, its _KEEP_LOWEST lowest scored
+    surfaces, in order, by the method or methods that scored the family
+    (``methods_of``: {family: methods}, from ``candidate_methods``; a
+    value by another method on the family's surfaces, a screen's, is left
+    out), each ``{"FOS", "method", "xc", "yc", "radius"[, "arc"]}`` or
+    ``{"FOS", "method", "points"}``, one per surface to 0.01 m. ``rename``
+    maps the tally's family names to the result's ('main' to the main
+    search's kind)."""
+    tally = _REFUSALS.get()
+    if tally is None:
+        return {}
+    rename = rename or {}
+    pooled: Dict[str, Dict[tuple, Dict[str, Any]]] = {}
+    for (family, method), kept in tally[6].items():
+        name = rename.get(family, family)
+        if method not in methods_of.get(name, ()):
+            continue
+        into = pooled.setdefault(name, {})
+        for key, s in kept.items():
+            have = into.get(key)
+            if have is None or s["FOS"] < have["FOS"]:
+                into[key] = dict(s, method=method)
+    out = {}
+    for name, into in pooled.items():
+        ranked = sorted(into.values(), key=lambda s: s["FOS"])
+        out[name] = [dict(s, FOS=round(s["FOS"], 4))
+                     for s in ranked[:_KEEP_LOWEST]]
+    return out
+
+
+def _screen_unsolved_so_far() -> List[Tuple[str, str, float, str]]:
+    tally = _REFUSALS.get()
+    return list(tally[4]) if tally is not None else []
+
+
+def screen_unsolved_record(notes, reported: Optional[float],
+                           rename: Optional[Dict[str, str]] = None,
+                           scored: Optional[Dict[tuple, float]] = None
+                           ) -> Dict[str, Any]:
+    """``SearchResult.screen_unsolved`` from the tally: the circles a
+    screen by another method scored below the minimum reported (every one
+    of them when nothing is reported), by family, for each family where
+    the named method had no solution on one or more of them: ``n`` the
+    circles re-scored by the method that have no solution by it, ``k`` the
+    circles re-scored (from the screen's lowest), ``N`` the circles the
+    screen scored below it in all (every circle Bishop's simplified method
+    scored in the family, each once, where ``scored``, [5] of the tally, is
+    given; else the screen's best circle of each centre or chord, from the
+    notes), ``lowest_screen_FOS`` the lowest screen value of the ``n`` and
+    ``lowest_screen_FOS_all`` that of the ``N``:
+    ``{"n", "k", "N", "lowest_screen_FOS", "by_family": {family: {"n",
+    "k", "N", "lowest_screen_FOS", "lowest_screen_FOS_all",
+    "screen"}}}``; empty when no family has such a circle."""
+    every: Dict[str, Dict[str, Any]] = {}
+    raw: Dict[str, set] = {}
+    for note in notes:
+        family, screen, fos, kind = (tuple(note) + ("unsolved",))[:4]
+        if reported is not None and fos >= reported:
+            continue
+        named = (rename or {}).get(family, family)
+        raw.setdefault(named, set()).add(family)
+        family = named
+        rec = every.setdefault(family, {
+            "n": 0, "k": 0, "N": 0, "lowest_screen_FOS": None,
+            "lowest_screen_FOS_all": fos, "screen": screen})
+        rec["N"] += 1
+        rec["lowest_screen_FOS_all"] = min(rec["lowest_screen_FOS_all"],
+                                           fos)
+        if kind in ("unsolved", "solved"):
+            rec["k"] += 1
+        if kind == "unsolved":
+            rec["n"] += 1
+            low = rec["lowest_screen_FOS"]
+            rec["lowest_screen_FOS"] = fos if low is None else min(low, fos)
+    by = {f: r for f, r in every.items() if r["n"]}
+    if not by:
+        return {}
+    if scored:
+        # every circle the screen scored in the family below the minimum
+        for family, rec in by.items():
+            if rec["screen"] != "bishop":
+                continue
+            vals = [f for key, f in scored.items()
+                    if key[0] in raw[family]
+                    and (reported is None or f < reported)]
+            if vals:
+                rec["N"] = max(rec["N"], len(vals))
+                rec["lowest_screen_FOS_all"] = min(
+                    rec["lowest_screen_FOS_all"], min(vals))
+    for rec in by.values():
+        rec["lowest_screen_FOS"] = round(rec["lowest_screen_FOS"], 4)
+        rec["lowest_screen_FOS_all"] = round(rec["lowest_screen_FOS_all"],
+                                             4)
+    return {"n": sum(r["n"] for r in by.values()),
+            "k": sum(r["k"] for r in by.values()),
+            "N": sum(r["N"] for r in by.values()),
+            "lowest_screen_FOS": min(r["lowest_screen_FOS"]
+                                     for r in by.values()),
+            "by_family": by}
+
+
 # Trial surfaces refused, counted into the tally of the search running in
-# this context: [0] those that leave the ground and come back into it
-# (GM-122, ``GroundCrossingError``; `_compute_fos` and `_check_entry_exit`),
+# this context: [0] polylines that leave the ground and come back into it
+# (GM-122, ``GroundCrossingError``; `_compute_fos` and `_check_entry_exit`;
+# a circle is split there instead, GM-343: `_ARCS`),
 # [1] those with m_alpha < 0.2 on a slice (GM-127; `_compute_fos` and the
 # rapid-drawdown search's per-surface solve).
 _REFUSALS: contextvars.ContextVar = contextvars.ContextVar(
     "slope_refusals", default=None)
 
 
+# Trial surfaces left without a solution (GM-140 step 2), counted by family
+# and by method into the tally of the search running in this context
+# ([2] of the tally, a dict {(family, method, kind): n};
+# `_count_no_solution`; kind as `solution.NO_SOLUTION_KINDS`).
+# The family is the one being scored in this context (`_scoring_family`):
+# 'main' for a search's own trials unless `search_critical_surface` names
+# it, the supplementary families' own names, None for the checks made on a
+# governing surface after the search (not trials: not counted).
+_FAMILY: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_scoring_family", default="main")
+
+
+@contextlib.contextmanager
+def _scoring_family(family: Optional[str]):
+    token = _FAMILY.set(family)
+    try:
+        yield
+    finally:
+        _FAMILY.reset(token)
+
+
+def _count_no_solution(method: str, kind: str = "not_converged") -> None:
+    tally = _REFUSALS.get()
+    family = _FAMILY.get()
+    if tally is not None and family is not None:
+        key = (family, method, kind or "not_converged")
+        tally[2][key] = tally[2].get(key, 0) + 1
+
+
+def _no_solution_so_far() -> Dict[Tuple[str, str, str], int]:
+    """The trials left without a solution so far by the search running in
+    this context, the searches run inside it included."""
+    tally = _REFUSALS.get()
+    return dict(tally[2]) if tally is not None else {}
+
+
+# The count's own reason for a surface the method solved with a factor of
+# safety below 0.05: the searches do not take such a value as a factor of
+# safety (the existing screen), and it is not a solve that failed to
+# converge (GM-140 step 2 review).
+BELOW_0_05 = "below_0_05"
+
+
+def _not_scored_kind(sol) -> str:
+    """The count's reason for a surface not scored: the solution's own kind
+    (`solution.NO_SOLUTION_KINDS`), or `BELOW_0_05` where the method solved
+    it with a value below 0.05."""
+    if sol.solved and sol.fos is not None and sol.fos < 0.05:
+        return BELOW_0_05
+    return sol.kind
+
+
+def no_solution_records(counts: Dict[Tuple[str, str, str], int],
+                        rename: Optional[Dict[str, str]] = None
+                        ) -> List[Dict[str, Any]]:
+    """``SearchResult.no_solution`` from the tally: one record per family
+    and method, in the order met: ``{"family", "method", "n",
+    "not_converged", "no_driving", "below_0_05"}``, ``n`` the sum of the
+    three reasons (`solution.NO_SOLUTION_KINDS` and `BELOW_0_05`)."""
+    out: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for (family, method, kind), n in counts.items():
+        family = (rename or {}).get(family, family)
+        rec = out.setdefault((family, method), {
+            "family": family, "method": method, "n": 0,
+            "not_converged": 0, "no_driving": 0, BELOW_0_05: 0})
+        rec["n"] += n
+        rec[kind] = rec.get(kind, 0) + n
+    return list(out.values())
+
+
+# The printed acceptability checks on every scored trial (GM-140 step 3),
+# into [3] of the tally: how many trials each family scored by each method
+# ("scored"), how many of those carried a flag ("flagged") and each flag
+# ("by_check"), how many took the Ordinary Method of Slices value because
+# Bishop's was below it (in "by_check" as 'bishop_below_oms'), and the
+# lowest scored trial that carries no flag ("lowest_unflagged": its factor
+# of safety and the surface).
+def _new_flag_tally() -> Dict[str, Dict]:
+    return {"scored": {}, "flagged": {}, "by_check": {},
+            "lowest_unflagged": {}}
+
+
+def _surface_record(slip) -> Dict[str, Any]:
+    if getattr(slip, "is_circular", True):
+        return {"xc": round(slip.xc, 3), "yc": round(slip.yc, 3),
+                "radius": round(slip.radius, 3)}
+    return {"points": [(round(x, 3), round(z, 3)) for x, z in slip.points]}
+
+
+def _note_trial_flags(method: str, fos: float, names, slip) -> None:
+    """Count a scored trial and the flags it carries into the tally of the
+    search running in this context (not the checks made on a governing
+    surface after the search: family None)."""
+    tally = _REFUSALS.get()
+    family = _FAMILY.get()
+    if tally is None or family is None:
+        return
+    t = tally[3]
+    key = (family, method)
+    t["scored"][key] = t["scored"].get(key, 0) + 1
+    if names:
+        t["flagged"][key] = t["flagged"].get(key, 0) + 1
+        for name in names:
+            k3 = (family, method, name)
+            t["by_check"][k3] = t["by_check"].get(k3, 0) + 1
+    else:
+        old = t["lowest_unflagged"].get(key)
+        if old is None or fos < old[0]:
+            t["lowest_unflagged"][key] = (fos, _surface_record(slip))
+
+
+def _merge_flag_tally(into: Dict[str, Dict], frm: Dict[str, Dict]) -> None:
+    for name in ("scored", "flagged", "by_check"):
+        for key, n in frm[name].items():
+            into[name][key] = into[name].get(key, 0) + n
+    for key, rec in frm["lowest_unflagged"].items():
+        old = into["lowest_unflagged"].get(key)
+        if old is None or rec[0] < old[0]:
+            into["lowest_unflagged"][key] = rec
+
+
+def _flag_tally_so_far() -> Dict[str, Dict]:
+    """The flag tally so far of the search running in this context, the
+    searches run inside it included."""
+    tally = _REFUSALS.get()
+    out = _new_flag_tally()
+    if tally is not None:
+        _merge_flag_tally(out, tally[3])
+    return out
+
+
+def flag_records(t: Dict[str, Dict],
+                 rename: Optional[Dict[str, str]] = None
+                 ) -> List[Dict[str, Any]]:
+    """``SearchResult.trial_flags`` from the tally: one record per family
+    and method, in the order met: ``{"family", "method", "n_scored",
+    "n_flagged", "by_check": {check: n}, "lowest_unflagged": {"FOS", and
+    the surface} or None}``."""
+    out = []
+    for (family, method), n in t["scored"].items():
+        low = t["lowest_unflagged"].get((family, method))
+        rec = {"family": (rename or {}).get(family, family),
+               "method": method, "n_scored": n,
+               "n_flagged": t["flagged"].get((family, method), 0),
+               "by_check": {c: k for (f, m, c), k in t["by_check"].items()
+                            if (f, m) == (family, method)},
+               "lowest_unflagged": None}
+        if low is not None:
+            rec["lowest_unflagged"] = dict(FOS=round(low[0], 4), **low[1])
+        out.append(rec)
+    return out
+
+
 def _count_ground_refusal() -> None:
     tally = _REFUSALS.get()
     if tally is not None:
         tally[0] += 1
+
+
+# Where a circle ends (GM-343). Circles that meet the ground at more than
+# two points are split there and each arc is scored as a trial surface of
+# its own (`_compute_fos`). The search running in this context counts the
+# circles split, by the number of arcs each gave ("split": {n_arcs: n}),
+# and the arcs of those circles that lie outside its entry / exit windows
+# and so are not scored, by family ("outside": {family: n};
+# `_check_entry_exit`, review of GM-343, ruling 2), and remembers the arc
+# that scored lowest on each split circle ("arc": {(xc, yc, R): (x_start,
+# x_end)}), so that the surface it reports, and every later analysis of
+# it, keeps that arc's two ends (`_governing_circle`).
+_ARCS: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_split_circles", default=None)
+
+
+def _count_split(n_arcs: int) -> None:
+    t = _ARCS.get()
+    if t is not None and _FAMILY.get() is not None:
+        t["split"][n_arcs] = t["split"].get(n_arcs, 0) + 1
+
+
+def _count_outside(n_arcs: int) -> None:
+    """Count arcs of a split circle that lie outside the search's entry /
+    exit windows: not scored, so counted here and not under a reason of
+    ``no_solution`` (counted per trial evaluation, as ``circles_split``)."""
+    t = _ARCS.get()
+    family = _FAMILY.get()
+    if t is not None and family is not None and n_arcs > 0:
+        t["outside"][family] = t["outside"].get(family, 0) + n_arcs
+
+
+def _outside_so_far() -> Dict[str, int]:
+    """The arcs of split circles left out by the windows so far by the
+    search running in this context, by family."""
+    t = _ARCS.get()
+    return dict(t["outside"]) if t is not None else {}
+
+
+def outside_records(counts: Dict[str, int],
+                    rename: Optional[Dict[str, str]] = None
+                    ) -> Dict[str, int]:
+    """``SearchResult.arcs_outside_windows`` from the tally, the families
+    named as ``no_solution`` names them."""
+    out: Dict[str, int] = {}
+    for family, n in counts.items():
+        name = (rename or {}).get(family, family)
+        out[name] = out.get(name, 0) + n
+    return out
+
+
+def _split_so_far() -> Dict[int, int]:
+    """The circles split so far by the search running in this context,
+    by the number of arcs each gave."""
+    t = _ARCS.get()
+    return dict(t["split"]) if t is not None else {}
+
+
+def _remember_arc(slip, arc) -> None:
+    """Note the arc that scored lowest on a split circle (None: no arc of
+    it was scored)."""
+    ends = None if arc is None else (arc.x_start, arc.x_end)
+    slip._governing_arc = ends
+    t = _ARCS.get()
+    if t is not None:
+        key = (slip.xc, slip.yc, slip.radius)
+        if ends is None:
+            t["arc"].pop(key, None)
+        else:
+            t["arc"][key] = ends
+
+
+def _circle_arcs(geom, slip):
+    """(arcs to score, the circle's number of arcs) for a circle given
+    without its ends: every arc below the ground (GM-343), or those an
+    entry / exit window let through (`_check_entry_exit`). Raises
+    ValueError where the circle does not overlap the profile."""
+    allowed = getattr(slip, "_window_arcs", None)
+    if allowed is not None:
+        return allowed, slip._n_arcs
+    arcs = slip.arcs(geom)
+    return arcs, len(arcs)
+
+
+def _governing_circle(geom, xc: float, yc: float, r: float, method: str,
+                      n_slices: int, tol: float = 1e-4,
+                      fos_fn: Optional[Callable] = None):
+    """The circle a search reports, standing for the arc that scored
+    lowest on it (GM-343): the arc the search remembered, or, where it
+    remembered none and the circle bounds several arcs, the lowest of them
+    scored again (not counted as trials). A circle with one arc is the
+    circle alone, as before."""
+    slip = CircularSlipSurface(xc, yc, r)
+    t = _ARCS.get()
+    ends = t["arc"].get((xc, yc, r)) if t is not None else None
+    if ends is None:
+        try:
+            if len(slip.arcs(geom)) <= 1:
+                return slip
+        except ValueError:
+            return slip
+        with _scoring_family(None):
+            _compute_fos(geom, slip, method, n_slices, tol=tol,
+                         fos_fn=fos_fn)
+        ends = getattr(slip, "_governing_arc", None)
+    return slip.arc(*ends) if ends else slip
+
+
+def _name_arc(geom, result) -> None:
+    """Say on a search's governing surface which arc of its circle it is
+    (``SlopeStabilityResult.arc``; GM-343), where the circle was split."""
+    crit = getattr(result, "critical", None)
+    t = _ARCS.get()
+    if (crit is None or t is None or getattr(crit, "arc", None)
+            or not getattr(crit, "is_circular", False)):
+        return
+    ends = t["arc"].get((crit.xc, crit.yc, crit.radius))
+    if ends is None:
+        return
+    from slope_stability.slip_surface import describe_arc
+    slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius, *ends)
+    crit.arc = describe_arc(slip, slip.meetings(geom))
+    crit.arc["governs"] = ("the lowest factor of safety of the circle's "
+                           "arcs the search scored (each a trial surface "
+                           "of its own)")
 
 
 def _count_m_alpha_refusal() -> None:
@@ -76,29 +750,103 @@ def _m_alpha_refusals_so_far() -> int:
 def _counts_refusals(fn):
     """Count the trial surfaces a search refuses because they leave the
     ground and come back into it (GM-122) or have m_alpha < 0.2 on a slice
-    (GM-127), and put the counts on the ``SearchResult`` it returns (or on
-    that result's ``search``) as ``n_rejected_ground_crossings`` and
-    ``n_rejected_m_alpha``. A search run inside another adds its counts to
+    (GM-127), and those the method has no solution on (GM-140 step 2), and
+    put the counts on the ``SearchResult`` it returns (or on that result's
+    ``search``) as ``n_rejected_ground_crossings``, ``n_rejected_m_alpha``
+    and ``no_solution``. A search run inside another adds its counts to
     the outer one, so the outermost result counts every refusal, its
     supplementary families' included."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         outer = _REFUSALS.get()
-        tally = [0, 0]
+        tally = [0, 0, {}, _new_flag_tally(), [], {}, {}]
         token = _REFUSALS.set(tally)
+        outer_arcs = _ARCS.get()
+        arcs = {"split": {}, "arc": {}, "outside": {}}
+        token_arcs = _ARCS.set(arcs)
         try:
             result = fn(*args, **kwargs)
+            geom_arg = args[0] if args else kwargs.get("geom")
+            if isinstance(geom_arg, SlopeGeometry):
+                _name_arc(geom_arg, result if isinstance(result, SearchResult)
+                          else getattr(result, "search", None))
         finally:
             _REFUSALS.reset(token)
+            _ARCS.reset(token_arcs)
+            if outer_arcs is not None:
+                for n_arcs, n in arcs["split"].items():
+                    outer_arcs["split"][n_arcs] = (
+                        outer_arcs["split"].get(n_arcs, 0) + n)
+                for family, n in arcs["outside"].items():
+                    outer_arcs["outside"][family] = (
+                        outer_arcs["outside"].get(family, 0) + n)
+                outer_arcs["arc"].update(arcs["arc"])
             if outer is not None:
                 outer[0] += tally[0]
                 outer[1] += tally[1]
+                for key, n in tally[2].items():
+                    outer[2][key] = outer[2].get(key, 0) + n
+                _merge_flag_tally(outer[3], tally[3])
+                outer[4].extend(tally[4])
+                for key, f in tally[5].items():
+                    if key not in outer[5] or f < outer[5][key]:
+                        outer[5][key] = f
+                for fm, kept in tally[6].items():
+                    into = outer[6].setdefault(fm, {})
+                    for key, s in kept.items():
+                        _keep_lowest(into, key, s)
         target = (result if isinstance(result, SearchResult)
                   else getattr(result, "search", None))
         if isinstance(target, SearchResult):
             target.n_rejected_ground_crossings = tally[0]
+            target.circles_split = dict(sorted(arcs["split"].items()))
+            if not target.arcs_outside_windows:
+                # (search_critical_surface names the families itself)
+                target.arcs_outside_windows = outside_records(
+                    arcs["outside"])
             target.n_rejected_m_alpha = tally[1]
+            if not target.no_solution:
+                # (search_critical_surface names the families itself)
+                target.no_solution = no_solution_records(tally[2])
+            if not target.trial_flags:
+                target.trial_flags = flag_records(tally[3])
         return result
+    return wrapper
+
+
+def _reports_acceptability(fn):
+    """Put the printed acceptability checks' report on the result of a
+    search called on its own: the governing surface's flags
+    (``critical_flags``, ``critical.acceptability``), the warning, and the
+    lowest scored surface with no flag (``lowest_unflagged``), from the one
+    place `search_supplements.report_acceptability`, which
+    `search_critical_surface` calls too (GM-140 step 3, item 4; its
+    review's defect 2). A search run inside another leaves the report to
+    the outer one. Every exported search function that returns a
+    ``SearchResult`` carries it; `search_rapid_drawdown` scores with its own
+    staged solve, which the checks are not made on."""
+    sig = inspect.signature(fn)
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        outermost = _REFUSALS.get() is None
+        result = fn(*args, **kwargs)
+        if outermost and isinstance(result, SearchResult):
+            from slope_stability.search_supplements import (
+                report_acceptability, CIRCULAR, NONCIRCULAR)
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            a = bound.arguments
+            crit = result.critical
+            circular = crit is None or getattr(crit, "is_circular", True)
+            method = surface_method(a.get("method") or "spencer", circular)
+            # (as `_compute_fos` scores it)
+            report_acceptability(
+                a["geom"], result, method, a["n_slices"], a["tol"],
+                m_alpha_rule=_M_ALPHA_RULE.get(),
+                family=CIRCULAR if circular else NONCIRCULAR)
+        return result
+    wrapper.reports_acceptability = True
     return wrapper
 
 
@@ -114,22 +862,71 @@ def m_alpha_rule_in_force() -> str:
     return _M_ALPHA_RULE.get()
 
 
+#: What a search does with a surface that has m_alpha < 0.2 on a slice
+#: (GM-140 step 3, OWN-102). "flag" (the default): the surface is kept and
+#: scored, and the result says which surface and slice (Whitman and Bailey
+#: 1967, p. 487, print a warning and an instruction to examine the result,
+#: not a rejection). "refuse": it is left out and counted, as the module
+#: did before this step (GM-127; Slide2's 'Check malpha < 0.2').
+LOW_M_ALPHA_ACTIONS = ("flag", "refuse")
+
+_LOW_M_ALPHA: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_low_m_alpha", default="flag")
+
+
+def low_m_alpha_in_force() -> str:
+    """The `LOW_M_ALPHA_ACTIONS` action of the search running in this
+    context."""
+    return _LOW_M_ALPHA.get()
+
+
+@contextlib.contextmanager
+def low_m_alpha(action: str):
+    """Run a block with ``action`` (`LOW_M_ALPHA_ACTIONS`) in force."""
+    if action not in LOW_M_ALPHA_ACTIONS:
+        raise ValueError(f"low_m_alpha must be one of "
+                         f"{LOW_M_ALPHA_ACTIONS}, not {action!r}")
+    token = _LOW_M_ALPHA.set(action)
+    try:
+        yield
+    finally:
+        _LOW_M_ALPHA.reset(token)
+
+
 def _applies_m_alpha_rule(fn):
     """Run ``fn`` with its ``m_alpha_rule`` argument in force for every
-    surface it scores, the searches run inside it included."""
+    surface it scores, the searches run inside it included; and, where
+    ``fn`` takes them, its ``low_m_alpha`` (`LOW_M_ALPHA_ACTIONS`) and
+    ``negative_friction_term`` (`methods.NEGATIVE_TERM_RULES`) arguments
+    (GM-140 step 3)."""
     sig = inspect.signature(fn)
-    default = sig.parameters["m_alpha_rule"].default
+    # (a search without the parameter keeps the rule already in force)
+    default = (sig.parameters["m_alpha_rule"].default
+               if "m_alpha_rule" in sig.parameters else None)
+    extra = {name: sig.parameters[name].default
+             for name in ("low_m_alpha", "negative_friction_term")
+             if name in sig.parameters}
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        rule = sig.bind_partial(*args, **kwargs).arguments.get(
-            "m_alpha_rule", default)
+        given = sig.bind_partial(*args, **kwargs).arguments
+        rule = given.get("m_alpha_rule", default)
+        if rule is None:
+            rule = _M_ALPHA_RULE.get()
         if rule not in M_ALPHA_RULES:
             raise ValueError(f"m_alpha_rule must be one of {M_ALPHA_RULES}, "
                              f"not {rule!r}")
         token = _M_ALPHA_RULE.set(rule)
         try:
-            return fn(*args, **kwargs)
+            with contextlib.ExitStack() as stack:
+                if "low_m_alpha" in extra:
+                    stack.enter_context(low_m_alpha(
+                        given.get("low_m_alpha", extra["low_m_alpha"])))
+                if "negative_friction_term" in extra:
+                    stack.enter_context(negative_term(given.get(
+                        "negative_friction_term",
+                        extra["negative_friction_term"])))
+                return fn(*args, **kwargs)
         finally:
             _M_ALPHA_RULE.reset(token)
     return wrapper
@@ -166,6 +963,33 @@ def _m_alpha_fails(slices, slip, method: str, fos: float,
     if info is not None:
         info["m_alpha_min"] = least
     return least is not None and least < M_ALPHA_MIN
+
+
+def _trial_checks(geom, slip, slices, sol, m_alpha_check: bool,
+                  info: Optional[Dict[str, Any]]):
+    """The printed acceptability checks on a trial surface its method
+    solved (GM-140 step 3; `acceptability.surface_findings`).
+
+    Returns ``(refuse, names)``: ``names`` the checks not met, ``refuse``
+    True when the surface is to be left out, which happens only for m_alpha
+    < 0.2 on a slice under ``low_m_alpha='refuse'`` (`LOW_M_ALPHA_ACTIONS`;
+    the stated option, the module's rule before this step) and where the
+    caller checks m_alpha at all (``m_alpha_check``). By default a flagged
+    surface is kept. ``info`` receives ``m_alpha_min`` (the least m_alpha
+    over the slices the rule looks at, None for the Ordinary Method of
+    Slices), ``flags`` and ``findings``."""
+    findings = surface_findings(geom, slip, slices, sol,
+                                rule=_M_ALPHA_RULE.get())
+    names = _flags(findings)
+    if info is not None:
+        f_own = sol.fos_bishop if sol.fos_bishop else sol.fos
+        info["m_alpha_min"] = _m_alpha_least(slices, slip, sol.method, f_own,
+                                             sol.fos_uncorrected)
+        info["flags"] = names
+        info["findings"] = findings
+    refuse = (m_alpha_check and "low_m_alpha" in names
+              and _LOW_M_ALPHA.get() == "refuse")
+    return refuse, names
 
 
 # ── Time budget (GM-123) ─────────────────────────────────────────────────
@@ -508,14 +1332,35 @@ def _window_span(x_entry_range, x_exit_range) -> Optional[float]:
 
 def _new_reject_stats() -> Dict[str, Any]:
     """Fresh per-search rejection tally (see ``_compute_fos``). ``refused``
-    keeps the lowest surface whose solution did not hold (`_solution_fails`)
-    so the result can say so."""
-    return {"geometry": 0, "nonconverged": 0, "jagged": 0, "refused": None}
+    is no longer filled (it kept the lowest surface the moment-axis and
+    slicing screens refused, removed in GM-140 step 3); ``screens`` counts
+    the refusals of each screen that is left, by name."""
+    return {"geometry": 0, "nonconverged": 0, "jagged": 0, "refused": None,
+            "screens": {}}
 
 
 def _bump(stats: Optional[Dict[str, int]], key: str) -> None:
     if stats is not None:
         stats[key] += 1
+
+
+#: The noncircular screens (D22): the module's own numerical stand-ins,
+#: not found in print. A refusal by each is counted
+#: (``SearchResult.screen_refusals``), with how many of the surfaces it
+#: refused after solving them carried a flag of the printed checks.
+NONCIRCULAR_SCREENS = ("slice_count", "span", "jagged_below_1_5")
+
+
+def _bump_screen(stats, screen: str, names) -> None:
+    """Count a refusal by a noncircular screen; ``names`` the printed
+    checks' flags of the solved surface (None: refused before any solve)."""
+    if stats is None:
+        return
+    rec = stats.setdefault("screens", {}).setdefault(
+        screen, {"n": 0, "n_flagged": 0 if names is not None else None})
+    rec["n"] += 1
+    if names:
+        rec["n_flagged"] = (rec["n_flagged"] or 0) + 1
 
 
 def _rejection_kwargs(stats: Dict[str, int], n_evaluated: int) -> Dict[str, int]:
@@ -534,33 +1379,50 @@ def _rejection_kwargs(stats: Dict[str, int], n_evaluated: int) -> Dict[str, int]
         "n_rejected_nonconverged": stats["nonconverged"],
         "n_rejected_jagged": stats["jagged"],
         "refused_lowest": stats.get("refused"),
+        "screen_refusals": {k: dict(v) for k, v in
+                            (stats.get("screens") or {}).items()},
     }
 
 
-def _note_refused(stats, slip, fos: float, reason: str) -> None:
-    """Keep the lowest refused surface in the tally (see
-    ``SearchResult.refused_lowest``)."""
-    if stats is None:
-        return
-    old = stats.get("refused")
-    if old is not None and old["FOS"] <= fos:
-        return
-    pts = slip.points
-    stats["refused"] = {
-        "FOS": round(fos, 4), "reason": reason,
-        "x_entry": round(pts[0][0], 3), "x_exit": round(pts[-1][0], 3),
-        "points": [(round(x, 3), round(z, 3)) for x, z in pts]}
+def module_span_floor(geom, window_span: Optional[float] = None) -> float:
+    """The module's span floor of a noncircular surface (D22: its own
+    screen, not in print; `_noncircular_admissible`): half the caller's
+    window span where given, else half the slope's height."""
+    if window_span is not None and window_span > 0:
+        return 0.5 * window_span
+    zs = [p[1] for p in geom.surface_points]
+    return 0.5 * ((max(zs) - min(zs)) if zs else 0.0)
+
+
+def start_span_floor(geom, pts, n_slices: int,
+                     window_span: Optional[float] = None) -> Optional[float]:
+    """The span floor of a start of the noncircular refinement (GM-140 step
+    7a, the fix round's ruling 8): the lesser of the module's floor and the
+    start's own span, as the span screen measures it (from its first
+    slice's left side to its last slice's right side); None where the start
+    gives no slices."""
+    try:
+        slip = (pts if hasattr(pts, "points") else PolylineSlipSurface(
+            points=[(float(x), float(z)) for x, z in pts]))
+        slices = build_slices(geom, slip, n_slices)
+    except (ValueError, ZeroDivisionError, RuntimeError, IndexError):
+        return None
+    if not slices:
+        return None
+    return min(module_span_floor(geom, window_span),
+               slices[-1].x_right - slices[0].x_left)
 
 
 def _noncircular_admissible(slip, slices, geom, n_slices_requested: int,
-                            window_span: Optional[float] = None) -> bool:
+                            window_span: Optional[float] = None,
+                            span_floor: Optional[float] = None) -> bool:
     """Reject grossly-degenerate noncircular trial surfaces (SS-6, geometry).
 
     Cheap geometric sanity checks the team-lead's list calls for — they weed
     out sliver / non-spanning surfaces before the (more expensive) rigorous
     solve. The *jagged-but-spanning* zig-zags that used to win searches with a
     spurious low FOS are caught separately and more reliably by REQUIRING the
-    rigorous GLE to converge (see ``_rigorous_noncircular_fos``): the GLE
+    rigorous GLE to converge (see ``_method_solution``): the GLE
     reports ``converged=False`` on those, whereas valid smooth surfaces
     converge. This geometric check is deliberately lenient so the random /
     weak-layer generators keep exploring.
@@ -574,16 +1436,15 @@ def _noncircular_admissible(slip, slices, geom, n_slices_requested: int,
       The old floor of 15% of the FULL model width silently rejected a legitimate
       localized failure in a wide model — a wide right-of-way or a long tailwater
       bench blew the floor up far past a real slide length.
+      ``span_floor`` (GM-140 step 7a, the fix round's ruling 8): a floor
+      given in its place, the lesser of this one and a refinement start's
+      own span (`start_span_floor`); the samplers pass none.
     """
     if len(slices) < max(5, n_slices_requested // 3):
         return False
     span = slices[-1].x_right - slices[0].x_left
-    if window_span is not None and window_span > 0:
-        min_span = 0.5 * window_span
-    else:
-        zs = [p[1] for p in geom.surface_points]
-        slope_height = (max(zs) - min(zs)) if zs else 0.0
-        min_span = 0.5 * slope_height
+    min_span = (module_span_floor(geom, window_span) if span_floor is None
+                else span_floor)
     if min_span > 0 and span < min_span:
         return False
     return True
@@ -626,28 +1487,6 @@ def _is_jagged(slip) -> bool:
     return False
 
 
-def _noncircular_axis_point(slices, geom) -> Optional[Tuple[float, float]]:
-    """A deterministic, robust moment axis for the noncircular convergence gate.
-
-    Midpoint of the surviving span, half a span above the highest ground point —
-    the same centroid-above-surface heuristic the validated composite-surface
-    path passes explicitly (test_validation uses the parent circle centre). This
-    pins the axis for the convergence check instead of leaving it to gle's
-    internal least-squares fit, which can land absurdly far away on a
-    near-straight surface and spuriously fail convergence. A converged GLE FOS is
-    axis-independent (both moment and force equilibrium are enforced), so this
-    does not move the reported FOS of valid surfaces.
-    """
-    if not slices:
-        return None
-    x_lo = slices[0].x_left
-    x_hi = slices[-1].x_right
-    span = max(x_hi - x_lo, 1.0)
-    z_top = max(p[1] for p in geom.surface_points) if geom is not None else \
-        max(s.z_base for s in slices)
-    return (0.5 * (x_lo + x_hi), z_top + 0.5 * span)
-
-
 def _has_reinforcement(geom) -> bool:
     """True when the geometry carries any reinforcement that
     `compute_reinforcement_forces` resolves (nails, anchors, geosynthetics,
@@ -672,144 +1511,67 @@ def trial_reinforcement(geom, slip):
     return compute_reinforcement_forces(geom, slip, x_entry, x_exit) or None
 
 
-def _reinforced_rigorous_fos(slices, slip, f_interslice: str, tol: float,
-                             reinf_forces) -> Optional[float]:
-    """Rigorous GLE FOS of a REINFORCED circular trial surface, or None when
-    the GLE does not converge. `spencer_fos` / `morgenstern_price_fos` fall
-    back to the legacy solver on non-convergence, and that solver ignores
-    reinforcement: in a search the unreinforced value of a heavily anchored
-    surface then wins (Slide2 #85, Spencer: 0.86 against Bishop 1.26). A
-    search rejects such a surface instead."""
-    from slope_stability.gle import gle_fos
-    try:
-        res = gle_fos(slices, slip, f_interslice=f_interslice,
-                      tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
-        if res.converged and 0.05 < res.fos < _FOS_MAX:
-            return res.fos
-    except (ValueError, ZeroDivisionError, OverflowError):
-        pass
-    return None
+def _method_solution(slices, slip, method: str, tol: float, reinf_forces):
+    """A trial surface scored by the search's method: the single-surface
+    solver's own solution (`solution.solve_method`), so a search and
+    `analyze_slope` return the same solution for the same surface (GM-140
+    step 2): the same moment axis, tolerance and test of convergence.
+    Morgenstern-Price and GLE take the interslice function of the search
+    running in this context (`interslice_in_force`: the one the search was
+    given, half-sine by default; GM-140 step 6). Before, they always took
+    the half-sine function in a search, whatever function was named.
+
+    Before, a circle no support crosses was scored by the old approximate
+    Spencer / Morgenstern-Price solver where the rigorous solution did not
+    converge (267 circles of a 6 x 6 Spencer search of Slide2 #85 without
+    its support), and a noncircular surface whose solution did not converge
+    about the GLE's fitted moment axis was solved again about a second,
+    fixed axis, which the single-surface solver does not use (ACADS 4's
+    weak-layer search returned Spencer 0.515 that way, on a surface where
+    `analyze_slope` found no Spencer solution)."""
+    return solve_method(slices, slip, method, _INTERSLICE.get(), tol,
+                        reinf_forces)
 
 
-def _rigorous_noncircular_fos(slices, slip, f_interslice: str,
-                              tol: float, geom=None,
-                              reinf_forces=None) -> Optional[float]:
-    """Rigorous GLE FOS for a noncircular surface, REQUIRING convergence.
-
-    Returns None when the GLE does not converge, so the caller REJECTS the
-    surface instead of silently accepting the legacy Spencer approximation —
-    which returns a spurious low FOS (~0.05-0.2) on jagged/degenerate surfaces
-    that a search would then wrongly pick as critical. The rigorous GLE reports
-    ``converged=False`` on those surfaces at every slice count (verified on the
-    ACADS-4 zig-zag: GLE constant 0.15 / half-sine 0.22, both non-converged,
-    vs a Fellenius 8.2 — the methods disagree because the surface is
-    kinematically inadmissible). Valid smooth surfaces converge and return the
-    same value as before.
-
-    The moment axis for the convergence check is tried in two steps: first gle's
-    internal least-squares fit (``axis_point=None`` — byte-identical to the
-    historical behaviour, so a surface that already converged is unchanged), and
-    only if THAT fails to converge, a robust pinned axis
-    (``_noncircular_axis_point``, when ``geom`` is supplied). The second pass
-    rescues a valid surface whose least-squares centre lands absurdly far away
-    (spuriously failing convergence) without ever removing a convergence the
-    first pass already found.
-    """
-    from slope_stability.gle import gle_fos
-    axes = [None]
-    if geom is not None:
-        pinned = _noncircular_axis_point(slices, geom)
-        if pinned is not None:
-            axes.append(pinned)
-    for axis_point in axes:
-        try:
-            res = gle_fos(slices, slip, f_interslice=f_interslice,
-                          tol=min(tol, 1e-4) * 0.1, axis_point=axis_point,
-                          reinf_forces=reinf_forces)
-            if res.converged and 0.05 < res.fos < _FOS_MAX:
-                return res.fos
-        except (ValueError, ZeroDivisionError, OverflowError):
-            pass
-    return None
+#: Noncircular screens removed in GM-140 step 3 (item 5), with what was
+#: measured on the noncircular cases of the validation set and on the
+#: module's own two rock-cut cases (`module_work/gm140/step3_screens.py`,
+#: STEP3_CHECK.md): every surface each refused carried a flag of the
+#: printed acceptability checks (EM 1110-2-1902 C-10a; Whitman and Bailey
+#: 1967, p. 487). Such a surface is now scored, kept and flagged.
+REMOVED_SCREENS = {
+    "one_moment_axis": "a would-be critical surface had to solve about two "
+                       "of three moment axes within 2 % (38 refused in the "
+                       "measured cases, 38 flagged)",
+    "one_slicing": "and at one slice more or twice the slices within 50 % "
+                   "(1 refused, 1 flagged)",
+    "jagged_below_1_5": "a FOS below 1.5 on a jagged surface was refused "
+                        "(88 refused, 88 flagged, in the measured Spencer "
+                        "searches); removed for Spencer, Morgenstern-Price "
+                        "and GLE only (the noncircular surfaces of "
+                        "Bishop's simplified method and, since GM-140 "
+                        "step 6, of the Ordinary Method of Slices are "
+                        "scored by Spencer's method). It stays, the "
+                        "module's own, for Janbu's simplified method, "
+                        "which no C-10a check covers "
+                        "(ACADS 1(a), 200 random trials: it refuses 29 "
+                        "Janbu and 42 Ordinary Method of Slices surfaces "
+                        "that no printed check flags), and for a caller's "
+                        "own per-surface solve (rapid drawdown), on which "
+                        "the printed checks are not made here",
+}
 
 
-# A rigorous noncircular solution is confirmed when a second moment axis
-# gives a converged solution within this fraction of its FOS, and the
-# surface cut into one slice more, or twice as many, still has one within
-# the second fraction (loose: a jagged random surface's FOS can move by a
-# third between 30 and 31 slices and still be an equilibrium solution at
-# each; and GLE finds no solution at some slice counts of valid surfaces).
-_AXIS_AGREE = 0.02
-_SLICE_AGREE = 0.5
-
-
-def _converged_about(slices, slip, f_interslice: str, tol: float, geom,
-                     reinf_forces=None) -> List[float]:
-    """FOS of every converged rigorous solution of the slices about three
-    moment axes: gle's least-squares fit, the pinned axis
-    (`_noncircular_axis_point`) and the pinned axis raised by the span."""
-    from slope_stability.gle import gle_fos
-    axes = [None]
-    pinned = _noncircular_axis_point(slices, geom) if geom is not None \
-        else None
-    if pinned is not None:
-        span = max(slices[-1].x_right - slices[0].x_left, 1.0)
-        axes += [pinned, (pinned[0], pinned[1] + span)]
-    out = []
-    for axis_point in axes:
-        try:
-            res = gle_fos(slices, slip, f_interslice=f_interslice,
-                          tol=min(tol, 1e-4) * 0.1, axis_point=axis_point,
-                          reinf_forces=reinf_forces)
-        except (ValueError, ZeroDivisionError, OverflowError):
-            continue
-        if res.converged and 0.05 < res.fos < _FOS_MAX:
-            out.append(res.fos)
-    return out
-
-
-def _solution_fails(geom, slip, f_interslice: str, tol: float,
-                    n_slices: int, slices, fos: float,
-                    reinf_forces=None) -> Optional[str]:
-    """Why the rigorous solution of FOS ``fos`` on a noncircular surface
-    is not an equilibrium solution of the surface but of one moment axis or
-    one slicing; None when it holds.
-
-    Spencer and GLE satisfy force and moment equilibrium, so their solution
-    is the same about any moment axis (`_noncircular_axis_point` relies on
-    that), and a surface's FOS does not hang on the number of slices. A
-    "converged" state that fails either test is a solver artefact, and
-    searches had been reporting them as critical: the least-squares axis of
-    a surface with a near-vertical segment can make F_m and F_f meet where
-    no other axis balances (a 10 m 1:1 cut, weak clay over sandstone: 1.06
-    on a surface 13 m deep in the sandstone, no solution about any other
-    axis, Fellenius 21.7); the pinned axis can catch a second, spurious root
-    (V-043's sand fill: 0.717 at lambda -0.35 at 30 slices, where 29 and 31
-    slices give 1.90 and 1.55 at lambda +0.2 about every axis); and a
-    surface diving at 75 deg into rock converged about two axes at 30
-    slices only (0.73, with Janbu 0.42 and Fellenius 8.5). So: two of the
-    three axes agree within ``_AXIS_AGREE``, and with one slice more or
-    twice as many some axis still converges, within ``_SLICE_AGREE`` of the
-    FOS. All three came from even slices that took one segment's angle
-    across a corner; sliced at its corners (GM-131) none has such a state
-    (two have no solution, V-043's solves at 1.715 at any count), and the
-    check stays as the guard.
-    """
-    here = _converged_about(slices, slip, f_interslice, tol, geom,
-                            reinf_forces)
-    if sum(abs(f - fos) <= _AXIS_AGREE * fos for f in here) < 2:
-        return "it solved about one moment axis only"
-    for n in (n_slices + 1, 2 * n_slices):
-        try:
-            more = build_slices(geom, slip, n)
-        except ValueError:
-            continue
-        there = _converged_about(more, slip, f_interslice, tol, geom,
-                                 reinf_forces)
-        if any(abs(f - fos) <= _SLICE_AGREE * fos for f in there):
-            return None
-    return (f"it solved at {n_slices} slices only, not at "
-            f"{n_slices + 1} or {2 * n_slices}")
+def _jagged_screen_applies(scored_by: str, fos_fn) -> bool:
+    """Whether the jagged screen (a FOS below 1.5 on a jagged surface is
+    refused; the module's own, not found in print) applies to a surface
+    scored by ``scored_by``: for a caller's own per-surface solve, and for
+    the methods no check of EM 1110-2-1902 C-10a covers (Janbu's
+    simplified method, the Ordinary Method of Slices); not for Spencer,
+    Morgenstern-Price and GLE (`C10A_METHODS`), whose checks flagged every
+    surface it refused in the measured cases (GM-140 step 3, item 5; its
+    review's defect 1)."""
+    return fos_fn is not None or scored_by not in C10A_METHODS
 
 
 def _compute_fos(geom: SlopeGeometry,
@@ -820,11 +1582,13 @@ def _compute_fos(geom: SlopeGeometry,
                  window_span: Optional[float] = None,
                  reject_stats: Optional[Dict[str, int]] = None,
                  fos_fn: Optional[Callable] = None,
-                 confirm_below: Optional[float] = None,
                  m_alpha_check: bool = True,
                  info: Optional[Dict[str, Any]] = None,
-                 inside_model: bool = True) -> float:
-    """Safely compute FOS, returning _FOS_MAX on any error.
+                 inside_model: bool = True,
+                 span_floor: Optional[float] = None) -> float:
+    """The search's score of a trial surface: the method's own factor of
+    safety, or _FOS_MAX (not scored) where the surface is refused or the
+    method has no solution on it.
 
     ``inside_model`` (GM-128): a surface reaching below the bottom of the
     deepest layer is left out (_FOS_MAX; ``_dips_below_base``), so every
@@ -843,17 +1607,11 @@ def _compute_fos(geom: SlopeGeometry,
     ``info`` (optional dict) receives ``m_alpha_min``, the least m_alpha of
     a scored surface (None for the OMS), whether or not it is checked.
 
-    ``confirm_below``: a noncircular surface scored by Spencer /
-    Morgenstern-Price / GLE at a FOS below this (a search's best so far) is
-    kept only if its solution holds about a second moment axis and at
-    another slicing (`_solution_fails`); otherwise it is rejected as not
-    converged and, if the lowest so refused, kept in
-    ``reject_stats['refused']`` so the result says so. Searches
-    pass their running best, so the check runs only when a surface would
-    become the critical one.
-
     ``window_span`` anchors the noncircular span floor to the caller's entry/exit
-    window (see ``_noncircular_admissible``). ``reject_stats`` (optional) is a
+    window (see ``_noncircular_admissible``); ``span_floor`` replaces that
+    floor (the noncircular refinement's starts, GM-140 step 7a: the lesser
+    of the module's floor and the start's own span; None, the default,
+    leaves the screen as it is). ``reject_stats`` (optional) is a
     mutable tally the generators pass so that silent noncircular rejections
     (geometry / non-converged / jagged) are counted rather than lost.
 
@@ -866,14 +1624,83 @@ def _compute_fos(geom: SlopeGeometry,
     leaves the method dispatch byte-identical.
 
     Reinforcement crossing the trial surface is resolved and applied exactly
-    as ``analyze_slope`` applies it (GM-53; ``trial_reinforcement``). A
-    reinforced circle scored by Spencer / M-P / GLE must converge in the
-    rigorous GLE (``_reinforced_rigorous_fos``): the legacy fallback ignores
-    reinforcement, so the surface is rejected instead.
+    as ``analyze_slope`` applies it (GM-53; ``trial_reinforcement``).
+
+    A method's own solution, or no score (GM-140 step 2; UFC 3-220-10
+    p. 362). Every surface, circular or not, with supports or without, is
+    scored by the single-surface solver (`_method_solution`). Where the
+    method has no solution the surface is not scored (_FOS_MAX, the
+    searches' "not scored" mark, which is not a factor of safety) and is
+    counted by family and method (`_count_no_solution`,
+    ``SearchResult.no_solution``; a caller's own ``fos_fn`` is not counted
+    here). An unknown ``method`` is refused.
     """
+    if fos_fn is None:
+        check_method(method)
+    # Where a circle ends (GM-343): a circle that meets the ground at more
+    # than two points is split there; each arc below the ground is a trial
+    # surface of its own, solved and screened like any other, and the
+    # circle's score is the lowest of them. An arc with no driving moment
+    # or no solution is counted with its reason, as any such surface is.
+    if getattr(slip, "is_circular", False) and not slip.is_bound:
+        try:
+            arcs, n_arcs = _circle_arcs(geom, slip)
+        except ValueError:
+            return _FOS_MAX
+        if n_arcs > 1:
+            _count_split(n_arcs)
+            # the arcs the windows left out: not scored, counted
+            _count_outside(n_arcs - len(arcs))
+            best, best_arc, best_info = _FOS_MAX, None, None
+            for arc in arcs:
+                arc_info = {} if info is not None else None
+                fos = _compute_fos(
+                    geom, arc, method, n_slices, tol=tol,
+                    window_span=window_span, reject_stats=reject_stats,
+                    fos_fn=fos_fn, m_alpha_check=m_alpha_check,
+                    info=arc_info, inside_model=inside_model,
+                    span_floor=span_floor)
+                if fos < best:
+                    best, best_arc, best_info = fos, arc, arc_info
+            _remember_arc(slip, best_arc)
+            if info is not None and best_info is not None:
+                info.update(best_info)
+            return best
     try:
         if inside_model and _dips_below_base(geom, slip):
             return _FOS_MAX         # as build_slices' refusal (ValueError)
+        # The surface's crack as printed (GM-140 step 4, `cracks`): a
+        # Rankine or minimum-FOS depth, or a reverse-curvature circle, is
+        # solved for on copies of the geometry with the crack fixed; a
+        # circle the printed crack does not close is discarded and counted.
+        from slope_stability import cracks
+        if cracks.may_need_solution(geom, slip):
+            plan = cracks.plan_crack(geom, slip)
+            if plan is not None and (plan.needs_solution or plan.discard):
+                # (the trial's own value is noted once, below, not each
+                # solve on a copy of the geometry: GM-140 step 10, D2)
+                off = _LOWEST_OFF.set(True)
+                try:
+                    fos, crack = cracks.solve_with_crack(
+                        geom, slip,
+                        lambda g: _compute_fos(
+                            g, slip, method, n_slices, tol=tol,
+                            window_span=window_span,
+                            reject_stats=reject_stats, fos_fn=fos_fn,
+                            m_alpha_check=m_alpha_check, info=info,
+                            inside_model=inside_model,
+                            span_floor=span_floor),
+                        plan=plan)
+                finally:
+                    _LOWEST_OFF.reset(off)
+                if crack.discarded:
+                    cracks.count_discard(slip, crack)
+                    return _FOS_MAX
+                if fos_fn is None and fos is not None:
+                    _note_lowest(method if getattr(slip, "is_circular", False)
+                                 else surface_method(method, False),
+                                 fos, slip)
+                return _FOS_MAX if fos is None else fos
         slices = build_slices(geom, slip, n_slices)
         if len(slices) < 3:
             _bump(reject_stats, "geometry")
@@ -883,113 +1710,128 @@ def _compute_fos(geom: SlopeGeometry,
         reinf = trial_reinforcement(geom, slip) if fos_fn is None else None
 
         # Noncircular guard (SS-6): reject kinematically-degenerate trial
-        # surfaces and REQUIRE the rigorous GLE to converge. This kills the
-        # weak-layer/random-polyline search pathology where a jagged surface
-        # makes the rigorous solver diverge, the legacy Spencer fallback
-        # returns a spurious low FOS (~0.05-0.2), and the search wrongly picks
-        # it as critical. Circular surfaces are untouched (their GLE converges;
-        # bishop/grid/entry-exit paths are byte-identical below).
+        # surfaces. (A surface the method has no solution on is not scored,
+        # circular or not: GM-140 step 2.)
         if not getattr(slip, 'is_circular', True):
             if not _noncircular_admissible(slip, slices, geom, n_slices,
-                                           window_span):
+                                           window_span, span_floor):
                 _bump(reject_stats, "geometry")
+                _bump_screen(
+                    reject_stats, "slice_count"
+                    if len(slices) < max(5, n_slices // 3) else "span", None)
                 return _FOS_MAX
             fos_u = None            # Janbu's uncorrected F, for m_alpha
-            scored_by = method
+            # (a noncircular surface named for Bishop's simplified method
+            # or the Ordinary Method of Slices, which are for circles, is
+            # scored by Spencer's method: `surface_method`, GM-140 step 6)
+            scored_by = surface_method(method, False)
             if fos_fn is not None:
                 fos = fos_fn(geom, slip)
-            elif method in ("morgenstern_price", "gle"):
-                fos = _rigorous_noncircular_fos(slices, slip, "half_sine", tol,
-                                                geom, reinf_forces=reinf)
-            elif method == "fellenius":
-                fos = fellenius_fos(slices, slip, reinf_forces=reinf)
-            elif method == "janbu":
-                fos, fos_u, _f0 = janbu_fos(slices, slip,
-                                            tol=min(tol, 1e-4) * 0.1,
-                                            reinf_forces=reinf)
-            else:  # spencer / bishop-fallback / default
-                scored_by = "spencer"
-                fos = _rigorous_noncircular_fos(slices, slip, "constant", tol,
-                                                geom, reinf_forces=reinf)
-            if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
+            else:
+                sol = _method_solution(slices, slip, scored_by, tol, reinf)
+                fos, fos_u = sol.fos, sol.fos_uncorrected
+            if fos is None or fos < 0.05 or math.isnan(fos) \
+                    or math.isinf(fos) or fos >= _FOS_MAX:
+                # no solution, or a value below 0.05: not scored, and
+                # counted, each under its own reason (GM-140 step 2)
                 _bump(reject_stats, "nonconverged")
+                if fos_fn is None:      # (a caller's solve counts its own)
+                    _count_no_solution(scored_by, _not_scored_kind(sol))
                 return _FOS_MAX
-            if (fos_fn is None and fos < _FOS_MAX
-                    and (m_alpha_check or info is not None)
-                    and _m_alpha_fails(slices, slip, scored_by, fos, fos_u,
-                                       info)
-                    and m_alpha_check):
-                _count_m_alpha_refusal()        # Slide2's -112 (GM-127)
-                return _FOS_MAX
-            if (confirm_below is not None and fos < confirm_below
-                    and fos_fn is None
-                    and method not in ("fellenius", "janbu")):
-                why = _solution_fails(
-                    geom, slip,
-                    "half_sine" if method in ("morgenstern_price", "gle")
-                    else "constant", tol, n_slices, slices, fos, reinf)
-                if why:
-                    _bump(reject_stats, "nonconverged")
-                    _note_refused(reject_stats, slip, fos, why)
+            names = None
+            if fos_fn is None:
+                # the printed acceptability checks: kept and flagged, or
+                # (the stated option) left out for m_alpha (GM-140 step 3)
+                refuse, names = _trial_checks(geom, slip, slices, sol,
+                                              m_alpha_check, info)
+                if refuse:
+                    _count_m_alpha_refusal()
                     return _FOS_MAX
-            # Spurious-low-FOS guard: a low FOS on a jagged surface is a solver
-            # artifact (SS-6), not a real critical surface — reject it.
-            if fos < _LOW_FOS_JAGGED_GATE and _is_jagged(slip):
+            # The agreement between moment axes and between slicings is
+            # gone for the method's own solves, and the refusal of a FOS
+            # below 1.5 on a jagged surface for Spencer, Morgenstern-Price
+            # and GLE (GM-140 step 3, item 5): measured on every noncircular
+            # case of the validation set, each refused only surfaces the
+            # printed checks flag, and those are kept and flagged now
+            # (`REMOVED_SCREENS`). The jagged screen stays for Janbu's
+            # simplified method and the Ordinary Method of Slices, which no
+            # C-10a check covers, and for a caller's own per-surface solve
+            # (rapid drawdown), not put through the printed checks here
+            # (`_jagged_screen_applies`).
+            if (fos < _LOW_FOS_JAGGED_GATE
+                    and _jagged_screen_applies(scored_by, fos_fn)
+                    and _is_jagged(slip)):
                 _bump(reject_stats, "jagged")
+                _bump_screen(reject_stats, "jagged_below_1_5", names)
                 return _FOS_MAX
+            if names is not None:
+                _note_trial_flags(scored_by, fos, names, slip)
+            if fos_fn is None:
+                _note_lowest(scored_by, fos, slip)
             return fos
-
-        # A reverse-curvature circle (its centre below the ground where it
-        # comes out) is closed by a dry crack unless the geometry asks for
-        # such circles to be discarded (Slide2's two choices; GM-59).
-        if (getattr(geom, "reverse_curvature", "tension_crack") == "discard"
-                and slip.reverse_curvature_crack(geom) is not None):
-            return _FOS_MAX
 
         fos_u = None                # Janbu's uncorrected F, for m_alpha
         scored_by = method
         if fos_fn is not None:
             fos = fos_fn(geom, slip)
-        elif method == "fellenius":
-            fos = fellenius_fos(slices, slip, reinf_forces=reinf)
-        elif method == "bishop":
-            fos = bishop_fos(slices, slip, tol=tol, reinf_forces=reinf)
-        elif method == "spencer":
-            if reinf:
-                fos = _reinforced_rigorous_fos(slices, slip, "constant", tol,
-                                               reinf)
-            else:
-                fos, _ = spencer_fos(slices, slip, tol=tol)
-        elif method in ("morgenstern_price", "gle"):
-            if reinf:
-                fos = _reinforced_rigorous_fos(slices, slip, "half_sine", tol,
-                                               reinf)
-            else:
-                fos, _ = morgenstern_price_fos(slices, slip, tol=tol)
-        elif method == "janbu":
-            fos, fos_u, _ = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1,
-                                      reinf_forces=reinf)
         else:
-            scored_by = "bishop"
-            fos = bishop_fos(slices, slip, tol=tol, reinf_forces=reinf)
+            sol = _method_solution(slices, slip, method, tol, reinf)
+            fos, fos_u = sol.fos, sol.fos_uncorrected
 
-        # Guard against non-convergence producing negative or absurd values
-        # FOS < 0.05 is physically meaningless and indicates numerical issues
-        if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
+        # No solution (the method's own solve does not converge, a
+        # per-surface solve returns none), or a value below 0.05, which is
+        # no factor of safety: not scored, and counted, each under its own
+        # reason (GM-140 step 2).
+        if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos) \
+                or fos >= _FOS_MAX:
+            if fos_fn is None:          # (a caller's solve counts its own)
+                _count_no_solution(scored_by, _not_scored_kind(sol))
             return _FOS_MAX
-        if (fos_fn is None and fos < _FOS_MAX
-                and (m_alpha_check or info is not None)
-                and _m_alpha_fails(slices, slip, scored_by, fos, fos_u, info)
-                and m_alpha_check):
-            _count_m_alpha_refusal()            # Slide2's -112 (GM-127)
-            return _FOS_MAX
+        if fos_fn is None:
+            # the printed acceptability checks: kept and flagged, or (the
+            # stated option) left out for m_alpha (GM-140 step 3)
+            refuse, names = _trial_checks(geom, slip, slices, sol,
+                                          m_alpha_check, info)
+            if refuse:
+                _count_m_alpha_refusal()
+                return _FOS_MAX
+            _note_trial_flags(scored_by, fos, names, slip)
+            _note_scored(scored_by, fos, slip)
+            _note_lowest(scored_by, fos, slip)
         return fos
+    except CrackRuleRefused as exc:
+        # a given crack the crack rule refuses (GM-140 step 4's review,
+        # D1/F1), found when the slices are cut: refused, and counted
+        _count_crack_refusal(slip, exc.outcome)
+        return _FOS_MAX
     except GroundCrossingError:
-        # not one sliding mass (GM-122): refused, and counted
+        # a polyline that leaves the ground and comes back into it
+        # (GM-122): refused, and counted
         _count_ground_refusal()
         return _FOS_MAX
     except (ValueError, ZeroDivisionError, RuntimeError):
         return _FOS_MAX
+
+
+def _report_geometry(geom, slip, method: str, n_slices: int, tol: float,
+                     fos_fn: Optional[Callable] = None):
+    """The geometry to slice a search's reported surface with: its crack
+    fixed as the scoring fixed it (`cracks.solve_with_crack`; GM-140
+    step 4). The crack is noted for the result (`cracks.note_report`)."""
+    from slope_stability import cracks
+    if not cracks.may_need_solution(geom, slip):
+        crack = cracks.given_outcome(geom, slip)
+        cracks.note_report(crack)
+        return geom
+    _, crack = cracks.solve_with_crack(
+        geom, slip,
+        lambda g: _compute_fos(g, slip, method, n_slices, tol=tol,
+                               fos_fn=fos_fn, m_alpha_check=False,
+                               inside_model=False))
+    if crack is not None and crack.discarded:
+        raise ValueError(crack.reason)
+    cracks.note_report(crack)
+    return cracks.geometry_of(geom, crack)
 
 
 def _check_entry_exit(geom, slip, x_entry_range, x_exit_range):
@@ -999,21 +1841,41 @@ def _check_entry_exit(geom, slip, x_entry_range, x_exit_range):
     """
     if x_entry_range is None and x_exit_range is None:
         return True
+
+    def inside(x_entry, x_exit):
+        if x_entry_range is not None:
+            if x_entry < x_entry_range[0] or x_entry > x_entry_range[1]:
+                return False
+        if x_exit_range is not None:
+            if x_exit < x_exit_range[0] or x_exit > x_exit_range[1]:
+                return False
+        return True
+
+    if getattr(slip, "is_circular", False) and not slip.is_bound:
+        # each arc of the circle is a trial surface (GM-343): the circle
+        # passes where an arc lies inside the windows, and `_compute_fos`
+        # scores those arcs only and counts the others
+        # (``arcs_outside_windows``)
+        try:
+            arcs = slip.arcs(geom)
+        except ValueError:
+            return False
+        if len(arcs) > 1:
+            slip._n_arcs = len(arcs)
+            slip._window_arcs = [a for a in arcs
+                                 if inside(a.x_start, a.x_end)]
+            if not slip._window_arcs:
+                _count_split(len(arcs))     # split, and no arc inside
+                _count_outside(len(arcs))
+            return bool(slip._window_arcs)
     try:
         x_entry, x_exit = slip.find_entry_exit(geom)
     except GroundCrossingError:
-        _count_ground_refusal()        # not one sliding mass (GM-122)
+        _count_ground_refusal()        # a polyline, not one mass (GM-122)
         return False
     except ValueError:
         return False
-
-    if x_entry_range is not None:
-        if x_entry < x_entry_range[0] or x_entry > x_entry_range[1]:
-            return False
-    if x_exit_range is not None:
-        if x_exit < x_exit_range[0] or x_exit > x_exit_range[1]:
-            return False
-    return True
+    return inside(x_entry, x_exit)
 
 
 def optimize_radius(geom: SlopeGeometry,
@@ -1310,7 +2172,10 @@ def _refine_centre(score, start, steps, bounds,
     return best
 
 
+@_reports_acceptability
 @_counts_refusals
+@counts_reverse_discards
+@_applies_interslice
 def grid_search(geom: SlopeGeometry,
                 x_range: Tuple[float, float],
                 y_range: Tuple[float, float],
@@ -1324,8 +2189,13 @@ def grid_search(geom: SlopeGeometry,
                 fos_fn: Optional[Callable] = None,
                 refine: bool = False,
                 bishop_screen: bool = False,
+                f_interslice: Optional[str] = None,
                 ) -> SearchResult:
     """Grid search for the critical circular slip surface.
+
+    ``f_interslice``: the interslice function of Morgenstern-Price and GLE
+    (None: the function in force, half-sine unless an outer search was
+    given another; GM-140 step 6).
 
     With ``refine`` the grid's lowest centres are then refined by a local
     compass search on the centre (GM-87; see ``_refine_centre``), inside the
@@ -1432,6 +2302,16 @@ def grid_search(geom: SlopeGeometry,
                 x_entry_range=x_entry_range, x_exit_range=x_exit_range)
             n_evaluated += 1
             rescored[key] = (fos_opt, xc, yc, r_opt)
+            if fos_opt >= _FOS_MAX:
+                # the method solved no circle about this centre: the
+                # screen's value there is reported (GM-140 step 6)
+                _note_screen_unsolved(scan, _f)
+            else:
+                _note_screen(scan, _f, "solved")
+        # the centres the screen scored and did not hand on (D2's count)
+        for key, val in found.items():
+            if key not in rescored:
+                _note_screen(scan, val[0], "screen")
 
     for ix in range(nx):
         for iy in range(ny):
@@ -1443,6 +2323,9 @@ def grid_search(geom: SlopeGeometry,
                 "yc": round(yc, 2),
                 "R": round(r_opt, 2),
                 "FOS": round(fos_opt, 4),
+                # the centre's place on the grid, for the contours of the
+                # minimum FOS over the centres (GM-140 step 10, D46)
+                "node": (ix, iy),
             }
             if rescored is not None:
                 if (ix, iy) not in rescored:
@@ -1450,7 +2333,11 @@ def grid_search(geom: SlopeGeometry,
                     grid_fos.append(entry)
                     continue
                 fos_opt, xc, yc, r_opt = rescored[(ix, iy)]
-                entry.update(R=round(r_opt, 2), FOS=round(fos_opt, 4))
+                entry.update(R=round(r_opt, 2), FOS=round(fos_opt, 4),
+                             # the screen's own value at the centre, for
+                             # the contours of a screened search (GM-140
+                             # step 10's fix round, Q1)
+                             screen_FOS=entry["FOS"], screen_method=scan)
             grid_fos.append(entry)
             if fos_opt < best_fos:
                 best_fos = fos_opt
@@ -1458,10 +2345,13 @@ def grid_search(geom: SlopeGeometry,
                 best_yc = yc
                 best_r = r_opt
 
+    refined_at: Dict[Tuple[int, int], tuple] = {}    # GM-140 step 7a
+    refine_ran = [False]
     if refine and best_fos < _FOS_MAX and _time_up():
         _record_not_run("the refinement of the lowest grid centres")
     # Local refinement of the lowest grid centres (GM-87)
     if refine and best_fos < _FOS_MAX and not _time_up():
+        refine_ran[0] = True
         steps = ((x_hi - x_lo) / max(nx - 1, 1) / 2.0,
                  (y_hi - y_lo) / max(ny - 1, 1) / 2.0)
         bounds = ((min(x_lo, x_hi), max(x_lo, x_hi)),
@@ -1503,8 +2393,17 @@ def grid_search(geom: SlopeGeometry,
             r_b, f_b = strict(xc, yc, "bishop")
             if f_b >= _FOS_MAX:
                 return r_b, _FOS_MAX
-            return r_b, _compute_fos(geom, CircularSlipSurface(xc, yc, r_b),
-                                     method, n_slices, tol=tol)
+            slip = CircularSlipSurface(xc, yc, r_b)
+            # (the windows again, so that a split circle is scored on the
+            # arcs inside them: GM-343)
+            _check_entry_exit(geom, slip, x_entry_range, x_exit_range)
+            f_m = _compute_fos(geom, slip, method, n_slices, tol=tol)
+            if f_m >= _FOS_MAX:
+                # Bishop's circle, which the method has no solution on
+                _note_screen_unsolved("bishop", f_b)
+            else:
+                _note_screen("bishop", f_b, "solved")
+            return r_b, f_m
 
         def walk_score(xc, yc):
             key = (round(xc, 6), round(yc, 6))
@@ -1538,19 +2437,23 @@ def grid_search(geom: SlopeGeometry,
                 elif f < best_fos:          # Bishop's circle, reported
                     grid_fos.append({"xc": round(xc, 2), "yc": round(yc, 2),
                                      "R": round(r, 2), "FOS": round(f, 4)})
+            refined_at[(ix, iy)] = (f, xc, yc, r)
             if f < best_fos:
                 best_fos, best_xc, best_yc, best_r = f, xc, yc, r
 
     # Build result for the critical surface
     critical = None
     if best_fos < _FOS_MAX:
-        slip = CircularSlipSurface(best_xc, best_yc, best_r)
+        slip = _governing_circle(geom, best_xc, best_yc, best_r, method,
+                                 n_slices, tol, fos_fn)
         try:
             x_entry, x_exit = slip.find_entry_exit(geom)
-            slices = build_slices(geom, slip, n_slices)
+            slices = build_slices(
+                _report_geometry(geom, slip, method, n_slices, tol, fos_fn),
+                slip, n_slices)
             critical = SlopeStabilityResult(
                 FOS=best_fos,
-                method=method.capitalize(),
+                method=method_label(method),
                 xc=best_xc,
                 yc=best_yc,
                 radius=best_r,
@@ -1568,10 +2471,247 @@ def grid_search(geom: SlopeGeometry,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
         warnings=[window_note] if window_note else [],
+        centre_grid={"x_range": (x_lo, x_hi), "y_range": (y_lo, y_hi),
+                     "nx": nx, "ny": ny},
+        local_minima=_grid_minima_record(
+            lattice, nx, ny, refined_at, refine=refine,
+            refine_ran=refine_ran[0], screened=scan != method,
+            n_starts=(_REFINE_STARTS if fos_fn is None
+                      else _REFINE_FOS_FN[0]),
+            within=_REFINE_WITHIN),
     )
 
 
+#: What a noncircular search called on its own says of the critical circle
+#: (GM-140 step 6): it ran no circular search, so its minimum is not
+#: checked against one. `search_critical_surface` runs the circular search
+#: first and adds its critical circle to the trials (`add_circle_trial`).
+NOT_CHECKED_AGAINST_CIRCLE = {
+    "checked": False,
+    "note": ("the noncircular minimum was not checked against a circle: no "
+             "circular search ran with this search")}
+
+
+def _grid_minima_record(*args, **kwargs):
+    from slope_stability.search_refine import grid_minima_record
+    return grid_minima_record(*args, **kwargs)
+
+
+# ── The noncircular refinement (GM-140 step 7a) ──────────────────────────
+#
+# Every noncircular search (random polylines, differential evolution, the
+# particle swarm, the weak-layer search) finishes the way EM 1110-2-1902
+# describes one: several independent starts (its own best surface, each
+# locally critical circle of the circular search run for circle_check, a
+# wedge along each layer, the caller's surface), each moved one point at a
+# time until no shift lowers F and the shifts are small against the
+# thinnest stratum (EM C-1g(3), p. C-10; 4-2e(2)(b), p. 4-7). The lowest
+# is reported and every start's minimum is listed (EM 4-2d(2), p. 4-2).
+# `search_refine` holds the pieces; `_refines_noncircular` puts the stage
+# at the end of each search. With ``refine=False`` nothing is shifted;
+# the weak-layer search is then its wedge stage alone.
+
+#: The statement a weak-layer search with ``refine=False`` (its wedge
+#: stage alone) carries (the fix round's ruling 10).
+WEDGE_STAGE_ALONE = (
+    "The wedge stage alone (refine=False, Slide2's search without "
+    "optimisation): the wedges' inclinations are fixed at EM 1110-2-1902 "
+    "C-1g(2)'s values, 45 + phi'_D/2 and 45 - phi'_D/2 (pp. C-8 to C-10), "
+    "and the stage is not a minimum over the inclinations or the shape of "
+    "the surface.")
+
+#: The options every noncircular search takes for its refinement.
+_REFINE_OPTIONS = {"refine": True, "refine_fraction": None,
+                   "circle_starts": None, "circle_note": None,
+                   "windows_given": (True, True), "seed_surface": None}
+
+
+def _polyline_result(geom, pts, fos, method, n_slices, tol, fos_fn):
+    """The ``SlopeStabilityResult`` of a polyline a search reports."""
+    slip = PolylineSlipSurface(points=list(pts))
+    x_entry, x_exit = slip.find_entry_exit(geom)
+    slices = build_slices(
+        _report_geometry(geom, slip, method, n_slices, tol, fos_fn),
+        slip, n_slices)
+    return SlopeStabilityResult(
+        FOS=fos, method=_polyline_label(method, fos_fn), xc=0.0, yc=0.0,
+        radius=0.0, x_entry=x_entry, x_exit=x_exit, n_slices=len(slices),
+        has_seismic=geom.kh > 0, kh=geom.kh, slip_points=list(slip.points))
+
+
+def _refines_noncircular(kind: str):
+    """Run the refinement stage (`search_refine.refinement_stage`) at the
+    end of a noncircular search of ``kind``: its sampler under
+    ``1 - _REFINE_SHARE`` of the time left, then every start refined with
+    the search's own scorer (`_compute_fos`, so the printed checks, the
+    method rule and a ``fos_fn`` hold). Adds the keyword options of
+    `_REFINE_OPTIONS` to the search's signature."""
+    def deco(fn):
+        sig = inspect.signature(fn)
+        own_seed = "seed_surface" in sig.parameters
+        extra = [inspect.Parameter(k, inspect.Parameter.KEYWORD_ONLY,
+                                   default=v)
+                 for k, v in _REFINE_OPTIONS.items()
+                 if not (k == "seed_surface" and own_seed)]
+        new_sig = sig.replace(parameters=list(sig.parameters.values())
+                              + extra)
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            opts = {k: kwargs.pop(k, v) for k, v in _REFINE_OPTIONS.items()
+                    if not (k == "seed_surface" and own_seed)}
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            a = bound.arguments
+            if own_seed:
+                opts["seed_surface"] = a.get("seed_surface")
+            refine = bool(opts["refine"])
+            if not refine and kind != "weak_layer":
+                result = fn(*args, **kwargs)
+                result.refinement = {"refined": False}
+                return result
+            with _stage_share(1.0 - _REFINE_SHARE if refine else 1.0):
+                result = fn(*args, **kwargs)
+            _run_refinement(result, a, opts, kind)
+            return result
+
+        wrapper.__signature__ = new_sig
+        return wrapper
+    return deco
+
+
+def _run_refinement(result: SearchResult, a, opts, kind: str) -> None:
+    """The refinement stage of `_refines_noncircular` on ``result``."""
+    from slope_stability.search_refine import (
+        refinement_stage, FINAL_FRACTION)
+    geom = a["geom"]
+    method, n_slices, tol = a["method"], a["n_slices"], a["tol"]
+    fos_fn = a.get("fos_fn")
+    windows = (tuple(a["x_entry_range"]), tuple(a["x_exit_range"]))
+    given = tuple(opts["windows_given"])
+    # Call 5 (OWN-143 part 42, confirmed 2026-11-15): automatic windows
+    # bound only the samplers, so they do not anchor the span screen of
+    # the refinement's trials either (`_noncircular_admissible` then takes
+    # half the slope's height).
+    window_span = _window_span(*windows) if all(given) else None
+    # The fix round's ruling 8 (D2, Q4): inside the refinement, and for
+    # every start scored as it stands, the span floor is the lesser of the
+    # module's floor and the start's own span; the samplers and the wedge
+    # stage keep step 3's screen.
+    floor = module_span_floor(geom, window_span)
+    reject_stats = _new_reject_stats()
+    seen: Dict[tuple, float] = {}
+    flags: Dict[tuple, list] = {}
+
+    def score(pts, start_span=None):
+        key = tuple((float(x), float(z)) for x, z in pts)
+        span_floor = None if start_span is None else min(floor, start_span)
+        if (key, span_floor) in seen:
+            return seen[(key, span_floor)]
+        info: Dict[str, Any] = {}
+        try:
+            slip = PolylineSlipSurface(points=list(key))
+            f = _compute_fos(geom, slip, method, n_slices, tol=tol,
+                             window_span=window_span,
+                             reject_stats=reject_stats, fos_fn=fos_fn,
+                             info=info, span_floor=span_floor)
+        except (ValueError, ZeroDivisionError, RuntimeError, IndexError):
+            f = _FOS_MAX
+        seen[(key, span_floor)] = f
+        if f < _FOS_MAX:
+            flags[key] = list(info.get("flags") or [])
+        return f
+
+    def flags_of(pts):
+        key = tuple((float(x), float(z)) for x, z in pts)
+        if key not in flags:
+            score(pts)
+        return flags.get(key, [])
+
+    def span_of(pts):
+        """A start's own span, as the span screen measures it."""
+        try:
+            slices = build_slices(geom, PolylineSlipSurface(
+                points=[(float(x), float(z)) for x, z in pts]), n_slices)
+        except (ValueError, ZeroDivisionError, RuntimeError, IndexError):
+            return None
+        return (slices[-1].x_right - slices[0].x_left) if slices else None
+
+    def record_stop(stage, n_done, n_of, unit, t0, covered, not_covered):
+        _record_stop(stage, n_done, n_of, unit, t0, covered, not_covered)
+
+    own = (result.critical.slip_points
+           if result.critical is not None and result.critical.slip_points
+           else None)
+    fraction = opts["refine_fraction"]
+    wedge_only = kind == "weak_layer" and not opts["refine"]
+    rec = refinement_stage(
+        geom, score=score, flags_of=flags_of, own_best=own,
+        windows=windows, windows_given=given, n_slices=n_slices,
+        circle_starts=opts["circle_starts"],
+        circle_note=(opts["circle_note"] or
+                     "no circular search ran with this search, so there "
+                     "are no circle starts"),
+        seed_surface=(None if opts["seed_surface"] is None else
+                      getattr(opts["seed_surface"], "points",
+                              opts["seed_surface"])),
+        wedges=True, refine=bool(opts["refine"]),
+        final_fraction=FINAL_FRACTION if fraction is None else fraction,
+        tol=tol, time_up=_time_up, record_stop=record_stop,
+        span_of=span_of,
+        own_label=f"the {kind.replace('_', ' ')} search's own best surface",
+        wedge_only=wedge_only)
+    if wedge_only:
+        # ruling 10: the wedge stage alone is not a minimum over the
+        # inclinations or the shape (in a run with refine=False only the
+        # stage's own value exists, so the first sentence alone);
+        # search_critical_surface puts it back after its supplements
+        rec["warning"] = WEDGE_STAGE_ALONE
+        result.warnings.append(WEDGE_STAGE_ALONE)
+    result.n_surfaces_evaluated += rec["n_scored"]
+    result.n_rejected_geometry += reject_stats["geometry"]
+    result.n_rejected_nonconverged += reject_stats["nonconverged"]
+    result.n_rejected_jagged += reject_stats["jagged"]
+    for name, r in (reject_stats.get("screens") or {}).items():
+        have = result.screen_refusals.setdefault(
+            name, {"n": 0, "n_flagged": r.get("n_flagged")})
+        have["n"] += r["n"]
+        if r.get("n_flagged") is not None:
+            have["n_flagged"] = (have.get("n_flagged") or 0) + r["n_flagged"]
+    for m in rec["local_minima"]:
+        if m.get("points"):
+            result.trial_surfaces.append({
+                "FOS": m["FOS"], "points": list(m["points"]),
+                "from": m["start"]})
+    best = rec.get("best")
+    exact = rec.pop("best_exact", None) or best
+    if exact is not None and (result.critical is None
+                              or exact["FOS"] < result.critical.FOS - 1e-9):
+        try:
+            result.critical = _polyline_result(
+                geom, exact["points"], exact["FOS"], method, n_slices, tol,
+                fos_fn)
+        except ValueError:
+            pass
+    result.local_minima = rec.pop("local_minima")
+    rec["best"] = None if best is None else best["start"]
+    result.refinement = rec
+
+
+def _polyline_label(method: str, fos_fn) -> str:
+    """The label of a noncircular result: the method that scored it
+    (Spencer's method where one for circles only was named), or, with a
+    caller's own per-surface solve, the name the caller gave."""
+    if fos_fn is not None:
+        return method_label(method)
+    return method_label(surface_method(method, False))
+
+
+@_reports_acceptability
 @_counts_refusals
+@counts_reverse_discards
+@_applies_interslice
+@_refines_noncircular("noncircular")
 def search_noncircular(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1583,11 +2723,17 @@ def search_noncircular(
     seed: Optional[int] = None,
     method: str = "spencer",
     fos_fn: Optional[Callable] = None,
+    f_interslice: Optional[str] = None,
 ) -> SearchResult:
     """Search for the critical noncircular slip surface using random polylines.
 
     Generates random polyline slip surfaces within the specified entry/exit
-    ranges and evaluates Spencer's FOS for each.
+    ranges and scores each by ``method`` (default Spencer's method), with
+    ``f_interslice`` for Morgenstern-Price and GLE (None: the function in
+    force, half-sine at the top). Bishop's simplified method and the
+    Ordinary Method of Slices are for circles; named here, the surfaces are
+    scored by Spencer's method and the result is labelled Spencer
+    (`surface_method`; GM-140 step 6).
 
     Parameters
     ----------
@@ -1672,8 +2818,7 @@ def search_noncircular(
             slip = PolylineSlipSurface(points=points)
             fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
                                window_span=window_span,
-                               reject_stats=reject_stats, fos_fn=fos_fn,
-                               confirm_below=best_fos)
+                               reject_stats=reject_stats, fos_fn=fos_fn)
             n_evaluated += 1
 
             grid_fos.append({
@@ -1700,10 +2845,12 @@ def search_noncircular(
     if best_fos < _FOS_MAX and best_slip is not None:
         try:
             x_entry, x_exit = best_slip.find_entry_exit(geom)
-            slices = build_slices(geom, best_slip, n_slices)
+            slices = build_slices(
+                _report_geometry(geom, best_slip, method, n_slices, tol, fos_fn),
+                best_slip, n_slices)
             critical = SlopeStabilityResult(
                 FOS=best_fos,
-                method=method.replace("_", "-").title(),
+                method=_polyline_label(method, fos_fn),
                 xc=0.0,
                 yc=0.0,
                 radius=0.0,
@@ -1722,13 +2869,18 @@ def search_noncircular(
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
         trial_surfaces=trial_surfaces,
+        circle_check=dict(NOT_CHECKED_AGAINST_CIRCLE),
         **_rejection_kwargs(reject_stats, n_evaluated),
     )
 
 
 # ── PSO Noncircular Search ────────────────────────────────────────────────
 
+@_reports_acceptability
 @_counts_refusals
+@counts_reverse_discards
+@_applies_interslice
+@_refines_noncircular("pso")
 def search_pso(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1742,11 +2894,18 @@ def search_pso(
     w: float = 0.7,
     c1: float = 1.5,
     c2: float = 1.5,
+    method: str = "spencer",
+    f_interslice: Optional[str] = None,
 ) -> SearchResult:
     """Particle Swarm Optimization for critical noncircular slip surface.
 
     Each particle represents a polyline slip surface defined by control
     point coordinates. The swarm evolves toward the minimum FOS surface.
+    Every particle is scored by ``method`` (default Spencer's method; before
+    GM-140 step 6 always Spencer's, whatever was named), with
+    ``f_interslice`` for Morgenstern-Price and GLE (None: the function in
+    force). Bishop's simplified method and the Ordinary Method of Slices,
+    which are for circles, are scored by Spencer's method here.
 
     Parameters
     ----------
@@ -1833,9 +2992,8 @@ def search_pso(
         slip = _particle_to_slip(pos)
         if slip is None:
             return _FOS_MAX
-        fos = _compute_fos(geom, slip, "spencer", n_slices, tol=tol,
-                           window_span=window_span, reject_stats=reject_stats,
-                           confirm_below=best_seen[0])
+        fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
+                           window_span=window_span, reject_stats=reject_stats)
         best_seen[0] = min(best_seen[0], fos)
         return fos
 
@@ -1935,10 +3093,12 @@ def search_pso(
         if best_slip is not None:
             try:
                 x_entry, x_exit = best_slip.find_entry_exit(geom)
-                slices = build_slices(geom, best_slip, n_slices)
+                slices = build_slices(
+                    _report_geometry(geom, best_slip, method, n_slices, tol, None),
+                    best_slip, n_slices)
                 critical = SlopeStabilityResult(
                     FOS=gbest_fit,
-                    method="Spencer",
+                    method=_polyline_label(method, None),
                     xc=0.0,
                     yc=0.0,
                     radius=0.0,
@@ -1957,13 +3117,40 @@ def search_pso(
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
         trial_surfaces=trial_surfaces,
+        circle_check=dict(NOT_CHECKED_AGAINST_CIRCLE),
         **_rejection_kwargs(reject_stats, n_evaluated),
     )
 
 
 # ── Weak-Layer Biased Search (SNIFF-inspired) ────────────────────────────
 
+def _layer_band_at(geom: SlopeGeometry, layer, x: float):
+    """(z_bottom, z_top) of the ground ``layer`` holds at x, for the
+    weak-layer search to aim at; None where it holds none.
+
+    A layer is where its top and bottom put it at x (``top_at`` and
+    ``bottom_at``: the polylines where given, else the flat elevations),
+    less what the layers listed before it hold
+    (``SlopeGeometry.column_at``; one material per point, GM-140 step 1).
+    The top is not cut at the ground: the search keeps its trial points
+    below the ground itself. For a layer with a flat top and bottom that
+    no earlier layer overlaps this is (bottom_elevation, top_elevation).
+    Where a layer listed before it cuts the layer in two, the thicker
+    stretch.
+    """
+    stretches = [(z_bot, z_top)
+                 for held_by, z_bot, z_top in geom.column_at(x, z_high=math.inf)
+                 if held_by is layer]
+    if not stretches:
+        return None
+    return max(stretches, key=lambda s: s[1] - s[0])
+
+
+@_reports_acceptability
 @_counts_refusals
+@counts_reverse_discards
+@_applies_interslice
+@_refines_noncircular("weak_layer")
 def search_weak_layer_biased(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1973,183 +3160,58 @@ def search_weak_layer_biased(
     n_slices: int = 30,
     tol: float = 1e-4,
     seed: Optional[int] = None,
+    method: str = "spencer",
+    f_interslice: Optional[str] = None,
 ) -> SearchResult:
-    """Weak-layer biased random search inspired by SSAP's SNIFF algorithm.
+    """The weak-layer search: a wedge along each layer (GM-140 step 7a).
 
-    Biases random surface generation toward passing through soil layers
-    with the lowest shear strength. Surfaces are weighted to preferentially
-    route through weak zones.
+    EM 1110-2-1902 C-1f(2), p. C-6: a wedge suits a long linear segment
+    through weak material bounded by stronger material; C-1g(2), pp. C-8
+    to C-10, Fig. C-7b: the wedge search varies the two ends of the
+    central block's base, the active wedge at 45 + phi'_D/2 and the
+    passive at 45 - phi'_D/2, tan phi'_D = tan phi'/F; FHWA NHI-06-088
+    pp. 6-43 to 6-44: try several positions of the wedges. Every layer
+    within the search's depth gets one (`search_refine.wedge_starts`):
+    the central block on the layer's mid-line, its ends at
+    ``search_refine.WEDGE_POSITIONS`` positions each over the windows.
+    This replaces the random aiming at a layer chosen by the weight
+    1/(c + 50 tan phi), which had no print (before step 7a: Borselli's
+    SNIFF idea, SSAP2010).
 
-    Parameters
-    ----------
-    geom : SlopeGeometry
-        Slope definition.
-    x_entry_range : (float, float)
-        Allowed entry x-coordinate range.
-    x_exit_range : (float, float)
-        Allowed exit x-coordinate range.
-    n_trials : int
-        Number of random trial surfaces. Default 500.
-    n_points : int
-        Number of polyline vertices. Default 5.
-    n_slices : int
-        Number of slices per analysis.
-    tol : float
-        FOS convergence tolerance.
-    seed : int, optional
-        Random seed for reproducibility.
+    With ``refine`` (default True) the lowest wedge of each layer, each
+    locally critical circle given (``circle_starts``; the circular search
+    `search_critical_surface` runs for circle_check) and a
+    ``seed_surface`` are each refined one point at a time (EM C-1g(3),
+    p. C-10; `search_refine.refine_polyline`) and the lowest is reported,
+    every start's minimum listed in ``local_minima``. With
+    ``refine=False`` the wedge stage alone is the result: Slide2's search
+    without optimisation. ``n_trials``, ``n_points`` and ``seed`` are
+    kept in the signature and no longer change the result.
+
+    Every surface is scored by ``method`` (default Spencer's method), with
+    ``f_interslice`` for Morgenstern-Price and GLE (None: the function in
+    force). Bishop's simplified method and the Ordinary Method of Slices,
+    which are for circles, are scored by Spencer's method here.
 
     Returns
     -------
     SearchResult
-
-    References
-    ----------
-    Borselli (2002) — SNIFF Random Search concept (SSAP2010)
     """
-    if seed is not None:
-        random.seed(seed)
-
-    min_layer_bot = min(L.bottom_elevation for L in geom.soil_layers)
-    window_span = _window_span(x_entry_range, x_exit_range)
-    reject_stats = _new_reject_stats()
-
-    # Compute weakness score for each layer: inverse of shear strength
-    layer_weakness = []
-    for layer in geom.soil_layers:
-        c, phi = layer.shear_strength_params
-        strength = c + 50.0 * math.tan(math.radians(phi))
-        if strength <= 0:
-            strength = 0.1
-        layer_weakness.append(1.0 / strength)
-
-    total_weakness = sum(layer_weakness)
-    if total_weakness > 0:
-        layer_weights = [lw / total_weakness for lw in layer_weakness]
-    else:
-        layer_weights = [1.0 / len(geom.soil_layers)] * len(geom.soil_layers)
-
-    best_fos = _FOS_MAX
-    best_slip = None
-    n_evaluated = 0
-    grid_fos = []
-    trial_surfaces = []
-
-    t_start = time.perf_counter()
-    for k in range(n_trials):
-        if best_fos < _FOS_MAX and _time_up():    # GM-123
-            _record_stop("weak-layer search", k, n_trials,
-                         "random trial surfaces", t_start,
-                         "the trials are random over both windows",
-                         f"{n_trials - k} trials")
-            break
-        x_entry = random.uniform(*x_entry_range)
-        x_exit = random.uniform(*x_exit_range)
-        if x_exit <= x_entry + 1.0:
-            continue
-
-        z_entry = geom.ground_elevation_at(x_entry)
-        z_exit = geom.ground_elevation_at(x_exit)
-
-        n_interior = max(n_points - 2, 1)
-        points = [(x_entry, z_entry)]
-
-        target_idx = _weighted_choice(layer_weights)
-        target_layer = geom.soil_layers[target_idx]
-
-        for j in range(n_interior):
-            frac = (j + 1) / (n_interior + 1)
-            x_pt = x_entry + frac * (x_exit - x_entry)
-            z_ground = geom.ground_elevation_at(x_pt)
-
-            if random.random() < 0.7:
-                layer_mid = (target_layer.top_elevation + target_layer.bottom_elevation) / 2.0
-                thickness = target_layer.top_elevation - target_layer.bottom_elevation
-                noise = random.gauss(0, max(thickness / 4.0, 0.1))
-                z_pt = layer_mid + noise
-                z_pt = max(min_layer_bot, min(z_ground - 0.3, z_pt))
-            else:
-                max_depth = z_ground - min_layer_bot
-                if max_depth <= 0:
-                    max_depth = 1.0
-                depth = random.uniform(0.5, max_depth * 0.9)
-                z_pt = z_ground - depth
-
-            points.append((x_pt, z_pt))
-
-        points.append((x_exit, z_exit))
-
-        try:
-            slip = PolylineSlipSurface(points=points)
-            fos = _compute_fos(geom, slip, "spencer", n_slices, tol=tol,
-                               window_span=window_span,
-                               reject_stats=reject_stats,
-                               confirm_below=best_fos)
-            n_evaluated += 1
-
-            grid_fos.append({
-                "xc": round(points[len(points) // 2][0], 2),
-                "yc": round(points[len(points) // 2][1], 2),
-                "R": 0.0,
-                "FOS": round(fos, 4),
-            })
-            if fos < 900:
-                trial_surfaces.append({
-                    "FOS": round(fos, 4),
-                    "points": [(round(px, 3), round(pz, 3))
-                               for px, pz in points],
-                })
-
-            if fos < best_fos:
-                best_fos = fos
-                best_slip = slip
-        except (ValueError, ZeroDivisionError, RuntimeError):
-            continue
-
-    critical = None
-    if best_fos < _FOS_MAX and best_slip is not None:
-        try:
-            x_entry, x_exit = best_slip.find_entry_exit(geom)
-            slices = build_slices(geom, best_slip, n_slices)
-            critical = SlopeStabilityResult(
-                FOS=best_fos,
-                method="Spencer",
-                xc=0.0,
-                yc=0.0,
-                radius=0.0,
-                x_entry=x_entry,
-                x_exit=x_exit,
-                n_slices=len(slices),
-                has_seismic=geom.kh > 0,
-                kh=geom.kh,
-                slip_points=list(best_slip.points),
-            )
-        except ValueError:
-            pass
-
     return SearchResult(
-        critical=critical,
-        n_surfaces_evaluated=n_evaluated,
-        grid_fos=grid_fos,
-        trial_surfaces=trial_surfaces,
-        **_rejection_kwargs(reject_stats, n_evaluated),
+        critical=None,
+        n_surfaces_evaluated=0,
+        grid_fos=[],
+        trial_surfaces=[],
+        circle_check=dict(NOT_CHECKED_AGAINST_CIRCLE),
     )
-
-
-def _weighted_choice(weights):
-    """Weighted random selection, returns index."""
-    r = random.random()
-    cumulative = 0.0
-    for i, w in enumerate(weights):
-        cumulative += w
-        if r <= cumulative:
-            return i
-    return len(weights) - 1
 
 
 # ── Entry/Exit Region Search ─────────────────────────────────────────────
 
+@_reports_acceptability
 @_counts_refusals
+@counts_reverse_discards
+@_applies_interslice
 def search_entry_exit(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2161,8 +3223,12 @@ def search_entry_exit(
     tol: float = 1e-4,
     fos_fn: Optional[Callable] = None,
     bishop_screen: bool = False,
+    f_interslice: Optional[str] = None,
 ) -> SearchResult:
     """Entry/exit region search for circular slip surfaces.
+
+    ``f_interslice``: the interslice function of Morgenstern-Price and GLE
+    (None: the function in force; GM-140 step 6).
 
     Instead of searching on a (xc, yc) grid, generates trial arcs
     connecting entry and exit points on the ground surface. For each
@@ -2362,6 +3428,16 @@ def search_entry_exit(
                             start=t_b)
             if res is not None:
                 rescored[key] = res
+            if res is None or res[0] >= _FOS_MAX:
+                # the method solved no circle on this pair: the screen's
+                # value there is reported (GM-140 step 6)
+                _note_screen_unsolved(scan, found[key][0])
+            else:
+                _note_screen(scan, found[key][0], "solved")
+        # the pairs the screen scored and did not hand on (D2's count)
+        for key, res in found.items():
+            if key not in shortlist:
+                _note_screen(scan, res[0], "screen")
 
     for i in range(len(entry_xs)):
         for j in range(len(exit_xs)):
@@ -2386,13 +3462,16 @@ def search_entry_exit(
 
     critical = None
     if best_fos < _FOS_MAX:
-        slip = CircularSlipSurface(best_xc, best_yc, best_r)
+        slip = _governing_circle(geom, best_xc, best_yc, best_r, method,
+                                 n_slices, tol, fos_fn)
         try:
             x_entry, x_exit = slip.find_entry_exit(geom)
-            slices = build_slices(geom, slip, n_slices)
+            slices = build_slices(
+                _report_geometry(geom, slip, method, n_slices, tol, fos_fn),
+                slip, n_slices)
             critical = SlopeStabilityResult(
                 FOS=best_fos,
-                method=method.capitalize(),
+                method=method_label(method),
                 xc=best_xc,
                 yc=best_yc,
                 radius=best_r,
@@ -2422,7 +3501,11 @@ def search_entry_exit(
 
 # ── Differential-Evolution Noncircular Refinement ───────────────────────
 
+@_reports_acceptability
 @_counts_refusals
+@counts_reverse_discards
+@_applies_interslice
+@_refines_noncircular("noncircular_de")
 def search_de(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2437,6 +3520,7 @@ def search_de(
     seed_surface=None,
     n_seed_trials: int = 150,
     fos_fn: Optional[Callable] = None,
+    f_interslice: Optional[str] = None,
 ) -> SearchResult:
     """Noncircular critical-surface optimization via differential evolution.
 
@@ -2460,7 +3544,12 @@ def search_de(
     n_points : int
         Total polyline vertices (>= 4 recommended for DE). Default 7.
     method : str
-        FOS method for evaluation. Default 'spencer'.
+        FOS method for evaluation. Default 'spencer'. Bishop's simplified
+        method and the Ordinary Method of Slices, which are for circles,
+        are scored by Spencer's method (`surface_method`).
+    f_interslice : str, optional
+        Interslice function of Morgenstern-Price and GLE (None: the
+        function in force, half-sine at the top; GM-140 step 6).
     n_slices, tol, seed : usual meanings.
     maxiter, popsize : int
         scipy differential_evolution budget. Default 30 / 15.
@@ -2523,7 +3612,7 @@ def search_de(
         info: Dict[str, Any] = {}
         fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
                            window_span=window_span, reject_stats=reject_stats,
-                           fos_fn=fos_fn, confirm_below=best_seen[0],
+                           fos_fn=fos_fn,
                            info=info)
         best_seen[0] = min(best_seen[0], fos)
         m = info.get("m_alpha_min")
@@ -2552,7 +3641,7 @@ def search_de(
         seed_res = search_noncircular(
             geom, x_entry_range, x_exit_range, n_trials=n_seed_trials,
             n_points=n_points, n_slices=n_slices, tol=tol, seed=seed,
-            method=method, fos_fn=fos_fn,
+            method=method, fos_fn=fos_fn, refine=False,
         )
         if seed_res.critical is not None and seed_res.critical.slip_points:
             seed_crit = seed_res.critical
@@ -2618,16 +3707,17 @@ def search_de(
         # objective may include penalty; recompute clean FOS
         clean = _compute_fos(geom, best_slip, method, n_slices, tol=tol,
                              window_span=window_span, fos_fn=fos_fn,
-                             reject_stats=reject_stats,
-                             confirm_below=math.inf)
+                             reject_stats=reject_stats)
         try:
             if clean >= _FOS_MAX:     # its solution did not hold (above)
                 raise ValueError("no confirmed solution")
             x_entry, x_exit = best_slip.find_entry_exit(geom)
-            slices = build_slices(geom, best_slip, n_slices)
+            slices = build_slices(
+                _report_geometry(geom, best_slip, method, n_slices, tol, fos_fn),
+                best_slip, n_slices)
             critical = SlopeStabilityResult(
                 FOS=clean,
-                method=method.replace("_", "-").title(),
+                method=_polyline_label(method, fos_fn),
                 xc=0.0, yc=0.0, radius=0.0,
                 x_entry=x_entry, x_exit=x_exit,
                 n_slices=len(slices),
@@ -2653,5 +3743,165 @@ def search_de(
         n_surfaces_evaluated=n_evaluated,
         grid_fos=[],
         warnings=notes,
+        circle_check=dict(NOT_CHECKED_AGAINST_CIRCLE),
         **_rejection_kwargs(reject_stats, n_evaluated),
     )
+
+
+# ── A noncircular minimum checked against the circle (GM-140 step 6) ─────
+#
+# A noncircular search (random polylines, particle swarm, differential
+# evolution, weak layer) samples polylines; nothing made it find the
+# critical circle, so it could report a minimum above the circle's value by
+# the same method without saying so (ACADS 1(a), 200 random polylines by
+# Spencer's method: 1.092 against the critical circle's 0.984). No print
+# held gives the rule: running the circular search first is the module's
+# own call (circle_check=False is the other form; the step 6 fix round,
+# the orchestrator's N1). EM 1110-2-1902 4-2e(2), p. 4-7, says only that
+# the initial position of a noncircular slip surface is specified by the
+# user and should correspond to the estimated position of the critical
+# slip surface; it is not the basis. `search_critical_surface` runs
+# the circular search first, by the method that scores the polylines, and
+# its critical circle, as the polyline of its slice-base points, is one of
+# the noncircular search's trials (`add_circle_trial`). Where no circular
+# search ran the result says the minimum was not checked against a circle
+# (`NOT_CHECKED_AGAINST_CIRCLE`).
+
+def circle_as_polyline(geom, crit, n_slices: int) -> PolylineSlipSurface:
+    """A result's circle (its governing arc) as the polyline through its
+    slice-base points on ``n_slices`` slices, its two ends on the ground.
+    Raises ValueError where the circle cannot be sliced."""
+    from slope_stability.slip_surface import circle_of
+    slip = circle_of(crit)
+    slices = build_slices(geom, slip, n_slices)
+    if len(slices) < 3:
+        raise ValueError("the circle gives fewer than three slices")
+    xs = [slices[0].x_left] + [s.x_right for s in slices]
+    pts = [(xs[0], geom.ground_elevation_at(xs[0]))]
+    for x in xs[1:-1]:
+        z = slip.slip_elevation_at(x)
+        if z is None:
+            raise ValueError(f"the circle has no point at x = {x:.3f}")
+        pts.append((x, min(z, geom.ground_elevation_at(x))))
+    pts.append((xs[-1], geom.ground_elevation_at(xs[-1])))
+    return PolylineSlipSurface(points=pts)
+
+
+def add_circle_trial(geom, result: SearchResult, circle, method: str,
+                     n_slices: int, tol: float = 1e-4) -> Dict[str, Any]:
+    """Score the critical circle of a circular search (``circle``, its
+    ``SlopeStabilityResult``; None when that search found none) as one of
+    the trials of the noncircular search whose result is ``result``, by
+    ``method`` (the method that scored the polylines), and report the
+    polyline where it is the lowest. Returns ``SearchResult.circle_check``
+    (and sets it): ``checked``, the circle (centre, radius, its factor of
+    safety by the method as a circle), ``FOS_as_polyline``,
+    ``noncircular_minimum`` (the search's own lowest polyline, None when it
+    solved none), ``governs`` (the circle's polyline is the surface
+    reported), ``note`` and, when the search's own minimum was above the
+    circle's value, ``warning``: the statement `search_critical_surface`
+    puts in the result's ``warnings``."""
+    own = result.critical.FOS if result.critical is not None else None
+    scored = surface_method(method, False)
+    out: Dict[str, Any] = {"checked": False, "method": scored,
+                           "f_interslice": interslice_of(scored),
+                           "noncircular_minimum":
+                               None if own is None else round(own, 4)}
+    result.circle_check = out
+    if circle is None or circle.FOS is None or circle.FOS >= _FOS_MAX:
+        out["note"] = ("the noncircular minimum was not checked against a "
+                       "circle: the circular search run for the check "
+                       "found no circle the method solves")
+        return out
+    out["circle"] = {"xc": round(circle.xc, 3), "yc": round(circle.yc, 3),
+                     "radius": round(circle.radius, 3),
+                     "x_entry": round(circle.x_entry, 3),
+                     "x_exit": round(circle.x_exit, 3),
+                     "FOS": round(circle.FOS, 4)}
+    fos = _FOS_MAX
+    poly = None
+    # (where the noncircular refinement ran, the circle's polyline is one
+    # of its starts as it stands, so its span floor is the start's: the
+    # fix round's ruling 8; otherwise step 6's screen as it was)
+    refined = bool((result.refinement or {}).get("refined"))
+    try:
+        poly = circle_as_polyline(geom, circle, n_slices)
+        fos = _compute_fos(
+            geom, poly, method, n_slices, tol=tol,
+            span_floor=(start_span_floor(geom, poly, n_slices)
+                        if refined else None))
+    except (ValueError, ZeroDivisionError, RuntimeError) as exc:
+        out["note"] = (f"the critical circle could not be scored as a "
+                       f"polyline ({exc})")
+    result.n_surfaces_evaluated += 1
+    out["checked"] = True
+    name = method_label(scored)
+    if fos >= _FOS_MAX:
+        out["FOS_as_polyline"] = None
+        out["governs"] = False
+        out.setdefault("note", (
+            "the critical circle as a polyline of its slice-base points "
+            "was not scored (the method has no solution on it, or a screen "
+            "of the noncircular search refused it)"))
+        if own is None or own > circle.FOS:
+            out["warning"] = (
+                f"The noncircular search's lowest surface "
+                f"({'none' if own is None else f'FOS {own:.3f}'}) is above "
+                f"the critical circle's value by the same method ({name}, "
+                f"FOS {circle.FOS:.3f}; circle_check), and that circle as a "
+                f"polyline was not scored, so it is not among the trials: "
+                f"the noncircular search did not reach the critical "
+                f"surface. Use the circular search's result, or more "
+                f"trials.")
+        return out
+    out["FOS_as_polyline"] = round(fos, 4)
+    out["governs"] = own is None or fos < own
+    result.trial_surfaces.append({
+        "FOS": round(fos, 4),
+        "points": [(round(px, 3), round(pz, 3)) for px, pz in poly.points],
+        "from": "critical circle"})
+    if not out["governs"]:
+        out["note"] = ("the search's own lowest polyline is at or below "
+                       "the critical circle's value as a polyline")
+        if refined and own is not None and own > circle.FOS + 1e-9:
+            # the fix round's ruling 9: every start, this polyline among
+            # them, is scored as it stands, so it never governs here; a
+            # headline above the circle's own value still says so
+            out["warning"] = (
+                f"The noncircular search's lowest surface (FOS {own:.4f}) "
+                f"is above the critical circle's value by the same method "
+                f"({name}, FOS {circle.FOS:.4f} as a circle, {fos:.4f} as "
+                f"the polyline of its {len(poly.points) - 1} slice bases; "
+                f"circle_check). Every start, that polyline among them, was "
+                f"scored as it stands and refined one point at a time (EM "
+                f"1110-2-1902 C-1g(3), p. C-10), and none reached below the "
+                f"circle: report the circle's value beside this one.")
+        return out
+    try:
+        x_entry, x_exit = poly.find_entry_exit(geom)
+        slices = build_slices(
+            _report_geometry(geom, poly, method, n_slices, tol, None),
+            poly, n_slices)
+    except ValueError as exc:
+        out["governs"] = False
+        out["note"] = f"the circle's polyline could not be reported ({exc})"
+        return out
+    result.critical = SlopeStabilityResult(
+        FOS=fos, method=name, xc=0.0, yc=0.0, radius=0.0,
+        x_entry=x_entry, x_exit=x_exit, n_slices=len(slices),
+        has_seismic=geom.kh > 0, kh=geom.kh,
+        slip_points=list(poly.points))
+    out["note"] = ("the critical circle, as the polyline of its slice-base "
+                   "points, is the lowest of the noncircular search's "
+                   "trials and is the surface reported")
+    out["warning"] = (
+        f"The noncircular search's own lowest surface "
+        f"({'none solved' if own is None else f'FOS {own:.3f}'}) is above "
+        f"the critical circle's value by the same method ({name}, FOS "
+        f"{circle.FOS:.3f} as a circle, {fos:.3f} as the polyline of its "
+        f"{len(poly.points) - 1} slice bases; circle_check). The circle's "
+        f"polyline is one of the search's trials and is the surface "
+        f"reported: the polylines the search generated did not reach a "
+        f"lower one. Running the circular search first is the module's own "
+        f"call (circle_check=False runs none).")
+    return out

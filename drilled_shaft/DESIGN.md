@@ -23,9 +23,11 @@ alpha method (clay), beta method (sand), and rock socket design.
 
 ## Public API
 ```python
-analyze_drilled_shaft(shaft, soil_profile, ...) -> DrillShaftResult
-analyze_capacity_vs_depth(shaft, soil_profile, depths, ...) -> list
-get_resistance_factors(method, condition) -> dict
+# exports of drilled_shaft/__init__.py
+DrillShaft, ShaftSoilLayer, ShaftSoilProfile
+DrillShaftAnalysis(shaft, soil, factor_of_safety=2.5, ...)
+    # .compute() -> DrillShaftResult; .capacity_vs_depth(...)
+DrillShaftResult
 ```
 
 ## Key Notes
@@ -139,7 +141,7 @@ local experience indicate the rock mass below the socket tip is
 competent"); false takes the Hoek-Brown base, refused where the tip rock
 layer gives no `GSI` or `m_i`; left out, the conditions are taken as met
 and said so when every layer within one base diameter below the base is
-rock with RQD 100 (the layer default), with the Hoek-Brown value beside
+rock with RQD 100 as given, with the Hoek-Brown value beside
 2.5 qu where the tip rock layer gives `GSI` and `m_i` (p. 10-22 recommends
 2.5 for rock that meets the conditions; the Hoek-Brown base is "For
 fractured rock mass", p. 10-23, so the lower value is not taken silently);
@@ -147,6 +149,20 @@ when any is soil or has a lower RQD, the Hoek-Brown base on the tip rock
 layer's `GSI` and `m_i`, and the call is refused, naming them, where it
 gives none, so 2.5 qu is never applied silently to fractured rock. No RQD
 or GSI threshold is built: GEC-10 prints none.
+
+A rock layer with no RQD given (GM-310, the call for OWN-84 of
+2026-11-12). The conditions of p. 10-22 are a finding about the rock below
+the base, so an RQD left out is not taken as 100 for the base: with rock
+within one base diameter below the base that gives no RQD and
+`rock_base_conditions_met` left out, the base is the Hoek-Brown base where
+the tip rock layer gives `GSI` and `m_i`, and otherwise the call is
+refused, naming the three inputs that settle it (the layers' RQD,
+`rock_base_conditions_met`, or `GSI` with `m_i`). `rock_base_method`
+"rqd" is refused the same way when the tip rock layer gives no RQD. Before
+this the layer default of 100 selected Eq. 10-23 (one probe: 89,722 kN
+against 47,378 kN by the Hoek-Brown base). The side resistance under
+`rock_side_method` "caving" still reads a left-out RQD as 100 and says so
+in its choice (not part of the call).
 
 The Hoek-Brown base (GM-251) is built as printed: Eq. 10-24 (p. 10-23),
 Eqs. 10-25 to 10-29 (p. 10-24), on the tip rock layer's `qu`, `GSI` and
@@ -329,3 +345,38 @@ Layer 3 sand beta = 0.41 (RSN 470.7 kips) and Layer 4 clay alpha = 0.47
 - Chen & Kulhawy (1993) — UU/UC -> CIUC strength transforms (Eq 10-16/10-17)
 - Mayne & Kulhawy (1982) — Ko = (1 - sin phi')*OCR^(sin phi')
 - Mayne (2007) — sigma'p correlation to N60
+
+## A shaft longer than the soil profile (GM-318)
+
+GEC-10 takes the base resistance from the ground at and to 2B below the
+base (Eq. 10-14, p. 10-15; Eq. 10-19, p. 10-19), and no held manual prints
+carrying the last explored layer on below the profile. So a shaft longer
+than the profile is refused, naming the depth the layers do not cover.
+
+`extend_last_layer=True` is the one input that runs it: the last layer is
+taken to go on to the base (side and base resistance in it, the same
+numbers as a profile given to the base). `DrillShaftResult.warnings` (new;
+`warnings` in `to_dict()` when not empty) and the choice "soil below the
+profile" say so, and the calc package's soil layers table marks the last
+layer "(given to 12 m, assumed below)" (review C6). Before GM-318 the run
+went ahead with only a Python
+warning: no side resistance below the profile and the base in the last
+layer.
+
+A base at the profile's bottom is accepted; the 2B zone below it is then
+"the mean over what the profile gives", as the base choices already say.
+In an extended run the base steps give `su_profile_ends_m` (clay base) or
+`N60_profile_ends_m` (sand base) as the depth the layers given reach, with
+`su_last_layer_carried_to_m` / `N60_last_layer_carried_to_m` the base the
+last layer was carried on to, and the base choice says both (GM-318 review
+B1; it gave the carried-on depth as the end of the profile).
+`capacity_vs_depth` lists a trial length past the profile among its skipped
+depths. With `extend_last_layer` it runs those lengths instead, each on the
+layers as given (the run of that length alone; the profile carried on to
+the deepest base would otherwise reach into a shorter trial's 2B zone
+unsaid). A row past the profile carries its run's `warnings`; the tool's
+result says once at the top which lengths stand on the carried-on layer,
+with the choice "soil below the profile" (GM-318 review A1), whether the
+design shaft passes the profile or only the sweep does (`depth_max` past it
+with the design shaft inside; re-check N1: that case had only the rows'
+warnings).

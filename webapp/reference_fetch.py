@@ -47,11 +47,15 @@ def _fetch(name: str, dest: str) -> Optional[str]:
 
 
 def register_if_configured() -> bool:
-    """Install the SharePoint fetcher when SharePoint is configured."""
+    """Install the SharePoint fetcher when SharePoint is configured. It
+    carries the folder's listing (:func:`available_names`), so the helpers
+    are promised a chart or a worked example's page only where its PDF is
+    in the folder (``reference_docs``, asked once a session)."""
     from funhouse_agent import reference_docs
     if not sharepoint_store.configured():
         return False
     _fetch.description = f"SharePoint {folder()}/"
+    _fetch.available = lambda: available_names()
     reference_docs.register_fetcher(_fetch)
     return True
 

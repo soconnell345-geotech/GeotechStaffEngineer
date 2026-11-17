@@ -102,7 +102,7 @@ def test_the_tools_take_the_concrete_strength_for_the_rock_side(
             "layers": [{"thickness": 3, "soil_type": "cohesive",
                         "unit_weight": 18, "cu": 100},
                        {"thickness": 10, "soil_type": "rock",
-                        "unit_weight": 23, "qu": 40000}]}
+                        "unit_weight": 23, "qu": 40000, "RQD": 100}]}
     for method in ("drilled_shaft_capacity", "lrfd_capacity"):
         r = D.call_agent("drilled_shaft", method, dict(call))
         assert "error" not in r, r.get("error")

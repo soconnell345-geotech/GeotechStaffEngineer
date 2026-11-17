@@ -156,11 +156,21 @@ def test_peck_overburden_correction_nhi_eq_3_3():
         15 * 0.77 * math.log10(20 * tsf / 50.0))
 
 
-def test_liao_whitman_default_is_unchanged():
-    # GEC-5 Eq 5.10 (p. 5-31) with pa = 100 kPa; cap 1.7 (Youd et al. 2001)
+def test_liao_whitman_default_and_its_cap():
+    # GEC-5 Eq 5.10 (p. 5-31) with pa = 100 kPa; capped at 2.0 as GEC-6
+    # Fig. 5-18 (p. 90) draws it (GM-310, the call for OWN-112; 1.7 after
+    # Youd et al. 2001 before, still there as CN_cap). Made-up counts.
     assert spt_overburden_correction(10, 50.0)["CN"] == pytest.approx(
         math.sqrt(2.0))
-    assert spt_overburden_correction(10, 20.0)["CN"] == 1.7
+    assert spt_overburden_correction(10, 20.0)["CN"] == 2.0
+    assert spt_overburden_correction(10, 30.0)["CN"] == pytest.approx(
+        math.sqrt(100 / 30.0))          # 1.826: 1.7 before GM-310
+    assert spt_overburden_correction(10, 30.0, CN_cap=1.7)["CN"] == 1.7
+    # at and above 34.6 kPa nothing moves
+    assert spt_overburden_correction(10, 35.0)["CN"] == pytest.approx(
+        math.sqrt(100 / 35.0))
+    # Peck's correction stays offered, at most 2.0
+    assert spt_overburden_correction(10, 4.0, method="peck")["CN"] == 2.0
 
 
 # ------------------------------------------------- soil_profile uses N1,60

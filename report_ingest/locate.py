@@ -32,6 +32,9 @@ words on a scan (``Document.page(p, words=True)``).
    - a laboratory test on a table printed one column per sample (its
      sample labels across a header row, :func:`sample_columns`) by its
      sample's column, boxed over the cells printing its results (RI-99);
+     else, where its sample's label names it on a line printing none of
+     its results and one row prints two or more of them, by that row
+     (:func:`_sample_results`, RI-99: the box is where the values are);
      else by its sample's label line, then by the row that
      prints its own results, then by its boring's label on a row that also
      prints its depth or one of its results (never a heading,
@@ -171,6 +174,7 @@ STATUSES = (PLACED, MOVED, SEVERAL, NOT_FOUND, NO_TEXT, NO_PAGE)
 #: of that boring shares) says nothing about which object it is.
 WORD_ANCHORS = frozenset((
     "label", "description", "sample label", "sample column",
+    "sample results",
     "label and number", "number by its label", "label and text",
     "printed text", "quote", "quote on its page"))
 #: The anchors that find an object's page, not its place on it: a sheet's
@@ -1571,11 +1575,39 @@ def _values_row(numbers: Sequence[float]) -> Anchor:
     return "result values", find
 
 
+def _sample_results(sample: str, boring: str, top: Optional[float],
+                    numbers: Sequence[float]) -> Anchor:
+    """A test whose sample label is printed apart from its results (BACKLOG
+    RI-99 (3)): the label names the test in one place (:func:`_sample_line`'s
+    own narrowing), on a row printing none of the test's results, and one
+    row of the page prints two or more of them (:func:`_values_row`). The
+    box is that row's: a reviewer checks a number where it is printed, and
+    the label's line prints none. Nothing in any other case (the label on
+    the results' own row, the results on no one row, the label in several
+    places), where the anchors after it place the test as before."""
+    values = _values_row(numbers)[1]
+
+    def find(words: PageWords, page: int) -> List[Candidate]:
+        if len(numbers) < 2:
+            return []
+        hits = label_hits(words(page), sample)
+        kept = _narrowed(hits, _row_tests(boring, top, numbers))
+        if len(kept) != 1:
+            return []
+        row = next(r for r, c in hits if c is kept[0])
+        if any(_row_prints(row, n) for n in numbers):
+            return []
+        rows = values(words, page)
+        return rows if len(rows) == 1 else []
+    return "sample results", find
+
+
 def lab_targets(test: Any) -> List[Anchor]:
     """The anchors of one laboratory test (a ``LabTest``): its sample's
-    column, in a table printed one column per sample; its sample's label;
-    the row printing its own results; its boring's label; the sheet's
-    title."""
+    column, in a table printed one column per sample; the row of its
+    results, where its sample's label is printed apart from them; its
+    sample's label; the row printing its own results; its boring's label;
+    the sheet's title."""
     sample = str(getattr(test, "sample_id", "") or "").strip()
     boring = str(getattr(test, "investigation_id", "") or "").strip()
     top = _value(getattr(test, "depth_top", None))
@@ -1583,6 +1615,7 @@ def lab_targets(test: Any) -> List[Anchor]:
     anchors: List[Anchor] = []
     if sample:
         anchors.append(_sample_column(sample, boring, top, numbers))
+        anchors.append(_sample_results(sample, boring, top, numbers))
         anchors.append(_sample_line(sample, boring, top, numbers))
     anchors.append(_values_row(numbers))
     if boring:

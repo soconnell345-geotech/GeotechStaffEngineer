@@ -82,9 +82,8 @@ def _build_geometry(params: dict) -> ExcavationGeometry:
         supports.append(SupportLevel(
             depth=sup["depth"],
             support_type=sup.get("support_type", "strut"),
-            spacing=sup.get("spacing", 3.0),
+            spacing=sup.get("spacing"),
             angle_deg=sup.get("angle_deg", 0.0),
-            preload_kN_per_m=sup.get("preload_kN_per_m", 0.0),
         ))
 
     return ExcavationGeometry(

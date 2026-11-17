@@ -259,8 +259,71 @@ def _model_section(result, analysis) -> CalcSection:
     return CalcSection(title="Model Summary", items=items)
 
 
+def srm_fos_bound(result) -> str:
+    """How the strength-reduction FOS of ``result`` stands to the true one
+    (GM-328 review A1): 'value' when the SRM bracketed the failure (a
+    converged run, fos_basis 'nonconvergence' or 'blowup'); 'upper' when
+    the slope already failed at the lowest SRF tried (converged False: the
+    FOS is below the number); 'lower' when it did not fail up to the
+    highest SRF tried (fos_basis 'range_exhausted': the FOS is at least
+    the number)."""
+    if getattr(result, "fos_basis", None) == "range_exhausted":
+        return "lower"
+    if not getattr(result, "converged", True):
+        return "upper"
+    return "value"
+
+
+def srm_fos_said(result) -> str:
+    """The FOS as the package prints it: ``FOS = 1.456`` for a converged
+    run; for a bound ``FOS < 2.000`` or ``FOS >= 3.000`` with the reason,
+    never the bare number."""
+    kind = srm_fos_bound(result)
+    if kind == "upper":
+        return (f"FOS < {result.FOS:.3f}: the slope already fails at the "
+                f"lowest strength reduction factor tried")
+    if kind == "lower":
+        return (f"FOS >= {result.FOS:.3f}: the slope did not fail at any "
+                f"strength reduction factor up to the highest tried")
+    return f"FOS = {result.FOS:.3f}"
+
+
+def srm_meets(result, required):
+    """``(meets, note)`` for the package's check FOS >= ``required``: True
+    or False where the FOS, or the bound it is, settles it; None, and the
+    srf_range that would settle it, where the bound does not (GM-328
+    review A1)."""
+    fos = getattr(result, "FOS", None)
+    if fos is None:
+        return None, ""
+    kind = srm_fos_bound(result)
+    if kind == "upper":
+        if fos <= required:
+            return False, ""
+        return None, (
+            f"Not determined: the FOS is below {fos:g}, the lowest strength "
+            f"reduction factor tried, which is above FOS_required = "
+            f"{required:g}. Run again with srf_range starting at or below "
+            f"{required:g} to settle it.")
+    if kind == "lower":
+        if fos >= required:
+            return True, ""
+        return None, (
+            f"Not determined: the FOS is at least {fos:g}, the highest "
+            f"strength reduction factor tried, which is below FOS_required "
+            f"= {required:g}. Run again with srf_range reaching above "
+            f"{required:g} to settle it.")
+    return bool(fos >= required), ""
+
+
+_SRM_BOUND_NAME = {"upper": "Upper bound on FOS",
+                   "lower": "Lower bound on FOS"}
+
+
 def _srm_section(result, analysis) -> CalcSection:
     items = []
+    bound = (srm_fos_bound(result) if result.FOS is not None
+             else "value")
     items.append(CalcStep(
         title="Strength Reduction Scheme",
         equation="c_red = c / SRF;  φ_red = arctan(tan(φ) / SRF);  "
@@ -268,11 +331,12 @@ def _srm_section(result, analysis) -> CalcSection:
         substitution="SRF increased until no stress distribution "
                      "satisfies both the Mohr-Coulomb criterion and "
                      "global equilibrium",
-        result_name="FOS",
+        result_name=_SRM_BOUND_NAME.get(bound, "FOS"),
         result_value=(f"{result.FOS:.3f}" if result.FOS is not None
                       else "-"),
         reference="Griffiths & Lane (1999)",
-        notes=f"Failure basis: "
+        notes=(srm_fos_said(result) + ". " if bound != "value" else "")
+              + f"Failure basis: "
               f"{getattr(result, 'fos_basis', None) or 'n/a'}. "
               f"{result.n_srf_trials} SRF trials.",
     ))
@@ -728,15 +792,30 @@ def _checks_section(result, analysis) -> CalcSection:
     items = []
     if getattr(result, 'FOS', None) is not None:
         req = (analysis or {}).get("FOS_required", 1.5)
-        items.append(CheckItem(
-            description="Slope stability adequacy (SRM)",
-            demand=req,
-            demand_label="FOS_required",
-            capacity=result.FOS,
-            capacity_label="FOS_computed",
-            unit="",
-            passes=result.FOS >= req,
-        ))
+        bound = srm_fos_bound(result)
+        meets, note = srm_meets(result, req)
+        if meets is None:
+            # a bound that does not settle the check (GM-328 review A1)
+            items.append(CalcStep(
+                title="Slope stability adequacy (SRM): NOT DETERMINED",
+                equation=f"FOS_required = {req}",
+                substitution="",
+                result_name=_SRM_BOUND_NAME[bound],
+                result_value=f"{result.FOS:.3f}",
+                notes=srm_fos_said(result) + ". " + note,
+            ))
+        else:
+            items.append(CheckItem(
+                description="Slope stability adequacy (SRM)",
+                demand=req,
+                demand_label="FOS_required",
+                capacity=result.FOS,
+                capacity_label={"upper": "FOS_upper_bound",
+                                "lower": "FOS_lower_bound"}.get(
+                                    bound, "FOS_computed"),
+                unit="",
+                passes=meets,
+            ))
     converged = getattr(result, 'converged', True)
     items.append(CheckItem(
         description="Solution convergence",
@@ -864,7 +943,7 @@ def get_figures(result, analysis) -> List[FigureData]:
                  "Failure Mechanism",
                  f"Displacement magnitude at the last stable SRF — "
                  f"the localized band marks the critical mechanism. "
-                 f"FOS = {result.FOS:.3f}."
+                 f"{srm_fos_said(result)}."
                  if result.FOS is not None else
                  "Displacement magnitude at the last stable SRF.")
             _add(lambda: _plots.plot_plastic_points(result),

@@ -40,6 +40,48 @@ def _no_circle(p):
     return {k: v for k, v in p.items() if k not in ("xc", "yc", "radius")}
 
 
+def test_a_flagged_headline_never_comes_alone():
+    """GM-140 step 3, the review's ruling 5. ACADS 1(a) (printed 1.00), a
+    200-trial random Spencer search: the lowest solved surface is flagged
+    and the lowest with no flag is higher (1.096). (The headline was 1.092
+    when measured, 0.633 until GM-344; since GM-140 step 6 it is 0.984,
+    the critical circle as a polyline, one of the search's trials, which
+    carries a tensile interslice force and no other flag; since step 7a's
+    fix round that polyline is one of the search's own starts, scored as
+    it stands, so it stays the headline and the circle trial no longer
+    governs.)
+    Neither alone is safe, so the tool result gives the headline, its
+    flags, the lowest surface with no flag and the option that refuses
+    flagged surfaces, as fields and in its one-sentence summary."""
+    r = METHOD_REGISTRY["search_critical_surface"]({
+        "surface_points": [[20, 25], [30, 25], [50, 35], [70, 35]],
+        "soil_layers": [{"name": "soil", "top_elevation": 35,
+                         "bottom_elevation": 20, "gamma": 20, "phi": 19.6,
+                         "c_prime": 3}],
+        "surface_type": "noncircular", "method": "spencer",
+        "n_trials": 200, "n_points": 6, "n_slices": 25, "seed": 42,
+        "x_entry_range": [20, 32], "x_exit_range": [46, 68]})
+    fos = r["critical"]["FOS"]
+    flags = r["critical_flags"]
+    low = r["lowest_unflagged"]["FOS"]
+    assert {"side_tension"} <= set(flags)
+    assert low > fos
+    # GM-140 step 6: the minimum is checked against the critical circle;
+    # step 7a's fix round (ruling 9(b)): the circle's polyline is the
+    # search's own start, so its own minimum is the headline
+    assert r["circle_check"]["governs"] is False
+    assert r["circle_check"]["noncircular_minimum"] == pytest.approx(
+        fos, abs=1e-4)
+    assert "low_m_alpha='refuse'" in r["refuse_option"]
+    s = r["summary"]
+    assert s.endswith(".") and ". " not in s          # one sentence
+    assert f"FOS {fos:.3f}" in s and f"FOS {low:.3f}" in s
+    assert "a tensile interslice force" in s
+    assert r["refuse_option"] in s
+    for key in ("summary", "refuse_option"):
+        assert key in METHOD_INFO["search_critical_surface"]["returns"]
+
+
 # ----------------------------------------------------------------------------
 # METHOD_INFO contract
 # ----------------------------------------------------------------------------
@@ -251,8 +293,22 @@ class TestReinforcement:
         r = METHOD_REGISTRY["analyze_slope"](_base(
             method="bishop",
             stabilizing_piles=[{"x": 35.0, "ito_matsui": True,
+                                "diameter": 0.6, "spacing": 3.0}]))
+        assert r["FOS"] > 2.03 and r["reinforcements"]    # 2.03 without
+
+    def test_pile_row_that_leaves_no_driving_moment_gives_no_number(self):
+        """GM-140 step 2. At a spacing of 1.5 the row's Ito-Matsui force
+        exceeds the circle's driving moment: there is no ratio to report.
+        This used to come back as FOS 999.9, the solver's marker."""
+        r = METHOD_REGISTRY["analyze_slope"](_base(
+            method="bishop",
+            stabilizing_piles=[{"x": 35.0, "ito_matsui": True,
                                 "diameter": 0.6, "spacing": 1.5}]))
-        assert r["FOS"] > 0 and r["reinforcements"]
+        assert r["FOS"] is None and r["is_stable"] is None
+        assert r["method_solved"] is False and r["method_used"] is None
+        assert r["methods_without_solution"] == ["Bishop"]
+        assert any("no net driving moment" in w for w in r["warnings"])
+        assert r["reinforcements"]
 
     def test_stabilizing_pile_missing_x(self):
         with pytest.raises(ValueError, match=r"stabilizing_piles\[\].*x"):
@@ -327,6 +383,10 @@ def _slide85(**over):
         "anchors": [{"x_head": 20.0, "z_head": 20.0, "length": 37.0,
                      "T_allow": 9000.0, "inclination": 0.0}],
         "xc": 15.012, "yc": 24.112, "radius": 14.112,
+        # the circle's centre is 5.89 below the crest: closed by a given
+        # crack that deep (GM-140 step 4; by default Rankine's crack is
+        # shallower and the circle has no factor of safety)
+        "tension_crack_depth": 5.89,
     }
     p.update(over)
     return p
@@ -363,8 +423,14 @@ class TestSingleSurfaceWarnings:
     def test_compare_methods_table_passes_warnings(self):
         p = {k: v for k, v in _slide85().items() if k != "method"}
         tab = METHOD_REGISTRY["compare_methods_table"](p)
-        assert [row["method"] for row in tab["rows"]][:2] == [
-            "Fellenius (OMS)", "Bishop simplified"]
+        # GM-140 step 8: the Ordinary Method of Slices is left out where a
+        # support crosses the surface (no printed form with known forces),
+        # and the table says why
+        assert [row["method"] for row in tab["rows"]][:1] == [
+            "Bishop simplified"]
+        assert "Fellenius" in tab["methods_without_solution"]
+        assert any("no reference held prints the Ordinary Method of Slices"
+                   in w for w in tab["warnings"])
         assert not any(row["method"].startswith("Spencer")
                        for row in tab["rows"])
         assert any("(method comparison) finds no equilibrium solution" in w
@@ -752,9 +818,22 @@ class TestV54TensionCrack:
 
     def test_allowed_values_and_bad_values(self):
         gp = METHOD_INFO["analyze_slope"]["parameters"]
-        assert gp["tension_crack_side"]["allowed_values"] == ["entry", "exit"]
+        assert gp["tension_crack_side"]["allowed_values"] == \
+            ["crest", "entry", "exit"]
+        assert gp["tension_crack_side"]["default"] == "crest"
         assert gp["tension_crack_model"]["allowed_values"] == \
-            ["strength", "truncation"]
+            ["truncation", "strength"]
+        assert gp["tension_crack_model"]["default"] == "truncation"
+        assert gp["tension_crack_depth_basis"]["allowed_values"] == \
+            ["given", "rankine", "min_fos"]
+        # GM-140 step 4's review, F1: no crack basis of their own for
+        # reverse-curvature circles; the crack is the analysis's
+        assert "reverse_curvature_crack_basis" not in gp
+        assert gp["reverse_curvature"]["default"] == "tension_crack"
+        with pytest.raises(ValueError,
+                           match="tension_crack_depth_basis 'bogus'"):
+            METHOD_REGISTRY["analyze_slope"](self._acads1b(
+                tension_crack_depth_basis="bogus"))
         with pytest.raises(ValueError, match="tension_crack_side 'bogus'"):
             METHOD_REGISTRY["analyze_slope"](self._acads1b(
                 tension_crack_side="bogus"))
@@ -764,9 +843,10 @@ class TestV54TensionCrack:
 
 
 class TestV54RapidDrawdown:
-    def test_stage3_effective_normal_raises_fos(self):
-        """The 3-stage 'gle' stage-3 normal option raises the FOS above the
-        Fellenius default on a specified circle (Slide2 #96 dam)."""
+    def test_every_stage_is_returned(self):
+        """GM-140 step 9: each stage's factor of safety, the stage the answer
+        is from, the water assumed and the per-slice columns of EM
+        1110-2-1902 Figs. G-10b and G-11b (Slide2 #96 dam; printed 1.443)."""
         _FACE = [[0, 0], [220 * _FT, 73 * _FT], [312 * _FT, 110 * _FT],
                  [380 * _FT, 110 * _FT]]
         base = {
@@ -780,12 +860,42 @@ class TestV54RapidDrawdown:
             "drawdown_to_elevation": 24 * _FT,
             "method": "duncan_3stage", "n_slices": 50,
         }
-        fell = METHOD_REGISTRY["rapid_drawdown_fos"](base)["FOS"]
-        gle = METHOD_REGISTRY["rapid_drawdown_fos"](
-            {**base, "stage3_effective_normal": "gle"})["FOS"]
-        assert gle > fell
-        assert METHOD_INFO["rapid_drawdown_fos"]["parameters"][
-            "stage3_effective_normal"]["allowed_values"] == ["fellenius", "gle"]
+        r = METHOD_REGISTRY["rapid_drawdown_fos"](base)
+        assert r["FOS"] == pytest.approx(1.443, rel=0.02)     # Slide2 #96
+        assert r["answer_stage"] == 3 and r["FOS"] == r["stage3_FOS"]
+        assert r["stage1_FOS"] > r["stage2_FOS"] > r["stage3_FOS"]
+        assert "level pool" in r["water_before"]
+        assert "level pool" in r["water_after"]
+        sl = r["slices"]
+        assert set(sl["columns"]) == set(sl) - {"columns"}
+        assert len(sl["tau_ff"]) == r["n_slices"] == len(sl["s_d"])
+        assert sl["strength_used"].count("drained") == \
+            r["n_drained_substituted"]
+        assert any(c["what"] == "water before drawdown" for c in r["choices"])
+        line = [[-10.0, 24 * _FT], [200.0, 24 * _FT]]
+        given = METHOD_REGISTRY["rapid_drawdown_fos"](
+            {**base, "drawdown_phreatic_points": line})
+        assert "given" in given["water_after"]
+        assert given["FOS"] == pytest.approx(r["FOS"], abs=1e-3)
+
+    def test_measured_d_and_psi_reach_the_layer(self):
+        from slope_stability.rapid_drawdown import r_envelope_d_psi
+        d, psi = r_envelope_d_psi(1200 * _PSF, 16.0, 30.0)
+        _FACE = [[0, 0], [220 * _FT, 73 * _FT], [312 * _FT, 110 * _FT],
+                 [380 * _FT, 110 * _FT]]
+
+        def run(**layer):
+            return METHOD_REGISTRY["rapid_drawdown_fos"]({
+                "surface_points": _FACE,
+                "soil_layers": [{"top_elevation": 110 * _FT,
+                                 "bottom_elevation": -1.0 * _FT,
+                                 "gamma": 135 * _PCF, "phi": 30.0,
+                                 "c_prime": 0.0, **layer}],
+                "xc": 169.5 * _FT, "yc": 210 * _FT, "radius": 210 * _FT,
+                "drawdown_from_elevation": 110 * _FT,
+                "drawdown_to_elevation": 24 * _FT})
+        assert run(R_d=d, R_psi=psi)["FOS"] == pytest.approx(
+            run(R_c=1200 * _PSF, R_phi=16.0)["FOS"], abs=1e-4)
 
     def test_lowe_karafiath_routes_and_is_ge_duncan(self):
         """'lowe_karafiath' is exposed and routes through; it uses the Duncan
@@ -814,12 +924,19 @@ class TestV54RapidDrawdown:
             METHOD_INFO["rapid_drawdown_fos"]["parameters"]["method"][
                 "allowed_values"]
 
-    def test_bad_stage3_normal_rejected(self):
+    def test_the_removed_stage3_basis_is_refused_with_the_rule(self):
+        """OWN-17 settled (GM-140 step 9): the drained check takes N from the
+        second stage (EM Eq. G-13); the old input is refused with the rule,
+        by the adapter's handler and by the tool's declaration."""
+        for m in ("rapid_drawdown_fos", "search_rapid_drawdown"):
+            refused = METHOD_INFO[m]["refused_parameters"]
+            assert "G-13" in refused["stage3_effective_normal"]["reason"]
+            assert "stage3_effective_normal" not in METHOD_INFO[m]["parameters"]
         with pytest.raises(ValueError, match="stage3_effective_normal"):
             METHOD_REGISTRY["rapid_drawdown_fos"](_dam(
                 drawdown_from_elevation=47 * _FT,
                 drawdown_to_elevation=15 * _FT,
-                stage3_effective_normal="bogus"))
+                stage3_effective_normal="gle"))
 
 
 class TestV54SearchRapidDrawdown:
@@ -843,3 +960,116 @@ class TestV54SearchRapidDrawdown:
             METHOD_REGISTRY["search_rapid_drawdown"](_dam(
                 drawdown_from_elevation=47 * _FT,
                 drawdown_to_elevation=15 * _FT, surface_type="pso"))
+
+
+class TestOneMaterialPerPoint:
+    """GM-140 step 1 through the adapter. Made-up values."""
+
+    _SURF = [[0, 0], [10, 0], [30, 10], [40, 10]]
+    _BOUNDARY = [[0, -2], [40, 6]]
+
+    def _params(self, **clay_over):
+        clay = {"name": "clay", "top_elevation": 6, "bottom_elevation": -10,
+                "gamma": 16, "cu": 30, "analysis_mode": "undrained"}
+        clay.update(clay_over)
+        return {
+            "surface_points": self._SURF,
+            "soil_layers": [
+                {"name": "fill", "top_elevation": 10, "bottom_elevation": 6,
+                 "gamma": 20, "phi": 30, "c_prime": 5,
+                 "bottom_boundary_points": self._BOUNDARY},
+                clay],
+            "xc": 18.0, "yc": 22.0, "radius": 24.0,
+        }
+
+    def test_flat_top_under_a_polyline_bottom_reports_the_overlap(self):
+        r = METHOD_REGISTRY["analyze_slope"](self._params())
+        assert r["layer_overlaps"][0]["layer"] == "clay"
+        assert r["layer_overlaps"][0]["held_by"] == ["fill"]
+
+    def test_top_boundary_points_is_the_same_ground(self):
+        flat = METHOD_REGISTRY["analyze_slope"](self._params())
+        poly = METHOD_REGISTRY["analyze_slope"](
+            self._params(top_boundary_points=self._BOUNDARY))
+        assert "layer_overlaps" not in poly
+        assert poly["FOS"] == pytest.approx(flat["FOS"], rel=1e-4)
+
+    def test_gap_refused_with_location(self):
+        with pytest.raises(ValueError, match=r"gap.*x = "):
+            METHOD_REGISTRY["analyze_slope"](self._params(top_elevation=-4))
+
+
+class TestOwnSolutionOrNoNumber:
+    """GM-140 step 2: a method's own solution, or no number, through the
+    agent's tools (UFC 3-220-10 p. 362)."""
+
+    # a made-up clay slope, phi = 0 (its searches leave trials without a
+    # Spencer solution)
+    _CLAY = {
+        "surface_points": [[0, 0], [12, 0], [24, 8], [40, 8]],
+        "soil_layers": [{"name": "clay", "top_elevation": 8,
+                         "bottom_elevation": -10, "gamma": 18, "cu": 30,
+                         "analysis_mode": "undrained"}],
+    }
+    # a made-up fill slope, c' = 40 kPa, and a circle on which Spencer's
+    # method has no solution: by the step 2 review's own Spencer (Spencer
+    # 1967 Eqs. 7 and 8, p. 15; 30 slices) the force and moment factors of
+    # safety stay at least 0.043 apart for side-force inclinations from -30
+    # to 60 degrees (slope_stability/tests/test_own_solution_or_no_number.py,
+    # _NO_SPENCER_CIRCLE)
+    _NO_SPENCER = {
+        "surface_points": [[0, 0], [10, 0], [16, 10], [34, 10]],
+        "soil_layers": [{"name": "fill", "top_elevation": 10,
+                         "bottom_elevation": -6, "gamma": 19, "phi": 22,
+                         "c_prime": 40}],
+        "xc": 8.0, "yc": 12.0, "radius": 12.0,
+    }
+
+    def test_single_surface_without_supports_gives_no_number(self):
+        r = METHOD_REGISTRY["analyze_slope"](dict(self._NO_SPENCER,
+                                                  method="spencer"))
+        assert r["FOS"] is None and r["method_solved"] is False
+        assert r["method_used"] is None
+        assert not any("legacy" in w for w in r["warnings"])
+        t = METHOD_REGISTRY["compare_methods_table"](dict(self._NO_SPENCER))
+        assert "Spencer" in t["methods_without_solution"]
+        assert not any(row["method"] == "Spencer" for row in t["rows"])
+
+    def test_search_counts_trials_without_a_solution(self):
+        r = METHOD_REGISTRY["search_critical_surface"](
+            dict(self._CLAY, method="spencer", nx=4, ny=4))
+        assert r["critical"]["method_solved"] is True
+        assert r["no_solution"] and all(
+            set(rec) == {"family", "method", "n", "not_converged",
+                         "no_driving", "below_0_05"}
+            for rec in r["no_solution"])
+
+    def test_yield_acceleration_gives_no_number(self):
+        r = METHOD_REGISTRY["yield_acceleration"](dict(self._NO_SPENCER,
+                                                       method="spencer"))
+        assert r["ky"] is None and r["ay_m_s2"] is None
+        assert "No yield coefficient is reported" in r["reason"]
+
+    def test_monte_carlo_reports_the_count_and_the_bounds(self):
+        p = {"surface_points": [[0, 0], [10, 0], [16, 10], [34, 10]],
+             "soil_layers": [{"name": "fill", "top_elevation": 10,
+                              "bottom_elevation": -6, "gamma": 19,
+                              "phi": 22, "c_prime": 38}],
+             "xc": 9.5, "yc": 11.0, "radius": 11.2, "method": "spencer",
+             "variables": {"c_prime": {"mean": 38.0, "std": 12.0}}}
+        mc = METHOD_REGISTRY["monte_carlo_fos"](dict(p, n=80, seed=7))
+        assert mc["n_no_solution"] > 0
+        assert mc["n_realizations"] + mc["n_no_solution"] == 80
+        lo, hi = mc["pf_bounds"]
+        assert lo <= mc["pf"] <= hi
+        assert "module's own" in mc["no_solution_note"]
+        with pytest.raises(ValueError, match="FOSM gives no result"):
+            METHOD_REGISTRY["fosm_fos"](p)
+
+    def test_method_text_says_what_the_code_does(self):
+        info = METHOD_INFO["analyze_slope"]["returns"]
+        assert "own converged solution" in info["FOS"]
+        assert "legacy" not in str(METHOD_INFO)
+        assert "no_solution" in METHOD_INFO["search_critical_surface"][
+            "returns"]
+

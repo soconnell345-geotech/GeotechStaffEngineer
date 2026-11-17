@@ -91,12 +91,15 @@ def _field_default(obj, name):
     return None
 
 
-def py_choices(layers, within: str = "layers") -> list:
+def py_choices(layers, within: str = "layers",
+               given_to: Optional[float] = None) -> list:
     """What a lateral analysis used (GM-115): each layer's p-y model with
     its source and any option left at its default, and the loading (static
     or cyclic) over the layers. ``within`` is the input the layers came in,
     so a calc package's call that says it is not the user's makes each
-    model and loading read "assumed" (GM-180)."""
+    model and loading read "assumed" (GM-180). ``given_to``: the depth the
+    layers given reach where ``extend_last_layer`` carried the last one
+    on, marked on its line (GM-318 review C6)."""
     from geotech_common.choices import DEFAULT, choice, how_given
     out, loading, all_default = [], [], True
     for layer in layers:
@@ -120,7 +123,10 @@ def py_choices(layers, within: str = "layers") -> list:
         if isinstance(model, WeakRock):
             basis += _weak_rock_note(model)
         family = next((f for f in _PY_FAMILIES if name in f), ())
-        out.append(choice(f"p-y curves {layer.top:g}-{layer.bottom:g} m",
+        span = f"{layer.top:g}-{layer.bottom:g} m"
+        if given_to is not None and layer.bottom > given_to + 1e-9:
+            span += f" (given to {given_to:g} m, assumed below)"
+        out.append(choice(f"p-y curves {span}",
                           name, how_given(name, None, within=within),
                           basis, family))
         if isinstance(model, (SandReese, SandAPI)):
@@ -319,7 +325,14 @@ class LateralPileAnalysis:
     pile : Pile
         Pile definition with geometry and material properties.
     layers : list of SoilLayer
-        Soil layers with associated p-y curve models.
+        Soil layers with associated p-y curve models. They start at the
+        ground surface and reach the pile toe, or the run is refused
+        (GM-318).
+    extend_last_layer : bool, optional
+        Layers that stop above the pile toe. False (default): refused,
+        naming the depth not covered. True: the last layer's p-y model is
+        taken to go on to the toe, and the result says so in its warnings
+        and choices. No held manual prints this extension.
 
     Examples
     --------
@@ -338,11 +351,46 @@ class LateralPileAnalysis:
     >>> print(f"Pile head deflection: {results.y_top:.4f} m")
     """
 
-    def __init__(self, pile: Pile, layers: List[SoilLayer]):
+    def __init__(self, pile: Pile, layers: List[SoilLayer],
+                 extend_last_layer: bool = False):
         self.pile = pile
+        self.extend_last_layer = extend_last_layer
         self.layers = sorted(layers, key=lambda l: l.top)
-        validate_layers(self.layers, self.pile.length)
+        validate_layers(self.layers, self.pile.length, extend_last_layer)
+        #: depth (m) the given layers reached where the last one was
+        #: carried on to the toe (GM-318), else None
+        self.profile_depth_given: Optional[float] = None
+        bottom = self.layers[-1].bottom
+        if bottom < self.pile.length - 1e-9 * max(self.pile.length, 1.0):
+            self.profile_depth_given = bottom
+            self.layers[-1] = dataclasses.replace(
+                self.layers[-1], bottom=self.pile.length)
         self.layers = _with_rock_surface(self.layers)
+
+    def _extension(self):
+        """(warnings, choices) of a run on an extended last layer."""
+        given = self.profile_depth_given
+        if given is None:
+            return [], []
+        from geotech_common.choices import choice, how_given
+        toe = self.pile.length
+        note = (f"The soil layers stop at {given:g} m and the pile toe is "
+                f"at {toe:g} m: the last layer's p-y model was taken to go "
+                f"on to the toe (extend_last_layer). The soil resistance "
+                f"from {given:g} m to {toe:g} m is in soil nobody "
+                f"explored; confirm the ground there before relying on "
+                f"this result.")
+        return [note], [choice(
+            "soil below the layers given",
+            f"last layer taken to go on from {given:g} m to the toe at "
+            f"{toe:g} m",
+            how_given(self.extend_last_layer, False,
+                      name="extend_last_layer"),
+            "extend_last_layer: the p-y curves below the layers given are "
+            "in soil that was not explored; no held manual prints this "
+            "extension",
+            ["layers given down to the toe (the default refuses layers "
+             "that stop above it)"])]
 
     def solve(
         self,
@@ -393,7 +441,8 @@ class LateralPileAnalysis:
             Convergence tolerance on EI for cracked concrete sections.
             Default 1e-3.
         max_ei_iterations : int
-            Maximum number of outer EI iterations. Default 20.
+            Maximum number of outer EI iterations. Default 20; at least 1,
+            else refused.
         stickup : float
             Above-ground free (unsupported) pile length (m). Default 0
             (head at the ground surface — identical to previous behavior).
@@ -415,6 +464,12 @@ class LateralPileAnalysis:
         """
         if stickup < 0:
             raise ValueError(f"stickup must be >= 0, got {stickup}")
+        if not max_ei_iterations >= 1:
+            # GM-318 review C4: 0 gave "after 0 passes the last change in
+            # EI was nan"
+            raise ValueError(
+                f"max_ei_iterations must be 1 or more (the passes of the "
+                f"cracked-section EI iteration), got {max_ei_iterations}")
 
         n_nodes = n_elements + 1
         z_top = -stickup if stickup > 0 else 0.0
@@ -435,6 +490,8 @@ class LateralPileAnalysis:
                 py_functions.append(zero_p)
             else:
                 py_functions.append(self._make_py_function(max(z, 0.0)))
+
+        ext_notes, ext_choices = self._extension()
 
         # Check if pile has an RC section for cracked-EI iteration
         rc_section = getattr(self.pile, 'rc_section', None)
@@ -470,12 +527,15 @@ class LateralPileAnalysis:
                 pile_diameter=self.pile.diameter,
                 Vt=Vt, Mt=Mt, Q=Q,
                 stickup=stickup,
-                choices=py_choices(self.layers),
+                choices=ext_choices + py_choices(
+                    self.layers, given_to=self.profile_depth_given),
+                warnings=ext_notes,
             )
 
         # Cracked-EI outer iteration loop for RC sections
         ei_converged = False
         ei_iter = 0
+        ei_diff = float("nan")
 
         for ei_iter in range(1, max_ei_iterations + 1):
             solver_result = solve_lateral_pile(
@@ -511,11 +571,17 @@ class LateralPileAnalysis:
             # EI update is inherently oscillatory without damping.
             EI_values = 0.5 * EI_values + 0.5 * EI_new
 
+        ei_notes = []
         if not ei_converged:
-            warnings.warn(
-                f"Cracked-EI iteration did not converge after "
-                f"{max_ei_iterations} iterations. Last EI change: {ei_diff:.2e}"
-            )
+            # in the result, not only a Python warning (GM-318)
+            ei_notes.append(
+                f"The cracked-section stiffness (EI) iteration did not "
+                f"converge: after {ei_iter} passes the last change in EI "
+                f"was {ei_diff:.2e} of the largest EI, above the tolerance "
+                f"{ei_tolerance:g}. The deflections and moments are from "
+                f"an EI profile that had not settled; raise "
+                f"max_ei_iterations or check the section and loads.")
+            warnings.warn(ei_notes[0])
 
         # Final solve with converged EI
         solver_result = solve_lateral_pile(
@@ -548,8 +614,13 @@ class LateralPileAnalysis:
             Vt=Vt, Mt=Mt, Q=Q,
             EI_profile=EI_values,
             ei_iterations=ei_iter,
+            ei_converged=ei_converged,
+            ei_last_change=float(ei_diff),
+            ei_tolerance=ei_tolerance,
             stickup=stickup,
-            choices=py_choices(self.layers),
+            choices=ext_choices + py_choices(
+                self.layers, given_to=self.profile_depth_given),
+            warnings=ext_notes + ei_notes,
         )
 
     def _make_py_function(self, z: float):

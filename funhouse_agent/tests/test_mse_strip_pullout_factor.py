@@ -60,11 +60,29 @@ def test_a_custom_strip_takes_it_and_a_geogrid_does_not_list_it():
                 if "(Cu_backfill)" in c["what"]]
 
 
+@pytest.mark.parametrize("name", ["ribbed_steel_strip_50x4",
+                                  "welded_wire_grid_w11",
+                                  "geogrid_gec11_e1_gg1"])
+def test_a_Cu_below_4_with_no_tested_F_star_is_refused(name):
+    """GM-310 (the call for OWN-85): GEC-11 Table 3-6 note (i) (p. 3-17),
+    'For fill outside these limits, tests must be run', whatever the
+    reinforcement; with F_star_tested the wall runs. Made-up wall."""
+    extra = ({"reinforcement_horizontal_spacing": 0.75}
+             if name.startswith("ribbed") else {})
+    r = _mse(reinforcement_name=name, Cu=2.5, **extra)
+    assert "Cu_backfill 2.5 is below 4" in r["error"]
+    assert "Give F_star_tested" in r["error"]
+    assert "p. 3-17" in r["error"]
+    ok = _mse(reinforcement_name=name, Cu=2.5, F_star_tested=0.9, **extra)
+    assert "error" not in ok, ok.get("error")
+    assert all(lv["F_star"] == 0.9 for lv in ok["internal_results"])
+
+
 @pytest.mark.parametrize("name, cu", [
-    ("welded_wire_grid_w11", 5.0), ("geogrid_gec11_e1_gg1", 2.5)])
+    ("welded_wire_grid_w11", 5.0), ("geogrid_gec11_e1_gg1", 4.0)])
 def test_a_grid_or_geogrid_takes_it_as_a_note_i_check(name, cu):
     """GEC-11 Table 3-6 note (i) (p. 3-17) holds every empirical F* to Cu
-    >= 4, so a Cu given with a grid or a geogrid is checked, not refused
+    >= 4, so a Cu of 4 or more given with a grid or a geogrid is checked
     (GM-246 review); their F* takes no Cu and is unchanged."""
     r = _mse(reinforcement_name=name, Cu=cu)
     assert "error" not in r, r.get("error")

@@ -25,8 +25,9 @@ Checked against the print (GM-295, 2026-10-31):
 * EN 1997-2:2007 Annex F, Tables F.1 and F.2 (p. 125).
 
 Not in the reference library, so not checked against a print: Youd et al.
-(2001) Table 2 (the borehole, rod-length and sampler factors and the 1.7
-cap on Liao & Whitman's C_N), EN ISO 22476-3 (the "iso" C_N) and Bolton
+(2001) Table 2 (the borehole, rod-length and sampler factors, and its 1.7
+cap on Liao & Whitman's C_N, the default cap before GM-310 and still
+available as ``CN_cap``), EN ISO 22476-3 (the "iso" C_N) and Bolton
 (1986).
 """
 
@@ -464,8 +465,12 @@ def spt_energy_correction(
 TSF_KPA = 95.76052
 
 #: The overburden corrections spt_overburden_correction offers, and each
-#: one's default cap on C_N.
-OVERBURDEN_METHODS = {"liao_whitman": 1.7, "peck": 2.0, "iso": 2.0}
+#: one's default cap on C_N. Liao & Whitman's is 2.0, as GEC-6 Figure 5-18
+#: (p. 90) draws it ("2.0 max."), since GM-310 (the call for OWN-112 of
+#: 2026-11-12); 1.7 before, from Youd et al. (2001), which the reference
+#: library does not hold. The liquefaction procedures keep the correction
+#: their own sources print and do not use this function.
+OVERBURDEN_METHODS = {"liao_whitman": 2.0, "peck": 2.0, "iso": 2.0}
 
 
 def spt_overburden_correction(
@@ -489,10 +494,12 @@ def spt_overburden_correction(
     method : str, optional
         - "liao_whitman" (default): C_N = (pa / sigma'v)^0.5 with
           pa = 100 kPa, Liao & Whitman (1986): GEC-5 Eq 5.10 (p. 5-31),
-          GEC-12 Eq. 5-4 with n = 0.5 for sands (Vol I p. 108). Capped at 1.7
-          per Youd et al. (2001), which the reference library does not
-          hold; GEC-6 Figure 5-18 (p. 90) draws the same correction (pa
-          1 tsf) to "2.0 max."
+          GEC-12 Eq. 5-4 with n = 0.5 for sands (Vol I p. 108). Capped at
+          2.0, as GEC-6 Figure 5-18 (p. 90) draws the same correction (pa
+          1 tsf): "2.0 max." (GM-310, OWN-112). The cap binds below
+          sigma'v = 25 kPa; the 1.7 of Youd et al. (2001), which the
+          reference library does not hold and which was the default
+          before, bound below 34.6 kPa (``CN_cap=1.7`` gives it).
         - "peck": C_N = 0.77 log10(20 / p_o), p_o in tsf, at most 2.0,
           Peck et al. (1974): NHI-06-088 Eq 3-3 (p. 3-56) and GEC-12 Eq.
           5-3 (Vol I p. 108, in ksf), which GEC-12 calls "the recommended
@@ -501,7 +508,7 @@ def spt_overburden_correction(
         - "iso": C_N = sqrt(98 / sigma'v) per EN ISO 22476-3 guidance
           (not held); capped at 2.0.
     CN_cap : float, optional
-        Override the default cap (1.7 liao_whitman, 2.0 peck and iso).
+        Override the default cap (2.0 for every method).
 
     Returns
     -------

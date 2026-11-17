@@ -11,6 +11,7 @@ References:
     Burland, J.B. (1973) — Beta (effective stress) method
 """
 
+import warnings
 from typing import List
 
 from calc_package.data_model import (
@@ -111,6 +112,23 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     """
     sections = []
 
+    # the last layer carried on below the profile (GM-318): said first
+    _given = getattr(analysis, "profile_depth_given", None)
+    _notes = [w for w in (getattr(result, "warnings", None) or [])
+              if "extend_last_layer" in w]
+    if _given is not None and _notes:
+        sections.append(CalcSection(
+            title="Soil Below the Profile (Assumed)",
+            items=[CalcStep(
+                title="Last layer carried on to the toe",
+                equation="", substitution="",
+                result_name="Profile given to",
+                result_value=f"{_given:g}",
+                result_unit="m",
+                notes=f"The toe is at {analysis.head_depth + analysis.pile_length:g} m. WARNING: "
+                      + " ".join(_notes),
+            )]))
+
     # == Section 1: Soil Profile Summary ==
     soil_items = []
     layer_rows = []
@@ -118,7 +136,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     for i, layer in enumerate(analysis.soil.layers, 1):
         top = depth_acc
         bot = depth_acc + layer.thickness
-        desc = layer.description or layer.soil_type.capitalize()
+        desc = _carried_on(
+            layer.description or layer.soil_type.capitalize(), _given, bot)
         params = _layer_params_str(layer)
         layer_rows.append([
             str(i),
@@ -459,10 +478,22 @@ def get_tables(result, analysis) -> list:
     top = max(analysis.pile_length, profile_depth)
     low = min(3.0, analysis.pile_length)
     if top > low:
-        rows, warned = [], False
-        for r in analysis.capacity_vs_depth(
+        from axial_pile.capacity import JudgmentNeeded, skipped_depths_note
+        rows, warned, skipped = [], False, []
+        try:
+            curve = analysis.capacity_vs_depth(
                 depth_min=low, depth_max=top,
-                n_points=CAPACITY_TABLE_POINTS):
+                n_points=CAPACITY_TABLE_POINTS, skipped=skipped)
+        except JudgmentNeeded:
+            raise
+        except ValueError as exc:
+            # every length refused (GM-318 review C2): the table is left
+            # out and the package says why, under the warnings the
+            # calculation raised
+            warnings.warn("The capacity against pile length table is left "
+                          f"out: {exc}")
+            curve = []
+        for r in curve:
             rows.append([r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
                          r["Q_ultimate_kN"]])
             warned = warned or bool(r.get("warnings"))
@@ -473,6 +504,10 @@ def get_tables(result, analysis) -> list:
             if warned:
                 note += ("; some lengths carry the toe warnings the "
                          "design length's result lists")
+            if skipped:
+                # named, as the drilled shaft table does (review C2)
+                note += ". " + skipped_depths_note(skipped,
+                                                   CAPACITY_TABLE_POINTS)
             tables.append(CalcTable(
                 title="Ultimate capacity against pile length",
                 columns=[("Pile length L", "m", ".2f"),
@@ -483,10 +518,12 @@ def get_tables(result, analysis) -> list:
             ))
 
     layer_rows, depth = [], 0.0
+    given = getattr(analysis, "profile_depth_given", None)
     for i, layer in enumerate(analysis.soil.layers, 1):
         layer_rows.append([
             i, depth, depth + layer.thickness, layer.soil_type,
-            layer.description, layer.unit_weight, layer.friction_angle,
+            _carried_on(layer.description, given, depth + layer.thickness),
+            layer.unit_weight, layer.friction_angle,
             layer.cohesion, layer.delta_phi_ratio])
         depth += layer.thickness
     if layer_rows:
@@ -507,6 +544,16 @@ def get_tables(result, analysis) -> list:
 
 
 # -- Helper functions --------------------------------------------------------
+
+
+def _carried_on(description: str, given, bottom: float) -> str:
+    """A layer's description, marked where ``extend_last_layer`` carried
+    it on below the depth the layers given reach (GM-318 review C6)."""
+    if given is None or bottom <= given + 1e-9:
+        return description
+    return ((f"{description} " if description else "")
+            + f"(given to {given:g} m, assumed below)")
+
 
 def _method_display_name(method: str) -> str:
     """Convert method code to display name."""

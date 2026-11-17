@@ -68,13 +68,31 @@ def test_tool_without_the_piles_gives_the_block_and_says_so():
     assert "axial_capacity_tension" in r["defaults_used"]
 
 
-def test_tool_small_driven_group_gives_ufc_reading():
+def test_tool_small_driven_group_takes_ufc_and_gives_gec12_beside():
+    """GM-310 (the call for OWN-118): 4 driven piles are a small group by
+    UFC 3-220-20 Table 6-28 note A (fewer than 5), the default; GEC-12 p.
+    225's fewer than 3 is given beside it. Made-up group."""
     r = _call("pile_group", "group_uplift", {
         "n_rows": 2, "n_cols": 2, "spacing": 1.0, "pile_diameter": 0.3,
         "pile_length": 8.0, "soil_type": "cohesionless", "unit_weight": 9.0})
     c = _choice(r, "resistance factor for group uplift")
-    assert c["chosen"] == "phi_ug = 0.50"
-    assert "fewer than 5 piles): phi_ug 0.40" in c["alternatives"][0]
+    assert c["chosen"] == ("phi_ug = 0.40 (0.50 reduced by 20 % for a small "
+                           "group of 4 piles)")
+    assert r["group_uplift_phi"] == pytest.approx(0.40)
+    assert "Table 6-28 note A" in c["basis"] and "p. 225" in c["basis"]
+    (alt,) = c["alternatives"]
+    assert "fewer than 3 piles" in alt and "phi_ug 0.50" in alt
+    assert "the block " in alt and alt.endswith(" kN")
+    said = float(alt.rsplit("the block ", 1)[1].removesuffix(" kN"))
+    assert said == pytest.approx(0.5 * r["group_uplift_block_kN"], abs=0.11)
+    # 5 piles or more, and 2: the two readings agree, nothing beside
+    for rows, cols in ((2, 3), (1, 2)):
+        r = _call("pile_group", "group_uplift", {
+            "n_rows": rows, "n_cols": cols, "spacing": 1.0,
+            "pile_diameter": 0.3, "pile_length": 8.0,
+            "soil_type": "cohesionless", "unit_weight": 9.0})
+        c = _choice(r, "resistance factor for group uplift")
+        assert not c.get("alternatives")
 
 
 def test_tool_refuses_cohesive_without_cu():

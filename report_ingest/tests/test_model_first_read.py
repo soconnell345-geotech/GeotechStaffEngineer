@@ -1204,3 +1204,188 @@ def test_the_narrative_plan_sizes_the_call_without_making_it(prose):
                                   engine, report_id=REPORT,
                                   max_request_tokens_in=10)
     assert small["pages"] == [0, 1] and small["over_limit"]
+
+
+# ---------------------------------------------------------------------------
+# RI-99 (4): two merges that lose or double a value
+# ---------------------------------------------------------------------------
+
+def _printed_doc(lines_by_page, n_pages=N_PAGES):
+    """A made-up report whose pages print the given lines."""
+    from planlens.document import open_document
+
+    pdf = pymupdf.open()
+    for n in range(n_pages):
+        page = pdf.new_page()
+        page.insert_text((72, 72), f"MADE-UP PAGE {n}", fontsize=11)
+        for k, line in enumerate(lines_by_page.get(n, [])):
+            page.insert_text((72, 140 + 24 * k), line, fontsize=11)
+    data = pdf.tobytes()
+    pdf.close()
+    return open_document(data, name="made_up_printed")
+
+
+def _two_sheet_log(printed, first_remarks, later_remarks):
+    doc = _printed_doc(printed)
+    engine = _engine([
+        _cut_off(),
+        {"final": _log([3], sample="S-1", remarks=first_remarks)},
+        {"final": _log([4], top=10.0, sample="S-2", total_depth=None,
+                       remarks=later_remarks)}])
+    try:
+        return mfr.read_logs(doc, [PageGroup("logs", [3, 4], key="log-3")],
+                             engine, report_id=REPORT)[0]["investigation"]
+    finally:
+        doc.close()
+
+
+FIRST_REMARKS = "Hole caved at 12 ft after the casing was pulled. " \
+                "Backfilled with made-up grout."
+LATER_REMARK = "Hole caved at 12 ft after the casing was pulled."
+
+
+def test_a_later_remark_printed_on_its_own_sheet_is_kept():
+    """RI-99 (4a): the second sheet prints, on its own, words the first
+    sheet's remarks also hold. It is a remark of the second sheet, not the
+    first's read twice, and is no longer dropped."""
+    inv = _two_sheet_log({3: ["Remarks: " + FIRST_REMARKS],
+                          4: ["Remarks: " + LATER_REMARK]},
+                         FIRST_REMARKS, LATER_REMARK)
+    assert inv["remarks"] == f"{FIRST_REMARKS}; {LATER_REMARK}"
+
+
+def test_a_later_remark_its_own_sheet_does_not_print_is_dropped():
+    """The second answer repeats the first sheet's words, which its own
+    sheet does not print: one printed text read twice, kept once."""
+    inv = _two_sheet_log({3: ["Remarks: " + FIRST_REMARKS]},
+                         FIRST_REMARKS, LATER_REMARK)
+    assert inv["remarks"] == FIRST_REMARKS
+
+
+def test_a_later_remark_no_page_can_be_searched_for_is_dropped():
+    """Pages with no such words to find (a scan): nothing can be told, and
+    today's rule stands."""
+    inv = _two_sheet_log({}, FIRST_REMARKS, LATER_REMARK)
+    assert inv["remarks"] == FIRST_REMARKS
+
+
+def test_a_remark_printed_on_every_sheet_is_joined_once():
+    """RI-99 review: a line the form prints on both sheets, read by both
+    calls, is one remark; it is joined once, not found apart on the later
+    sheet and doubled."""
+    box = "Made-up note: water levels are approximate."
+    inv = _two_sheet_log({3: [box], 4: [box]}, box, box)
+    assert inv["remarks"] == box
+
+
+def _two_window_calc(printed, first, later):
+    from report_ingest.model import Calculation
+
+    pages = list(range(14, 28))
+    doc = _printed_doc(printed)
+    engine = _engine([{"final": _calc(first)}, {"final": _calc(later)}])
+    try:
+        got = mfr.read_calcs(doc, [PageGroup("calc", pages, key="calc-14")],
+                             engine, report_id=REPORT)[0]
+    finally:
+        doc.close()
+    return Calculation.model_validate(got["calculation"]), got
+
+
+def test_a_second_window_s_misreading_of_a_value_printed_once_is_set_beside(
+        ):
+    """RI-99 (4b): both windows carry the last page, which prints the
+    footing width once, as 6.5. The first reads 6.5, the second 8.5. The
+    record keeps the printed one, with the other as an alternative and one
+    entry; before, both stood as two values with nothing said."""
+    record, got = _two_window_calc(
+        {27: ["Footing width B (ft)   6.5", "Embedment depth (ft)   3.0"]},
+        [("Footing width B", 6.5, 27)], [("Footing width B", 8.5, 27)])
+    assert [(v.name, v.value.value) for v in record.inputs] == [
+        ("Footing width B", 6.5)]
+    alternatives = record.inputs[0].prov.alternatives
+    assert [(a.field, a.value, a.method) for a in alternatives] == [
+        ("value", "8.5", "model")]
+    rows = [r for r in got["unresolved"] if "prints it once" in r["why"]]
+    assert len(rows) == 1 and rows[0]["page"] == 27
+    assert rows[0]["read"] == "8.5 ft"
+
+
+def test_the_first_window_s_misreading_gives_way_to_the_printed_value():
+    record, _got = _two_window_calc(
+        {27: ["Footing width B (ft)   6.5"]},
+        [("Footing width B", 8.5, 27)], [("Footing width B", 6.5, 27)])
+    assert [v.value.value for v in record.inputs] == [6.5]
+    assert [a.value for a in record.inputs[0].prov.alternatives] == ["8.5"]
+
+
+def test_a_label_printed_twice_with_two_values_keeps_both_with_no_entry():
+    """One label printed once per case: two values, as today."""
+    record, got = _two_window_calc(
+        {27: ["Footing width B (ft)   6.5", "Footing width B (ft)   8.5"]},
+        [("Footing width B", 6.5, 27)], [("Footing width B", 8.5, 27)])
+    assert sorted(v.value.value for v in record.inputs) == [6.5, 8.5]
+    assert not any(v.prov.alternatives for v in record.inputs)
+    assert not any("prints it once" in r["why"] for r in got["unresolved"])
+
+
+def test_two_readings_the_page_prints_neither_of_keep_both():
+    """Neither number can be found at the label (a scan): nothing is
+    settled, as today."""
+    record, got = _two_window_calc(
+        {}, [("Footing width B", 6.5, 27)], [("Footing width B", 8.5, 27)])
+    assert sorted(v.value.value for v in record.inputs) == [6.5, 8.5]
+    assert not any("prints it once" in r["why"] for r in got["unresolved"])
+
+
+# ---------------------------------------------------------------------------
+# RI-99 (6): one printed test an answer gives twice
+# ---------------------------------------------------------------------------
+
+def _limits(page, sample="S-3", ll=41.0):
+    return {"kind": "atterberg", "investigation_id": "QX-2",
+            "sample_id": sample, "depth_top": 4.0, "ll": ll, "pl": 19.0,
+            "pi": ll - 19.0, "prov": _prov(page)}
+
+
+def _lab_window(printed, tests):
+    doc = _printed_doc(printed)
+    engine = _engine([{"final": mf.LabSheetReading.model_validate(
+        {"depth_unit": "ft", "tests": tests})}])
+    try:
+        return mfr.read_lab(doc, [PageGroup("lab", [7], key="lab-7")],
+                            engine, report_id=REPORT)[0]
+    finally:
+        doc.close()
+
+
+def test_one_printed_test_given_twice_is_kept_once_with_an_entry():
+    """The page prints the sample's limits on one row; the answer gives the
+    test twice, alike in everything. Before, the record held two tests with
+    nothing said."""
+    got = _lab_window({7: ["S-3   4.0   41   19   22"]},
+                      [_limits(7), _limits(7)])
+    assert len(got["tests"]) == 1
+    rows = [r for r in got["unresolved"]
+            if "read more than once" in r["why"]]
+    assert len(rows) == 1 and rows[0]["page"] == 7
+
+
+def test_a_test_printed_twice_and_given_twice_is_two_tests():
+    got = _lab_window({7: ["S-3   4.0   41   19   22",
+                           "S-3   4.0   41   19   22"]},
+                      [_limits(7), _limits(7)])
+    assert len(got["tests"]) == 2
+    assert not any("read more than once" in r["why"]
+                   for r in got["unresolved"])
+
+
+def test_entries_alike_on_a_page_that_cannot_be_searched_are_kept():
+    got = _lab_window({}, [_limits(7), _limits(7)])
+    assert len(got["tests"]) == 2
+
+
+def test_two_tests_that_differ_are_never_one():
+    got = _lab_window({7: ["S-3   4.0   41   19   22"]},
+                      [_limits(7), _limits(7, sample="S-4")])
+    assert len(got["tests"]) == 2

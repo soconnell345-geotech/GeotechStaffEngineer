@@ -48,11 +48,11 @@ def _image_name(path: str) -> str:
 _SERIES_KEYS = ("x", "y", "label", "style", "color", "marker", "marker_size",
                 "marker_edge", "marker_open", "line_dash", "line_width",
                 "fill", "hatch", "fill_opacity", "labels", "hover",
-                "in_legend")
+                "in_legend", "fill_to_x", "fill_to_y")
 _REF_LINE_KEYS = ("value", "label")
 #: A plot_data note's keys (profile_figure.data_plot.ANNOTATION_KEYS).
 _NOTE_KEYS = ("text", "x", "y", "coords", "point", "align", "box", "color",
-              "font_size", "halo")
+              "font_size", "halo", "rotation")
 # Words the near-miss matcher cannot place. Suggestions only, never renamed.
 _KEY_HINTS = {
     "name": ("label", "text"), "legend": ("label", "in_legend"),
@@ -96,7 +96,7 @@ VALID_PLOT = frozenset({
     "hlines", "vlines", "grid", "legend", "output_path", "dpi", "width_in",
     "height_in", "include_base64", "interactive", "equal_aspect", "xlim",
     "ylim", "legend_position", "plan_view", "north_deg", "scale_units",
-    "x_on_top", "annotations",
+    "x_on_top", "annotations", "panels", "contour", "footnote",
 })
 
 
@@ -142,9 +142,20 @@ def run_plot_data(params: dict, overlay=_REGISTERED) -> dict:
                           else set())
     params = apply_aliases(params, _PLOT_ALIASES)
     reject_unknown_params(params, valid, method="plot_data")
-    require_params(params, ["series"], method="plot_data", valid=valid)
-    check_nested_list(params["series"], _SERIES_KEYS, method="plot_data",
-                      label="series", hints=_KEY_HINTS)
+    if params.get("panels") is None and params.get("contour") is None:
+        require_params(params, ["series"], method="plot_data", valid=valid)
+    check_nested_list(params.get("series"), _SERIES_KEYS,
+                      method="plot_data", label="series", hints=_KEY_HINTS)
+    panels = params.get("panels")
+    for k, panel in enumerate(panels if isinstance(panels, list) else []):
+        if isinstance(panel, dict):     # a panel's series and notes too
+            check_nested_list(panel.get("series"), _SERIES_KEYS,
+                              method="plot_data",
+                              label=f"panels[{k}].series", hints=_KEY_HINTS)
+            check_nested_list(panel.get("annotations"), _NOTE_KEYS,
+                              method="plot_data",
+                              label=f"panels[{k}].annotations",
+                              hints=_KEY_HINTS)
     check_nested_list(params.get("annotations"), _NOTE_KEYS,
                       method="plot_data", label="annotations",
                       hints=_KEY_HINTS)
@@ -158,6 +169,18 @@ def run_plot_data(params: dict, overlay=_REGISTERED) -> dict:
     _scale_units(params.get("scale_units"))
     n_added, chart_said = 0, None
     if params.get("reference_chart"):
+        # the chart is drawn under the series it is read against, on one
+        # plot (GM-315 review: with panels, or a contour alone, the overlay
+        # had no series to fit and failed with a KeyError)
+        if params.get("panels") is not None:
+            raise ValueError(
+                "plot_data: reference_chart is drawn on one plot, not in "
+                "panels: draw the chart with the data read against it as a "
+                "figure of its own.")
+        if not params.get("series"):
+            raise ValueError(
+                "plot_data: reference_chart is drawn under the series read "
+                "against it: give those series.")
         params, n_added, chart_said = overlay(params)
 
     # Every figure saved reaches the user: one that only holds a place is
@@ -173,7 +196,7 @@ def run_plot_data(params: dict, overlay=_REGISTERED) -> dict:
 
     try:
         result = render_data_plot(
-            params["series"],
+            params.get("series"),
             title=params.get("title", ""),
             xlabel=params.get("xlabel", ""),
             ylabel=params.get("ylabel", ""),
@@ -197,6 +220,9 @@ def run_plot_data(params: dict, overlay=_REGISTERED) -> dict:
             scale_units=_scale_units(params.get("scale_units")),
             x_on_top=bool(params.get("x_on_top", False)),
             annotations=params.get("annotations"),
+            contour=params.get("contour"),
+            panels=params.get("panels"),
+            footnote=params.get("footnote") or "",
         )
     except ValueError as exc:
         if not n_added:
@@ -220,7 +246,8 @@ def run_plot_data(params: dict, overlay=_REGISTERED) -> dict:
             f'style="width:100%;max-width:640px;">'),
         "embed_note": (
             "Saved as a PNG plus an INTERACTIVE chart (unless "
-            "interactive=false). The web app shows the interactive chart "
+            "interactive=false, or the warnings say this figure has none: "
+            "the chat then shows the PNG). The web app shows the interactive chart "
             "under your reply -- zoom and hover, one card; the PNG is the "
             "report copy (a file written outside the conversation folder is "
             "copied in at the end of the turn). Paste html_img_tag into "
@@ -236,6 +263,10 @@ def run_plot_data(params: dict, overlay=_REGISTERED) -> dict:
                                      checked_in="warnings")
     if result.annotations:
         response["annotations"] = list(result.annotations)
+    if result.panels:
+        response["panels"] = list(result.panels)
+    if result.contour:
+        response["contour"] = dict(result.contour)
     if chart_said:
         response["reference_chart"] = chart_said
     # The interactive twin, written beside the PNG as <name>.plotly.json —
@@ -267,19 +298,35 @@ def _plot_words(params: dict) -> dict:
     names, series names, and the point names, notes and reference-line
     names."""
     series = [s for s in params.get("series") or [] if isinstance(s, dict)]
-    notes = []
+    notes, titles, axes = [], [params.get("title")], \
+        [params.get("xlabel"), params.get("ylabel")]
+    raw_notes = list(params.get("annotations") or [])
+    panels = params.get("panels")
+    for panel in (panels if isinstance(panels, list) else []):
+        if not isinstance(panel, dict):
+            continue
+        series += [s for s in panel.get("series") or []
+                   if isinstance(s, dict)]
+        titles.append(panel.get("title"))
+        axes.append(panel.get("xlabel"))
+        raw_notes += list(panel.get("annotations") or [])
+        for key in ("bands", "dimensions", "arrows"):
+            notes += [item.get("label") or item.get("text")
+                      for item in panel.get(key) or []
+                      if isinstance(item, dict)]
+    if isinstance(params.get("contour"), dict):
+        axes.append(params["contour"].get("label"))
+    notes.append(params.get("footnote"))
     for s in series:
         if isinstance(s.get("labels"), (list, tuple)):
             notes += list(s["labels"])
-    notes += [a.get("text") for a in params.get("annotations") or []
-              if isinstance(a, dict)]
+    notes += [a.get("text") for a in raw_notes if isinstance(a, dict)]
     for key in ("hlines", "vlines"):
         lines = params.get(key)
         notes += [spec.get("label") for spec in
                   (lines if isinstance(lines, list) else [])
                   if isinstance(spec, dict)]
-    return {"titles": [params.get("title")],
-            "axes": [params.get("xlabel"), params.get("ylabel")],
+    return {"titles": titles, "axes": axes,
             "series": [s.get("label") for s in series], "notes": notes}
 
 
@@ -304,13 +351,15 @@ PLOT_DATA_INFO = {
               "vs displacement, a parameter sweep or method "
               "comparison, the cases of a "
               "sensitivity study, a plan view of borings and a "
-              "footprint drawn to scale. Shows in chat as an "
+              "footprint drawn to scale, panels on one elevation axis, "
+              "contours. Shows in chat as an "
               "INTERACTIVE chart (zoom/hover) and saves a PNG for "
               "reports, with an <img> tag ready to paste."),
     "parameters": {
         "series": {
-            "type": "array", "required": True,
+            "type": "array", "required": False,
             "description": (
+                "Required unless panels or contour is given. "
                 "[{'x': [...], 'y': [...], 'label': str, optional "
                 "'style': 'both'|'line'|'markers'|'step'|'polygon', "
                 "'color'}]. x and y are equal-length lists. Optional per "
@@ -326,7 +375,8 @@ PLOT_DATA_INFO = {
                 "boundary, a zone); 'fill': true or a colour, "
                 "'fill_opacity' (default 0.2), 'hatch' ('/', '\\', "
                 "'x', '-', '|', '+', '.') to mark a zone over what lies "
-                "under it. x given as names (cases, "
+                "under it. 'fill_to_x' / 'fill_to_y' (a number): filled "
+                "to that base line. x given as names (cases, "
                 "scenarios, borings) puts them along the x axis in "
                 "order: draw separate cases with style 'markers', since "
                 "a line between unrelated cases shows a trend that is "
@@ -350,11 +400,34 @@ PLOT_DATA_INFO = {
                 "colour); 'halo': true for a thin ring of the "
                 "background round the letters, so hatching or a grid "
                 "behind them stops short (the PNG); 'color'; "
-                "'font_size' (pt). A new line or "
+                "'font_size' (pt); 'rotation' (degrees). A new line or "
                 "'<br>' breaks a line. The warnings say when a note "
                 "overlaps other lettering, a line runs through it or it "
                 "stands outside the plot."),
         },
+        "panels": {
+            "type": "array", "required": False,
+            "description": (
+                "In place of series: panels side by side on ONE vertical "
+                "axis (ylabel, ylim; hlines cross them all). [{'kind': "
+                "'chart', 'section' (to scale, no x axis) or 'column' "
+                "(layer bands, x 0-1), 'title', 'series', 'xlabel', "
+                "'xlim', 'annotations', 'vlines', 'width', 'share_x' (a "
+                "name: one x scale), 'bands': [{top, bottom, label, color, "
+                "hatch}], 'dimensions': [{from, to, offset, text}], "
+                "'arrows': [{from, to, text}], 'grid'}]."),
+        },
+        "contour": {
+            "type": "object", "required": False,
+            "description": (
+                "Contours under the series: {'x', 'y', 'z', 'label' "
+                "(quantity, unit), 'levels', 'filled', 'line_labels'}; z "
+                "as rows over an x-y grid, or one value per scattered "
+                "point."),
+        },
+        "footnote": {
+            "type": "str", "required": False, "default": "",
+            "description": "Small text under the figure."},
         "equal_aspect": {
             "type": "bool", "required": False, "default": False,
             "description": (
@@ -400,6 +473,7 @@ PLOT_DATA_INFO = {
         "legend_position": {
             "type": "str", "required": False, "default": "auto",
             "allowed_values": ["auto", "inside", "outside", "below"],
+            "any_case": True,
             "description": ("Where the legend goes; auto = outside a "
                             "drawing to scale, inside otherwise.")},
         "title": {"type": "str", "required": False, "default": "",
@@ -429,11 +503,13 @@ PLOT_DATA_INFO = {
                    "description": ("Vertical reference lines: "
                                    "[{'value': x, 'label': str}].")},
         "grid": {"type": "bool", "required": False, "default": True,
-                 "description": "Draw a light grid."},
+                 "description": ("Draw a light grid (with panels: each "
+                                 "panel's own 'grid', default none).")},
         "legend": {"type": "bool", "required": False,
                    "description": ("Show the legend. Default: when more "
                                    "than one series is in it (reference "
-                                   "lines are named on the line).")},
+                                   "lines are named on the line); with "
+                                   "panels, only when true.")},
         "output_path": {"type": "str", "required": False,
                         "description": ("PNG path. A bare filename lands in "
                                         "the working folder. "
@@ -467,7 +543,12 @@ PLOT_DATA_INFO = {
         "width_px": "Rendered width in pixels.",
         "height_px": "Rendered height in pixels.",
         "series": ("Each series as drawn: label, n points, x/y ranges "
-                   "(x_categories when x named cases), points_named."),
+                   "(x_categories when x named cases), points_named; its "
+                   "panel with panels."),
+        "panels": ("With panels, each as drawn: kind, title, x_range, "
+                   "width_in."),
+        "contour": ("With contour: label, from (grid or points), levels, "
+                    "z_range, filled."),
         "annotations": ("Each note as drawn: text, at ([x, y] as "
                         "given), coords, and point for a note with a "
                         "leader. Absent when there are none."),
@@ -479,9 +560,19 @@ PLOT_DATA_INFO = {
                              "the PNG; this is what the chat shows. Absent "
                              "when interactive=false."),
         "warnings": ("Non-fatal notes (e.g. non-finite points dropped, "
-                     "a note that overlaps other lettering)."),
+                     "a note that overlaps other lettering, a figure "
+                     "with no interactive chart)."),
     },
 }
+
+# What a call with panels does not use (GM-315): these single-plot inputs'
+# defaults are then left out of ``defaults_used``; a left-out ``series``
+# is listed only where panels or contour stands in for it.
+for _name in ("equal_aspect", "plan_view", "north_deg", "scale_units",
+              "x_on_top", "legend_position", "logx", "logy", "grid"):
+    PLOT_DATA_INFO["parameters"][_name]["applies_when"] = {"panels": "unset"}
+PLOT_DATA_INFO["parameters"]["series"]["applies_when"] = [
+    {"panels": "set"}, {"contour": "set"}]
 
 declare_aliases({"plot_data": PLOT_DATA_INFO}, {"plot_data": _PLOT_ALIASES})
 # What a left-out input with no default stands for (BACKLOG GM-165): north.
@@ -489,7 +580,10 @@ declare_when_absent({"plot_data": PLOT_DATA_INFO}, {
     "plot_data": {
         "north_deg": ("north straight up",
                       "the source plan's north was not given; the result "
-                      "says so")},
+                      "says so"),
+        # left out only with panels or contour (GM-315); refused otherwise
+        "series": ("no series of the figure's own",
+                   "panels or contour gives what is drawn")},
 })
 
 

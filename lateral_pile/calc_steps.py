@@ -89,12 +89,30 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     """
     sections = []
 
+    # the last layer carried on below the profile (GM-318): said first
+    _given = getattr(analysis, "profile_depth_given", None)
+    _notes = [w for w in (getattr(result, "warnings", None) or [])
+              if "extend_last_layer" in w]
+    if _given is not None and _notes:
+        sections.append(CalcSection(
+            title="Soil Below the Profile (Assumed)",
+            items=[CalcStep(
+                title="Last layer carried on to the toe",
+                equation="", substitution="",
+                result_name="Profile given to",
+                result_value=f"{_given:g}",
+                result_unit="m",
+                notes=f"The toe is at {analysis.pile.length:g} m. WARNING: "
+                      + " ".join(_notes),
+            )]))
+
     # ── Soil Layer Summary ─────────────────────────────────────
     layer_rows = []
     for i, layer in enumerate(analysis.layers, 1):
         model = layer.py_model
         model_name = type(model).__name__
-        desc = layer.description or model_name
+        desc = _carried_on(layer.description or model_name, _given,
+                           layer.bottom)
         # Extract key parameters from the model
         params = _extract_model_params(model)
         layer_rows.append([
@@ -171,6 +189,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             substitution="",
             result_name="EI iterations",
             result_value=str(result.ei_iterations),
+            notes=("" if result.ei_converged is None else
+                   (f"Converged: last change in EI "
+                    f"{result.ei_last_change:.2e} of the largest EI, "
+                    f"tolerance {result.ei_tolerance:g}."
+                    if result.ei_converged else
+                    "WARNING: " + " ".join(
+                        w for w in result.warnings
+                        if "did not converge" in w))),
         ))
 
     sections.append(CalcSection(title="Solver Performance", items=solver_items))
@@ -303,10 +329,13 @@ def get_tables(result, analysis) -> list:
         ))
 
     layer_rows = []
+    given = getattr(analysis, "profile_depth_given", None)
     for i, layer in enumerate(analysis.layers, 1):
         model = layer.py_model
         layer_rows.append([i, float(layer.top), float(layer.bottom),
-                           layer.description or type(model).__name__,
+                           _carried_on(layer.description
+                                       or type(model).__name__, given,
+                                       layer.bottom),
                            type(model).__name__,
                            _extract_model_params(model)])
     if layer_rows:
@@ -319,6 +348,15 @@ def get_tables(result, analysis) -> list:
             name="soil_layers", printed=False,
         ))
     return tables
+
+
+def _carried_on(description: str, given, bottom: float) -> str:
+    """A layer's description, marked where ``extend_last_layer`` carried
+    it on below the depth the layers given reach (GM-318 review C6)."""
+    if given is None or bottom <= given + 1e-9:
+        return description
+    return ((f"{description} " if description else "")
+            + f"(given to {given:g} m, assumed below)")
 
 
 def _extract_model_params(model) -> str:

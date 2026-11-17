@@ -3,6 +3,9 @@
 Lists all analysis modules available through the adapter layer.
 """
 
+import re
+from typing import Optional
+
 from funhouse_agent.adapters import MODULE_REGISTRY
 
 _NUM_MODULES = len(MODULE_REGISTRY)
@@ -225,13 +228,97 @@ REFERENCE_MODULES_CLAUSE = (
 SYSTEM_PROMPT = REACT_PREFIX + _build_module_catalog()
 
 
-def build_system_prompt(allowed_agents=None) -> str:
+#: The v1 prompt's chart paragraph, and its place taken on a host that
+#: cannot reach the reference PDFs (no fetcher, no PDFs;
+#: ``reference_docs.chart_reads_available``; 2026-11-10 reach audit).
+CHART_READS_PARAGRAPH = (
+    "**Reading values off published charts:** when a question needs a numeric value \
+that lives in a chart or figure (an earth-pressure coefficient, bearing-capacity \
+factor, influence factor, correlation, etc.), do NOT estimate it from the figure \
+caption or from memory. Find the figure with `call_agent` -> `figure_db` \
+(`figure_search`), then call `read_reference_figure` to render the actual chart \
+and read the value off it. Report the result as a chart read-off estimate.")
+NO_CHART_READS_PARAGRAPH = (
+    "**Values on published charts:** no value can be read off a reference "
+    "chart here (the reference PDFs are not on this host). When a question "
+    "needs a numeric value that lives only in a chart or figure, find the "
+    "figure with `call_agent` -> `figure_db` (`figure_search`), cite it, and "
+    "say its value could not be read; do NOT estimate it from the figure "
+    "caption or from memory.")
+assert CHART_READS_PARAGRAPH in REACT_PREFIX
+
+#: The v1 vision tool text's read_reference_figure section, left out where
+#: no chart can be read.
+_READ_FIGURE_SECTION = re.compile(
+    r"### \d+\. read_reference_figure\n.*?(?=### \d+\. |\Z)", re.DOTALL)
+
+
+#: The v1 tool text for the table page reader, appended after the vision
+#: tool descriptions where the reference PDFs reach this host and the
+#: library has table catalogs (the core's text has no table reader).
+TABLE_READ_SECTION = """
+
+### 13. read_reference_table
+Render the printed page(s) of a reference table and read value(s) off them
+with vision, for a table whose values are printed only on its page. Find the
+table first with `call_agent` -> `table_db` (`table_search` / `table_get`):
+each hit's `how_to_read` says where its values are (a section to fetch, a
+lookup to call, or this call with its `pdf_page_index`). A table printed over
+several pages is read page by page from the page given; the result names any
+pages left for another read. Never give a table value from its caption or
+from memory.
+```
+<tool_call>
+{"tool_name": "read_reference_table", "reference": "dm7_2", "table_number": "6-24", "pdf_page_index": 465, "prompt": "Read the bond strength range for the soil type named"}
+</tool_call>
+```
+"""
+
+
+def without_chart_reads(tool_text: str) -> str:
+    """``tool_text`` (the v1 vision tool descriptions) without its
+    ``read_reference_figure`` section."""
+    return _READ_FIGURE_SECTION.sub("", tool_text)
+
+
+#: Rule 7 for the calculation modules, and its place taken where only
+#: reference modules are in scope (the v1 consult): a lookup is in its
+#: manual's units, many US customary (2026-11-10 review, item 2).
+SI_UNITS_RULE = "7. All units are SI: meters, kPa, kN, kN/m3, degrees."
+REFERENCE_UNITS_RULE = (
+    "7. A reference lookup uses the units of the manual it comes from (US "
+    "customary in many, SI in others); describe_method gives a unit where "
+    "the method's description states one, and where none is stated, say "
+    "so and do not assume one. Give every value with its unit as the "
+    "reference gives it; if you convert one, say so and from what.")
+
+
+def build_system_prompt(allowed_agents=None,
+                        chart_reads: Optional[bool] = None) -> str:
     """Full system prompt: ReAct instructions + module catalog.
 
     Parameters
     ----------
     allowed_agents : iterable of str, optional
         If provided, only these modules appear in the catalog. Defaults to the
-        full registry.
+        full registry. A scope of reference modules only gets
+        :data:`REFERENCE_UNITS_RULE` in place of the SI rule.
+    chart_reads : bool, optional
+        Whether a value can be read off a reference chart on this host
+        (None: ask :func:`funhouse_agent.reference_docs.chart_reads_available`);
+        where not, :data:`NO_CHART_READS_PARAGRAPH` takes the chart
+        paragraph's place.
     """
-    return REACT_PREFIX + _build_module_catalog(allowed_agents)
+    prefix = REACT_PREFIX
+    if chart_reads is None:
+        from funhouse_agent.reference_docs import chart_reads_available
+        chart_reads = chart_reads_available()
+    if not chart_reads:
+        prefix = prefix.replace(CHART_READS_PARAGRAPH,
+                                NO_CHART_READS_PARAGRAPH)
+    if allowed_agents is not None:
+        from funhouse_agent.dispatch import REFERENCE_MODULES
+        names = set(allowed_agents)
+        if names and names <= set(REFERENCE_MODULES):
+            prefix = prefix.replace(SI_UNITS_RULE, REFERENCE_UNITS_RULE)
+    return prefix + _build_module_catalog(allowed_agents)

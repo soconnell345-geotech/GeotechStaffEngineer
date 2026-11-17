@@ -163,8 +163,22 @@ def test_v029_acads5_flownet_grid_demonstration():
            for x in range(-5, 66, 5) for z in [-6, -3, 0, 2, 4, 6, 8, 10]]
     f_dry = analyze_slope(_a5_geom(), xc=_A5_XC, yc=_A5_YC, radius=_A5_R,
                           method="bishop", n_slices=40).FOS
-    f_grid = analyze_slope(_a5_geom(ppp), xc=_A5_XC, yc=_A5_YC, radius=_A5_R,
-                           method="bishop", n_slices=40).FOS
+    # GM-140 step 3 (D21): on this made-up grid the pressure head stands
+    # above the ground at the toe, so u b exceeds W on the toe slices. By
+    # default Bishop's W - u b is used as printed (Bishop 1955 Eq. 13,
+    # p. 10), negative there, and the result names the slices; the value is
+    # lower than the 1.247 pinned before and is not pinned here (no printed
+    # answer: the published 1.498 is for a flow net this grid does not
+    # reproduce). With the term set to zero where negative, the stated
+    # option and the rule before step 3, the earlier 1.247 is reproduced.
+    grid = analyze_slope(_a5_geom(ppp), xc=_A5_XC, yc=_A5_YC, radius=_A5_R,
+                         method="bishop", n_slices=40)
+    f_grid = grid.FOS
+    f_zero = analyze_slope(_a5_geom(ppp), xc=_A5_XC, yc=_A5_YC, radius=_A5_R,
+                           method="bishop", n_slices=40,
+                           negative_friction_term="zero").FOS
     assert f_dry == pytest.approx(1.893, abs=0.05)      # ours dry (pinned)
-    assert f_grid == pytest.approx(1.247, abs=0.05)     # ours grid (pinned)
+    assert f_zero == pytest.approx(1.247, abs=0.05)     # ours grid (pinned)
+    assert "negative_frictional_term" in grid.flags
+    assert f_grid < f_zero                              # the negative terms
     assert f_grid < f_dry                               # flow-net field destabilises

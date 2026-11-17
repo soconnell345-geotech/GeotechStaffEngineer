@@ -350,7 +350,7 @@ MODULE_REGISTRY = {
     },
     "dxf_export": {
         "adapter": "funhouse_agent.adapters.dxf_export",
-        "brief": "Cross-section geometry to a DXF file",
+        "brief": "Cross-section geometry to a DXF file; drawing sheets (DXF + PDF + PNG) with dimensions, bars, callouts: reinforced wall section",
     },
     "calc_package": {
         "adapter": "funhouse_agent.adapters.calc_package",
@@ -431,139 +431,180 @@ MODULE_REGISTRY = {
     # --- geotech-references agents (reference modules + cross-reference DB) ---
     "reference_db": {
         "adapter": "funhouse_agent.adapters.reference_db_adapter",
-        "brief": "Text search over the reference chapters (DM7, GEC, micropile); use first to scope, then reference_get",
+        "brief": "Text search over every reference's chapters; use first to scope, then reference_get",
     },
     "figure_db": {
         "adapter": "funhouse_agent.adapters.figure_db_adapter",
-        "brief": "Find a reference chart (DM7/GEC figure catalogs) by meaning; read values off it with read_reference_figure",
+        "brief": "Reference charts by meaning; read values off it with read_reference_figure where a hit says so",
+    },
+    "table_db": {
+        "adapter": "funhouse_agent.adapters.table_db_adapter",
+        "brief": "Printed reference tables by number or caption; how_to_read gives the call",
     },
     "dm7": {
         "adapter": "funhouse_agent.adapters.dm7_adapter",
-        "brief": "NAVFAC DM7 equations (340+): soil classification, stresses, settlement, seepage, foundations",
+        "brief": "DM 7.1 / 7.2 equations (340+): soil classification, stresses, settlement, seepage, foundations",
+        "title": "UFS 3-220-10 (DM 7.1, 16 January 2026) and UFC 3-220-20 (DM 7.2, 16 January 2025)",
+    },
+    "em_1905": {
+        "adapter": "funhouse_agent.adapters.em_1905_adapter",
+        "brief": "EM 1110-1-1905 shallow foundations: bearing, stresses, settlement (consolidation, Schmertmann, Burland-Burbidge, Menard), time rate (US)",
+        "title": "USACE EM 1110-1-1905 (shallow foundations on soils, 31 July 2025)",
     },
     "em_2104": {
         "adapter": "funhouse_agent.adapters.em_2104_adapter",
         "brief": "EM 1110-2-2104 RC hydraulic structures (USACE): loads, service limits, flexure-axial, shear",
+        "title": "USACE EM 1110-2-2104 (reinforced concrete hydraulic structures)",
     },
     "em_2107": {
         "adapter": "funhouse_agent.adapters.em_2107_adapter",
         "brief": "EM 1110-2-2107 hydraulic steel structures (USACE): LRFD loads, seismic amplification, Tainter gates",
+        "title": "USACE EM 1110-2-2107 (hydraulic steel structures)",
     },
     "gec4": {
         "adapter": "funhouse_agent.adapters.gec4_adapter",
         "brief": "Ground anchors (FHWA-IF-99-015): bond stress, load transfer, corrosion protection, anchored walls (ASD)",
+        "title": "FHWA GEC 4 (ground anchors)",
     },
     "gec5": {
         "adapter": "funhouse_agent.adapters.gec5_adapter",
         "brief": "Site characterization (FHWA NHI-16-072): investigation planning, classification, strength, stiffness, hazards",
+        "title": "FHWA GEC 5 (site characterization)",
     },
     "gec6": {
         "adapter": "funhouse_agent.adapters.gec6_adapter",
         "brief": "Shallow foundations reference (FHWA-SA-02-054)",
+        "title": "FHWA GEC 6 (shallow foundations)",
     },
     "gec7": {
         "adapter": "funhouse_agent.adapters.gec7_adapter",
         "brief": "Soil nail walls reference (FHWA-NHI-14-007)",
+        "title": "FHWA GEC 7 (soil nail walls)",
     },
     "gec8": {
         "adapter": "funhouse_agent.adapters.gec8_adapter",
         "brief": "CFA piles (FHWA-HIF-07-03): DD pile capacity (NeSmith), ASD, grout volume factor, p-multipliers, group efficiency",
+        "title": "FHWA GEC 8 (CFA piles)",
     },
     "gec9": {
         "adapter": "funhouse_agent.adapters.gec9_adapter",
         "brief": "Laterally loaded piles (FHWA-HIF-18-031): resistance factors, p-multipliers, p-y parameters (stiff clay, sand)",
+        "title": "FHWA GEC 9 (laterally loaded deep foundations)",
     },
     "gec10": {
         "adapter": "funhouse_agent.adapters.gec10_adapter",
         "brief": "Drilled shafts reference (FHWA-NHI-18-024)",
+        "title": "FHWA GEC 10 (drilled shafts)",
     },
     "gec11": {
         "adapter": "funhouse_agent.adapters.gec11_adapter",
         "brief": "MSE walls & reinforced soil slopes (FHWA-NHI-10-024)",
+        "title": "FHWA GEC 11 (MSE walls and reinforced soil slopes)",
     },
     "gec12": {
         "adapter": "funhouse_agent.adapters.gec12_adapter",
         "brief": "Driven piles reference (FHWA-NHI-16-009)",
+        "title": "FHWA GEC 12 (driven piles)",
     },
     "gec13": {
         "adapter": "funhouse_agent.adapters.gec13_adapter",
         "brief": "Ground modification reference (FHWA-NHI-16-027/-028)",
+        "title": "FHWA GEC 13 (ground modification)",
     },
     "gec14": {
         "adapter": "funhouse_agent.adapters.gec14_adapter",
         "brief": "QA for geotech reporting documents (FHWA-HIF-17-016): GRD types, ACMs/ADMs, QA process, checklists",
+        "title": "FHWA GEC 14 (geotechnical reporting)",
     },
     "micropile": {
         "adapter": "funhouse_agent.adapters.micropile_adapter",
         "brief": "Design reference (FHWA-NHI-05-039): bond stresses",
+        "title": "FHWA Micropile Design and Construction",
     },
     "ufc_backfill": {
         "adapter": "funhouse_agent.adapters.ufc_backfill_adapter",
-        "brief": "UFC 3-220-04N (compaction, filter criteria, drainage)",
+        "brief": "UFC 3-220-04FA: backfill materials, Table 5-1 compaction, lifts, equipment, Fig 2-5 lateral pressure (US)",
+        "title": "UFC 3-220-04FA (backfill for subsurface structures)",
     },
     "ufc_expansive": {
         "adapter": "funhouse_agent.adapters.ufc_expansive_adapter",
-        "brief": "UFC 3-220-07 (swell potential, heave, pier design)",
+        "brief": "UFC 3-220-07: swell potential (Table 4-1), active zone, heave (Eqs 4-1, 5-2, 5-8), foundation types, grade-beam void (US)",
+        "title": "UFC 3-220-07 (expansive soils)",
     },
     "ufc_pavement": {
         "adapter": "funhouse_agent.adapters.ufc_pavement_adapter",
         "brief": "UFC 3-250-01 roads/parking: CBR flexible, rigid, overlays, frost, drainage, joints, mixed traffic (US)",
+        "title": "UFC 3-250-01 (pavements for roads and parking)",
     },
     "ufc_stabilization": {
         "adapter": "funhouse_agent.adapters.ufc_stabilization_adapter",
         "brief": "UFC 3-250-11: additive selection, strength/durability criteria, equivalency factors",
+        "title": "UFC 3-250-11 (soil stabilization)",
     },
     "ufc_flexible_practice": {
         "adapter": "funhouse_agent.adapters.ufc_flexible_practice_adapter",
         "brief": "UFC 3-250-03 asphalt: HMA gradations, Marshall/Superpave, spray rates, seal coats",
+        "title": "UFC 3-250-03 (flexible pavements)",
     },
     "ufc_concrete_practice": {
         "adapter": "funhouse_agent.adapters.ufc_concrete_practice_adapter",
         "brief": "UFC 3-250-04: materials tables, dowel tolerances, joint spacing, RCC",
+        "title": "UFC 3-250-04 (concrete pavements)",
     },
     "ufc_structural": {
         "adapter": "funhouse_agent.adapters.ufc_structural_adapter",
         "brief": "UFC 3-301-01 DoD (IBC/ASCE 7-22 mods): risk categories, live loads, seismic systems",
+        "title": "UFC 3-301-01 (structural engineering)",
     },
     "ufc_collapse": {
         "adapter": "funhouse_agent.adapters.ufc_collapse_adapter",
         "brief": "UFC 4-023-03 progressive collapse: tie forces, Alternate Path LRFD, LIF/DIF, ELR, RC/steel m-factors",
+        "title": "UFC 4-023-03 (progressive collapse)",
     },
     "gsa_collapse": {
         "adapter": "funhouse_agent.adapters.gsa_collapse_adapter",
         "brief": "GSA Alternate Path 2016 (civilian sibling of UFC 4-023-03): FSL applicability, AP-only design, redundancy",
+        "title": "GSA Alternate Path guidelines (progressive collapse)",
     },
     "wood_handbook": {
         "adapter": "funhouse_agent.adapters.wood_handbook_adapter",
         "brief": "USDA Wood Handbook: clear-wood properties, EMC/shrinkage, stress/deformation/stability, fastener yield model",
+        "title": "USDA Wood Handbook",
     },
     "fema_p2082": {
         "adapter": "funhouse_agent.adapters.fema_p2082_adapter",
         "brief": "2020 NEHRP: Vs30 site classes A-F incl. BC/CD/DE, SDS/SD1, two-period spectrum, SDC, Risk Category",
+        "title": "FEMA P-2082 (2020 NEHRP provisions)",
     },
     "california_trenching": {
         "adapter": "funhouse_agent.adapters.california_trenching_adapter",
         "brief": "Caltrans Trenching and Shoring Manual: Cal/OSHA soil types/slopes, log-spiral Kp, apparent pressures, bottom heave (US)",
+        "title": "Caltrans Trenching and Shoring Manual",
     },
     "fhwa_pavements": {
         "adapter": "funhouse_agent.adapters.fhwa_pavements_adapter",
         "brief": "FHWA-NHI-05-037 Geotechnical Aspects of Pavements: Mr from CBR/R/DCP, drainage, frost, swell, stabilization (US)",
+        "title": "FHWA-NHI-05-037 (geotechnical aspects of pavements)",
     },
     "fhwa_soils_foundations": {
         "adapter": "funhouse_agent.adapters.fhwa_soils_foundations_adapter",
-        "brief": "FHWA NHI-06-088/089 Soils and Foundations manual text: soils, slopes (Taylor/Janbu charts), settlement, footings, piles, shafts, walls",
+        "brief": "FHWA NHI-06-088/089 Soils and Foundations: soils, slopes (Taylor/Janbu charts), settlement, footings, piles, shafts, walls",
+        "title": "FHWA NHI-06-088/089 (Soils and Foundations)",
     },
     "eurocode_7_1": {
         "adapter": "funhouse_agent.adapters.eurocode_7_1_adapter",
         "brief": "EN 1997-1: partial factors + DA1-DA3; earth pressure, bearing, PMT, settlement, rock, movement. SI",
+        "title": "Eurocode 7 Part 1 (EN 1997-1)",
     },
     "eurocode_7_2": {
         "adapter": "funhouse_agent.adapters.eurocode_7_2_adapter",
         "brief": "EN 1997-2: CPT, Menard PMT, SPT, dynamic probing, vane, DMT, plate load correlations; cu/Eoed; lab minima. SI",
+        "title": "Eurocode 7 Part 2 (EN 1997-2)",
     },
     "aashto_1993": {
         "adapter": "funhouse_agent.adapters.aashto_1993_adapter",
-        "brief": "AASHTO 1993 Pavement Design Guide: flexible SN, rigid slab D, or W18 for either; layer coeffs, roadbed Mr, ZR/So, mi/Cd, ESALs (US)",
+        "brief": "AASHTO 1993 pavement guide: flexible SN, rigid slab D or W18; layer coeffs, roadbed Mr, ZR/So, mi/Cd, ESALs (US)",
+        "title": "AASHTO 1993 Guide for Design of Pavement Structures",
     },
 }
 

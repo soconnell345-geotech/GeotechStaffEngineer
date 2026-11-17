@@ -95,6 +95,24 @@ class TestFlexibleDesign:
         assert res.layers[1]["a"] == pytest.approx(0.14, abs=0.005)
         assert res.layers[2]["a"] == pytest.approx(0.11, abs=0.005)
 
+    def test_asphalt_modulus_below_figure_2_5_refused_plainly(self):
+        """Figure 2.5's curve starts at about 106,000 psi (a1 0.20): a softer
+        asphalt gets the module's own message naming the chart's range and
+        what to do, not a bare library error."""
+        with pytest.raises(ValueError) as exc:
+            design_flexible_pavement(
+                layers=[PavementLayer("asphalt", modulus_psi=90000)],
+                **FLEX_EXAMPLE)
+        msg = str(exc.value)
+        assert "Figure 2.5" in msg
+        assert "106,000" in msg and "500,000" in msg
+        assert "'a' directly" in msg
+        # a direct coefficient for the same course designs as usual
+        res = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", modulus_psi=90000, a=0.18)],
+            **FLEX_EXAMPLE)
+        assert res.layers[0]["a"] == pytest.approx(0.18)
+
     def test_seasonal_mr_guide_example(self):
         res = design_flexible_pavement(
             w18=5e6, reliability_pct=95, so=0.35, delta_psi=1.9,
@@ -354,14 +372,24 @@ class TestTraffic:
         assert res.base_year_w18_two_way == pytest.approx(base, rel=1e-6)
         assert res.lef_basis == "truck_factors"
 
-    def test_load_off_the_printed_table_is_noted(self):
-        """A load above the table's last row is read at that row, and said."""
-        res = compute_design_esals(
-            axle_groups=[{"axle_config": "single", "load_kips": 57,
-                          "daily_count": 3}],
-            growth_rate_pct=0, design_period_yr=1,
-            num_lanes_per_direction=1, directional_factor=0.5)
-        assert any(n.startswith("single axle, 57 kips:") for n in res.notes)
+    def test_load_off_the_printed_table_is_refused(self):
+        """A load above the table's last row has no Appendix D LEF: the
+        lookup's refusal is raised again naming the axle group, whole (it
+        used to be read at the last row with a note; refs REF-76)."""
+        from geotech_references.aashto_1993.lef import (
+            load_equivalency_factor)
+        with pytest.raises(ValueError) as lib:
+            load_equivalency_factor("flexible", "single", 57, sn=5.0, pt=2.5)
+        with pytest.raises(ValueError) as raised:
+            compute_design_esals(
+                axle_groups=[{"axle_config": "single", "load_kips": 57,
+                              "daily_count": 3}],
+                growth_rate_pct=0, design_period_yr=1,
+                num_lanes_per_direction=1, directional_factor=0.5)
+        msg = str(raised.value)
+        assert msg.startswith("single axle group of 57 kips:")
+        assert str(lib.value) in msg
+        assert "truck factors" in msg
 
     def test_axle_spectrum_at_digitized_point(self):
         """18-kip single axle on SN=5/pt=2.5 has LEF = 1.0 by definition."""
@@ -829,10 +857,18 @@ class TestTreatedBaseScales:
                         ucs_7day_psi=800)[0] == pytest.approx(0.22)
         assert self._a2(layer_type="cement_treated_base",
                         ucs_7day_psi=1000)[0] == pytest.approx(0.25)
-        a, res = self._a2(layer_type="cement_treated_base",
-                          ucs_7day_psi=1200)
-        assert a == pytest.approx(0.25)
-        assert any("above the printed scale" in w for w in res.warnings)
+        # between ticks, the design takes the library's own read of the
+        # chart (no value off the printed chart is held here)
+        from geotech_references.aashto_1993.tables import (
+            layer_coefficient_a2_cement_treated)
+        lib = layer_coefficient_a2_cement_treated(300)["a2"]
+        assert self._a2(layer_type="cement_treated_base",
+                        ucs_7day_psi=300)[0] == pytest.approx(lib, abs=5e-4)
+        # above the top tick refused, as below the bottom one (refs
+        # REF-76; the top tick's a2 used to be held with a warning)
+        with pytest.raises(ValueError, match="cement_treated_base layer: "
+                           ".*top labelled tick"):
+            self._a2(layer_type="cement_treated_base", ucs_7day_psi=1200)
         with pytest.raises(ValueError, match="lowest labelled tick"):
             self._a2(layer_type="cement_treated_base", ucs_7day_psi=150)
 
@@ -842,6 +878,9 @@ class TestTreatedBaseScales:
         a = self._a2(layer_type="bituminous_treated_base",
                      marshall_stability_lb=500)[0]
         assert 0.161 < a < 0.180
+        with pytest.raises(ValueError, match="top labelled tick"):
+            self._a2(layer_type="bituminous_treated_base",
+                     marshall_stability_lb=1900)
         with pytest.raises(ValueError, match="lowest labelled tick"):
             self._a2(layer_type="bituminous_treated_base",
                      marshall_stability_lb=100)
@@ -975,20 +1014,33 @@ class TestFigure34:
         high = kf(3500, 3, 450)["k_pci"] / 450
         assert high > low + 0.3
 
-    def test_outside_the_drawn_curves(self):
-        from geotech_references.aashto_1993.composite_k import (
-            k_rigid_foundation_correction as kf)
-        r = kf(3500, 1.5, 180)
-        assert r["k_pci"] == kf(3500, 2, 180)["k_pci"]
-        assert "understates" in r["note"]
-        r = kf(3500, 5, 1600)
-        assert r["k_pci"] == 1600 and "no correction" in r["note"]
-        r = kf(24000, 5, 900)
-        assert r["k_pci"] == kf(20000, 5, 900)["k_pci"]
-        assert "understates" in r["note"]
-        assert kf(20000, 2, 1400)["k_pci"] == 2000
-        with pytest.raises(ValueError):
-            kf(3500, 0, 180)
+    def test_outside_the_drawn_curves_stops_the_worksheet(self):
+        """Outside Figures 3.4-3.6's drawn curves or axes the chart lookups
+        refuse (they used to read the nearest curve with a note; refs
+        REF-76); the worksheet stops, naming the season and step, with the
+        lookup's message whole. Made-up values."""
+        from pavement_design.composite_k import effective_k
+        from geotech_references.aashto_1993 import composite_k as ck
+        cases = (
+            (dict(seasonal=[{"mr_psi": 3500}], slab_d_in=9, dsg_ft=1.5),
+             "seasonal[0] (MR 3,500 psi): Figure 3.4",
+             lambda: ck.k_rigid_foundation_correction(3500, 1.5, 180)),
+            (dict(seasonal=[{"mr_psi": 3500}], slab_d_in=15),
+             "Figure 3.5, the relative damage for a 15-in slab",
+             lambda: ck.relative_damage_rigid(15, 180)),
+            (dict(seasonal=[{"mr_psi": 3500}], slab_d_in=9, ls=3.5),
+             "Figure 3.6, the loss-of-support correction",
+             lambda: ck.k_loss_of_support(180, 3.5)),
+        )
+        for kwargs, step, lib in cases:
+            with pytest.raises(ValueError) as lib_err:
+                lib()
+            with pytest.raises(ValueError) as raised:
+                effective_k(**kwargs)
+            msg = str(raised.value)
+            assert step in msg, msg
+            assert str(lib_err.value) in msg, msg
+            assert "give k_pci directly" in msg
 
 
 class TestCbrScales:

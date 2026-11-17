@@ -328,7 +328,11 @@ def tags_for(record: ReportRecord) -> Dict[str, List[str]]:
     if hazards.liquefactionPotential and \
             hazards.liquefactionPotential not in ("none", "not evaluated"):
         _add(topics, "Liquefaction")
-    if hazards.soilCorrosion == "yes":
+    # The verdict, not the whole answer: "yes - <basis>" is a yes. A
+    # "mixed" saved before the owner's answer of 2026-11-13 (OWN-125) meant
+    # corrosive to something, which is a yes under it.
+    corrosion = str(hazards.soilCorrosion or "").strip().lower()
+    if corrosion.split(" ", 1)[0].rstrip("-:;,") in ("yes", "mixed"):
         _add(topics, "Corrosion/Durability")
     for hazard in (hazards.earthHazardsExposed or ()):
         if hazard == "landslide":
@@ -1103,7 +1107,10 @@ def write_outputs(record: ReportRecord, out_dir: Any, *,
     out = str(out_dir)
     os.makedirs(out, exist_ok=True)
     key = record_key(record, source, parent_base)
-    source_text = str(source) if source else ""
+    # The file's bytes key the row (since BACKLOG RI-209) and name no file:
+    # the page and the library then record no source path.
+    source_text = "" if isinstance(source, (bytes, bytearray)) \
+        else str(source) if source else ""
     written = WrittenOutputs(key=key)
 
     if write_diggs_file:

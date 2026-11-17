@@ -62,13 +62,20 @@ _BASE_CIRCLE = dict(xc=2.63, yc=11.11, radius=21.10)
 _SU_A, _SU_DSS, _SU_P = 40.0, 25.2, 14.0
 
 
-def _geom(model, **kw):
+def _geom(model, crack="rankine", **kw):
+    """The slope as given. Both circles below have their centres below the
+    crest (reverse curvature): with no crack asked for they are no
+    admissible surfaces (GM-140 step 4 and its review's F1), so Rankine's
+    crack with the developed strengths is asked for (EM 1110-2-1902 (2003)
+    Eq. C-36, p. C-36); ``crack=None`` asks for none. The anisotropy checks
+    compare factors of safety on the same circles, crack and all."""
     return SlopeGeometry(
         surface_points=_FACE,
         soil_layers=[SlopeSoilLayer(
             name="clay", top_elevation=5.0, bottom_elevation=-10.0, gamma=20.0,
             analysis_mode="undrained", cu=40.0,
-            strength_model=model, **kw)])
+            strength_model=model, **kw)],
+        tension_crack_depth_basis=crack or "given")
 
 
 def _fos(g, circle, method="bishop"):
@@ -81,8 +88,17 @@ def test_v054_isotropic_anchor_matches_published():
     2.16 (FLAC 2.18; Taylor ~2.2). On the profile as given (it starts at the
     toe) the toe circle gives 2.379 (2.287 before GM-134; see the module
     docstring)."""
+    from slope_stability import cracks
+    with pytest.raises(cracks.ReverseCurvatureDiscarded):
+        _fos(_geom("mohr_coulomb", crack=None), _ISO_CIRCLE)
     f = _fos(_geom("mohr_coulomb"), _ISO_CIRCLE)
-    assert f == pytest.approx(2.379, abs=0.02)          # ours (pinned)
+    # GM-140 step 4: 2.379 -> 2.218; printed 2.16 (+2.7 %; FLAC 2.18,
+    # +1.7 %). The toe circle's centre is 1 m below the crest: closed by
+    # the Rankine crack asked for (EM 1110-2-1902 Eq. C-36, developed
+    # strengths), not at its centre's level; with no crack asked for it is
+    # no surface (the step 4 review's F1). Printed 2.16 is for the slope
+    # (Frontiers Earth Sci 13:1581457), not for this circle.
+    assert f == pytest.approx(2.218, abs=0.02)          # module's own
     clay = _geom("mohr_coulomb").soil_layers
     past_toe = SlopeGeometry(surface_points=[(-40.0, 0.0)] + _FACE,
                              soil_layers=clay)
@@ -90,7 +106,7 @@ def test_v054_isotropic_anchor_matches_published():
     assert base == pytest.approx(2.222, abs=0.005)      # ours (pinned)
     assert base == pytest.approx(2.16, rel=0.04)        # within ~3% of published
     assert base == pytest.approx(2.18, rel=0.03)        # within ~2% of FLAC
-    assert base < f
+    assert base == pytest.approx(f, abs=0.02)
 
 
 def test_v054_anisotropic_reduces_to_isotropic_exactly():
@@ -100,7 +116,15 @@ def test_v054_anisotropic_reduces_to_isotropic_exactly():
         f_mc = _fos(_geom("mohr_coulomb"), _ISO_CIRCLE, m)
         f_an = _fos(_geom("anisotropic", su_active=40.0, su_dss=40.0,
                           su_passive=40.0), _ISO_CIRCLE, m)
-        assert f_an == pytest.approx(f_mc, rel=1e-9)
+        if f_mc is None:
+            # GM-140 step 2: Spencer and GLE have no solution on this
+            # circle of a phi = 0 slope (before, the old approximate
+            # solver's value, Bishop's, stood in for both models). The two
+            # models still agree: neither has a number.
+            assert m != "bishop" and f_an is None
+        else:
+            assert f_an == pytest.approx(f_mc, rel=1e-9)
+    assert _fos(_geom("mohr_coulomb"), _ISO_CIRCLE, "bishop") is not None
 
 
 def test_v054_bakklandet_anisotropy_reduction():
@@ -114,12 +138,35 @@ def test_v054_bakklandet_anisotropy_reduction():
                   su_passive=_SU_P)
     f_ani_on_iso = _fos(aniso, _ISO_CIRCLE)
     f_ani_crit = _fos(aniso, _ANI_CIRCLE)
-    assert f_ani_on_iso == pytest.approx(1.942, abs=0.02)   # ours (pinned)
-    assert f_ani_crit == pytest.approx(1.886, abs=0.02)     # ours (pinned)
-    # anisotropy lowers the FOS, and the critical surface migrates (deeper drop)
-    assert f_ani_crit < f_ani_on_iso < f_iso
-    drop = 1.0 - f_ani_crit / f_iso
+    # GM-140 step 4: 1.942 -> 1.693, a 23.7 % reduction from the isotropic
+    # 2.218 where it was 18.4 %; printed 24 % (Bakklandet, 1.43 -> 1.09).
+    # Both circles are reverse-curvature circles, closed by the Rankine
+    # crack asked for, at the active strength (EM 1110-2-1902 Eq. C-36).
+    assert f_ani_on_iso == pytest.approx(1.693, abs=0.02)
+    assert f_ani_on_iso < f_iso
+    drop = 1.0 - f_ani_on_iso / f_iso
     assert 0.18 < drop < 0.28                               # brackets Bakklandet 24%
+    assert f_ani_crit < f_iso
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "GM-140 step 4 (OWN-103): on the circle (3, 3), R 4.243, which was the "
+    "anisotropic critical one, with Rankine's crack asked for (the step 4 "
+    "review's F1: no crack, no such circle), the reduction from the "
+    "isotropic value is "
+    "now 16.7 % (1.848 against 2.218) where it was 20.7 % (1.886 against "
+    "2.379): away from Bakklandet's printed 24 %. Its centre is 2 m below "
+    "the crest and Rankine's crack (Eq. C-36 at the active strength) is "
+    "barely deeper, so little of it is cut, while the toe circle (2.5, 4) "
+    "loses more; the toe circle now reads the lower of the two (23.7 %). "
+    "module_work/gm140/STEP4_CHECK.md"))
+def test_v054_bakklandet_reduction_on_the_former_critical_circle():
+    f_iso = _fos(_geom("mohr_coulomb"), _ISO_CIRCLE)
+    aniso = _geom("anisotropic", su_active=_SU_A, su_dss=_SU_DSS,
+                  su_passive=_SU_P)
+    f_ani_crit = _fos(aniso, _ANI_CIRCLE)
+    assert f_ani_crit < _fos(aniso, _ISO_CIRCLE)
+    assert 1.0 - f_ani_crit / f_iso == pytest.approx(0.24, abs=0.04)
 
 
 def test_v054_active_zone_stronger_than_passive():

@@ -160,9 +160,11 @@ def discover_dxf(filepath: str = None, content: bytes = None) -> Dict[str, Any]:
 
 
 def from_dxf(filepath: str = None, content: bytes = None,
-             layer_mapping=None, units: str = "m", flip_y: bool = False,
+             layer_mapping=None, units: Optional[str] = None,
+             flip_y: bool = False,
              section_bottom: Optional[float] = None,
-             name: str = "DXF import") -> Project:
+             name: str = "DXF import",
+             ignore_header_units: bool = False) -> Project:
     """Build a Project from a DXF using a USER-CONFIRMED layer mapping.
 
     Parameters
@@ -177,10 +179,15 @@ def from_dxf(filepath: str = None, content: bytes = None,
              "water_table": "GWT",          # optional
              "nails": "NAILS"}              # optional
 
-    units : str
-        Drawing units ('m', 'mm', 'cm', 'ft', 'in').
+    units : str, optional
+        Drawing units ('m', 'mm', 'cm', 'ft', 'in'). Left out, the units the
+        drawing's header states are used; given, a difference from the
+        header is refused unless ``ignore_header_units`` (see
+        ``dxf_import.parse_dxf_geometry``).
     flip_y : bool
         Negate Y for downward-positive drawings.
+    ignore_header_units : bool
+        Use ``units`` even where the drawing's header states other units.
     section_bottom : float, optional
         Flat bottom elevation of the modeled section (m). Default: lowest
         imported point minus 5 m (logged as an assumption).
@@ -202,7 +209,8 @@ def from_dxf(filepath: str = None, content: bytes = None,
 
     parsed = parse_dxf_geometry(filepath=filepath, content=content,
                                 layer_mapping=layer_mapping, units=units,
-                                flip_y=flip_y)
+                                flip_y=flip_y,
+                                ignore_header_units=ignore_header_units)
     return _project_from_parse_result(parsed, "dxf", name,
                                       section_bottom=section_bottom)
 

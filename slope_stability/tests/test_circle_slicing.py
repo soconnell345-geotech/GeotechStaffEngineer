@@ -116,13 +116,16 @@ def test_a_circle_is_cut_at_a_surcharge_edge():
 
 def test_a_circle_is_cut_at_the_tension_crack():
     """A 2 m crack in the crest: its base, el 8, meets the circle at
-    x = 7.056, a slice boundary; the slices before it are in the crack and
-    none after it."""
+    x = 7.056, a slice boundary. By default the surface ends there (GM-140
+    step 4; EM 1110-2-1902 2-2f(3), p. 2-6); with the 'strength' option the
+    slices before it are in the crack and none after it."""
     g = _geom(tension_crack_depth=2.0)
     slip = CircularSlipSurface(*_CIRCLE)
     x8 = _left_crossing(8.0)
     assert x8 == pytest.approx(7.056, abs=1e-3)
     assert _has(slice_boundaries(g, slip, 30), x8)
+    assert build_slices(g, slip, 30)[0].x_left == pytest.approx(x8)
+    g = _geom(tension_crack_depth=2.0, tension_crack_model="strength")
     sl = build_slices(g, slip, 30)
     assert any(s.in_tension_crack for s in sl)
     for s in sl:
@@ -134,10 +137,18 @@ def test_a_polyline_is_cut_at_surcharge_and_crack_edges():
     crossing (el 8, x = 6.857) to a polyline's boundaries, besides its
     corners (9, 16), the ground breaks (10, 20) and the top of the clay
     (x = 10.75)."""
-    g = _geom(surcharge=20.0, surcharge_x_range=(6.0, 8.0),
-              tension_crack_depth=2.0)
     slip = PolylineSlipSurface([(4.0, 10.0), (9.0, 6.5), (16.0, 4.5),
                                 (21.0, 5.0)])
+    # by default the surface ends at the crack (GM-140 step 4): the slices
+    # start at the crack's base crossing and all 30 are in the mass kept
+    g = _geom(surcharge=20.0, surcharge_x_range=(6.0, 8.0),
+              tension_crack_depth=2.0)
+    kept = slice_boundaries(g, slip, 30)
+    assert kept[0] == pytest.approx(4.0 + 5.0 * 2.0 / 3.5)
+    assert len(kept) == 31 and len(build_slices(g, slip, 30)) == 30
+    # the 'strength' option keeps the cracked soil, cut at the same places
+    g = _geom(surcharge=20.0, surcharge_x_range=(6.0, 8.0),
+              tension_crack_depth=2.0, tension_crack_model="strength")
     bounds = slice_boundaries(g, slip, 30)
     for x in (6.0, 8.0, 4.0 + 5.0 * 2.0 / 3.5, 9.0, 16.0, 10.0, 20.0,
               9.0 + 0.5 * 7.0 / 2.0):

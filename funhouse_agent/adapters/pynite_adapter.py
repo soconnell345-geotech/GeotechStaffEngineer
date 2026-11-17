@@ -115,7 +115,7 @@ METHOD_INFO = {
             "udl": {"type": "float", "required": False, "default": 0.0, "description": "UDL on all spans, downward positive (kN/m)."},
             "span_udls": {"type": "array", "required": False, "description": "Per-span UDLs (kN/m, downward positive); overrides udl."},
             "point_loads": {"type": "array", "required": False, "description": "[{span (1-based), x (m from span start), P (kN downward)}]."},
-            "support_types": {"type": "array", "required": False, "allowed_values": _SUPPORT_TYPES, "description": "One per support; default pinned + rollers."},
+            "support_types": {"type": "array", "required": False, "allowed_values": _SUPPORT_TYPES, "any_case": True, "description": "One per support; default pinned + rollers."},
         },
         "returns": {
             "support_reactions_kN": "Vertical reactions at each support.",

@@ -4,6 +4,8 @@ Input geometry dataclasses for support of excavation design.
 All units SI: meters, kPa, kN/m³, degrees.
 """
 
+import math
+import numbers
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -47,19 +49,52 @@ class SupportLevel:
         Depth from top of wall to the support (m).
     support_type : str
         One of "strut", "anchor", "raker".
-    spacing : float
-        Horizontal center-to-center spacing (m). Default 3.0.
+    spacing : float, optional
+        Horizontal centre-to-centre spacing of the supports along the
+        wall (m). The load of one support is the load per metre of wall
+        times it, Th = Thi s (GEC-4 Eq. 19, p. 66). Not given (None):
+        loads are reported per metre of wall only (GM-321: it defaulted
+        to 3.0 and was never read).
     angle_deg : float
-        Inclination from horizontal (degrees). 0 = horizontal strut,
-        positive = inclined downward (typical for anchors). Default 0.
-    preload_kN_per_m : float
-        Lock-off / preload per meter of wall (kN/m). Default 0.
+        Inclination from the horizontal (degrees), 0 to less than 90:
+        0 = a horizontal strut; an anchor or raker inclined below the
+        horizontal carries the axial load T = Th / cos(angle), with the
+        vertical component Tv = T sin(angle) (GEC-4 Eqs. 20 and 21,
+        p. 67). Default 0.
+
+    A preload or lock-off load is not an input (GM-321): no reference
+    held prints how it enters the support loads of an apparent pressure
+    analysis, so ``preload_kN_per_m``, stored and never read before, was
+    taken out.
     """
     depth: float
     support_type: str = "strut"
-    spacing: float = 3.0
+    spacing: Optional[float] = None
     angle_deg: float = 0.0
-    preload_kN_per_m: float = 0.0
+
+    def __post_init__(self):
+        # None: not given, as for spacing; anything else must be a number
+        # (a string or a bool was compared raw before)
+        if self.angle_deg is None:
+            self.angle_deg = 0.0
+        for key in ("spacing", "angle_deg"):
+            value = getattr(self, key)
+            if value is not None and (isinstance(value, bool) or not
+                                      isinstance(value, numbers.Real)):
+                raise ValueError(
+                    f"a support's {key} must be a number, got {value!r}")
+        # inf passed "> 0" and gave infinite loads (GM-321 re-check, C2)
+        if self.spacing is not None and not (math.isfinite(self.spacing)
+                                             and self.spacing > 0):
+            raise ValueError(
+                f"a support's spacing must be positive and finite (m), got "
+                f"{self.spacing!r}; leave it out for loads per metre of "
+                "wall only")
+        if not 0.0 <= self.angle_deg < 90.0:
+            raise ValueError(
+                "a support's angle_deg is its inclination from the "
+                "horizontal, 0 (horizontal) to less than 90 degrees, got "
+                f"{self.angle_deg!r}")
 
 
 @dataclass

@@ -64,8 +64,13 @@ class RandomVariable:
     -----
     For truncated normal/lognormal the ``mean``/``std`` attributes remain the
     parameters of the UNDERLYING (untruncated) distribution; truncation only
-    renormalizes pdf/cdf/ppf/sampling. Moment methods (FOSM, PEM) use the
-    underlying moments.
+    renormalizes pdf/cdf/ppf/sampling. Monte Carlo and FORM read the
+    truncated distribution. The moment methods (FOSM, PEM) evaluate g at
+    mean +/- std and have no step that takes a truncation, so they refuse a
+    truncated variable (:func:`refuse_truncated`, GM-322) instead of
+    answering for the untruncated one. Bounds that cut off no probability
+    (infinite bounds, a lognormal with ``lower=0``), or at most
+    :data:`TRUNCATION_IGNORED_MASS`, are not a truncation to them.
     """
 
     name: str
@@ -211,6 +216,18 @@ class RandomVariable:
         return (self.dist in ("normal", "lognormal")
                 and (self.lower is not None or self.upper is not None))
 
+    def _cut_mass(self) -> float:
+        """Probability the bounds of a normal/lognormal variable cut off,
+        both tails together (0 for no bounds, infinite bounds, or a
+        lognormal with lower=0). The upper tail is read from the survival
+        function, so a far-tail bound is not lost to rounding."""
+        if not self._is_truncated():
+            return 0.0
+        upper_tail = (float(self._base.sf(self.upper))
+                      if self.upper is not None and self.upper != math.inf
+                      else 0.0)
+        return self._Fa + upper_tail
+
     # -- distribution interface (truncation-aware) ---------------------------
 
     def pdf(self, x):
@@ -279,6 +296,62 @@ class RandomVariable:
 # ---------------------------------------------------------------------------
 # Spec parsing + correlation assembly
 # ---------------------------------------------------------------------------
+
+#: Probability that lower/upper on one normal/lognormal variable may cut off
+#: (both tails together) and still be read by FOSM and PEM as no truncation.
+#: The lead's call in the GM-322 review round (module_work/gm322/CHECK.md,
+#: "Calls made"): their answer moves by far less than its own error there.
+TRUNCATION_IGNORED_MASS = 1e-6
+
+
+def refuse_truncated(variables: Sequence["RandomVariable"],
+                     engine: str) -> List[str]:
+    """Refuse truncated normal/lognormal variables in a moment engine.
+
+    FOSM (Duncan 2000; UFC 3-220-20 Eqs. 7-8 to 7-11) and Rosenblueth's
+    point-estimate method (UFC 3-220-20 Eqs. 7-13/7-14) evaluate g at
+    ``mean +/- std`` only. Neither has a step that reads a truncation, and
+    ``mean``/``std`` here are the moments of the UNTRUNCATED distribution,
+    so running them would answer for a different variable than the one
+    Monte Carlo and FORM read (GM-322). Uniform and triangular bounds are
+    the distribution itself (their mean and std follow from the bounds) and
+    are accepted.
+
+    Only bounds that cut off probability are refused. Bounds that cut off
+    none (infinite bounds, a lognormal with ``lower=0``) are no truncation
+    and run silently. Bounds that cut off at most
+    :data:`TRUNCATION_IGNORED_MASS` run on the untruncated variable, and
+    the returned notes (one per such variable) say how much they cut off;
+    the engine puts them in its result's ``warnings``.
+    """
+    cut = []
+    notes: List[str] = []
+    for v in variables:
+        mass = v._cut_mass()
+        if mass > TRUNCATION_IGNORED_MASS:
+            cut.append((v, mass))
+        elif mass > 0.0:
+            notes.append(
+                f"'{v.name}': lower/upper cut off {mass:.2g} of the "
+                f"{v.dist} distribution's probability, at most "
+                f"{TRUNCATION_IGNORED_MASS:g}, which {engine} reads as no "
+                f"truncation: the bounds were not applied, and {engine} ran "
+                f"on the untruncated variable.")
+    if not cut:
+        return notes
+    listed = ", ".join(
+        f"'{v.name}' ({v.dist}, lower={v.lower}, upper={v.upper}, cutting "
+        f"off {mass:.2g} of the probability)" for v, mass in cut)
+    raise ValueError(
+        f"{engine} takes no truncation: it evaluates g at mean +/- std of "
+        f"each variable and has no step that reads lower/upper on a normal "
+        f"or lognormal variable. Truncated variable(s): {listed}. Use "
+        f"monte_carlo or form, which read the truncated distribution, or "
+        f"remove lower/upper to run {engine} on the untruncated variable "
+        f"(bounds that cut off at most {TRUNCATION_IGNORED_MASS:g} of the "
+        f"probability run, untruncated; uniform and triangular bounds are "
+        f"accepted: they define the distribution).")
+
 
 def variables_from_spec(spec: Union[Dict[str, Dict], Sequence[RandomVariable]]
                         ) -> List[RandomVariable]:

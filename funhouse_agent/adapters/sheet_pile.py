@@ -56,8 +56,8 @@ def _log_spiral_source(params, layers, *, method):
                 f"{method}: log_spiral_source {source!r} (UFC 3-220-20 "
                 f"{chart[source]}) is drawn for delta/phi' = 0.66 only; "
                 f"layers {off} take another wall friction (left out, a "
-                "cohesionless layer takes the clean sand row of the steel "
-                "sheet pile table, 17 deg). Set each layer's "
+                "layer takes none; marked interface_soil 'clean_sand', the "
+                "steel sheet pile table's 17 deg). Set each layer's "
                 "wall_friction_deg to 0.66 x its friction_angle, or leave "
                 "log_spiral_source out (UFC 3-220-20 Eq. 4-12 for a "
                 "vertical face and level ground, any wall friction) or give "
@@ -198,18 +198,21 @@ _LAYERS = {
         "sandy silt, nonplastic silt); at most friction_angle; not with "
         "wall_friction_deg)}. wall_friction_deg or interface_soil is used "
         "on both sides by pressure_method 'coulomb' and 'log_spiral'. A "
-        "layer giving neither takes, with 'log_spiral', the clean_sand row "
-        "(17 deg, at most its phi') on the passive side when it has no "
-        "cohesion and no wall friction on the active side or in a layer "
-        "with cohesion (UFC 3-220-20 Fig. 4-37 step 1, p. 237: 'Passive "
-        "pressures for clean coarse grained soils include wall friction "
-        "(see Table 4-1)'; it ignores wall friction in other soils, so give "
-        "wall_friction_deg 0 in a silty sand or silt); with 'coulomb' none "
-        "(UFC 3-220-20 p. 190: passive pressure 'should be calculated using "
-        "the log spiral method and not the Coulomb method'). The result's "
-        "choices give each layer's wall friction and its Kp at the other "
-        "rows and at delta = 0, and where a layer took the clean sand row "
-        "by default the embedment with none."),
+        "layer giving neither takes no wall friction with any method, so "
+        "its 'log_spiral' Kp is Rankine's: UFC 3-220-20 Fig. 4-37 step 1 "
+        "(p. 237), 'Passive pressures for clean coarse grained soils "
+        "include wall friction (see Table 4-1). For active or passive "
+        "pressures in all other soil types, ignore wall friction', and "
+        "whether a layer is clean sand or gravel is for the caller to say: "
+        "mark it interface_soil 'clean_sand' (17 deg) or 'clean_gravel' "
+        "(22 deg) to take the table's wall friction with 'log_spiral'. "
+        "With 'coulomb' a row or wall_friction_deg is taken as given, but "
+        "UFC 3-220-20 p. 190 says passive pressure 'should be calculated "
+        "using the log spiral method and not the Coulomb method'. The "
+        "result's choices give each layer's wall friction and its Kp at "
+        "every row and at delta = 0, and, where a layer without cohesion "
+        "named no wall friction under 'log_spiral', the embedment with "
+        "those layers marked clean sand."),
 }
 
 # The water level on the excavated side (GM-296).
@@ -245,7 +248,7 @@ METHOD_INFO = {
             "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS applied to passive resistance."},
             "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on the active (retained) side, m below the top of the wall."},
             "gwt_depth_passive": _GWT_PASSIVE,
-            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi). 'coulomb' and 'log_spiral' take each layer's wall friction (layers: wall_friction_deg or interface_soil; what a layer giving neither takes is in the layers description)."},
+            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "value_aliases": {"caquot_kerisel": "log_spiral", "logspiral": "log_spiral"}, "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi). 'coulomb' and 'log_spiral' take each layer's wall friction (layers: wall_friction_deg or interface_soil; what a layer giving neither takes is in the layers description)."},
             "log_spiral_source": _LOG_SPIRAL_SOURCE,
             "embedment_increase": {"type": "float", "required": False, "default": 1.2, "description": "D / D0, the multiplier on the embedment from moment equilibrium: 1.2 (default), as the Caltrans Trenching and Shoring Manual (7-5.02 step 3, p. 7-11: 'The 20 percent increase is not a factor of safety'; its Example 7-3 takes it after FS 1.3 on the moments) and UFC 3-220-20 (Fig. 4-41 step 6, p. 242: 'Increase D by 20% to allow for dredging, scour, etc.'; its example Fig. 4-43 takes it after phi'allow = atan(tan 35 deg / 1.5) = 25 deg, Kp 3.6) both print it beside a factor of safety on the passive side. FOS_passive divides the passive pressure, UFC Fig. 4-41 step 2's alternative to phi'allow. Must be >= 1.0."},
         },
@@ -262,7 +265,7 @@ METHOD_INFO = {
             "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on the active (retained) side, m below the top of the wall."},
             "gwt_depth_passive": _GWT_PASSIVE,
             "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS applied to passive resistance."},
-            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi). 'coulomb' and 'log_spiral' take each layer's wall friction (layers: wall_friction_deg or interface_soil; what a layer giving neither takes is in the layers description)."},
+            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "value_aliases": {"caquot_kerisel": "log_spiral", "logspiral": "log_spiral"}, "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi). 'coulomb' and 'log_spiral' take each layer's wall friction (layers: wall_friction_deg or interface_soil; what a layer giving neither takes is in the layers description)."},
             "log_spiral_source": _LOG_SPIRAL_SOURCE,
         },
         "returns": {"embedment_depth_m": "Required embedment.", "anchor_force_kN_per_m": "Anchor force.", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources, and UFC 3-220-20 p. 260 on tied-back walls; with 'coulomb' or 'log_spiral': each passive-side layer's wall friction, given or taken, with its Kp at delta = 0 and at the table's other rows; whenever either side has water: the excavated side's water depth taken (gwt_depth_passive), given or left out, with its basis. Tell the user."},

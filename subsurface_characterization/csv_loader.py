@@ -140,7 +140,10 @@ def load_cpt_to_investigation(cpt_result) -> Investigation:
     Returns
     -------
     Investigation
-        With CPT measurements as PointMeasurements.
+        With CPT measurements as PointMeasurements. A reading the file does
+        not have (NaN in ``cpt_result``; the parse result's
+        ``missing_values`` counts them) is left out, so the investigation
+        holds measured values only.
     """
     measurements = []
 
@@ -151,45 +154,19 @@ def load_cpt_to_investigation(cpt_result) -> Investigation:
             investigation_type="cpt",
         )
 
-    # qc
-    if len(cpt_result.q_c_kPa) > 0:
-        for d, v in zip(depths, cpt_result.q_c_kPa):
+    # A reading the file does not have (NaN in the parse result) makes no
+    # measurement: a PointMeasurement is something that was measured.
+    for attr, parameter in (("q_c_kPa", "qc_kPa"), ("f_s_kPa", "fs_kPa"),
+                            ("u_2_kPa", "u2_kPa"), ("Rf_pct", "Rf_pct")):
+        column = getattr(cpt_result, attr)
+        if len(column) == 0:
+            continue
+        for d, v in zip(depths, column):
+            if not np.isfinite(float(v)):
+                continue
             measurements.append(PointMeasurement(
                 depth_m=float(d),
-                parameter="qc_kPa",
-                value=float(v),
-                source="field",
-                test_type="CPTu",
-            ))
-
-    # fs
-    if len(cpt_result.f_s_kPa) > 0:
-        for d, v in zip(depths, cpt_result.f_s_kPa):
-            measurements.append(PointMeasurement(
-                depth_m=float(d),
-                parameter="fs_kPa",
-                value=float(v),
-                source="field",
-                test_type="CPTu",
-            ))
-
-    # u2
-    if len(cpt_result.u_2_kPa) > 0:
-        for d, v in zip(depths, cpt_result.u_2_kPa):
-            measurements.append(PointMeasurement(
-                depth_m=float(d),
-                parameter="u2_kPa",
-                value=float(v),
-                source="field",
-                test_type="CPTu",
-            ))
-
-    # Rf
-    if len(cpt_result.Rf_pct) > 0:
-        for d, v in zip(depths, cpt_result.Rf_pct):
-            measurements.append(PointMeasurement(
-                depth_m=float(d),
-                parameter="Rf_pct",
+                parameter=parameter,
                 value=float(v),
                 source="field",
                 test_type="CPTu",

@@ -1,0 +1,801 @@
+{
+ "about": "One sample calc package per *_package method of the calc_package adapter, built by build_sample_packages.py through the dispatch call the agent makes. Each row's params are the whole call: the example's inputs, the package's selector where it has one, the header fields, and given, which names every input passed as stated by the example. origin: worked_example (an entry of funhouse_agent/worked_examples.json; example_call is the index of its dispatch call, whose parameters the row repeats), validation_example (a case of validation_examples/), printed_example (a printed example pinned in a module's own tests) or made_up (no published example fits; the note says why). fast: built in every test run; the others are built in the slow run.",
+ "packages": [
+  {
+   "module": "bearing_capacity",
+   "method": "bearing_capacity_package",
+   "origin": "worked_example",
+   "example_id": "WE-FOOTING-1",
+   "example_call": 0,
+   "example_tool": "bearing_capacity.bearing_capacity_analysis",
+   "source": "FHWA GEC-6, Shallow Foundations (FHWA-SA-02-054), Appendix B, Example 1 'Interior Bridge Pier on Spread Footing', Step 7 bearing capacity and Tables B1-2/B1-3 Hough settlement",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-FOOTING-1",
+    "width": 3.0,
+    "shape": "square",
+    "depth": 2.3,
+    "cohesion": 0.0,
+    "friction_angle": 35.0,
+    "unit_weight": 19.6,
+    "gwt_depth": 9.1,
+    "factor_of_safety": 3.0,
+    "factor_method": "vesic",
+    "ngamma_method": "vesic",
+    "given": [
+     "cohesion",
+     "depth",
+     "factor_method",
+     "factor_of_safety",
+     "friction_angle",
+     "gwt_depth",
+     "ngamma_method",
+     "shape",
+     "unit_weight",
+     "width"
+    ]
+   },
+   "fast": true
+  },
+  {
+   "module": "lateral_pile",
+   "method": "lateral_pile_package",
+   "origin": "made_up",
+   "example_id": "MADE-UP-LATERAL-1",
+   "source": "Made-up inputs (the lateral_pile_package probe of funhouse_agent/tests/method_probes.json).",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "MADE-UP-LATERAL-1",
+    "layers": [
+     {
+      "bottom": 15,
+      "gamma": 19,
+      "k": 8150,
+      "model": "SandAPI",
+      "phi": 32,
+      "top": 0
+     }
+    ],
+    "pile_diameter": 0.8,
+    "pile_length": 15.0,
+    "Vt": 100,
+    "given": [
+     "Vt",
+     "layers",
+     "pile_diameter",
+     "pile_length"
+    ]
+   },
+   "fast": true,
+   "note": "No published example fits the tool: validation example V-017 (FHWA NHI-05-039 Micropile Manual, Sample Problem No. 2) has its cap 0.305 m below the ground surface, which lateral_pile_analysis cannot be given."
+  },
+  {
+   "module": "slope_stability",
+   "method": "slope_stability_package",
+   "origin": "worked_example",
+   "example_id": "WE-SLOPE-4",
+   "example_call": 0,
+   "example_tool": "slope_stability.analyze_slope",
+   "source": "Rocscience Slide2 Verification Manual, Verification Problem #39, pp. 147-150; after Tandjiria, V., Teh, C.I. & Low, B.K. (2002), sand-fill case (Table 39.2).",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-SLOPE-4",
+    "surface_points": [
+     [
+      0,
+      9
+     ],
+     [
+      10,
+      9
+     ],
+     [
+      20,
+      3
+     ],
+     [
+      30,
+      3
+     ]
+    ],
+    "soil_layers": [
+     {
+      "name": "fill",
+      "top_elevation": 9.0,
+      "bottom_elevation": 3.0,
+      "gamma": 17.0,
+      "gamma_sat": 17.0,
+      "phi": 37.0,
+      "c_prime": 0.0,
+      "analysis_mode": "drained"
+     },
+     {
+      "name": "softclay",
+      "top_elevation": 3.0,
+      "bottom_elevation": 0.0,
+      "gamma": 20.0,
+      "gamma_sat": 20.0,
+      "phi": 0.0,
+      "c_prime": 20.0,
+      "cu": 20.0,
+      "analysis_mode": "undrained"
+     }
+    ],
+    "xc": 15.193905105454997,
+    "yc": 10.242328996634253,
+    "radius": 9.938523884815131,
+    "method": "spencer",
+    "given": [
+     "method",
+     "radius",
+     "soil_layers",
+     "surface_points",
+     "xc",
+     "yc"
+    ]
+   },
+   "fast": true
+  },
+  {
+   "module": "slope_stability",
+   "method": "slope_report_package",
+   "origin": "worked_example",
+   "example_id": "WE-SF-4",
+   "example_call": 0,
+   "example_tool": "slope_stability.search_critical_surface",
+   "source": "FHWA NHI-06-088, Soils and Foundations Reference Manual Vol I (Dec 2006), Chapter 6, Examples 6-1 and 6-1a, printed pp. 6-30 to 6-32 (ReSSA computer check cited on p. 6-32)",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-SF-4",
+    "surface_points": [
+     [
+      -15.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0
+     ],
+     [
+      15.838,
+      9.144
+     ],
+     [
+      50.838,
+      9.144
+     ]
+    ],
+    "soil_layers": [
+     {
+      "name": "fill",
+      "top_elevation": 9.144,
+      "bottom_elevation": -15.0,
+      "gamma": 18.851,
+      "phi": 20.0,
+      "c_prime": 23.94
+     }
+    ],
+    "method": "bishop",
+    "surface_type": "entry_exit",
+    "x_entry_range": [
+     -8.0,
+     2.0
+    ],
+    "x_exit_range": [
+     16.0,
+     40.0
+    ],
+    "n_trials": 1500,
+    "seed": 42,
+    "given": [
+     "method",
+     "n_trials",
+     "seed",
+     "soil_layers",
+     "surface_points",
+     "surface_type",
+     "x_entry_range",
+     "x_exit_range"
+    ]
+   },
+   "fast": false
+  },
+  {
+   "module": "settlement",
+   "method": "settlement_package",
+   "origin": "printed_example",
+   "example_id": "NHI-06-089-EX-8-2",
+   "source": "FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (Dec 2006), Chapter 8, Example 8-2, printed pp. 8-48 to 8-52 (Schmertmann settlement of a 6 ft x 24 ft footing; 0.130 in at 0.1 year, 0.156 in at 1 year). Pinned in settlement/tests/test_printed_examples.py.",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "NHI-06-089-EX-8-2",
+    "q_applied": 95.761,
+    "q_overburden": 16.519,
+    "B": 1.8288,
+    "L": 7.3152,
+    "shape": "rectangular",
+    "immediate_method": "schmertmann",
+    "gamma_soil": 19.44,
+    "time_years_schmertmann": 0.1,
+    "schmertmann_layers": [
+     {
+      "depth_top": 0.0,
+      "depth_bottom": 0.9144,
+      "Es": 13598.0
+     },
+     {
+      "depth_top": 0.9144,
+      "depth_bottom": 1.2192,
+      "Es": 40794.0
+     },
+     {
+      "depth_top": 1.2192,
+      "depth_bottom": 2.4384,
+      "Es": 40794.0
+     },
+     {
+      "depth_top": 2.4384,
+      "depth_bottom": 4.8768,
+      "Es": 110986.0
+     }
+    ],
+    "given": [
+     "B",
+     "L",
+     "gamma_soil",
+     "immediate_method",
+     "q_applied",
+     "q_overburden",
+     "schmertmann_layers",
+     "shape",
+     "time_years_schmertmann"
+    ]
+   },
+   "fast": true,
+   "note": "The example's US units converted to SI; its p_op = 840 psf at the peak depth is given by one unit weight, (840 - 345) / 4 = 123.75 pcf, as the module's test does."
+  },
+  {
+   "module": "axial_pile",
+   "method": "axial_pile_package",
+   "origin": "worked_example",
+   "example_id": "WE-PILE-1",
+   "example_call": 1,
+   "example_tool": "axial_pile.axial_pile_capacity",
+   "source": "FHWA GEC-12, Design and Construction of Driven Pile Foundations, Vol 3 (FHWA-NHI-16-064), Appendix D, North Abutment design example, Table D-6 (nominal resistance vs depth)",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-PILE-1",
+    "pile_type": "h_pile",
+    "designation": "HP12x74",
+    "pile_length": 18.288,
+    "gwt_depth": 4.572,
+    "head_depth": 1.524,
+    "factor_of_safety": 2.5,
+    "layers": [
+     {
+      "thickness": 7.62,
+      "soil_type": "cohesionless",
+      "unit_weight": 16.494,
+      "friction_angle": 33,
+      "description": "L1 loose silty sand"
+     },
+     {
+      "thickness": 7.62,
+      "soil_type": "cohesionless",
+      "unit_weight": 17.594,
+      "friction_angle": 36,
+      "description": "L2 medium dense sand"
+     },
+     {
+      "thickness": 15.85,
+      "soil_type": "cohesionless",
+      "unit_weight": 19.636,
+      "friction_angle": 36,
+      "toe_friction_angle": 40,
+      "description": "L3 dense gravel (shaft phi=36, toe phi=40)"
+     }
+    ],
+    "given": [
+     "designation",
+     "factor_of_safety",
+     "gwt_depth",
+     "head_depth",
+     "layers",
+     "pile_length",
+     "pile_type"
+    ]
+   },
+   "fast": true
+  },
+  {
+   "module": "drilled_shaft",
+   "method": "drilled_shaft_package",
+   "origin": "worked_example",
+   "example_id": "WE-SHAFT-1",
+   "example_call": 0,
+   "example_tool": "drilled_shaft.drilled_shaft_capacity",
+   "source": "FHWA GEC-10, Drilled Shafts: Construction Procedures and Design Methods (FHWA-NHI-18-024), Appendix A design example, Steps 11.5-11.6 (Layer 3 sand beta chain, Layer 4 clay alpha chain, base resistance)",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-SHAFT-1",
+    "diameter": 2.4384,
+    "shaft_length": 9.096,
+    "casing_depth": 3.0,
+    "beta_method": "rational",
+    "layers": [
+     {
+      "thickness": 3.0,
+      "soil_type": "cohesionless",
+      "unit_weight": 18.0,
+      "phi": 30,
+      "description": "cased cover"
+     },
+     {
+      "thickness": 6.096,
+      "soil_type": "cohesionless",
+      "unit_weight": 17.9,
+      "phi": 40,
+      "N60": 30,
+      "N1_60": 21,
+      "sigma_v_ref": 222.4,
+      "description": "Layer 3 sand"
+     }
+    ],
+    "given": [
+     "beta_method",
+     "casing_depth",
+     "diameter",
+     "layers",
+     "shaft_length"
+    ]
+   },
+   "fast": true
+  },
+  {
+   "module": "downdrag",
+   "method": "downdrag_package",
+   "origin": "printed_example",
+   "example_id": "UFC-3-220-20-B-5.4",
+   "source": "UFC 3-220-20 (2025), Appendix B-5.4, pp. 633-643 (drag force on 12 in square piles 65 ft long through 40 ft of soft clay under 8 ft of fill; Table B-28, p. 640). Pinned in downdrag/tests/test_alpha_default.py.",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "UFC-3-220-20-B-5.4",
+    "pile_length": 19.812,
+    "pile_diameter": 0.3048,
+    "pile_perimeter": 1.2192,
+    "pile_area": 0.0929,
+    "pile_E": 27785872.0,
+    "include_pile_weight": false,
+    "Q_dead": 177.93,
+    "fill_thickness": 2.4384,
+    "fill_unit_weight": 18.851,
+    "gwt_depth": 0.0,
+    "n_sublayers": 40,
+    "layers": [
+     {
+      "thickness": 12.192,
+      "soil_type": "cohesive",
+      "unit_weight": 15.709,
+      "cu": 23.94,
+      "settling": true,
+      "Cc": 0.5,
+      "e0": 1.5,
+      "description": "soft clay"
+     },
+     {
+      "thickness": 15.5448,
+      "soil_type": "cohesive",
+      "unit_weight": 18.851,
+      "cu": 143.64,
+      "description": "stiff clay"
+     }
+    ],
+    "given": [
+     "Q_dead",
+     "fill_thickness",
+     "fill_unit_weight",
+     "gwt_depth",
+     "include_pile_weight",
+     "layers",
+     "n_sublayers",
+     "pile_E",
+     "pile_area",
+     "pile_diameter",
+     "pile_length",
+     "pile_perimeter"
+    ]
+   },
+   "fast": true,
+   "note": "The example's US units converted to SI."
+  },
+  {
+   "module": "seismic_geotech",
+   "method": "seismic_package",
+   "origin": "validation_example",
+   "example_id": "V-062",
+   "source": "FHWA GEC-11 (FHWA-NHI-10-025) Vol II, Example E7, Step 6, pp. E7-5 and E7-6 (Mononobe-Okabe KAE = 0.4782 and PAE = 19.65 kips/ft at kh = 0.206). validation_examples/test_published_v062_seismic_mse_e7.py.",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "V-062",
+    "analysis_type": "seismic_earth_pressure",
+    "phi": 30.0,
+    "delta": 30.0,
+    "kh": 0.206,
+    "kv": 0.0,
+    "gamma": 19.636,
+    "H": 7.8151,
+    "given": [
+     "H",
+     "analysis_type",
+     "delta",
+     "gamma",
+     "kh",
+     "kv",
+     "phi"
+    ]
+   },
+   "fast": true,
+   "note": "The example's US units converted to SI."
+  },
+  {
+   "module": "retaining_walls",
+   "method": "retaining_wall_package",
+   "origin": "worked_example",
+   "example_id": "WE-SF-3",
+   "example_call": 1,
+   "example_tool": "retaining_walls.cantilever_wall",
+   "source": "FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (Dec 2006), Chapter 10, Example 10-3, printed pp. 10-52 to 10-56",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-SF-3",
+    "wall_height": 6.1874,
+    "base_width": 3.9929,
+    "toe_length": 0.701,
+    "stem_thickness_top": 0.4877,
+    "stem_thickness_base": 0.701,
+    "base_thickness": 0.701,
+    "backfill_slope": 10.0,
+    "gamma_backfill": 18.065,
+    "phi_backfill": 30.0,
+    "phi_foundation": 38.0,
+    "gamma_foundation": 18.851,
+    "delta_base": 28.5,
+    "gamma_concrete": 23.563,
+    "pressure_method": "rankine",
+    "include_passive": false,
+    "given": [
+     "backfill_slope",
+     "base_thickness",
+     "base_width",
+     "delta_base",
+     "gamma_backfill",
+     "gamma_concrete",
+     "gamma_foundation",
+     "include_passive",
+     "phi_backfill",
+     "phi_foundation",
+     "pressure_method",
+     "stem_thickness_base",
+     "stem_thickness_top",
+     "toe_length",
+     "wall_height"
+    ]
+   },
+   "fast": true
+  },
+  {
+   "module": "ground_improvement",
+   "method": "ground_improvement_package",
+   "origin": "worked_example",
+   "example_id": "WE-GI-1",
+   "example_call": 0,
+   "example_tool": "ground_improvement.wick_drains",
+   "source": "FHWA GEC-13, 'Ground Modification Methods Reference Manual', Vol 1 (FHWA-NHI-16-027), Chapter 2, Section 4.4, PVD design example (t90 vs drain spacing).",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-GI-1",
+    "spacing": 2.4384,
+    "ch": 6.782,
+    "cv": 3.391,
+    "Hdr": 6.096,
+    "time": 0.8219,
+    "dw": 0.0635,
+    "pattern": "triangular",
+    "smear_ratio": 1.0,
+    "kh_ks_ratio": 1.0,
+    "given": [
+     "Hdr",
+     "ch",
+     "cv",
+     "dw",
+     "kh_ks_ratio",
+     "pattern",
+     "smear_ratio",
+     "spacing",
+     "time"
+    ]
+   },
+   "fast": true
+  },
+  {
+   "module": "wave_equation",
+   "method": "wave_equation_package",
+   "origin": "made_up",
+   "example_id": "MADE-UP-WAVE-1",
+   "source": "Made-up inputs (the wave_equation_package probe of funhouse_agent/tests/method_probes.json).",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "MADE-UP-WAVE-1",
+    "driving_system": "Vulcan 014",
+    "pile_area": 0.01,
+    "pile_length": 15.0,
+    "ram_weight": 30.0,
+    "stroke": 2.5,
+    "given": [
+     "driving_system",
+     "pile_area",
+     "pile_length",
+     "ram_weight",
+     "stroke"
+    ]
+   },
+   "fast": true,
+   "note": "No published example fits: validation example V-003 (GEC-12 Vol 3 drivability) uses a hammer the module's hammer table does not hold, and its bearing graph is not reproduced."
+  },
+  {
+   "module": "pile_group",
+   "method": "pile_group_package",
+   "origin": "validation_example",
+   "example_id": "V-060",
+   "source": "FHWA GEC-12 (FHWA-NHI-16-009) Vol 3, Appendix D, North Abutment: Table D-11 (p. 47, Strength I loads), Table D-12 (p. 47, Configuration 2: 2 rows of 11 piles, rows 4.0 ft apart, piles 4.0 ft apart) and Table D-14 (p. 49: 265 kips compression and -37 kips tension per pile). validation_examples/test_published_v060_pile_group.py.",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "V-060",
+    "n_rows": 11,
+    "n_cols": 2,
+    "spacing_x": 1.2192,
+    "spacing_y": 1.2192,
+    "Vz": 11142.8,
+    "My": 8982.3,
+    "given": [
+     "My",
+     "Vz",
+     "n_cols",
+     "n_rows",
+     "spacing_x",
+     "spacing_y"
+    ]
+   },
+   "fast": true,
+   "note": "The example's US units converted to SI. The back row is in tension, so the package also says what its group uplift check needs."
+  },
+  {
+   "module": "sheet_pile",
+   "method": "sheet_pile_package",
+   "origin": "worked_example",
+   "example_id": "WE-SOE-1",
+   "example_call": 2,
+   "example_tool": "sheet_pile.cantilever_wall",
+   "source": "Caltrans Trenching & Shoring Manual (July 2025), Chapter 7, Example 7-1B: cantilever soldier-pile wall by the AASHTO Simplified method (pp. 133-139).",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-SOE-1",
+    "excavation_depth": 4.572,
+    "layers": [
+     {
+      "thickness": 45.0,
+      "unit_weight": 19.636,
+      "friction_angle": 35.0,
+      "cohesion": 0.0
+     }
+    ],
+    "surcharge": 3.447,
+    "FOS_passive": 1.0,
+    "embedment_increase": 1.2,
+    "given": [
+     "FOS_passive",
+     "embedment_increase",
+     "excavation_depth",
+     "layers",
+     "surcharge"
+    ]
+   },
+   "fast": true
+  },
+  {
+   "module": "soe",
+   "method": "soe_package",
+   "origin": "worked_example",
+   "example_id": "WE-SOE-2",
+   "example_call": 0,
+   "example_tool": "soe.fhwa_apparent_pressure_anchored_wall",
+   "source": "FHWA GEC-4, 'Ground Anchors and Anchored Systems' (FHWA-IF-99-015), Appendix A, Design Example 1: two-tier anchored soldier-beam wall.",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-SOE-2",
+    "wall_type": "fhwa_anchored",
+    "H": 10.0,
+    "anchor_depths": [
+     2.5,
+     6.25
+    ],
+    "gamma": 18.0,
+    "phi": 33.0,
+    "surcharge": 11.0,
+    "spacing": 2.5,
+    "inclination_deg": 15.0,
+    "given": [
+     "H",
+     "anchor_depths",
+     "gamma",
+     "inclination_deg",
+     "phi",
+     "spacing",
+     "surcharge",
+     "wall_type"
+    ]
+   },
+   "fast": true
+  },
+  {
+   "module": "reliability",
+   "method": "reliability_package",
+   "origin": "printed_example",
+   "example_id": "DUNCAN-2000-WALL-SLIDING",
+   "source": "Duncan, J.M. (2000). 'Factors of Safety and Reliability in Geotechnical Engineering.' J. Geotech. Geoenviron. Eng. 126(4), 307-316: the retaining wall sliding example (most likely factor of safety 1.50, coefficient of variation 17 %, probability of failure about 1 %). Pinned in reliability/tests/test_validation.py.",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "DUNCAN-2000-WALL-SLIDING",
+    "engine": "fosm",
+    "variables": {
+     "F": {
+      "mean": 1.5,
+      "cov": 0.17,
+      "dist": "lognormal"
+     }
+    },
+    "g_expression": "F",
+    "convention": "fos",
+    "given": [
+     "convention",
+     "engine",
+     "g_expression",
+     "variables"
+    ]
+   },
+   "fast": true,
+   "note": "The paper's factor of safety and its coefficient of variation are given as one lognormal variable; the paper's own Taylor series over the wall's inputs is not rebuilt."
+  },
+  {
+   "module": "pavement_design",
+   "method": "pavement_design_package",
+   "origin": "worked_example",
+   "example_id": "WE-PAVE-1",
+   "example_call": 0,
+   "example_tool": "pavement_design.flexible_pavement_design",
+   "source": "AASHTO Guide for Design of Pavement Structures (1993), Part II, Figure 3.1 design chart worked example (printed p. II-32)",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-PAVE-1",
+    "w18": 5000000,
+    "reliability_pct": 95,
+    "so": 0.35,
+    "mr_psi": 5000,
+    "delta_psi": 1.9,
+    "layers": [
+     {
+      "layer_type": "asphalt",
+      "modulus_psi": 400000
+     },
+     {
+      "layer_type": "granular_base",
+      "modulus_psi": 30000
+     },
+     {
+      "layer_type": "granular_subbase",
+      "modulus_psi": 11000
+     }
+    ],
+    "given": [
+     "delta_psi",
+     "layers",
+     "mr_psi",
+     "reliability_pct",
+     "so",
+     "w18"
+    ]
+   },
+   "fast": true
+  },
+  {
+   "module": "fem2d",
+   "method": "fem2d_package",
+   "origin": "worked_example",
+   "example_id": "WE-FEM-1",
+   "example_call": 0,
+   "example_tool": "fem2d.fem2d_consolidation",
+   "source": "Itasca FLAC2D/FLAC3D Verification Manual, 'One-Dimensional Consolidation' (Terzaghi/Biot column)",
+   "params": {
+    "project_name": "Sample calc package",
+    "project_number": "WE-FEM-1",
+    "analysis_type": "consolidation",
+    "width": 2.0,
+    "depth": 20.0,
+    "soil_layers": [
+     {
+      "name": "column",
+      "bottom_elevation": -20.0,
+      "E": 529400.0,
+      "nu": 0.3235,
+      "gamma": 0.0
+     }
+    ],
+    "k": 1e-07,
+    "n_w": 4000000.0,
+    "load_q": 100.0,
+    "time_points": [
+     0.0,
+     311.0,
+     622.0,
+     933.0,
+     1244.0,
+     1555.0,
+     1866.0,
+     2177.0,
+     2488.0,
+     2799.0,
+     3110.0,
+     3421.0,
+     3732.0,
+     4043.0,
+     4354.0,
+     4665.0,
+     4976.0,
+     5287.0,
+     5598.0,
+     5909.0,
+     6220.0,
+     6531.0,
+     6842.0,
+     7153.0,
+     7464.0,
+     7775.0,
+     8086.0,
+     8397.0,
+     8708.0,
+     9019.0,
+     9330.0,
+     9641.0,
+     9952.0,
+     10263.0,
+     10574.0,
+     10885.0,
+     11196.0,
+     11507.0,
+     11818.0,
+     12129.0,
+     12440.0
+    ],
+    "consolidation_scheme": "monolithic",
+    "theta": 0.5,
+    "nx": 2,
+    "ny": 40,
+    "given": [
+     "analysis_type",
+     "consolidation_scheme",
+     "depth",
+     "k",
+     "load_q",
+     "n_w",
+     "nx",
+     "ny",
+     "soil_layers",
+     "theta",
+     "time_points",
+     "width"
+    ]
+   },
+   "fast": true
+  }
+ ]
+}

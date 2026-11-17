@@ -333,7 +333,16 @@ class _ProjectNewArgs(BaseModel):
         description=('USER-CONFIRMED DXF mapping: {"surface": layer, '
                      '"soil_boundaries": {dxf_layer: soil_name}, '
                      '"water_table": layer?, "nails": layer?}.'))
-    units: str = Field(default="m", description="DXF drawing units.")
+    units: Optional[str] = Field(
+        default=None,
+        description=("DXF drawing units (m, mm, cm, ft, in). Left out, the "
+                     "units the drawing's own header states are used; given, "
+                     "a difference from the header is refused unless "
+                     "ignore_header_units."))
+    ignore_header_units: bool = Field(
+        default=False,
+        description=("Use units even where the drawing's header states "
+                     "other units (the header is wrong)."))
     pdf_path: str = Field(
         default="", description="Path to a PDF (vector line work).")
     role_mapping: Optional[Dict[str, str]] = Field(
@@ -426,7 +435,8 @@ def make_setup_tools(store: Optional[ProjectStore] = None,
                 project = from_dxf(
                     args.dxf_path, layer_mapping=args.layer_mapping,
                     units=args.units, section_bottom=args.section_bottom,
-                    name=args.name or "DXF import")
+                    name=args.name or "DXF import",
+                    ignore_header_units=args.ignore_header_units)
             elif args.pdf_path:
                 from geo_project.ingest import from_pdf_vector
                 project = from_pdf_vector(

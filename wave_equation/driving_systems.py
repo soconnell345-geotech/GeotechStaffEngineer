@@ -1,7 +1,7 @@
 """
 Driving systems (hammer cushion and helmet) as a held reference prints them.
 
-GEC-12 Vol 2 (FHWA-NHI-16-009) has no table of cushion and helmet data by
+GEC-12 Vol 2 (FHWA-NHI-16-010) has no table of cushion and helmet data by
 hammer: Appendix C (pp. 519-541) lists each hammer's ram weight, stroke
 and rated energy only, and p. 225 sends the analyst to GRLWEAP's own data
 file ("Manufacturer's Recommended Driving System", p. 226), which is not
@@ -99,7 +99,7 @@ PRINTED_DRIVING_SYSTEMS: Dict[str, DrivingSystem] = {
 #: What a held reference prints for a cushion or a helmet, for an error
 #: that asks for one (GM-299).
 PRINTED_OPTIONS = (
-    "Printed options (GEC-12 Vol 2, FHWA-NHI-16-009): the contractor's "
+    "Printed options (GEC-12 Vol 2, FHWA-NHI-16-010): the contractor's "
     "submittal for the actual hammer (p. 226); driving_system 'Vulcan 014' "
     "or 'ICE 42S', Example 6's systems as Table 12-2 (p. 183) prints them "
     "(Vulcan 014: Nycast, 208 ksi, 234 in2, 6.0 in, COR 0.91, helmet 1.67 "

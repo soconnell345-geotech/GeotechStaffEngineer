@@ -21,13 +21,16 @@ stabilizing piles in every method (`reinforcement.py`).
 - FHWA GEC-7, Lazarte et al. (2003) — Soil nail walls (nails.py)
 
 ## Files
-- `geometry.py` — SlopeSoilLayer (elevation-based), SlopeGeometry (polyline surface/GWT)
-- `slip_surface.py` — CircularSlipSurface (center + radius), PolylineSlipSurface (polyline points); a surface below the ground over more than one stretch is refused (`GroundCrossingError`, GM-122)
-- `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure
-- `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`; the `*_legacy` approximate forms are the fallback), solve_rigorous()
+- `geometry.py` — SlopeSoilLayer (flat or polyline top and bottom), SlopeGeometry (polyline surface/GWT); `column_at`, the one lookup of the layer at a point (GM-140 step 1)
+- `slip_surface.py` — CircularSlipSurface (center + radius, and the two ends of the arc it stands for), PolylineSlipSurface (polyline points); `circle_ground_meetings`, where a circle meets the ground, from the ground's segments and corners: a circle that meets it at more than two points is split there and each arc is a trial surface (GM-343); a polyline below the ground over more than one stretch is refused (`GroundCrossingError`, GM-122)
+- `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure (the weight summed over `SlopeGeometry.column_at`)
+- `pore_pressure.py` — `base_pore_pressure()`, the one function that gives a slice base its pore pressure (GM-140 step 5a): the water line as a piezometric line or a water table (`SlopeGeometry.water_line_kind`), ru on the column's overburden stress, a pore-pressure grid, none on total-stress layers; `pond_edges()`; `water_statements()`, what a result says about it
+- `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`); each returns the method's own solution or raises `NoSolution` (GM-140 step 2: the `*_legacy` approximate forms and `solve_rigorous()` are removed)
+- `solution.py` — `solve_method()`, the one solver every caller uses for a method (a result, every search family, the yield acceleration, FOSM, Monte Carlo): a `MethodSolution` with the method's own FOS, or None and the reason; `NoSolution`; `check_method()` / `check_interslice()` (an unknown name is refused)
 - `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
 - `reinforcement.py` — nails, anchors, geosynthetics and stabilizing piles as forces at the base of the slice each crosses, in every method (GM-53, GM-59)
 - `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering; a rigorous noncircular solution must hold about a second axis and slicing (`_solution_fails`, GM-57 review); the search's time budget and the Bishop screen (`search_budget`, `bishop_screen`, GM-123)
+- `acceptability.py` — the printed acceptability checks on a solved surface (GM-140 step 3): `surface_findings()` gives each finding with its check, source, slices or slice sides and values (m_alpha below 0.2, Bishop against the Ordinary Method of Slices, a negative frictional term, tension on bases and sides, the line of thrust outside the mass); a flagged surface is kept, in a result and in a search
 - `search_supplements.py` — toe-circle, circle-passing-above-the-toe and infinite-slope (shallow planar) families scored after every `search_critical_surface` (GM-13, GM-14, GM-122)
 - `search_ranges.py` — the automatic entry / exit windows and centre ranges, set from the slope's toe, crest, height and depth to the base (GM-57)
 - `analysis.py` — analyze_slope(), search_critical_surface() orchestrators
@@ -41,6 +44,213 @@ stabilizing piles in every method (`reinforcement.py`).
 - `tests/test_duncan_verification.py` — 28 tests (Duncan §7.6-7.7 verification examples; Ex 1 against Taylor's chart, GM-63, and the default search on long profiles, GM-87)
 - `tests/test_nails.py` — 38 tests + 16 skipped (nail intersection/pullout/capacity; the skipped ones test the old nail path, replaced by `reinforcement.py`)
 - `tests/test_reinforcement.py`, `tests/test_search_reinforcement.py` — 22 + 33 tests (supports in each method; supports in searches, GM-53, GM-54, GM-59, GM-60)
+
+## Layers: one material per point (GM-140 step 1, 2026-11-13)
+
+Print: a slice that holds two soils is weighed in two portions, each
+soil's part of the slice at its own unit weight (EM 1110-2-1902 Appendix F,
+F-5d, p. F-19: slices containing both embankment and foundation soil "were
+divided into two portions for calculating the slice weights"; worked in
+Fig. F-11, p. F-21), with total unit weights for all soils (2-2d, p. 2-5);
+and the engineer checks "the weights of slices, shear strength properties,
+and pore water pressures at the bottoms of slices" (EM 4-2d(2), p. 4-2).
+2-2d and 4-2d(2) are as quoted in
+`module_work/slope_integral_review/ACCOUNT.md` section 2 (the EM is not in
+the repository).
+
+- **The rule.** At a point (x, z) below the ground, the layer is the first
+  one listed in `soil_layers` whose bottom and top at x contain z.
+  `SlopeGeometry.column_at(x, z_low, z_high)` gives a column as stretches,
+  each with its one layer; `layer_at_point(x, z)` is the same rule at a
+  point. The slice weight (`slices._compute_slice_weight`) is summed over
+  the column; the strength, ru, the drawdown envelope and the supports'
+  layer come from `layer_at_point` at the base; SHANSEP's sigma'v and the
+  seismic force come from that weight. The section drawings
+  (`plotting._draw_section_base`, `calc_package.interactive`) fill each
+  layer where it holds the ground (`layer_bands`).
+- **What an input means.** A layer's `top_elevation` / `bottom_elevation`,
+  or `top_boundary_points` / `bottom_boundary_points` (polylines sorted by
+  x, level beyond their ends), say where the layer MAY be. A polyline
+  bottom on one layer and a flat top on the next, at the boundary's highest
+  point, therefore means the lower layer starts at the boundary. Giving the
+  lower layer the same polyline as `top_boundary_points` says the same
+  with no overlap.
+- **Overlaps.** Where two layers cover the same ground the first listed
+  holds it. `SlopeGeometry.layer_overlaps()` lists each layer that loses
+  ground (the layers that hold it, the x range, the tallest shared stretch
+  below the ground). The results of `analyze_slope`,
+  `search_critical_surface`, `compare_methods_table` and
+  `rapid_drawdown_fos` carry it (`layer_overlaps`, in `to_dict()` when not
+  empty; a LAYERS line in the summaries of the first three), and the calc
+  package prints it as a table. The FOSM and Monte Carlo results, the
+  yield acceleration, the result of a search function called directly
+  (`grid_search`, `search_weak_layer_biased` and the others in `search.py`)
+  and the top level of the drawdown search's result do not carry it: read
+  it from the geometry there.
+- **Lenses.** A layer listed before the layer it sits in holds its own
+  ground and the host is weighed around it (two stretches in the column).
+  No closed-region input was added.
+- **Gaps.** Ground between the surface and the bottom of the deepest layer
+  that no layer covers is refused when the `SlopeGeometry` is built, with
+  the elevations and the x range. That includes ground above the first
+  layer's top. Below the bottom of the deepest layer is the model's base,
+  as before (GM-128).
+- **How it is found.** `SlopeGeometry._scan_layers`: the ground and every
+  top and bottom are straight between their vertices, so gaps and overlaps
+  open and close only where two of those lines cross; the column is checked
+  at the ends and middle of every stretch between such points. A stretch
+  shorter than 1e-6 m is neither.
+- **Before.** The weight summed every layer that overlapped the slice
+  height, each from its own flat top (a top could not slope), while the
+  strength used the rule above. With the usual layout the wedge between a
+  sloping boundary and the lower layer's flat top was weighed twice: V-028
+  weighed 8,768 kN/m against 3,003 from its area. Models whose layers do
+  not overlap are unchanged, slice for slice (VALIDATION.md B19).
+- **Not done here.** A layer boundary's vertices are not slice boundaries
+  (only its crossings with the slip surface are), so a slice with a kink
+  of the boundary inside it takes its weight from the mid-point column;
+  the su-with-depth law still reads a layer's flat `top_elevation` /
+  `bottom_elevation` (the weak-layer search aims at the ground a layer
+  holds at each x since the fix round, `search._layer_band_at`; its lower
+  limit is still the lowest flat `bottom_elevation`). `ru` took the base
+  layer's unit weight over the column (the account's D3) until step 5a, which
+  takes it on the column's own weight ("Pore pressure as printed", below). See
+  `module_work/gm140/STEP1_CHECK.md`.
+
+## Tension cracks and reverse-curvature circles as printed (GM-140 step 4, 2026-11-13)
+
+The rule lives in `cracks.py`, one for every method, surface family and
+caller. Print: USACE EM 1110-2-1902 (31 Oct 2003) 2-2f, pp. 2-6 to 2-9, and
+C-10c, p. C-36; Slide v6 Tutorial 16, p. 16-1.
+
+**What a crack does** (`tension_crack_model`). `'truncation'` (default): the
+slip surface ends where it reaches the bottom of the crack, the soil upslope
+of the crack is left out, and the slices end at a vertical boundary there
+(EM 2-2f(3): "terminating the slices near the crest of the slope with a
+slice having a vertical boundary"; C-10c; Slide: "A tension crack
+essentially terminates the slip surface"). The mass that is kept is cut into
+the `n_slices` asked for. `'strength'` keeps the cracked soil as driving
+weight without strength: the default before this step, with no printed
+source, kept as a stated option. Either way the crack's water acts on the
+vertical boundary: 0.5 gamma_w z_w^2 at z_w / 3 above the crack's bottom; a
+`tension_crack_water_depth` above the crack's own depth fills it.
+
+**Where it is** (`tension_crack_side`). `'crest'` (default): the end of the
+slip surface where the ground is higher (EM 2-2f(3): near the crest),
+whichever way the slope faces (`cracks.crest_side`; ends at one level:
+low x). `'entry'` / `'exit'` give the end. The crack's bottom is the ground
+at that end of the surface less the depth. The crack stands where the
+surface reaches that bottom, which is where the slices end; the result
+reports it there (`tension_crack['x_m']`, the ground `ground_z_m` and the
+bottom `base_z_m` at that x) and the plot draws it there.
+
+**A surface wholly within the cracked depth.** A surface that nowhere passes
+below the crack's depth, measured below the ground above it
+(`cracks.depth_below_ground`), has no vertical boundary at the crack's
+bottom (EM 2-2f(3); C-10c): it is no slip surface. A search refuses and
+counts it (`crack_refused['within_cracked_depth']`); given to
+`analyze_slope` it raises `cracks.CrackRuleRefused` saying so. Without this,
+a search with a deep given crack settled on slivers on the face held wholly
+within the crack (ACADS 1(b) with its 3.81 m water-filled crack on Slide2's
+own centre grid: F 0.052 on a 0.6 m sliver; so did the module before
+step 4, 0.050 with the old default and 0.052 with the surface ended at the
+crack). A Rankine depth that would reach below the deepest point of the
+surface is solved again from F with no crack; the scan stops at that depth.
+
+**How deep** (`tension_crack_depth_basis`):
+
+| Basis | Depth | Print |
+|---|---|---|
+| `'given'` (default) | `tension_crack_depth`; 0 = no crack | the caller |
+| `'rankine'` | d = 2 c_D / (gamma tan(45 - phi_D / 2)), c_D = c / F, phi_D = arctan(tan(phi) / F) | Eq. C-36, p. C-36 ("for total stresses and homogeneous soil"); Eqs. 2-5, 2-6, p. 2-9 (Eq. 2-4 is the same depth) |
+| `'min_fos'` | the depth of minimum factor of safety from a scan | 2-2f(4), p. 2-6; C-10c(1), p. C-36 |
+
+* **Rankine.** F is the factor of safety of the surface itself, by the method
+  in use: the surface is solved, the depth recomputed, and so on from F = 1
+  until the depth changes by less than 1 mm (`DEPTH_TOL`; at most 25
+  solutions). c, phi and gamma are those of the soil at the ground at the
+  crack. A depth past that soil's bottom stops there (C-10c: the crack is as
+  deep as the embankment and does not extend into the foundation), and the
+  result says so. c = 0 gives no crack. Module's readings, each stated in the
+  result: a drained soil with pore water pressure inside the cracked depth
+  (the water table there, ru, or a pressure grid) is scanned instead, because
+  2-2f(6), p. 2-9, prints no equation for effective stresses; so is a SHANSEP
+  or Hoek-Brown soil (no c and phi); an `'anisotropic'` soil takes its active
+  strength with phi = 0 (Rankine's active pressures).
+* **Scan.** 21 depths in equal steps from 0 to the lowest point of the
+  surface's upper half, shallowest first; the first minimum met is taken
+  (past the depth that removes the tension a deeper crack removes
+  compression, and F rises: 2-2f(4), "tensile but not compressive stresses
+  are eliminated"). A factor of safety still falling at the last depth has
+  no minimum and the surface gets no number. On the made-up slope of
+  `test_cracks_as_printed.py` the scan's depth is 3.10 m and Rankine's
+  2.85 m, F within 0.001: the manual's two ways agree.
+
+**Reverse-curvature circles** (`reverse_curvature`; the owner's call
+OWN-103, as the orchestrator refined it on the step 4 review's F1). A circle
+whose centre is below the ground at its upper end would turn back over
+itself above its vertical tangent, at the centre's level. The tension crack
+is a condition of the analysis, set by the engineer and the same on every
+trial surface; a circle's shape never switches it on. `'tension_crack'`
+(default): with a crack asked for (`tension_crack_depth`, or
+`tension_crack_depth_basis` `'rankine'` or `'min_fos'`), such a circle is
+closed by that crack, its surface ending at the crack's bottom like any
+other, where its overhang (the centre's depth below the ground) lies within
+the crack's depth; a circle overhanging deeper is discarded (a crack is
+justified only to the depth the soil can be in tension, C-10c). With no
+crack asked for, every such circle is discarded: it is not an admissible
+surface, and naming a crack admits those within its depth. `'discard'`
+discards every such circle. A circle overhanging at its lower end is always
+discarded: a crack is at the upper end (EM 2-2f(3)) and no print closes the
+other. A search counts the surfaces the crack rule refuses by reason and
+locates them (`SearchResult.crack_refused`: `reverse_curvature_no_crack`,
+`reverse_curvature_deeper_than_crack`, `reverse_curvature_no_crack_at_end`,
+`reverse_curvature_discard_asked`, `within_cracked_depth`,
+`scan_no_minimum`; `n_discarded_reverse_curvature` sums the four
+reverse-curvature reasons), and its `choices` name each; a discarded circle
+given to `analyze_slope`, `rapid_drawdown_fos` or `yield_acceleration`
+raises `cracks.ReverseCurvatureDiscarded` (a `cracks.CrackRuleRefused`) with
+the reason and the depths. The crack from the centre's level to the ground,
+which no printed source gives, is removed. (As first built, step 4 closed a
+reverse-curvature circle with Rankine's crack whenever no crack was given,
+so a circle's shape switched the crack on: the search's minimum then jumped
+where the centre crossed the crest's level, and Slide2 #85 read 1.361 on such
+a circle. The review's F1 removed that; `reverse_curvature_crack_basis` is
+gone.)
+
+**How it is wired.** `cracks.plan_crack` says what a surface's crack needs;
+`cracks.solve_with_crack` hands the caller's solver copies of the geometry
+with the crack fixed (`fixed_geometry`), repeating as the basis requires.
+`slices.build_slices` reads the crack from there (`crack_for_slices`) and
+raises `cracks.CrackDepthNeeded` for a geometry whose crack still depends on
+the factor of safety, so nothing slices such a surface on a silent basis.
+The callers: `analyze_slope` (and `compare_methods`), the search scorer
+`search._compute_fos` (every family: grid and entry/exit circles, circles
+through and above the toe, planes, random, differential-evolution,
+particle-swarm and weak-layer polylines; a `fos_fn` such as the drawdown
+search's gets the fixed geometry), `rapid_drawdown_fos` (one crack for every
+stage, at the drawdown F), `yield_acceleration` (Rankine's depth at F = 1,
+the state it solves for; a scanned depth from the surface without kh), and
+through `_compute_fos` the FOSM and Monte Carlo runs (each run its own
+crack), so also `reliability/wrappers.py`, `geo_project`'s builder, the
+agent's adapter and the calc packages. A result carries the crack it was
+solved with (`tension_crack`, the depth used, one warning line); a search's
+`choices` say the crack's model, side and depth basis and what was done with
+reverse-curvature circles.
+
+**Measured** (VALIDATION.md B21): ACADS 1(b) 1.603 / 1.599 / 1.600 on
+Slide2's circle and, searched on Slide2's own grid, Bishop 1.590 / Spencer
+1.585, against the printed 1.596 / 1.592 / 1.592; V-031 with its dry crack
+1.417 / 1.422 printed; V-043's clay crest 0.964 against 0.975. With no crack
+asked for, the searches that read a reverse-curvature circle as first built
+read what they read before step 4, the overhanging circles discarded:
+Taylor's 45 deg slope 1.942 against 1.947, V-054's steep clay slope 2.346
+(printed 2.16 for the slope, whose profile ends at the toe), Slide2 #85 with
+its support Bishop 1.508 / passive 1.316 against 1.531 / 1.324 (D&W 1.51 /
+1.32). The vertical cut read 0.935 against Taylor's 0.851, a strict xfail
+with the reason (before step 4, 0.842 on a circle closed at its centre's
+level; with Rankine's crack asked for, 0.605). Since GM-343 ("Where a
+circle ends", below) it reads 0.851 and the mark is gone.
 
 ## Public API
 ```python
@@ -66,7 +276,9 @@ search_critical_surface(geom, surface_type="noncircular",
 
 ### Circular (CircularSlipSurface)
 - Defined by center (xc, yc) and radius
-- Entry/exit found by bisection against ground surface
+- Entry/exit: the two ends of its arc, found from the ground's segments
+  and corners (GM-343, "Where a circle ends" below); a circle that meets
+  the ground at more than two points is split there, each arc a surface
 - Sliced at the ground's breaks, its layer, water-table and crack-base
   crossings and the surcharge edges, each slice's base its chord (GM-134;
   "Where a circle is sliced" below)
@@ -304,8 +516,142 @@ guard (`test_a_state_at_one_slicing_only_is_refused`).
 - `search_noncircular(geom, n_trials, n_points, x_entry_range, x_exit_range, ...)` — random polylines
 - Generates random polyline surfaces between entry and exit x-ranges
 - Intermediate points at random depths below ground surface
-- Uses Spencer's method for each trial
-- Returns best (minimum FOS) surface found
+- Scores each trial by the method named, with the interslice function
+  named (GM-140 step 6; Spencer's method where a method for circles only
+  is named). The particle swarm and the weak-layer search do the same;
+  before step 6 both always used Spencer's method.
+- Since GM-140 step 7a every noncircular search ends with the refinement
+  of several starts (next section but one).
+- Returns best (minimum FOS) surface found. Through
+  `search_critical_surface` the critical circle of a circular search by the
+  same method is one of the trials ("One method across the search" below).
+
+### The noncircular search finished as printed (GM-140 step 7a, 2026-11-15)
+
+`search_refine.py`; `search._refines_noncircular` puts the stage at the end
+of `search_noncircular`, `search_de`, `search_pso` and
+`search_weak_layer_biased` (and so of `search_critical_surface` and the
+drawdown search's noncircular kinds, which pass their `fos_fn`). Each start
+is scored by the search's own `_compute_fos`, so step 3's checks, step 6's
+method rule and a caller's `fos_fn` hold.
+
+- *Starts* (EM 1110-2-1902 4-2e(1)(b), pp. 4-3 and 4-6; 4-2e(2), p. 4-7;
+  C-1g(4), p. C-11; FHWA NHI-06-088 p. 6-22): the kind's own best surface;
+  each locally critical circle of the circular search
+  `search_critical_surface` runs for `circle_check` (its grid minima,
+  `SearchResult.local_minima`, and the toe and above-toe families' critical
+  circles), scored as it stands as the polyline of its slice-base points on
+  the search's `n_slices` (step 6's circle-check polyline) and refined from
+  the polyline of its slice-base points on ten slices (11 vertices); a wedge
+  along each layer; the caller's `seed_surface`. With `circle_check=False`
+  there are no circle starts and the record says so. Every start is scored
+  as it stands before it is refined, and its minimum is the lower of the
+  two, labelled which (fix round, ruling 9(b)): a start the time budget
+  leaves unrefined still has its value, and none ends above itself.
+- *Wedges* (EM C-1f(2), p. C-6; C-1g(2), pp. C-8 to C-10; FHWA pp. 6-43 to
+  6-44): every layer holding ground within the windows' span and the
+  search's depth; the central block on the mid-line between the layer's
+  bottom and the lesser of its top and the ground (`_wedge_mid`, as
+  `thinnest_stratum` reads the band; fix round, D6), its ends at 21
+  positions each over the span, then the best wedge's two ends halved, one
+  at a time, the inclinations fixed, from half the spacing down to the
+  final increment (fix round, ruling 10); the wedge on the toe side at
+  45 - phi'_D/2, the other at 45 + phi'_D/2, tan phi'_D = tan phi'/F, phi'
+  of the material just above the base end, F = 1 first and then the F each
+  pass gave (3 passes at most). A layer with no wedge says why (no leg
+  reaching the ground, the windows given, no solution, the time budget).
+  The random aiming of the weak-layer search and its weight
+  1/(c + 50 tan phi), which had no print, are gone;
+  `search_weak_layer_biased` is the wedge stage (`refine=False`: Slide2's
+  search without optimisation, whose result says the inclinations are
+  fixed at C-1g(2)'s values and that the stage is not a minimum over the
+  inclinations or the shape) and its `n_trials`, `n_points` and `seed` no
+  longer change the result. A stop of the wedge stage by the time budget is
+  recorded as a stage of `search_ranges.time_budget`, naming the layers
+  and positions not built (fix round, D3).
+- *Refinement* (EM C-1g(3), p. C-10, Fig. C-8): interior points up and
+  down, ends along the ground, one point at a time, the better of two
+  shifts taken where F falls by more than the solver's tolerance; passes
+  repeat until none does; the increment halves from 0.10 x the ground's
+  relief in the windows down to the final increment, the lesser of 0.10 x
+  the least vertical thickness of the thinnest stratum (EM 4-2e(2)(b), p.
+  4-7; `refine_fraction`, at most 0.25) and a quarter of the starting
+  increment (fix round, ruling 9(a): the print gives a maximum only; the
+  starting increment is never raised to meet it). Starts get points on
+  their longest segments up to 11 vertices (the surface unchanged): with
+  points closer together than the increment a one-point shift is only a
+  kink, so a refinement of the 30-point polyline would cost three times as
+  much and mostly stand still; no vertex count is in print (ruling 9(b)).
+- *Restrictions.* No end crosses a crest from its start or moves from one
+  face group onto another (EM 4-2e(1)(a), p. 4-3). No shift makes the toe
+  segment steeper than EM Eq. C-32's 45 - phi'/2 (exit material) or, where
+  the start's own exit is steeper, than the start's (EM 4-2e(2)(a), p. 4-7;
+  call 4). Automatic windows bound only the samplers: the shifts and the
+  wedge ends are free of them, and they do not anchor the span screen of
+  the refinement's trials (`_noncircular_admissible` then takes half the
+  slope's height); windows the caller gives bound everything (call 5,
+  confirmed by the owner 2026-11-15). Inside the refinement, and for every
+  start scored as it stands, the span floor is the lesser of that floor
+  (`search.module_span_floor`) and the start's own span
+  (`search.start_span_floor`; fix round, ruling 8), so a start shorter than
+  the floor (B14's critical circle, 4.66 m against 5 m) is scored and
+  refined; the samplers keep step 3's screen. No shape rule (call 6).
+- *Report* (EM 4-2d(2), p. 4-2): `local_minima`, each start's minimum
+  lowest first with `F_start` (as it stands), `F_refined`, `minimum` ("as
+  it stands" or "refined"), the surface and its flags, and for a circle
+  start `F_circle` (the circle's own F) and `F_refine_start` (its 11-vertex
+  polyline); the headline is the lowest. Where it is above the critical
+  circle's own F, the result says so with both values (step 6's rule). `refinement`: the increments with the stratum,
+  the wedges, the starts the time budget left (`unrefined`; GM-123: the
+  refinement is a stage with `_REFINE_SHARE` of the time, and a stop is
+  recorded as a stage of `search_ranges.time_budget`) and the surfaces
+  scored (no run time: a result does not change from run to run). A circular search lists its grid minima in
+  `local_minima` (whether the walk started from each, and why not: the
+  run-time caps or the budget); no circular value changes.
+- *Choices*: `search_refine.refinement_choices`.
+
+**Calls made (step 7a and its fix round after review; for OWN-143).**
+Each with the form taken and the other form. The builder's seven
+(`module_work/gm140/STEP7A_CHECK.md`, section 5):
+
+1. The toe limit: the larger of Eq. C-32's angle and the start's own exit.
+   Other form: both as separate limits, which leaves a start steeper than
+   C-32 unrefinable.
+2. The span screen under automatic windows: half the slope's height (call
+   5). Other form: the automatic windows' span, which refused B14's wedge
+   and every short start.
+3. Wedge ends under automatic windows: bounded only by windows the caller
+   gives (call 5). Other form: the automatic windows bound them too.
+4. Starting increment: 0.10 x the ground's relief in the windows. Other
+   form: none printed (C-1g(3): "a small distance").
+5. 11 vertices, 21 positions per wedge end, 3 passes of F: none printed;
+   set before any benchmark was run.
+6. Circle starts refined from the polyline of their slice-base points on
+   10 slices. Other form: the `n_slices` polyline (ruling 9(b) below).
+7. The record keeps no run time, so a result repeats.
+
+The fix round's, by the orchestrator's rulings:
+
+8. The span floor inside the refinement: the lesser of the module's floor
+   (D22) and the start's own span, for every shift and every start scored
+   as it stands; the samplers unchanged. Other form: the module's floor
+   alone (as built), under which B14's critical circle was not a start.
+9. (a) The final increment: the lesser of `refine_fraction` x the thinnest
+   stratum and a quarter of the starting increment, the starting increment
+   never raised; EM 4-2e(2)(b) prints a maximum only ("no more than 10 to
+   25 percent"). Other form: exactly the fraction of the thinnest stratum
+   (as built), one level with no halving on a thick stratum.
+   (b) Every start scored as it stands, its minimum the lower of that and
+   the refined value, labelled; a circle start as it stands is the
+   polyline of its slice bases on the search's `n_slices`, and the
+   refinement works on the 11-vertex polyline (the reason above). Other
+   form: refine the `n_slices` polyline itself.
+10. The wedge stage's positions: the best wedge's two ends halved after the
+    21-position grid, the inclinations fixed, down to the final increment;
+    decided before ACADS 4 was re-run. Other form: an inclination band
+    about C-1g(2)'s values, Fig. C-7b, not built.
+11. The toe limit: call 1 kept, max(Eq. C-32, the start's own exit). Other
+    form: as call 1.
 
 ### Supplementary families: toe circles and the infinite slope (GM-13, GM-14)
 `search_critical_surface` scores two more surface families after the main
@@ -343,7 +689,13 @@ and `refused_lowest` only where the result has them (GM-125).
   drawdown solve can fail -- the result says it is the infinite-slope
   mechanism and gives no window-edge warnings; a deep circle scoring about
   the same is not called that. `infinite_slope_checks` carry both closed
-  forms (`FOS_dry_closed_form`, `FOS_seepage_closed_form`).
+  forms (`FOS_dry_closed_form`, `FOS_seepage_closed_form`). The second
+  follows the reading of the water line and `seepage_reading` names it
+  (GM-140 step 5a review): `'water_table'`, (γ'/γsat) tan φ' / tan β
+  (FHWA NHI-06-088 Eq. 6-10, p. 6-8); `'piezometric'` (the default), the
+  full head, (γsat cos² β − γw) tan φ' / (γsat sin β cos β); in a
+  rapid-drawdown search (`'rapid_drawdown'`, level pools), (γ'/γ) tan φ' /
+  tan β as before.
 - **Toe circles** (Taylor 1937; Duncan, Wright & Brandon 2014): for each
   slope face (`slope_faces`: maximal runs of segments steeper than 5 deg
   rising the same way; a flat stretch ends a face, so each bench has its own
@@ -371,14 +723,17 @@ and `refused_lowest` only where the result has them (GM-125).
   across a ramp's corner swung the FOS 5 % either side of the closed form;
   at a fortieth, the stage-1 solve of a face under a full pool drifts up.)
   They are REAL surfaces, so pore pressure, ponding, surcharge and kh act
-  on them as on any other. They are scored by **Janbu's simplified method
-  whatever method the search uses**: the infinite slope is a
-  force-equilibrium result (the interslice forces on a slice of an infinite
-  slope are equal and opposite), Janbu's force equilibrium with no
-  interslice shear reproduces it, and moment equilibrium says nothing on a
-  thin planar slide -- the rigorous GLE often finds no F_m = F_f crossing
-  there (the surface is rejected) and Spencer at 1 % depth ran 6 % above
-  the closed form on a 2:1 sand face. Measured against the closed form
+  on them as on any other. They are scored by **the method the search was
+  given** (GM-140 step 6; "One method across the search" below), and by
+  Spencer's method where Bishop's simplified method or the Ordinary Method
+  of Slices is named. *(Until step 6 they were scored by Janbu's
+  simplified method whatever method the search used, on the reasoning that
+  the infinite slope is a force-equilibrium result and that the rigorous
+  GLE often found no F_m = F_f crossing on a thin plane. Since the GLE
+  solver reports a root or no number (GM-344), Spencer's method,
+  Morgenstern-Price and the GLE solve all six planes of every planar
+  family of the validation set; STEP6_CHECK.md has the counts.)* Measured
+  by Janbu's simplified method against the closed form
   F = tan phi' (cos b - kh sin b - ru / cos b) / (sin b + kh cos b), dry,
   with ru 0.2, with kh 0.1-0.15, both face directions: +0.11 % to +0.15 %
   on 30 slices (Janbu's f0 and the end ramps; VALIDATION.md B12). The
@@ -489,7 +844,7 @@ pile force acts at the base of the slice it crosses:
 | Method | Moment about the centre | Vertical equilibrium of that slice | Horizontal equilibrium |
 |--------|------------------------|------------------------------------|------------------------|
 | Bishop's simplified | yes (signed) | yes: W -> W - Fz in the numerator, so the base normal and, where phi > 0, the strength change | not satisfied by the method |
-| Ordinary Method of Slices | yes (signed) | the component normal to the base adds to N | not satisfied |
+| Ordinary Method of Slices | no number where a support crosses the surface (GM-140 step 8, below; until then: the signed moment, and the component normal to the base added to N, forms of the module's own) | | |
 | Spencer / M-P / GLE / Janbu (`gle.py`) | exact | yes (base-normal equation) | yes (E march) |
 
 Wright & Duncan's conclusion 6: "In Bishop's simplified procedure, which
@@ -527,18 +882,7 @@ Slide2 "Active/Passive Force Application"):
 Every method honours the choice (before GM-59 only Fellenius / Bishop, and
 only for piles; the GLE applied every support unfactored).
 
-**Reverse-curvature circles** (`SlopeGeometry.reverse_curvature`). A circle
-whose centre lies below the ground where it comes out rises past the
-centre's level and would turn back over itself. Slide2 calls these "reverse
-curvature" surfaces, which "cannot actually exist", and by default closes
-them with "a vertical tension crack where the slip surface begins to reverse
-direction (i.e. when the slip surface y-coordinate is equal to the slip
-center y-coordinate)", always dry; otherwise it discards them. The module has
-always done the former (`find_entry_exit` ends the circle where the arc is
-vertical, at the centre's level). Now: `'tension_crack'` (default, as
-Slide2 and as before) or `'discard'` (the searches drop such circles; a
-circle given to `analyze_slope` is still evaluated). A search whose
-governing circle is one says so in `warnings`, with the crack depth.
+**Reverse-curvature circles** (`SlopeGeometry.reverse_curvature`): see "Tension cracks and reverse-curvature circles as printed" above (GM-140 step 4). Before it such a circle was closed by a dry crack from its centre's level to the ground, as Slide2's default is quoted to do; the numbers in the table below marked "default" are from then.
 
 **Bishop / OMS critical circle with supports at a short arm.** When the
 supports crossing a Bishop or OMS critical circle act with an average arm
@@ -628,7 +972,752 @@ missed a slice's horizontal equilibrium by up to 199 lb/ft. Runtime of the
 #85 default searches (once each, shared laptop): Spencer 40 -> 37 s, GLE
 62 -> 32 s; #86 unchanged (Bishop 1.612, Spencer 1.606, GLE 1.606).
 
+### Supports as printed (GM-140 step 8, 2026-11-14)
+
+**The rule.** A support enters a solution as a known force, the way the
+print gives it: by Method A or Method B, along the reinforcement's own
+direction, and no larger than the reinforcement can carry where the slip
+surface crosses it. `supports.resolve_supports` is the one place that turns
+a geometry's supports into the forces every method takes
+(`reinforcement.compute_reinforcement_forces` returns its `forces`), so the
+rule holds for every method, every family of surfaces and every caller.
+
+**Print.** Duncan, Wright and Brandon (2014), 2nd ed. (the owner's copy,
+cited by page and equation), FHWA GEC 11 and FHWA GEC 7 (reference
+library).
+
+| What | Print | In the module |
+|------|-------|---------------|
+| Method A, Method B | Sec. 8.2, pp. 159 to 160, Eqs. 8.1 to 8.4. A: allowable forces, not divided by F. B: ultimate forces, divided by F. A is preferable (p. 160). GEC 11 p. 9-24, Eq. 9-17, FS = MR / (MD - Ts D), Method A's form: "the allowable strength of the reinforcement Tal must be divided by a required minimum factor of safety FSR = 1.3" | `support_convention` 'active' (default) / 'passive' per support. Every result with supports names the method and the measure of force (`choices`: "how the support forces enter the factor of safety"); its basis quotes GEC 11's Eq. 9-17 sentence, and nothing divides the force given (the fix round, defect 4) |
+| Bishop's simplified method with known forces | Sec. 6.5.3, pp. 91 to 93, Eq. 6.78 with Eqs. 6.70 and 6.75: `F = SUM[(c' dl cos a + (W - F_v - u dl cos a) tan phi') / m_alpha] / (SUM W sin a - M_n / r)`; a horizontal force enters the moment only, an inclined one both, the vertical part always | `methods.bishop_fos` was checked term by term: the signed moment about the centre divided by R off the driving sum, `W - Fz` (Fz upward) in the numerator of the slice crossed; Method B: both divided by F. It matched; nothing changed. `test_supports_step8._bishop_by_hand` writes Eq. 6.78 out and agrees to 1e-9 |
+| A support near the centre's level | p. 93: the method neglects what a horizontal force adds to the normal stress on the slip surface; care where large horizontal forces contribute | The short-arm warning stays, now citing p. 93. How much of the support counts is not adjusted. The share below which it warns (0.5) is the module's own |
+| The Ordinary Method of Slices with known forces | none printed (p. 93); none found in the reference library (FHWA NHI-06-088 ch. 6, UFC 3-220-10, GEC 11 ch. 9, DM 7.1 ch. 7 searched). FHWA GEC 7 Eqs. 5.6 to 5.9 (Sec. 5.6.4, pp. 118 to 120, Fig. 5.9) were found and are not taken: they are one planar wedge's force balance (the nail's T sin beta in the normal force, T cos beta off the driving force), and the method on a circle is a moment equation (the orchestrator's Q1) | Refused where a support crosses the surface: `NoSolution`, kind `with_supports`, the reason citing p. 93 and GEC 7 Eqs. 5.6 to 5.9 as found and not applicable (`solution.OMS_WITH_SUPPORTS`); the comparison table leaves the method out and says why. A search by the method is refused when a support crosses any trial surface: no critical surface and no factor of safety, the crossed surfaces counted by family, the same reason and the methods that take known forces (`solution.oms_search_refusal`); a search whose surfaces no support crosses runs as before (Q2). The lead's call |
+| Direction | Sec. 8.6, pp. 163 to 164: the reinforcement's original orientation (recommended, the more conservative); parallel to the slip surface is the other extreme. GEC 11 p. 9-7: continuous sheet reinforcement "assumed to act tangentially to the circle" (the moment arm D = R under Eq. 9-1), the print of the option (Q4) | `force_direction` 'along_reinforcement' (default) / 'along_slip_surface' on nails, anchors and geosynthetics; a pile's 'horizontal' (its shear) / 'along_slip_surface'. A pile's 'normal' is refused |
+| What a layer carries at a crossing | Sec. 8.4, pp. 161 to 163: the lesser of T_lim and the pullout from each end (Fig. 8.2); Eqs. 8.8 and 8.9; Table 8.3; Eq. 8.10 and Table 8.4. GEC 11 Sec. 9.1 (p. 9-1), Eq. 3-2 (p. 3-16), Eq. 9-9 (p. 9-13) and "only count reinforcement that extends 3 ft (1 m) beyond the surface" (p. 9-14), FS 1.5 granular and 2 cohesive (p. 9-5) | `supports.layer_capacity`, below |
+| A nail | GEC 7 Eq. 5.2, p. 105: Tmax = min(R_T, R_F, R_PO); Fig. 5.7, p. 106 (the library holds its caption, "Limitations to tensile forces in nails", and a summary, not the drawing) | `SoilNail.facing_capacity`: given, the load at the surface is also limited by (R_F + the pullout of the length in front of the surface), a reading of Fig. 5.7 beside Eq. 5.2 (Q5). Left out, the term is not checked and the result says so |
+
+**Crossings, exactly.** A nail's or an anchor's line is crossed with the
+circle itself (the lower arc between the surface's two ends) or with each
+segment of a polyline (`supports.line_crossings`); a layer's level with the
+circle or with each segment (`supports.level_crossings`). Until this step
+the line was sampled at 200 points, which missed a crossing within one step
+of a circle's vertical end, and a layer took the first sign change found
+from the surface's low-x end.
+
+**A layer is crossed wherever the surface passes through it.** At each
+crossing the force on the sliding mass points along the layer toward the
+side where the layer lies in the ground under the surface (its anchorage).
+Until this step a layer's `dir_x` could point away from its anchorage,
+which every method hid by taking the horizontal component's magnitude as
+resisting (GM-82); the methods now take the force's own direction
+(`reinforcement.support_components`, `gle._assign_reinforcement`).
+
+**A pull that assists the sliding (OWN-59).** Both readings are offered:
+`SlopeGeometry.assisting_support` 'slack' (default: the support counts
+nothing on that surface and the result names it, `supports_not_counted`)
+or 'as_given' (the force is applied as it stands). The test is the
+module's own: the force's component along the slip surface at the crossing
+points down the slope. On a circle that is the sign of its moment about
+the centre. Two cases meet it: a steep nail crossing the steep upper part
+of a surface, and the toe-side crossing of a layer the surface crosses
+twice. Applying such a force as it stands can still raise F a little in a
+complete-equilibrium method (the pull also presses the mass on its base):
+the made-up case of `test_support_pulling_with_the_slide...` reads 2.2129
+slack and 2.2138 as given.
+
+**Pullout of a geosynthetic layer** (`pullout_basis`):
+
+- `'dwb2014'` (the default once `F_star` and `alpha` are given): pullout
+  from each end of the layer, `2 alpha F* x` the integral of `gamma z`
+  along the embedded length. Eq. 8.8 (constant depth) and Eq. 8.9 (beneath
+  the slope face) are that integral on level and on uniformly sloping
+  ground; it is evaluated on the ground as given (`supports.
+  stress_integral`, exact on both). Under Method A it is divided by
+  `pullout_factor` (Eq. 8.10; Table 8.4 prints 1.3, 1.5 and 2.0 and no
+  default, so it is asked for); under Method B it is not (ultimate forces).
+  The default because the forces are entered by this book's Methods A
+  and B.
+- `'gec11'`: behind the surface only, on the effective vertical stress,
+  times `coverage_ratio`, divided by `pullout_factor` under Method A and
+  Method B alike, so it is asked for under both: Eq. 9-9 (p. 9-13) carries
+  FS whatever the method, and GEC 11's own analysis puts the reinforcement
+  in the resisting moment, Method B's form (p. 9-24). A layer with less
+  than 1 m behind the surface counts nothing (p. 9-14).
+- `'given'`: `development_length`, the length from an end over which the
+  force rises linearly from zero to `T_allow` (Fig. 8.2; the form Fig. 8.4a
+  gives its layers in).
+- `'not_checked'`: the full `T_allow` at every crossing. This is also what
+  a layer with no pullout input gets (the behaviour before this step), and
+  the result then says among its warnings that the pullout was not checked
+  and what to give: `analyze_slope`, a search (its warnings and its
+  critical surface's), `rapid_drawdown_fos` and `search_rapid_drawdown`
+  (Q3).
+- `anchored_end` 'start' / 'end': an end fixed to a facing; no pullout is
+  measured from it.
+- The layer's ends are `x_start` / `x_end`, else where its level meets the
+  ground, else the model's edge.
+
+**A support on a slice boundary (GM-353).** A layer on a material boundary
+meets the slip surface exactly on a slice edge, and a rounding used to
+decide which slice it acted on (V-043: 40.88 or 45.22 kN/m). The rule
+(`supports.slice_index_for`), the module's own: the slice that holds the
+part of the support inside the sliding mass, since that is the body the
+support pulls on; a vertical pile, which has no such side, the slice toward
+-x. A crossing within 1e-6 m of a slice edge is on it. The other reading,
+the slice on the anchorage side, gives 40.88 kN/m on V-043 (-7 % against
+the printed 44 to 45 kN/m); the rule gives 45.22 (+0.5 % to +2.8 %).
+
+**The legacy single force** (`reinforcement_force`) without
+`reinforcement_elevation` is refused when the geometry is built (D37: it
+was left out without notice).
+
+**Calls made in the fix round after review (for OWN-143).** The
+orchestrator's rulings, each with the form taken and the other form:
+
+1. **Q1, an Ordinary Method of Slices with known forces.** Taken: GEC 7
+   Eqs. 5.6 to 5.9 (pp. 118 to 120) are not that method (one planar
+   wedge's force balance; the method on a circle is a moment equation),
+   so the refusal stays and its reason cites them. Other form: take the
+   wedge's form (the support's normal component in N, its parallel
+   component off the driving force) as the method's, as the module's old
+   polyline form did.
+2. **Q2, a search by the Ordinary Method of Slices on a slope with
+   supports.** Taken: refused when a support crosses any trial surface,
+   with p. 93's reason and the methods that take known forces; a search
+   whose surfaces no support crosses runs as before. Other form: report
+   the minimum over the surfaces no support crosses and say so in the
+   headline (the review's made-up case: 1.741, with 481 crossed surfaces
+   left out, not the slope's minimum).
+3. **Q3, a layer with no pullout input.** Taken: it carries its full
+   `T_allow`, and the result says among its warnings that the pullout was
+   not checked and what to give. Other form: refuse such a layer.
+4. **Q4, a geosynthetic's direction.** Taken: the reinforcement's own
+   orientation by default (Duncan, Wright and Brandon 2014, Sec. 8.6);
+   `along_slip_surface` cites GEC 11 p. 9-7 (continuous sheets acting
+   tangentially) as its print. Other form: tangential by default, as GEC
+   11 takes continuous sheets.
+5. **Q5, a nail's force at the slip surface.** Taken: R_F plus q times
+   the length in front of the surface, GEC 7 Fig. 5.7 (p. 106) cited
+   beside Eq. 5.2 (p. 105) as a reading of the figure (the library holds
+   only its caption). Other form: the literal min(R_T, R_F, R_PO) of
+   Eq. 5.2.
+6. **Defect 1, GEC 11's pullout under Method B.** Taken: under
+   `pullout_basis='gec11'` the pullout is divided by FS
+   (`pullout_factor`, asked for) under both methods, as Eq. 9-9 (p. 9-13)
+   prints it. Other form: not divided under Method B (ultimate forces,
+   divided by F with the soil strength), as the step first had it; the
+   review's made-up layer carries 33.17 kN/m that way against 22.11.
+7. **Defect 4, GEC 11 Eq. 9-17 (p. 9-24).** Taken: Method A's basis says
+   that in that form Tal "must be divided by a required minimum factor of
+   safety FSR = 1.3"; the allowable force is the engineer's input and
+   nothing divides it. Other form: divide an active support's force by a
+   factor of at least 1.3 under Method A (or ask for that factor).
+
+**Not changed, noted.** An anchor still carries its full `T_allow` once
+more than 5 % of its length lies beyond the surface (that 5 % is the
+module's own); a nail's bond stress, bar and facing are taken in the
+measure of `support_convention` with no factor of their own; the pullout
+stress under `'dwb2014'` is the total `gamma z` as Eqs. 8.8 and 8.9 print
+it, whatever the water.
+
+### A method's own solution, or no number (GM-140 step 2, 2026-11-13)
+**The rule.** A factor of safety reported under a method's name is that
+method's own converged solution on that surface. Where the method has no
+solution there is no number: `FOS` is None, `method_solved` is False and the
+result says why. One rule for every method (Ordinary Method of Slices,
+Bishop, Janbu, Spencer, Morgenstern-Price, GLE), every family of surfaces
+and every caller.
+
+**Print.** UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as
+a result of non-convergence. The engineer should be able to identify when
+convergence issues are present." EM 1110-2-1902 C-10d (pp. C-37 to C-38)
+lists the ways to avoid non-convergence (reject the unrealistic one of
+multiple solutions, a sensible starting F, a realistic initial surface).
+The methods' own equations: Bishop (1955) Eq. 13, p. 10; Spencer (1967)
+Eqs. 7 and 8, p. 15; Morgenstern and Price (1965) Eq. 18, p. 85.
+
+**What it replaces** (the account's D23, D27, D30 and parts of D49; GM-81's
+rest, GM-139). It supersedes the parts of the GM-81 section below that keep
+the approximate solver's value.
+
+- **One solver** (`solution.solve_method`). `analyze_slope`, the search
+  scorer `search._compute_fos` (every family), `newmark.yield_acceleration`,
+  `probabilistic.fosm_fos` / `monte_carlo_fos` (so
+  `reliability.wrappers.slope_reliability`) and the calc packages all take a
+  method's value from it. A search's score of a surface is the
+  single-surface FOS of that surface, to the last digit.
+- **No approximate solver.** `spencer_fos_legacy` and
+  `morgenstern_price_fos_legacy` are deleted (no consumer outside the
+  module). `spencer_fos`, `morgenstern_price_fos`, `bishop_fos`,
+  `fellenius_fos` and `janbu_fos` raise `NoSolution` (a ValueError, with
+  the reason) where they have no solution.
+- **Bishop and Janbu.** Bishop's iteration not within its tolerance after
+  50 iterations has no solution (it returned its last iterate with a Python
+  warning). Janbu's force-equilibrium iteration with no state has none.
+- **No driving.** A surface with no net driving moment or force has no
+  factor of safety. The solvers' internal 999.9 never leaves them as one;
+  `solve_method` also refuses a ratio at or above it (the driving sum zero
+  to rounding). 999.9 remains only as the searches' internal "not scored"
+  score (`search._FOS_MAX`) and inside `gle.GLEResult` beside
+  `converged=False`.
+- **The lambda search** (`gle.gle_fos`). GM-60's robust search (the scan
+  started from the nearest lambda with a state when lambda = 0 has none; a
+  lambda with no state stepped over; a bracket whose bisection does not
+  close passed over) ran only with supports. It is the one search for every
+  run. At a fixed lambda, an iteration on {N, E, X, F} that runs its 80
+  iterations without settling is solved by the direct march
+  (`_solve_marched`), and where that finds nothing there is no state: the
+  last iterate was returned as a state before, flagged by nobody.
+  *Not adopted:* the direct march as the fallback wherever the fixed-point
+  step cannot be taken (as with supports). Measured, it solves about half
+  of the otherwise unsolved random polylines of a noncircular search at 14
+  to 16 times the run time (111 s against 8 s; 297 s against 18 s) with the
+  same minimum in both cases tried. The step 2 review asked for it (D1);
+  tried in the fix round and not applied: it finds the Spencer solution of
+  a phi = 0 circle the module misses (2.9458; the "independent" 2.9435
+  was wrong: the moment ratio is 3.08, GM-140 step 3's fix round), but it
+  also gives "converged" states that rest on the m_alpha
+  clamp, with base tension, on two surfaces GM-131 found to have no
+  Spencer solution (1.56 at every slicing on w11; 1.19 at 30 and 41
+  slices only on the deep sandstone polyline), takes away the yield
+  coefficient of an ordinary slope (0.327 without it; with it Spencer has
+  no solution at a trial kh of 1.0 and no ky is given) and makes ACADS 4's
+  weak-layer search take 84.5 s against 22 s. A call for the owner; see
+  `module_work/gm140/STEP2_CHECK.md`.
+- **One moment axis.** On a polyline the GLE takes moments about its fitted
+  axis (`gle._fit_axis_point`) in a search and on one surface alike. The
+  search's second try about a fixed axis (`_noncircular_axis_point`) is
+  gone from scoring: with the lambda search above it rescued no surface in
+  four searches (about 2,100 trial solves), and it was how ACADS 4's weak-layer search
+  returned Spencer 0.515 on a surface `analyze_slope` had no solution on.
+  The fixed axes remain in the confirmation check of a would-be critical
+  surface (`_solution_fails`), which is a screen, not a score.
+- **Searches count.** `SearchResult.no_solution` lists the trials left
+  without a solution by family and by method (`n_no_solution` the total),
+  in `to_dict()` and `summary()`; `warnings` says so when the governing
+  family lost trials this way. Measured on Slide2 #85 without its support,
+  6 x 6 Spencer search: 267 circles went to the approximate solver before;
+  329 trials have no Spencer solution now (the search no longer stops its
+  families early on the approximate values) and the reported minimum is
+  1.047 on a toe circle where Bishop's simplified method gives 0.910: on a
+  steep phi = 0 slope Spencer's method has no solution on the circles that
+  govern (tension at the top; the force factor of safety approaches the
+  moment one from above and does not meet it for lambda up to 1.5), and the
+  result says a lower surface cannot be ruled out.
+- **Yield acceleration.** Every trial kh is the method's own solution. The
+  upper end of the kh bracket is halved until the method solves there.
+  Where a trial kh the bisection needs has no solution, `ky` is None with
+  the reason, the kh, and the bounds reached.
+- **FOSM and Monte Carlo.** FOSM with no solution at the mean values or at
+  a value one standard deviation off gives no result (a ValueError naming
+  the variable and the value). Monte Carlo counts realizations with no
+  solution (`n_no_solution`), leaves them out of the statistics and bounds
+  the probability of failure both ways (`pf_lower`, `pf_upper`). No printed
+  rule was found for either; the result says the rule is the module's own.
+  They solve the one given surface as `analyze_slope` does (before, through
+  the search scorer and its screens).
+- **Unknown names.** An unknown `method` is refused with the list of names
+  in every entry point (it ran Bishop's simplified method); an unknown
+  `f_interslice` likewise.
+- **Not changed** (other steps): which method scores which family, and a
+  polyline named for Bishop running Spencer (step 6); the m_alpha rule and
+  the acceptability checks (step 3); the rapid-drawdown stages and their
+  fall-back to Ordinary Method of Slices estimates (step 9;
+  `rapid_drawdown.py` is untouched, and its search does not yet count its
+  per-surface solves without a solution); the GLE's lambda range, tolerance
+  and m_alpha clamp (D29; the lambda scan and the test of a crossing were
+  rebuilt in GM-344, the section after next).
+
+### The GLE solver: a root, or no number (GM-140, GM-344, 2026-11-14)
+
+The solver behind Spencer's method, Morgenstern-Price and GLE (`gle.py`;
+Janbu's simplified method is its force equation at lambda = 0). Record:
+`module_work/gm140/GLE_ROOT_CHECK.md`; a second computation of Spencer's two
+equations, written apart from `gle.py`, is
+`module_work/gm140/gle_root_spencer_script.py`.
+
+**What was wrong.** The scan of lambda took its state at each lambda from a
+lagged iteration, or from a direct march where that did not settle, each
+started from the mean of the last two factors of safety. Where the force
+equation has more than one solution at a lambda, the scan could pass from
+one branch of solutions to another; the change of order of F_m and F_f
+across that jump was bisected as if it were a crossing, and the point was
+accepted when |F_m - F_f| fell below max(50 tol, 1e-3), the mean of the two
+being reported. On a long thin planar surface the fitted moment axis lies
+kilometres away, so F_m and F_f are within 1e-3 of each other at every
+lambda and the test accepted a jump. And the device for a base in tension
+(D29) was in the horizontal and moment terms but not in the normal force's
+m_alpha or the march's vertical equation, so the equations solved were
+neither the printed ones nor the device's.
+
+**A reported factor of safety is a root.** One state at one lambda meets
+both equations:
+
+- Every state of the scan is `_GLESystem._state`: the direct
+  Morgenstern-Price march (Morgenstern and Price 1965; no lag between E
+  and X) with the F that closes it, found from the neighbouring lambda's F.
+- The crossing is judged on the state's own net moment R (resisting moment
+  / F - driving moment, with that state's N, E and X). With the forces in
+  equilibrium R is a couple and does not depend on the axis; it is zero to
+  rounding (`_CLOSES` of the forces times the size of the mass) at a root.
+  F_m = F_f then holds far inside `tol`.
+- A sign change of R between two states is refined (`refine`) until a
+  state has R = 0 (a crossing: its own F is reported, not a mean) or until
+  the bracket is closed in lambda (`_LAMBDA_CLOSED`) without one: a jump.
+  A jump is not a bracket; the scan goes on, and `GLEResult.jumps` keeps
+  its lambda.
+- No crossing: `converged` is False and the callers give no number (step
+  2's rule). The reason says that the scan went upward from lambda = 0 on
+  the branch that starts there, to 1.5 or to where that branch ends, and
+  each jump; where the branch's starting state has a base or a side in
+  tension on a slice with cohesion, it names EM 1110-2-1902 C-10c (p. C-36)
+  and its remedy, a tension crack (`tension_crack_depth`, step 4).
+- The scan stops at the first lambda at which the branch it follows has no
+  state: the branch ends there (fix round, the review's question 4).
+  Before, that lambda was stepped over (GM-60) and the next state found
+  could lie on another branch with the same pole signature, which ruling 2
+  excludes. No pinned value moved with it (the test files run in the fix
+  round pass with their pins unchanged).
+- Fix round 2: where a step of 0.1 meets no state, the step is bisected
+  between the last lambda with a state and that lambda, each trial state
+  found from the branch's last state (its F and side), until the two are
+  less than 1e-4 apart (`gle._BRANCH_END_TOL`); each state met on the way
+  is tested as a step's state is (agreement, then a sign change of R
+  against the state before it, refined). `branch_end` holds the narrowed
+  pair and the reason prints it to 4 decimals. Before, a crossing inside
+  the last step before the branch ended was lost: on trials 97 and 16 of
+  ACADS 1(a)'s 200-trial Spencer search (seed 42) the review's script
+  found 13.9859 at 23.25 deg and 8.0514 at 5.9556 deg just short of the
+  end, and the module gave no number; it now reads them (both roots of
+  the second computation's equations). The search's value (1.0916) does
+  not move; run through `search_critical_surface` it leaves 49 trials
+  without a solution in place of the review's 55, and
+  `test_choices`' short search 83 in place of 84 (9.49 stands). Same rule
+  under both `base_in_tension` settings (one scan).
+
+**Which root (the orchestrator's ruling 2; a call, OWN-143).** The slice
+equations are singular at F = tan(phi') tan(theta_i - alpha) for slice i
+(`_poles`; theta_i = atan(lambda f) on its upslope side). The closing force
+is infinite there, so a branch of solutions cannot pass a pole, and a root
+can lie close beside one: the search for a state looks on each side of every
+pole and keeps to the neighbour's side. The scan starts at lambda = 0 on the
+branch on which every slice lies above its pole (the side it is on for a
+large F; below it the slice's response is reversed, the generalised m_alpha
+negative) and goes UP in steps of 0.1 to 1.5; the first crossing met is
+reported (`gle.ROOT_CHOICE`, in a search's `choices`). Lambda below 0 is not
+scanned: there the interslice shear acts against the sense the sliding
+gives it, and the crossings found there were states with bases and sides in
+tension (the old scan went both ways). The other form, the lowest of every
+root in the range, is not built; on an ordinary circle Spencer's equations
+have many roots with slices below their poles at very low F.
+
+**The lambda range (D29; the lead's call R15, OWN-143).** D29's range was
+-1.5 to 1.5, and the old scan went both ways from 0. Under ruling 2 the
+range is 0 to 1.5, upward from lambda = 0 on the branch that starts there,
+and the scan stops where that branch ends; `lambda_bounds`' lower bound is
+used only by the scan below 0 for the reason (next lines). Other form: where
+no crossing is met upward, the first crossing met downward from 0 (D29's
+former range) reported. Not built: on the review's cases the crossings below
+0 had bases in tension and slice denominators of 0.0004 to 0.0077 (EM
+1110-2-1902 C-10b states, whose factors of safety the EM calls not
+meaningful). Fix round 2 (the orchestrator's ruling 2, last clause): where
+ONE surface is analysed (`analyze_slope`, through the context
+`gle.single_surface`) and no crossing is met upward, the branch from
+lambda = 0 is scanned DOWN to -1.5 with the same steps and end rule; a
+crossing met there is named in the no-number reason with its F, lambda and
+flags (the slices with a base in tension, the sides in tension, the least
+slice denominator and its slice), and the reason says it is not reported
+because below lambda = 0 the interslice shear acts against the sense the
+sliding gives it. Never inside a search's trials (run time): off by default
+in `gle_fos`, held in a context variable, with no new input. A search's
+governing surface is solved again (`report_acceptability`,
+`m_alpha_confirmation`), but those solves print no reason, so they make no
+such scan either. Step 2's fill circle at 30 kPa by Morgenstern-Price
+(half-sine), as printed, names lambda -0.0342, F 1.6089 (the crest slice's
+base and six sides in tension; least denominator 0.4352, on the crest
+slice); Spencer meets none below 0 on that circle at 30 or 38 kPa (its
+branch from 0 ends near lambda -0.33 and -0.29). What the change does: ACADS 1(a)'s 200-trial random Spencer
+search 0.633 (flagged) to 1.092 (printed 1.00); a made-up short search
+(`test_choices`) 0.462 to 9.49; Spencer has no solution on the steep-exit
+polyline of `test_acceptability` and on the DE surfaces of `test_m_alpha`
+(those tests now use Morgenstern-Price and Janbu), and none at 30 and 38 kPa
+on step 2's fill circle (below).
+
+**A base in tension (D29; ruling 3; a call, OWN-143).**
+`gle.BASE_TENSION_RULES`, parameter `base_in_tension` of `analyze_slope` and
+`search_critical_surface` (held in a context variable, so every solve inside
+the call follows it, Janbu's simplified method included):
+
+- `as_printed` (default): the equations as printed on every slice, the
+  friction term N' tan(phi') negative where N' is. Spencer (1967, pp. 14 to
+  15) and Morgenstern and Price (1965, p. 85) print no rule for a negative
+  N'; EM 1110-2-1902 C-10a (pp. C-33 to C-34) asks that such a base be
+  examined, and the `base_tension` finding names the slices and the option.
+- `no_friction`: a slice whose N' comes out negative is solved again with
+  tan(phi') = 0 in every equation (its normal force, the march, the
+  horizontal and the moment sums). The module's own device, not found in
+  print. `GLEResult.frictionless` marks the slices.
+
+**What this does to results.**
+
+- A value is always a solution of the method's equations. Numbers that were
+  not (the jump accepted on thin planar surfaces; values resting on the
+  half-applied device) are gone.
+- A circle with cohesion whose crest slices are in tension can have no
+  Spencer solution for lambda from 0 to 1.5 where the old equations read a
+  number: on a made-up 10 m fill slope the circle that read 1.645 at
+  c' = 30 kPa and 1.917 at 38 kPa now has none, under either rule. That is
+  accepted as the method's own behaviour (step 2's rule; the orchestrator's
+  R7) because the review's own script finds no crossing on the branch from
+  lambda = 0 either, for lambda from 0 to 1.5 (its only roots there are at
+  negative theta, with slice denominators below 0.01). A root that script
+  finds on the branch from lambda = 0 and the solver loses would be a
+  defect. The no-solution reason names EM 1110-2-1902 C-10c (p. C-36) and
+  its remedy, a tension crack (`tension_crack_depth`, or
+  `tension_crack_depth_basis='rankine'` for Eq. C-36's depth).
+- On a surface whose toe is inclined steeply against the sliding, the
+  branch from lambda = 0 can end at a root where the toe wedge is all but
+  locked (F just above the toe slice's pole) and carries a very large
+  force: Spencer's own solution, with a constant side-force inclination
+  (the thin planar case: 0.918, 37 % above the infinite slope's 0.6704).
+  It is never reported without a finding: the `low_m_alpha` check reads
+  the denominator of the slice's own equations (the next section), 0.018
+  on the toe slice there, and names EM C-10b's remedies. The half-sine
+  function of Morgenstern-Price (no side shear at the ends) does not lock
+  (0.678 on that case); EM C-10b (pp. C-34 to C-36) names a change of
+  side-force inclination among its remedies for a steep exit, and
+  Morgenstern-Price with the half-sine is the module's form of it.
+- `rapid_drawdown_fos` takes `base_in_tension` too (fix round): every
+  stage's solve follows it, the fixed-inclination stage solve
+  (`fixed_inclination_solution`) included, which now asks for the branch
+  above every pole by name and reports the mobilised shear with the
+  tan(phi') each slice's solve used (before, max(N', 0)).
+- The 0.05 m_alpha clamp and the fitted moment axis (D29) are unchanged.
+
+### The printed acceptability checks (GM-140 step 3, 2026-11-13)
+
+**The rule.** Once a method has solved a surface (step 2) and the surface is
+one sliding mass (GM-122), every further test is a printed acceptability
+check whose finding is reported with the surface: which check, which slice,
+what value. A search keeps a flagged surface by default and says so;
+refusing on a check is a stated option. Nothing is left out silently, and
+circles and polylines meet the same checks. Code: `acceptability.py`
+(`surface_findings`), called by `analyze_slope`, by every search's scorer
+(`search._compute_fos`, `_trial_checks`) and by `search_critical_surface` on
+its governing surface (`search_supplements.critical_acceptability`).
+
+| Check (`flags`) | Printed source | What is reported |
+|---|---|---|
+| `low_m_alpha` | Whitman and Bailey (1967, p. 487, Eq. 5): warn if cos(theta) + tan(phi) sin(theta) / F < 0.2 on any slice; "the user must examine the result in detail". For Spencer, Morgenstern-Price and GLE the same 0.2 is read on the denominator of the slice's own equations, cos(alpha - theta_i) + sin(alpha - theta_i) tan(phi') / F (GM-344 fix round; the lead's call, below) | the slices, their m_alpha (or that denominator, with the side-force inclination, the interslice force on that side and the base's effective normal force), base angle and whether the base is inclined against the sliding; EM 1110-2-1902 C-10b's four remedies (pp. C-34 to C-36) where it is, named and not applied |
+| `bishop_below_oms` | Duncan (1996, p. 580): compute the Ordinary Method of Slices value for each circle when Bishop's method is used; where Bishop's is the lower, the Ordinary Method of Slices value is the better answer | both values; the Ordinary Method of Slices value is taken (`FOS`, with `method_used`), Bishop's own stays in `FOS_bishop` |
+| `negative_frictional_term` | Bishop (1955) Eqs. 9 and 13, p. 10, no lower limit; Whitman and Bailey (1967, p. 487) ask for a warning | the slices where u b exceeds W (Bishop) or u l exceeds W cos(alpha) (Ordinary Method of Slices), and the rule in force |
+| `base_tension`, `side_tension`, `thrust_outside` | EM 1110-2-1902 C-10a (pp. C-33 to C-34): forces examined, no tension on the sides or bottom of slices, the line of thrust within the sliding mass; UFC 3-220-10 pp. 361 to 362 | Spencer, Morgenstern-Price and GLE: the slices with a negative effective normal force, the slice sides with a tensile interslice force, and the sides where the line of thrust as solved (not clipped) is outside the mass |
+
+**The denominator of the side-force methods (GM-344 fix round; the
+orchestrator's R6, the lead's call, OWN-143).** In Spencer's method,
+Morgenstern-Price and GLE the side force on slice i is inclined at theta_i =
+atan(lambda f(x)) (on its upslope side, the one the march solves for), and
+the slice's two equations have the denominator cos(alpha - theta_i) +
+sin(alpha - theta_i) tan(phi') / F (`gle.GLEResult.slice_denominator`;
+`_poles` is where it is zero). With horizontal side forces it is m_alpha,
+so Bishop's and Janbu's checks are unchanged. Whitman and Bailey print the
+warning for m_alpha; applying it, with the same 0.2, to the denominator of
+an inclined side force is the lead's call. Other form: the finding stays on
+horizontal side forces (m_alpha at the method's F), as step 3 built it;
+there a toe slice all but locked by an inclined side force (the thin planar
+case's 0.918: denominator 0.018, m_alpha 0.57) is not flagged. The finding
+gives the slice, the value, the side-force inclination and the forces on
+the slice, cites Whitman and Bailey and EM 1110-2-1902 C-10b (p. C-34:
+where the resultant on the base is nearly parallel to the side force, the
+factor of safety is not meaningful), and names C-10b's remedies where the
+slice's base is inclined against the sliding. A slice the solve took
+frictionless (`base_in_tension='no_friction'`) is not looked at under the
+default rule, as a slice with phi' = 0 is not: its denominator,
+cos(alpha - theta_i), does not depend on F and its strength is c l whatever
+N' (the module's own reasoning, as for phi' = 0; `m_alpha_rule=
+'every_slice'` looks at it). `low_m_alpha='refuse'` leaves
+such a surface out of a search as it does any other. A search's
+`m_alpha_min` record (the search files, not this step's) still reads
+m_alpha.
+
+**m_alpha below 0.2 (OWN-102).** A search keeps such a surface, flags it and
+counts it by family (`SearchResult.trial_flags`); `low_m_alpha='refuse'`
+leaves it out and counts it, the rule before this step (GM-127; the section
+below describes that rule and its history). The exemption of phi' = 0
+slices stays the default and is stated in the result as the module's own
+reasoning, with no printed source; `m_alpha_rule='every_slice'` is the
+option.
+
+**Bishop against the Ordinary Method of Slices.** Made in the one solver
+(`solution.bishop_against_oms`), so it holds for a given circle, every
+search family, FOSM and Monte Carlo. It is made only on circles with no
+supports and no seismic coefficient (the limit the owner added to OWN-102 on
+2026-11-13: Duncan, Wright and Brandon 2014, p. 93, print no Ordinary
+Method of Slices equation with known forces); otherwise the result says it
+was not made and why. "Below" means below by more than the tolerance
+Bishop's iteration is solved to: on a phi = 0 circle the two are the same
+sum (EM C-2b, p. C-16).
+
+**The frictional term (D21).** `methods.NEGATIVE_TERM_RULES`: `as_printed`
+(default) uses W - u b and W cos(alpha) - u l as printed; `zero` sets the
+term to zero where negative (the rule before this step, no printed source).
+Parameter `negative_friction_term` of `analyze_slope` and
+`search_critical_surface`; the rule is held in a context variable so every
+solve inside the call follows it. The GLE solver's own settings (no
+friction on a base in tension, the 0.05 m_alpha clamp; D29) were not
+changed by step 3; the first is an option since GM-344 (the next section),
+and `base_tension` names the slices and says which rule was in force.
+
+**In a search.** `trial_flags` gives, by family and method, the trials
+scored, those flagged and each flag; `critical_flags` and
+`critical.acceptability` what the governing surface carries; and when it
+carries a flag, `lowest_unflagged` gives the lowest factor of safety among
+the scored surfaces of the same method that carry none (among the trials
+the search happened to score: it is not a second search). The headline stays
+the lowest solved surface. Every exported search that returns a
+`SearchResult` gets this from one place, `search_supplements.
+report_acceptability`: `search_critical_surface` calls it, and
+`search._reports_acceptability` calls it on a search called on its own
+(`search_noncircular`, `search_de`, `search_pso`, `search_weak_layer_biased`,
+`search_entry_exit`, `grid_search`; the step 3 review's defect 2).
+`search_rapid_drawdown` scores with its own staged solve, on which the checks
+are not made.
+
+Neither number alone is safe (ACADS 1(a) by Spencer: 0.633 flagged, 1.09
+with none, printed 1.00; ACADS 4's weak layer: 0.830 flagged, 1.667 with
+none, printed 0.760), so a headline that carries a flag is never given alone.
+The agent's tool result (the adapter) carries, as fields and in its
+one-sentence `summary` (`search_supplements.headline_report`): the headline,
+its flags (`critical_flags`), the lowest surface with no flag
+(`lowest_unflagged`, or that none was found) and the option that leaves
+flagged surfaces out (`refuse_option`). Only m_alpha has such an option
+(`low_m_alpha='refuse'`); no option leaves out surfaces with the other flags,
+and `refuse_option` says so. The other form of this call (the headline is the
+lowest surface with no flag) is on the owner's desk (`module_work/gm140/
+STEP3_CHECK.md`, "Calls made").
+
+**The noncircular screens (D22), measured** (`module_work/gm140/
+step3_screens.py`; table in `module_work/gm140/STEP3_CHECK.md`). On the
+noncircular cases of the validation set and the module's two rock-cut
+cases:
+
+- agreement between moment axes (38 refused), agreement between slicings (1)
+  and a FOS below 1.5 on a jagged surface (88), all measured with Spencer's
+  method: every surface refused carried a flag of the printed checks. The
+  first two are removed for the method's own solves, the jagged screen for
+  Spencer, Morgenstern-Price and GLE (`search.REMOVED_SCREENS`); such a
+  surface is scored, kept and flagged. `SearchResult.refused_lowest` is no
+  longer filled.
+- the jagged screen stays, counted (`screen_refusals`) and named in
+  `choices` as the module's own, for Janbu's simplified method and the
+  Ordinary Method of Slices (`search._jagged_screen_applies`): no check of
+  C-10a covers them, so the surfaces it refuses there carry no flag. On
+  ACADS 1(a), 200 random trials, it refuses 29 Janbu and 42 Ordinary Method
+  of Slices surfaces no printed check flags (the step 3 review's defect 1).
+- span: of the surfaces it refused that have a Spencer solution, the printed
+  checks pass 25 of 48. It stays, counted (`screen_refusals`) and named in
+  `choices` as the module's own, not found in print.
+- slice count: it refused no trial in any measured case; kept as it was.
+- the jagged gate also applies to a caller's own per-surface solve (the
+  rapid-drawdown search), on which the printed checks are not made here.
+
+Consequence to know: a random noncircular search can now end on a zig-zag
+surface with a low factor of safety, flagged, with the lowest unflagged
+surface beside it (ACADS 1(a), 200 trials: 0.633 flagged, 1.096 unflagged;
+1.092 before; printed 1.00).
+
+**One below-base test (D19).** The toe-circle family asks
+`search._dips_below_base`, as every family does.
+
+**The direct march (step 2's open question): not applied.** Measured again
+with the rule that a marched state resting on the m_alpha clamp or on a base
+in tension is no state: the reviewer's phi = 0 circle solves (2.9458) and
+the GM-131 surfaces no longer do, but a GLE solve loses the state
+the lambda search had, an ordinary slope loses its yield coefficient (no
+Spencer solution at kh = 1.0) and two searches change. The strict xfail in
+`test_own_solution_or_no_number.py` holds the case. Its target is the moment
+ratio, not the 2.9435 the step 2 review gave: with phi = 0 on a circle,
+Spencer's F must equal cu R (arc length) / sum(W x), x the moment arm about
+the centre; the test works it out on 600 slices of the surface closed by a
+dry crack at x = 41 (3.0 m, given, since GM-140 step 4 discards the
+reverse-curvature circle with no crack asked for): 3.08, against Bishop's
+3.07 on 30 slices.
+
+### One method across the search (GM-140 step 6, 2026-11-14)
+
+**The rule.** Every family of surfaces in a search is scored by the method
+named, with the interslice function named, so the reported minimum compares
+like with like. A family the named method cannot score is reported under
+the method that did score it, apart from the others.
+
+**Print.** EM 1110-2-1902 4-3b(9)(a), p. 4-8: state the method used. EM
+C-2b, p. C-16: the Ordinary Method of Slices "can only be used with
+circular slip surfaces". EM C-5a, p. C-26: Spencer's method extended to
+noncircular surfaces. FHWA NHI-06-088 Table 6-1, p. 6-21: Bishop's the
+minimum method, Spencer's where available. UFC 3-220-10 Table 7-7 step 5,
+p. 374. UFC 3-220-10 p. 362: "Critical failure surfaces can be missed as a
+result of non-convergence. The engineer should be able to identify when
+convergence issues are present." FHWA NHI-06-088 p. 6-20: "For soils
+that have frictional strength, the Bishop Method should be used as a
+minimum"; Table 6-1, p. 6-21, Note 1: "More rigorous methods such as
+Spencer's method should be used when a computer program has such
+capabilities" (the stand-in order on circles, below). **No printed rule on
+comparing surfaces solved by different methods was found** (the account's
+D42); the case is that a search minimises the factor of safety of the
+method it reports (GM-138). **No printed rule for checking a noncircular
+search against the critical circle was found** either: EM 1110-2-1902
+4-2e(2), p. 4-7 (read in the owner's copy for the fix round) says only "In
+all of these methods, the initial position of the slip surface is
+specified by the user and should correspond to the estimated position of
+the critical slip surface". It is not the basis of the circle check, which
+is the module's own call (Calls made).
+
+**What was wrong (D13, D42, D26, D49's labels).** Planes were scored by
+Janbu's simplified method whatever method was named; the particle swarm
+and the weak-layer search always used Spencer's method; Morgenstern-Price
+and GLE always took the half-sine function in a search, and the search had
+no choice of function; the Ordinary Method of Slices scored polylines; a
+toe-circle result was labelled 'Morgenstern_price' or 'Gle', and
+`search_noncircular` named for Bishop labelled its Spencer result 'Bishop'.
+
+**What the code does.**
+
+- *The function.* `search_critical_surface(f_interslice=...)` (default
+  'half_sine'; an unknown name is refused) puts the function in force for
+  every solve made inside it (`search._applies_interslice`,
+  `search.interslice_in_force`; `search._method_solution` reads it): the
+  grid, entry and exit, toe circles, circles above the toe, planes, random,
+  differential evolution, particle swarm and weak layer. The search
+  functions take `f_interslice` too (None: the function in force).
+  `search_rapid_drawdown` already passed its `f_interslice` to every
+  family's staged solve; it now refuses an unknown name.
+- *The method.* `search_pso` and `search_weak_layer_biased` take `method`.
+  `check_infinite_slope` scores each face's planes by the method named.
+- *A family the method cannot score* (`search.scoring_order`,
+  `search.CIRCLES_ONLY`, `search.STAND_INS`). Bishop's simplified method
+  and the Ordinary Method of Slices do not apply to a plane or a polyline;
+  any method can solve none of a family's surfaces (it lost trials to
+  non-convergence and scored none). A family of planes or polylines is
+  then scored by Spencer's method, and where Spencer's solves none, by
+  Janbu's simplified method. A family of circles (the grid, entry and
+  exit, the toe circles, the circles above the toe, the refinement walk)
+  is scored by Spencer's method, then Bishop's simplified method, then
+  Janbu's simplified method; where the method named is a complete
+  equilibrium method (Spencer, Morgenstern-Price, GLE), by Bishop's, then
+  Janbu's (`search.CIRCLE_STAND_INS`, `search.RIGOROUS`; the
+  orchestrator's ruling on the step 6 review's D1: on Slide2 #85 without
+  its support, Spencer named, Janbu's stood in on the circles above the
+  toe at 1.033, 10 % above Bishop's 0.937 on the same circle; Bishop's now
+  stands in and reads its own lowest circle of the family, 0.911). For
+  the planes the order is applied face by face, so a face the method
+  solves keeps the method. The main search does the same
+  (`analysis.search_critical_surface`, `_main_search`), and the toe-circle
+  families (`search_supplements._toe_families`). Each stand-in's
+  `reason` names the methods tried before it.
+- *Janbu's simplified method standing in* (the orchestrator's Q2). Its
+  value carries Janbu's correction factor f0, which was not found in the
+  printed sources searched (the account's D28). A family it scores says
+  so in a warning, with f0 on the family's reported surface and the
+  uncorrected factor of safety beside it (also `janbu_f0` and
+  `FOS_uncorrected` in the family's `candidate_methods` entry). No number
+  changes; D28 keeps the decision.
+- *A stand-in above the screen's value.* A family scored by a stand-in
+  never governs above the screen's own lowest value on the same family
+  unless the result says so: a warning names both values
+  (`search_supplements.stand_in_above_screen_warning`).
+- *The record.* `SearchResult.candidate_methods`: one entry per family and
+  scoring method, `{family, method, f_interslice, FOS, named, reason}`,
+  with `screen` where another method picked the circles. `candidates`
+  keeps its form (family: FOS). `named_method` and `f_interslice` say what
+  was asked for. The governing surface's `method` label is the method that
+  scored it (`search.method_label`: 'Morgenstern-Price', 'GLE').
+- *The headline.* The reported factor of safety is the lowest over all
+  families. Where the governing family was scored by another method than
+  the one named: `method_used`, a warning placed first, and
+  `named_method_lowest` (the named method's own lowest value, or FOS None
+  with a note when it scored no family).
+- *Screens by another method* are run-time devices only: the optional
+  Bishop screen of the main search (`bishop_screen`), the Bishop scan of
+  the toe-circle families under Spencer / Morgenstern-Price / GLE (and of
+  the circles above the toe under Janbu), and the refinement walk's radius
+  by Bishop. Every value a family reports, and every comparison between
+  families, is the scoring method's own factor of safety on the surface
+  reported; `choices` names the screens ("screens by another method").
+- *Surfaces the method could not solve.* Where a screen scored surfaces
+  below the minimum reported and the named method had no solution on them,
+  `screen_unsolved` gives, by family, `n` of the `k` circles re-scored
+  from the screen's lowest that have no solution by the method, `N` the
+  circles the screen scored below the minimum in all, and the lowest
+  screen value; the warning reads "of the k circles re-scored from the
+  screen's lowest, n have no solution by <method>; the screen scored N
+  circles below the reported minimum in all" (`search._note_screen`,
+  `search_supplements.screen_unsolved_warning`; UFC p. 362; the step 6
+  review's D2: the count had read as if it covered every circle the
+  screen scored). `n` and `k` count the screen's best circle of a centre,
+  a chord of the toe families or an entry-exit pair, the circles handed on
+  to the method; `N` counts every circle Bishop's simplified method scored
+  in the family below the minimum, each once (`search._note_scored`): on
+  Slide2 #85 without its support, Spencer named, 6 x 6, 116 on the toe
+  circles below 0.911, of which the screen handed on its best 2.
+- *The planar family's findings.* Each `infinite_slope_checks` entry and
+  the family's `candidate_methods` entry carry `flags`: what the printed
+  acceptability checks find on the lowest plane (the low m_alpha of
+  Spencer's solution on a steep end among them, EM C-10b; GM-344), with
+  `n_planes` and `n_solved_by_named` (GM-56).
+- *A noncircular minimum checked against the circle.* A noncircular search
+  through `search_critical_surface` first runs the circular search (centre
+  grid and toe-circle families, the same windows, apart from this search's
+  counts) by the method that scores the polylines, and takes its critical
+  circle, as the polyline of its slice-base points
+  (`search.circle_as_polyline`), as one of its trials
+  (`search.add_circle_trial`). `circle_check` gives the circle, its value
+  as a circle and as a polyline, the search's own lowest polyline and which
+  governs; a warning says so when the search's own polylines stayed above
+  the circle. `circle_check=False`, a search function called on its own,
+  and a rapid-drawdown search run no circular search, and the result says
+  the minimum was not checked against a circle. The circular search takes
+  the caller's `nx` and `ny` and windows (the orchestrator's Q3; for the
+  particle swarm `nx` x `ny` also sets the swarm's size), not a 10 x 10
+  default of its own. It costs about 2 to 21 times the noncircular search
+  alone (the step 6 review's measures). Under a time budget the circular
+  search may use a quarter of it.
+- *Supports (after the merge with step 8).* Every trial surface of every
+  family goes through `search._compute_fos`, which takes the supports
+  crossing it (`search.trial_reinforcement`, now
+  `supports.resolve_supports`), so step 8's supports reach every method a
+  family is scored by, the stand-ins and the circle trial included. A
+  search named for the Ordinary Method of Slices where a support crosses
+  any of its trial surfaces is refused whatever scored its governing
+  family (the planes are scored by Spencer's method for it), and no
+  stand-in's value is reported in its place.
+
+**Calls made (for the owner; STEP6_CHECK.md has the other forms).** The
+order: on planes and polylines Spencer's method, then Janbu's simplified
+method; on circles Spencer's, then Bishop's simplified method, then
+Janbu's (Bishop's, then Janbu's, where a complete equilibrium method is
+named; the orchestrator's ruling, FHWA NHI-06-088 p. 6-20 and Table 6-1
+Note 1, p. 6-21). Other form: the spec's order, Spencer's then Janbu's, on
+every family. The lower value governs and both are stated; the order
+applied face by face for the planes; `candidates` kept as it was with the
+methods beside it. The circle check on by default: the circular search run
+before a noncircular one is the module's own call, not found in print
+(EM 4-2e(2), p. 4-7 asks only that the initial surface be at the estimated
+critical position); other form: `circle_check=False`, no circular search
+and the result says the minimum was not checked (OWN-143). The Ordinary
+Method of Slices on a
+polyline left available on ONE given surface (`analyze_slope`,
+`compare_methods_table`: Fredlund and Krahn 1977 print it on a composite
+surface), refused only as a search's scoring method.
+
+**Not changed.** Janbu's correction factor f0 (D28: not found in print).
+New families or generators (step 7). The yield acceleration, FOSM and
+Monte Carlo take no `f_interslice` (their Morgenstern-Price and GLE solves
+use the half-sine function, as their documents say).
+
 ### A single surface: warnings, and no silent fallback (GM-81, 2026-10-15)
+*(Its two "what `FOS` holds when there is no solution" cases, the labelled
+approximate value and `_legacy_critical_warning`, are superseded by GM-140
+step 2 above: there is no number in either case.)*
 `analyze_slope` results (`SlopeStabilityResult`) now carry what the searches
 said only about their governing surface, and say when the method asked for
 has no solution:
@@ -646,42 +1735,192 @@ has no solution:
   `m_alpha_rule='every_slice'` (GM-127, `analysis.m_alpha_statement`).
 - **`method_solved`** False when Spencer / Morgenstern-Price / GLE finds no
   equilibrium solution on the surface (the GLE does not converge; the
-  reason, e.g. "no lambda from -1.5 to 1.5 gives moment and force factors
-  of safety that agree", is in the warning). **`method_used`** names what
-  produced `FOS`: the method itself, the "legacy approximate ... solver",
-  or None. **`methods_without_solution`** lists the rigorous FOS fields
-  (headline or `compare_methods`) that hold no converged solution.
-- **What `FOS` holds when there is no solution** (decided here):
-  - *Supports cross the surface: `FOS` is None* (to_dict null,
-    `is_stable` None; the calc package prints no stability check). The
-    legacy approximate solver ignores supports, so its value is that of
-    the slope WITHOUT them: on #85's anchored toe circle 0.938 for a
-    surface Bishop puts at 1.372 (0.891 and 1.304 before GM-134). Before
-    GM-81 that number came back as
-    the Spencer FOS with only a Python warning. It is not returned at all.
-  - *No support crosses it: `FOS` is the legacy approximate solver's
-    value, labelled* (`method_solved` False, `method_used`, the warning
-    giving theta or lambda). That solver answers the same slope; on a
-    phi = 0 circle with theta = 0 it gives Bishop's value, which every
-    method satisfying moment equilibrium gives there. Values are unchanged
-    from before: `methods.solve_rigorous` makes the same solves as
-    `spencer_fos` / `morgenstern_price_fos`.
-  The same rule applies to the `compare_methods` Spencer / M-P values.
-- **Searches** never consume `analyze_slope`; they score with
-  `search._compute_fos`, which rejects a reinforced circle and any
-  noncircular surface with no GLE solution (GM-53, SS-6) and passes over
-  such toe circles in the rigorous re-scoring (GM-60). A circle no support
-  crosses is still scored by the legacy solver when the GLE fails (#85
-  without its support: every circle, see below), so when the governing
-  circle is one of those the search labels it
-  (`_legacy_critical_warning`: `critical.method_solved` False, a warning).
-- **Found on the way.** Without supports the GLE keeps the old lambda
+  reason, e.g. "no lambda from 0 to 1.5 gives moment and force factors
+  of safety that agree", is in the warning). **`method_used`** is ''
+  when `FOS` is the method's own solution and None when the method has
+  none (it could name the "legacy approximate ... solver" until GM-140
+  step 2). **`methods_without_solution`** lists the FOS fields (headline
+  or `compare_methods`) that hold no converged solution.
+- **What `FOS` holds when there is no solution.** Since GM-140 step 2,
+  nothing, with or without supports: `FOS` is None (to_dict null,
+  `is_stable` None; the calc package prints no stability check), and the
+  same for the `compare_methods` values. What GM-81 decided here, now
+  superseded: with supports crossing the surface `FOS` was None, because
+  the legacy approximate solver ignored supports (on #85's anchored toe
+  circle 0.938 for a surface Bishop puts at 1.372; 0.891 and 1.304 before
+  GM-134; before GM-81 that number came back as the Spencer FOS with only
+  a Python warning); with no support crossing it `FOS` was that solver's
+  value, labelled (`method_solved` False, `method_used`, the warning
+  giving theta or lambda). That solver (`methods.solve_rigorous` and the
+  `*_legacy` functions) has been removed.
+- **Searches** never consume `analyze_slope`; since GM-140 step 2 they
+  score every surface by the method's own solution (`solution.solve_method`
+  through `search._compute_fos`, the solver `analyze_slope` uses too), and
+  a surface with no solution is not scored and is counted by family and
+  method (`no_solution`). Until then a circle no support crossed was scored
+  by the legacy solver when the GLE failed (#85 without its support: every
+  circle, see below), and the search labelled such a governing circle
+  (`_legacy_critical_warning`, removed).
+- **Found on the way.** Without supports the GLE kept the old lambda
   search (GM-60 made only the supported one robust), and on #85's clay
-  without its support it finds no solution on any circle tried (a 6 x 6
-  Spencer search called the legacy solver 415 times); the legacy value is
-  Bishop's there. Not changed here.
+  without its support it found no solution on any circle tried (a 6 x 6
+  Spencer search called the legacy solver 415 times); the legacy value was
+  Bishop's there. Changed in GM-140 step 2: the robust lambda search
+  serves every run (the direct march where the fixed-point step cannot be
+  taken is still used with supports only; see "The lambda search").
+
+### Where a circle ends (GM-343; GM-140 after step 3, 2026-11-13)
+**The rule.** A circle's trial surface is an arc below the ground between
+two points where the circle meets the ground. A circle that meets the
+ground at more than two points (crossing it, or touching it; "The touch
+allowance" below says what counts as a touch) is split at those points.
+Each arc with ground above it is a trial surface of its own, solved and
+screened like any other (steps 2 to 4 apply to it unchanged), and a search
+scores each one that lies inside its entry / exit windows (it counts the
+others). A mass with no
+driving moment is refused, as any such surface is (step 2). Nothing is
+refused merely for being one of two masses, and no arc is carried under the
+ground in front of the toe. The result says which arc it is.
+
+**Print, and what is not printed.** The family of circles with their lower
+end on the face: FHWA NHI-06-088 p. 6-38. A search that covers face exits
+at every height: GEC 11 p. 9-6. No held reference prints a rule for a
+circle that meets the ground more than twice. Slide2 refuses it (its error
+-105; GM-122 below followed it). The split is the module's ruling of
+2026-11-13 (the orchestrator's, under the owner's standing word for
+judgement calls; OWN-143). The other form, for the owner: keep only the arc
+that holds the crest.
+
+**Why.** Taylor's stability number for a vertical face in a phi = 0 soil is
+3.83. For a 5 m cut, cu 20 kPa, 18 kN/m3, F = 3.83 x 20 / (18 x 5) =
+0.851, on a toe circle (centre (13.02, 10.96), R 13.00, from the toe to
+the crest at x 24.57; 0.8514 by hand). That circle's centre lies beyond the
+toe, so the circle goes on descending past the toe and runs under the level
+ground in front of it for 14 m before it comes out. That lens is symmetric
+about the centre: it adds arc and no driving moment. Before this step the
+module read the circle as one surface from the far floor crossing (2.676);
+circles leaving the face just above the toe were refused as two masses
+(GM-122); and the default search's answer, 0.935, was a circle that dipped
+0.048 m under the floor, inside the touch allowance, so the reported
+minimum moved with that constant. The toe-circle searches shrank each
+radius by a millionth so that the arc passed just above the toe, and the
+200-point sampling of `find_entry_exit` (a step of about 0.13 m) stepped
+over the gap of about 2e-5 m that this left.
+
+**How.**
+
+- *The meeting points* (`slip_surface.circle_ground_meetings`) come from the
+  ground's own segments and corners, not from sampling. On a ground segment
+  of slope m through (x0, z0) the circle meets the line where (1 + m^2) u^2
+  + 2 k m u + k^2 - R^2 = 0, with u = x - xc and k = z0 - yc + m (xc - x0);
+  the roots on the lower arc inside the segment are meeting points. The
+  depth of the arc below the ground is concave along a segment (the lower
+  arc is convex), so between neighbouring meeting points the arc is wholly
+  below the ground or wholly above it, and the depth can have a local
+  minimum only at a ground corner. A toe, or any other corner, therefore
+  divides the arc exactly.
+- *The touch allowance* is `_TOUCH_FRACTION` (1 %, the module's own value,
+  older than this step; no printed source) of the circle's greatest depth
+  below the ground. Its value is unchanged; its role is now: (1) a stretch
+  below the ground whose greatest depth is under it touches the ground,
+  carries no mass and is no arc (as before); (2) a ground corner inside an
+  arc that the arc passes under by less than it, where the depth has a
+  local minimum, is a touch (`CircleMeetings.touched`): a point where an
+  arc *given by its two ends* may end. Taylor's circle to two decimals (R
+  13.00) passes 0.007 m under the toe; `CircularSlipSurface(13.02, 10.96,
+  13.00, 20.0, 24.57)` ends it there (0.850). A circle given *without* its
+  ends is not split at such a corner: it crosses the ground twice and is
+  that one surface, as before this step (2.677 for that circle), and the
+  result says which corner it passed under, that it is not split there
+  and why, and how to end it there. A corner the arc passes *through*
+  (zero depth to a billionth of the radius: a circle built through a toe)
+  does split it.
+- *Why a touched corner does not split an ungiven circle* (a call, for the
+  owner; `_SPLIT_AT_TOUCHED_CORNERS`). The rule's words, "touching it
+  within the touch allowance", can be read to split there too. Built that
+  way first and measured: an arc may then pass up to the allowance under a
+  toe and be ended at it, which leaves a small free face, so every search's
+  minimum sat a little below its toe circles and moved with the constant.
+  The vertical cut read 0.844 where its toe circles read 0.8514 (Taylor
+  0.8511), and V-042's entry / exit search read 1.3269 for 1.3335 (printed
+  1.334), a benchmark whose circles cross the ground twice. As built, both
+  read as print. The orchestrator's ruling after the review (2026-11-13):
+  the builder's form stands, because an allowance must not change the
+  answer. Split there, the vertical cut's default search reads 0.8440,
+  the allowance acting as about 1 % more height (0.8511 x 5 / 5.05 =
+  0.843); not split, it reads 0.85135 whatever the allowance (0.005, 0.01
+  and 0.02 measured). The other form, for the owner (OWN-143): split there
+  (`_SPLIT_AT_TOUCHED_CORNERS = True`).
+- *A circle carries its arc's two ends*: `CircularSlipSurface(xc, yc,
+  radius, x_start, x_end)`. `find_entry_exit` returns them, so the slices,
+  the supports, the crack and every check are cut between them. `arcs(geom)`
+  gives one such circle per arc. A circle given without ends that bounds one
+  arc is that arc, as before. One that bounds several has no single entry
+  and exit: `find_entry_exit` raises `SeveralArcsError` (a `ValueError`),
+  which is not a refusal of the circle: the callers below score each arc.
+- *A stretch that runs out of the profile* below the ground at one of its
+  ends is not between two meeting points and is no arc. A circle's side (its
+  vertical tangent) with the ground above the centre's level ends an arc
+  there: the reverse-curvature circle of step 4, which its crack rule
+  closes or discards as before.
+- *One surface* (`analysis.lowest_arc`). `analyze_slope`,
+  `rapid_drawdown_fos` and `yield_acceleration` on a circle that bounds
+  several arcs analyse each arc as a surface of its own and return the
+  lowest; `arc` on the result names it (its two ends, its number among the
+  circle's arcs in x order, every arc of the circle), lists the others with
+  their value or the reason they have none, and counts those by reason
+  (`not_scored`: `no_driving`, `not_converged`, `refused`); the first
+  warning says the same in a sentence. FOSM and Monte Carlo on a given
+  circle take the arc with the lowest factor of safety at the values given
+  and hold it for every evaluation. Ends given by the caller must be the
+  two ends of one of the circle's arcs, or a touched corner inside it
+  (within a thousandth of the radius; they are set on those points), or
+  the surface is refused with the circle's arcs listed.
+- *The searches* (`search._compute_fos`, every family's scorer). A split
+  circle's score is the lowest of its arcs' scores; each arc goes through
+  the same solve, the same counts (`no_solution` by family, method and
+  reason, where an arc with no driving moment is counted under
+  `no_driving`) and the same flags. With entry / exit windows, the arcs
+  inside the windows are scored and the others are not: they are counted
+  by family in `SearchResult.arcs_outside_windows` (per trial evaluation,
+  as `circles_split`), the main family's automatic windows included, so
+  the statements say "each arc inside the windows". On the vertical cut
+  the default search's floor lenses are left out this way, not counted as
+  `no_driving`. `SearchResult.circles_split` counts the
+  circles split by the number of arcs each gave (it replaces the count of
+  circles refused; `n_rejected_ground_crossings` now counts polylines
+  only). The search remembers the arc that scored lowest on each split
+  circle, so the reported surface, its crack, its supports, the
+  acceptability report and every later analysis (`slip_surface.circle_of`:
+  the refinement walk's report, the calc package, the drawdown stages, the
+  probabilistic annex) keep its two ends, and `critical.arc` names it.
+- *The toe circles and the circles above the toe*
+  (`search_supplements.search_toe_circles`) take, on the circle through
+  each chord's two ends, the arc whose downslope end is the chord's start
+  (the toe, or the point on the face). The radius is the circle's own. A
+  circle with no such arc is not one of the family's surfaces. These two
+  families score only that arc (`search_toe_circles.toe_arc`); the
+  circle's other arcs are not scored by them and are not counted in
+  `arcs_outside_windows` (the main search meets such circles itself).
+
+**A polyline** that leaves the ground and comes back into it is still
+refused (`GroundCrossingError`, GM-122 below): the rule above is for
+circles, and the noncircular generators place their ends on the ground.
+
+**Measured** (`module_work/gm140/CIRCLE_ENDS_CHECK.md`). The vertical cut:
+the default Bishop search 0.935 -> 0.8514, on a toe circle (Taylor 0.8511,
++0.03 %); Taylor's circle through the toe, 120 slices, 2.676 -> 0.8515
+(0.8514 by hand). Spencer's
+method has no solution on that arc (no lambda from -1.5 to 1.5 at which the
+moment and force factors of safety agree) and says so: a Spencer or GLE
+search of such a cut can leave Taylor's surface unscored, and counts it.
 
 ### One sliding mass per trial surface (GM-122, GM-124; 2026-10-16)
+**Since GM-343 (2026-11-13) this section's refusal holds for polylines
+only.** A circle that meets the ground at more than two points is split
+there and each arc is scored ("Where a circle ends", above); what follows
+is the record of the rule as it stood for circles until then.
+
 **The rule.** Limit equilibrium takes the soil above the slip surface as one
 free body, divided into slices (Duncan, Wright & Brandon 2014, Ch. 6). A
 trial surface that is below the ground over more than one stretch leaves
@@ -934,8 +2173,10 @@ times at 30 slices; at 60 slices Spencer 42-56, Morgenstern-Price 42-68 and
 GLE 41-72 times. A whole search costs less than the ratio where it already
 scans with Bishop (the refinement walk, GM-87; the toe-circle families,
 GM-13): the default centre grid 5-13 times, an entry/exit grid 28-46 times.
-The noncircular searches score with Spencer whatever method is named for
-Bishop (PSO and weak_layer always). Measured on the same four slopes at 30
+The noncircular searches score with the method named (Spencer's method
+where Bishop's simplified method or the Ordinary Method of Slices is named;
+before GM-140 step 6, PSO and weak_layer always with Spencer's). Measured
+before step 6, which adds the circular search of `circle_check` to each, on the same four slopes at 30
 slices, at the tool's defaults (500 trials, 5 points), no budget, the
 supplementary families included (GM-129, 2026-10-17): `noncircular` 6.0-7.2 s,
 `weak_layer` 2.7-7.1 s, `noncircular_de` 9.9-11.8 s on three slopes and
@@ -969,6 +2210,12 @@ and the rigorous methods can rank circles differently where interslice
 forces matter.
 
 ### m_alpha below 0.2: Slide2's check on every scored surface (GM-127, 2026-10-17)
+
+> **Since GM-140 step 3 (2026-11-13)** a surface with m_alpha below 0.2 is
+> kept and flagged by default (OWN-102; see "The printed acceptability
+> checks" above). What this section describes, leaving such a surface out
+> and counting it, is the stated option `low_m_alpha='refuse'`. The values
+> below were measured under that rule.
 
 m_alpha = cos(a) + sin(a) tan(phi') / F, with the base angle a positive in
 the sliding direction, divides the normal force on a slice base in Bishop's
@@ -1153,8 +2400,9 @@ boundary, entry to exit, and `build_slices` cuts there.
   polyline asked for 60: 85). Every consumer works from the slices
   themselves (each method, m_alpha (GM-127), the slice tables, the
   rapid-drawdown stage mapping by `x_mid`), so none assumes equal widths;
-  a surface below the ground in more than one stretch (GM-122) is refused
-  by `find_entry_exit` before any slicing; the section figure draws each
+  a polyline below the ground in more than one stretch (GM-122) is refused
+  by `find_entry_exit` before any slicing (a circle is split there and
+  each arc sliced between its own two ends, GM-343); the section figure draws each
   polyline boundary from the surface at the boundary rather than at the
   slice's mid-base.
 - **The planar family** (infinite slope) is a polyline too: its end ramps
@@ -1234,8 +2482,9 @@ boundary, entry to exit, and `build_slices` cuts there.
   2.287) won partly by the tangent's error at their vertical end.
 - **What moved**: VALIDATION.md B16, every value with its old code's own
   value on 3,840 slices.
-- **Not done.** The edge of ponded water (where the water table crosses
-  the ground) is not a slice boundary.
+- The edge of ponded water (where the water line comes down to the
+  ground) is a slice boundary since GM-140 step 5a ("Pore pressure as
+  printed", below).
 
 ### The refinement walk moves on the method's own FOS (GM-138, 2026-10-18)
 - **The defect.** On V-043 (Slide2 #39 sand fill, c' = 0 / phi' 37 over 3 m
@@ -1382,6 +2631,259 @@ boundary, entry to exit, and `build_slices` cuts there.
   Taylor Bishop 2.1-2.3 / 2.1 s, Spencer 12.8-14.4 / 12.4 s; V-043 Spencer
   14.1-14.7 / 13.6 s; #85 with its support, Bishop 2.5 / 2.5 s.
 
+### Pore pressure as printed (GM-140 step 5a, 2026-11-13)
+
+The pore pressure on a slice base is the printed one for the kind of water
+input and the kind of strength the base's layer has, from ONE function,
+`pore_pressure.base_pore_pressure`, which `build_slices` calls. Every
+method (OMS, Bishop, Janbu, Spencer, Morgenstern-Price, GLE), every family
+of surfaces and every caller takes its slices from `build_slices`, so the
+rule holds for all of them (the list is in
+`module_work/gm140/STEP5A_CHECK.md`).
+
+- **The water line's kind (account D2; owner call OWN-104).**
+  `SlopeGeometry.water_line_kind` says what `gwt_points` is.
+  - `'piezometric'` (default): a piezometric line, "a surface connecting
+    the height or elevation that water would rise in a series of standpipe
+    piezometers" (UFC 3-220-10 Sec. 7-5.1, p. 355). u = γw × the full
+    vertical depth below it. Never corrected.
+  - `'water_table'`: a water table with seepage parallel to it. "When the
+    water table is sloping, use Equation 6-16 to calculate the water
+    pressure on the base of the slice: u = hw γw cos² αw", αw the slope of
+    the water table from the horizontal (FHWA NHI-06-088 p. 6-14); UFC
+    3-220-10 Sec. 7-5.1 (p. 355) lists "Water table or phreatic surface –
+    can be corrected to approximate the piezometric surface based on the
+    slope of the surface above the specific point". αw is the slope of the
+    line's stretch above the base's mid-point (at a vertex of the line, the
+    flatter of the two stretches; level beyond the line's ends). Where the
+    line is above the ground at the slice (ponded water) nothing is
+    corrected.
+  - Why the default is the uncorrected head although two manuals print the
+    correction (OWN-104): the correction holds for seepage parallel to a
+    straight water table, which is a statement about the seepage that only
+    the caller can make, and the full head is the lower factor of safety.
+  - A result with a line that slopes below the ground names the reading in
+    its `choices` ("pore pressure under the sloping water line"), with the
+    premise and the other reading. A level line reads the same either way
+    and has no entry.
+  - The printed case: FHWA NHI-06-088 Sec. 6.3 (pp. 6-7 to 6-8, Fig. 6-4,
+    Eqs. 6-6 to 6-10), the infinite slope with seepage parallel to it. The
+    pore-water force on the base is U = γw b h cos β over a base b / cos β
+    long, that is u = γw h cos² β, and for c' = 0 the dry FS is "reduced by
+    the factor γ'/γsat" (Eq. 6-10). A plane 390 m long, 0.5 m below a 2H:1V
+    face with the water table at the surface, reproduces Eq. 6-10 with
+    `'water_table'` (OMS 0.6704 against 0.6704) and the full-head statics
+    with `'piezometric'` (OMS 0.5007 against 0.5007);
+    `tests/test_pore_pressure_as_printed.py`.
+- **ru in a layered column (D3).** u = ru × the total overburden stress at
+  the base: the weight of the soil column above it per unit width, each
+  soil at its own unit weight (the column step 1 weighs). EM 1110-2-1902
+  C-7 (p. C-29) defines ru = u / (γ z) for a uniform slope only; the sum
+  over a layered column is the module's reading of that definition, and
+  the result says so (`choices`, "pore pressure from ru"). A surcharge and
+  ponded water are not in the overburden: γ z is the soil's weight (and a
+  base under ponded water is under the line, which governs there). ru is
+  used where the line gives no pressure at the base, as before. It was
+  ru × γ(base layer) × the column's height.
+- **Total-stress layers (D4).** No pore pressure is subtracted on the base
+  of a slice whose layer is analysed in total stresses: "For total stress
+  analyses, pore water pressures are set to zero" (EM 1110-2-1902 Table
+  2-1, p. 2-2); "the pore water pressure should be set to zero" (2-2c,
+  p. 2-4). Total-stress layers: Mohr-Coulomb with
+  `analysis_mode='undrained'`, `'shansep'` and `'anisotropic'`. These all
+  have φ = 0 at the base, so no factor of safety moves; the slice table's
+  u and the GLE's "base tension" note do. `Slice.water_pressure` keeps the
+  water pressure at the base, which the SHANSEP and Hoek-Brown stresses
+  still use (D40, not changed). A total-stress layer given φ > 0 that lies
+  under water draws a warning citing Table 2-1's note 2 (total-stress
+  envelopes with φ > 0 apply only to partially saturated soils) and saying
+  that the φ given is not used.
+- **The pond's edge (D16).** Where the water line comes down to the ground
+  is a slice boundary (`pore_pressure.pond_edges`, in `slice_breaks`), for
+  circles and polylines: each slice's top is wholly under the pond or
+  wholly out of it, and the slices' pond weights add up to the water over
+  the surface at any slice count. FHWA NHI-06-088 p. 6-14 puts slice sides
+  "at the intersection of the ground water level and the circle" and tops
+  "at breaks in the slope"; the pond's edge is cut as a surcharge's edge is.
+- **The pond's thrust on a slice** (`slices._pond_thrust`) is the
+  horizontal resultant of the water's pressure on the ground across the
+  slice, from the pool's depth at each SIDE of the slice (the line's own
+  elevation there less the ground's): γw × the mean depth × the ground's
+  rise over the stretch where the line is above the ground, at the centroid
+  of that pressure trapezoid (boundary water forces with total weights,
+  FHWA NHI-06-088 p. 6-13). Under a level pool this is ½ γw (d_l² − d_r²),
+  the form used before. That form took both depths from the line's
+  elevation at the slice's MIDDLE: the same under a level pool and wherever
+  the line is above the ground at both sides, but a sloping line AT or just
+  under the ground (a water table at the surface of a face) read as a pool
+  at each slice's lower side, with a thrust into the slope. Found while
+  pinning the correction to print: the long plane above read OMS 0.860
+  (Spencer 1.103) as a piezometric line where statics gives 0.501.
+  - **Departure, declared (the step 5a review, ruling 1).** What the
+    step's brief allowed to move a value: ru in a layered column (D3),
+    total-stress bases (D4) and the pond's edge (D16). What this changes:
+    the thrust where a water line is at or just under a sloping ground,
+    which was a phantom pool pushing into the slope; where the pool covers
+    both sides of a slice the value is the old one. Why: it is arithmetic,
+    and the old value erred on the unsafe side. The closed form (made-up
+    values; `TestPondThrust` in `tests/test_pore_pressure_as_printed.py`):
+    a 2H:1V face, c' = 5 kPa, φ' = 34°, γ = γsat = 19.5 kN/m³, the water
+    line on the ground read as a piezometric line, a plane 2 m (vertical)
+    below the face. Per metre of plan W = γsat z, u = γw z, N' = W cos β −
+    u / cos β, and F = c' / (γsat z sin β cos β) + (γsat cos² β − γw)
+    tan φ' / (γsat sin β cos β) = 0.3205 + 0.5007 = 0.8212. OMS on the
+    finite plane (60 slices) gives 0.8238, which is the same statics
+    summed over the plane and its two 2 m end stretches, the frictional
+    term taken as printed where it is negative on the steep head stretch
+    (D21, GM-140 step 3); 0.8253 with `negative_friction_term='zero'`.
+    Before this step it gave 0.9140 (0.9124 with step 3's frictional
+    term). Saved answers that move: such a face, −10 to −13 % (OMS,
+    Janbu, M-P); V-031, −0.005 % (`module_work/gm140/STEP5A_CHECK.md`,
+    "Fix round after review", with the branch against master after the
+    merge with steps 3 and 9).
+- **A pore-pressure grid with a line** (unchanged): the grid governs the
+  base pressure wherever it is given; the line gives the pond's loads and
+  the saturated unit weights below it. The result says so.
+- **Rapid drawdown**: the stages' slices come from `build_slices`, so they
+  take the same function. The pools are level unless a line is given: a
+  sloping seepage line before drawdown (`stage1_phreatic_points`) or a
+  line after it (`drawdown_phreatic_points`, GM-140 step 9) is read as
+  `water_line_kind` says, and the result names it ("Stage 1 (before
+  drawdown): ...", "After drawdown: ..."; `rapid_drawdown.
+  _stage_water_statements`, on every return, a run with no solution
+  too). The ru, grid and total-stress statements concern the same soils
+  in every stage and are said once, by stage 1.
+
+### Reporting as printed (GM-140 step 10, 2026-11-14)
+
+A result and its report show what the print asks an engineer to be shown;
+no factor of safety changes.
+
+* **Contours of the minimum FOS over the centres (D46).** A grid search's
+  centres carry `node` = (ix, iy) in `grid_fos` and the result its grid
+  (`SearchResult.centre_grid`). `report_views.centre_contours` lays the
+  per-centre minima scored by the method on the grid (a centre a screen
+  alone scored is left out) and judges whether the lowest contour closes
+  inside the grid (the fix round's rule, D1 of the review): it closes when
+  the lowest value inside the grid is below the lowest value on its edge
+  AND every centre next to (eight neighbours) the centres below the level
+  midway between the two has a value; then the midway contour encloses the
+  minimum without reaching the edge. It is open when the edge's lowest is
+  at or below the lowest inside, "cannot be judged" (`closed` None) when a
+  centre next to the low ones has no value, or no centre inside the edge
+  (or none on it) has one, and "does not close" when the grid has no
+  centre inside its edge. The module's reading of the plot, not a printed
+  formula: GEC 11 Vol. II p. 9-24 prints "A contour plot of lowest safety
+  factor values about the trial failure circle centroids is recommended";
+  FHWA NHI-06-088 Fig. 6-13, pp. 6-22 to 6-23; Duncan, Buchignani and De
+  Wet (1987), Fig. 28. Where the method's own values cannot be judged (or
+  there are none) and the search screened its circles by Bishop's
+  simplified method, the screen's values are contoured instead and every
+  line names them "Bishop's simplified method (the screen)" (the
+  orchestrator's ruling, Q1); `grid_search` keeps each re-scored centre's
+  `screen_FOS` for it. Where the governing surface's centre lies outside
+  the grid (another family governs), the statement says so. The levels
+  drawn are four through the values and, when the contour closes, the
+  midway level, each only where a whole cell of four valued centres spans
+  it (`contour_levels`); with none, the figure says why no contour is
+  drawn (`no_contour_reason`). `to_dict()["centre_contours"]` (with
+  `values_by`, `verdict`, `level`), the summary, the report's table
+  "Minimum FOS over the Circle Centres" and the figure
+  `plot_centre_contours` (the grid outlined, the critical centre marked
+  and, with the screen's contours, the named method's lowest surface; the
+  drawing at true scale).
+* **The ten lowest surfaces (D47).** `report_views.lowest_surfaces`, from
+  a pool (the ruling on the review's Q3): each family's ten lowest scored
+  surfaces, by the method that scored the family (`SearchResult.
+  family_lowest`, kept while the search runs by `search._note_lowest`; a
+  tension-crack surface once, at its final value), more than one circle
+  about a centre allowed, each surface once to 0.01 m, a value a screen
+  alone gave never in it; a result without `family_lowest` falls back to
+  `family_surfaces`. In order, each with its FOS, family, method and
+  geometry as scored (to 0.0001 m, with the arc's ends where the trial was
+  one arc), so each can be analysed again at its listed value (a radius
+  rounded to 0.01 m reached past the profile's end on #85's eighth
+  surface). FHWA NHI-06-088 p. 6-49; EM 1110-2-1902 4-3b(9)(b), p. 4-8.
+* **Inputs that do nothing in the case (Q4).** A package input given a
+  value other than its default that could act but did nothing in the case
+  (`tol` with the Ordinary Method of Slices
+  scoring the surface reported, `base_in_tension` where no slice base was
+  in tension on the surface reported or any trial, `reverse_curvature`
+  where no circle had reverse curvature) is accepted, and the report's
+  Method Choices and the response (`inputs_without_effect`) say it did
+  nothing and why. A value equal to the default is not said: it is what
+  the package does without it, and gives the same result as leaving it
+  out (`test_defaults_used`). A value that could never act is still
+  refused (a `tol` above 1e-4 with a method other than Bishop's).
+* **A search stopped by its time budget before it scored a surface**: the
+  report package's refusal says so, with the budget and the time it ran,
+  and asks for a larger `time_budget_s` (not a wider grid; D6).
+* **The slice table first** in the report (EM 1110-2-1902 4-2d(2), p. 4-2).
+* **The method each family was scored with** (step 6's statements), with a
+  stand-in's reason, Janbu's f0 where Janbu's method stands in, method
+  named against method used, the unsolved line as the result words it, the
+  circle check and an Ordinary Method of Slices search refused where
+  supports cross: the report's table "The Method Each Family Was Scored
+  With".
+* **A circle through c' = 0 soil at the face** (`analyze_slope`): a
+  statement that a single circle there overestimates against the
+  infinite-slope mechanism, which the search scores with planes
+  (`cohesionless_circle_statements`). A statement only.
+* **Figures at print size (GM-186).** The interslice figure's title on two
+  lines and the line-of-thrust key on three, so both print at 7 pt or more
+  at 5 in; the keys of the cross-section, slice-force, interslice and
+  contour figures below the plot (`plotting._key_below`), the factor of
+  safety heading the cross-section's key; the circle centre's label hangs
+  from the centre on the side away from the radius line; the entry and
+  exit labels sit outside the arc, above the ground (below it where the
+  ground rises away from the end), so neither lands on the ground line's
+  label. The contour and interslice figures are drawn at 5.0 in wide, the
+  interslice figure's theta or lambda on its own title line, so their
+  lettering prints at 7 pt or more (D4).
+
+**Out of scope (the audit's row 1), what each would need:** a
+rapid-drawdown package: the `rapid_drawdown_fos` / `search_rapid_drawdown`
+result's three stages and the per-slice table of Figs. G-10b and G-11b
+(`slice_table()`) as calc steps, the water before and after drawn on the
+section, and the stage factors of safety as a check; a yield-acceleration
+package: the kh search's trace (kh against FOS to FOS = 1) and the critical
+surface at ky; FOSM and Monte Carlo packages: the existing probabilistic
+annex of `calc_steps._probabilistic_section` as the package body, on a
+given surface, with the variables table. None is built.
+
+**Calls made (for the owner's review, OWN-143).** Each with the form taken
+and the other form.
+
+1. *Closed contour*: taken, D1's rule above (lowest inside below lowest on
+   the edge, and every neighbour of the centres below the midway level
+   valued, else "cannot be judged"); other form, the builder's (lowest
+   inside below lowest on the edge, missing centres not considered).
+2. *The pool for the ten lowest*: taken, every family's ten lowest by the
+   method that scored it, more than one circle per centre, distinct to
+   0.01 m, never a screen's value; other form, the main search's trials
+   plus each other family's lowest surface.
+3. *tol above 1e-4*: taken, refused unless the method is Bishop's (it
+   changes nothing); other form, wire tol into the GLE solvers as given,
+   which moves values at the default.
+4. *`m_alpha_rule` of the rapid-drawdown tools*: taken, set in dispatch's
+   MODULE_DEFAULTS; other form, declare it as an input of
+   `rapid_drawdown_fos` (past that description's 16,000-character budget).
+5. *The factor of safety on the cross-section*: taken, in the key's title;
+   other form, a box on the drawing (it met a label in every corner on one
+   probe or another).
+6. *The slice table first* (EM 1110-2-1902 4-2d(2)): taken, first among
+   the calculation sections, after the package's input echo; other form,
+   ahead of the input echo.
+7. *`base_in_tension` in the report package*: taken, always applied (the
+   report compares every method on the critical surface); other form, only
+   with a GLE-system method named, as `slope_stability_package` takes it.
+8. *Q1, which values the contours show*: taken, the method's own, and the
+   Bishop screen's, named as such, where the method's cannot be judged;
+   other form, contour only the centres the named method valued and say
+   "cannot be judged".
+9. *Q4, an input that does nothing in the case*: taken, accepted and
+   stated with its reason; other form, refused.
+
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
   directly, because `sin(alpha)` can be negative for L-to-R slopes
@@ -1488,7 +2990,9 @@ boundary, entry to exit, and `build_slices` cuts there.
     rejects a MAJORITY of its trials emits a `warnings.warn` so an
     under-resolved / mis-windowed search is not silently reported as a clean
     result.
-  - **Convergence-gate moment axis has a robust fallback** (v5.3 review fix):
+  - **Convergence-gate moment axis has a robust fallback** (v5.3 review fix;
+    removed from scoring by GM-140 step 2, see "A method's own solution, or
+    no number"):
     `_rigorous_noncircular_fos` first tries gle's internal least-squares axis
     (byte-identical to before) and, only if that fails to converge, retries with
     an explicit pinned `axis_point` (`_noncircular_axis_point`: span midpoint,
@@ -1505,100 +3009,105 @@ boundary, entry to exit, and `build_slices` cuts there.
   surface to (γ'/γ)·that. Validated vs Slide2 #79 (1.44) / #81 (1.15). This is
   the exact answer for the c'=0 circular-overestimate limitation noted above;
   the search reaches it through the infinite-slope family (GM-14).
-- **Rapid drawdown (v5.3 B2a)** — `rapid_drawdown.rapid_drawdown_fos(geom, from_el,
-  to_el, xc/yc/radius, method='corps_2stage'|'lowe_karafiath'|'duncan_3stage')`
-  → `RapidDrawdownResult`
-  (also `analysis.rapid_drawdown_fos`). Low-permeability layers carry the total-stress
-  **R-envelope** (`R_c`, `R_phi`) alongside the effective `c_prime`/`phi`; `R_phi is
-  None` = free-draining. The method is wired to the GLE engine by OVERRIDING each
-  undrained slice's base strength to a fixed `c = τ_ff, φ = 0` and re-solving. Theory:
-  * **Stage 1** — effective-stress ("S") analysis at the FULL pool gives the
-    consolidation stresses on each base: σ'_fc = N'/l and τ_fc = S_mob/l (from the
-    GLE per-slice effective normal / mobilized shear).
-  * **Stage 2** — undrained strength τ_ff. Corps 2-stage: τ_ff = min(R-envelope,
-    drained) at σ'_fc (the "combined" envelope, capping R-envelope over-strength at
-    low σ'). Duncan 3-stage AND Lowe-Karafiath 2-stage: linear interpolation with the
-    consolidation stress ratio Kc = σ'_1c/σ'_3c between the Kc=1 (R / IC-U, lower) and
-    Kc=Kf (drained, upper) envelopes: τ_ff = τ_R + (Kc−1)/(Kf−1)·(τ_drained − τ_R),
-    capped at the drained (Kf) bound. Kc per slice is back-figured from σ'_fc, τ_fc
-    and the base angle α assuming a vertical major principal consolidation stress;
-    Kf = (1+sinφ')/(1−sinφ'). **Lowe-Karafiath (1960)** uses this identical stage-2
-    strength but stops here (no stage 3); Duncan-Wright-Wong (1990) is Lowe-Karafiath
-    plus the stage-3 drained check, so `lowe_karafiath` FOS ≥ `duncan_3stage` FOS
-    always (stage 3 only ever *substitutes a lower* strength). On the exact #95/#96
-    dam `lowe_karafiath` lands at 1.36 flat / 1.45 seepage — the seepage value sits
-    on the published Duncan-Wright-Wong 1.443, corroborating that the Kc stage-2 is
-    sound and the default 3-stage's deficit is entirely the Fellenius stage-3 normal
-    (see the E2 note below), not the interpolation.
-  * **R-envelope input convention — the Kc=1 line (EM G-12 reconciliation).** The
-    Kc=1 (R / IC-U) envelope is taken DIRECTLY as `τ_R = R_c + σ'_fc·tan(R_phi)`,
-    i.e. `(R_c, R_phi)` are the strength envelope ALREADY plotted as τ_ff vs the
-    effective consolidation stress σ'_fc — the "Total Stress R Envelope (linear)"
-    Slide2/GeoStudio expose and that the EM 1110-2-1902 App. G verification
-    problems (#95–#99) tabulate. This is NOT the raw isotropically-consolidated CU
-    triaxial envelope: EM Eq. G-12 maps that raw envelope onto the τ_ff-vs-σ'_fc
-    plane via d = R_c·cos(R_phi)·cos(φ')/(1−sin R_phi) and ψ = atan[sin(R_phi)·
-    cos(φ')/(1−sin R_phi)]. Feeding the raw parameters through *and* letting the
-    module treat them as the plotted line would double-apply that transform and
-    OVER-predict: for #96 (R_c=1200 psf, R_phi=16°, φ'=30°) the G-12 image is
-    (d=1379 psf, ψ=18.24°), which drives `lowe_karafiath` to 1.53 seepage —
-    overshooting the published 1.443 that the raw (as-plotted) inputs reproduce at
-    1.45. So supply `(R_c, R_phi)` as the τ_ff-vs-σ'_fc envelope (Slide2
-    convention, validated by V-037/V-048); a user starting from raw CU triaxial
-    data applies EM G-12 first. Confirmed empirically (raw 1.45 vs G-12 1.53 on
-    #95/#96; published 1.443).
-  * **Stage 3** (3-stage only, `duncan_3stage`) — where the post-drawdown DRAINED
-    strength (low-pool effective stress) is less than the stage-2 undrained strength,
-    it is substituted
-    (Duncan, Wright & Brandon 2014, Ch. 9: third-stage drained strength on the
-    drawn-down effective stresses).
-  * The final FOS is a GLE/Spencer solve at the DRAWN-DOWN pool (external water load
-    removed to the low level; undrained slices carry τ_ff as φ=0 total-stress
-    strength). Validated vs Slide2 #95 (2-stage) / #96 (3-stage) — see RESULTS V-037/V-038.
-  * **Stage-1 seepage option (`stage1_phreatic_points`)** — the DEFAULT stage-1 uses a
-    flat full-pool phreatic (hydrostatic to the reservoir), the conservative
-    no-through-seepage bound. A low-permeability embankment under an established full
-    pool actually has a steady-state seepage field whose phreatic DECLINES through the
-    dam, so the true σ'_fc (and mobilized τ_ff) are higher. Passing the flow-net /
-    Casagrande phreatic line as `stage1_phreatic_points` (a `[(x,z),…]` surface that
-    starts at the pool level on the upstream face, preserving the external reservoir
-    load there) reproduces the steady-seepage condition Slide2/EM 1110-2-1902 use.
-    Default `None` = unchanged. For Slide2 #95 this recovers the Corps 2-stage FOS from
-    the conservative 1.21 to 1.34 vs the published 1.347 (~0.6%).
-  * **Duncan 3-stage for c'=0 soils — stage-3 normal (v5.4 E2).** For #95/#96 the
-    default 3-stage lands ~12% below the published 1.443. The V5.3 note blamed the Kc
-    interpolation; the E2 re-investigation found the Kc interpolation is sound (it yields
-    ~1.45 on its own) and the deficit is in the STAGE-3 drained substitution: the
-    drawn-down effective normal σ'_post was estimated with the Fellenius `W·cosα/l − u`
-    term, which under-predicts N' (it neglects interslice forces) and so substitutes a
-    too-low drained strength on 17/50 slices. The optional
-    `stage3_effective_normal='gle'` uses the RIGOROUS GLE effective normal from a
-    drawn-down drained solve (the same `base_normal_eff` basis stage 1 uses) — 9
-    physically-genuine substitutions instead of 17 — lifting #96 to 1.306 (flat) /
-    1.370 (seepage), closing most of the residual (~5% left, within the
-    representative-flow-net + LE-N'-at-FOS sensitivity that shows as the +0.6% Corps
-    residual). **Default is `'fellenius'` (byte-identical to before);** the refinement
-    is opt-in. Only the 3-stage has a stage 3, so the 2-stage is untouched.
-    The default is the Ordinary Method of Slices estimate of the normal, as
-    FHWA NHI-06-088 sets the method out (pp. 6-12 to 6-13: the side forces
-    ignored, the uplift at the base taken off the total weight);
-    'gle' takes the normal from a rigorous equilibrium solution, the basis
-    stage 1 uses, and comes closer to Duncan, Wright & Wong (1990)'s published
-    3-stage values (#96: 1.31 / 1.37 against 1.443; 'fellenius' 1.235 /
-    1.273). The default stays 'fellenius' by the owner's ruling.
-  * **The Fellenius normal under the remaining pool (GM-57 review).** Water
-    ponded above a slice raises its total normal stress and its pore pressure
-    equally (FHWA NHI-06-088 p. 6-13: total weights with the boundary water
-    forces, or submerged weights, give the same result), but the per-slice
-    `W·cosα/l − u` counted the pond's pressure on the base in full and its
-    weight only at cos²α. Under a deep pool on an inclined base σ'_post went
-    negative, was clamped to zero, and the drained substitution left no
-    strength: the true Pilarcitos section searched fully automatically gave
-    DWW 0.052 on a toe circle wholly under the remaining pool (2.048 with
-    'gle'). `_fellenius_effective_normal` takes the pond out of both W and u:
-    that circle now gives 1.57; slices with no pond are byte-identical. (The
-    stage-1 fallback, used when the full-pool GLE fails, uses the same
-    estimate.) The default stays `'fellenius'` (the owner's ruling).
+- **Rapid drawdown, as EM 1110-2-1902 Appendix G prints it (GM-140 step 9,
+  2026-11-13)** — `rapid_drawdown.rapid_drawdown_fos(geom, from_el, to_el,
+  xc/yc/radius, method='duncan_3stage'|'lowe_karafiath'|'corps_2stage')`
+  → `RapidDrawdownResult` (also `analysis.rapid_drawdown_fos`). **The rule:
+  each stage is computed as Appendix G prints it, each stage's factor of
+  safety is reported, and the answer is the factor of safety of the last stage
+  computed.** A layer that does not drain freely carries the R envelope
+  (`R_c`, `R_phi`) beside its effective `c_prime`/`phi`, or the measured
+  `R_d`, `R_psi`; a layer with neither is free-draining. The manual (31 Oct
+  2003) is the owner's copy; the equations below were read from its pages.
+  * **First stage (G-3a, p. G-2).** Effective-stress analysis with the pore
+    pressures before drawdown: σ'_c = N'/dl (Eq. G-1), τ_c = S/dl (Eq. G-2).
+  * **Strengths for the second stage, `lowe_karafiath` and `duncan_3stage`
+    (G-3b, pp. G-4 to G-8).** The strength of soil consolidated at K_c = 1 is
+    τ_ff = d + σ'_c tan ψ (Eq. G-9), with d = c_R cos φ_R cos φ' / (1 − sin φ_R)
+    (Eq. G-5) and ψ = arctan[sin φ_R cos φ' / (1 − sin φ_R)] (Eq. G-6)
+    (`r_envelope_d_psi`), or d and ψ as measured (`R_d`, `R_psi`; G-3b(1)(a)
+    and (b)). The strength of soil consolidated at failure is τ_ff = c' + σ'_c
+    tan φ' (Eq. G-10); K_f by Eq. G-7 where c' = 0 and Eq. G-8 where it is not
+    (`_Kf`). The slice's K_c is Eq. G-11 (p. G-7), held between 1 and K_f
+    (`consolidation_stress_ratio`), and τ_ff Eq. G-12 (p. G-8;
+    `second_stage_strength`).
+  * **Strength for the second stage, `corps_2stage` (G-2, pp. G-1 to G-2).**
+    The lower of the R envelope, c_R + σ'_c tan φ_R with c_R and φ_R as
+    entered, and the effective-stress envelope. No third stage.
+  * **Second stage (G-3c, p. G-8).** Solved after drawdown with τ_ff as
+    cohesion, φ = 0 and no pore pressure on the slices that do not drain
+    freely; c', φ' and the pore pressure after drawdown on the free-draining
+    ones; the water left against the slope is an external load. Its factor of
+    safety and its N on every base are kept. It is the answer of
+    `lowe_karafiath` and `corps_2stage`.
+  * **Drained check (G-3d, p. G-8), `duncan_3stage`.** σ = N/dl with N from
+    the second stage (Eq. G-13), σ'_d = σ − u with u after drawdown (G-14),
+    s_d = c' + σ'_d tan φ' (G-15) (`drained_check`). A negative σ'_d gives
+    s_d = c': the manual prints 0.00 for such a slice with c' = 0 (Fig. G-11b);
+    for c' above zero that is the module's reading. Where s_d is not below
+    τ_ff on any slice the second stage is the answer and no third stage is
+    computed.
+  * **Third stage (G-3e, pp. G-8 to G-9).** The second stage again with c', φ'
+    and the after-drawdown pore pressure on the slices whose drained strength
+    is lower (not that strength entered as a cohesion), τ_ff with φ = 0 on the
+    rest.
+  * **Water (Table 2-1, p. 2-2; G-4b, p. G-9).** Before drawdown: the seepage
+    line when one is given (`stage1_phreatic_points`), otherwise a level pool,
+    the assumption of the manual's own example ("for simplicity"; seepage
+    analyses would often be appropriate), named in the result as assumed.
+    After drawdown: the line given (`drawdown_phreatic_points`), otherwise the
+    level lowered pool, named. No printed benchmark uses a line after
+    drawdown.
+  * **One set of slices (GM-135).** The slices are cut at the water crossings
+    before and after drawdown alike and paired by index; a surface on which
+    the two cuts differ is refused.
+  * **A stage with no solution gives no number.** `FOS` is None and
+    `no_solution` says which stage and why; no Ordinary Method of Slices
+    estimate stands in for a first stage that did not converge.
+  * **A base in tension before drawdown (σ'_c below zero).** The manual
+    prints no rule. The module takes σ'_c as zero there, uses the lower of
+    the two envelope strengths and names the slices in a warning.
+  * **What the result carries.** `stage1_fos`, `stage2_fos`, `stage3_fos`
+    (None where not computed), `answer_stage`, `stage_method`, `water_before`,
+    `water_after`, `choices`, and per slice the columns of Figs. G-10b and
+    G-11b: σ'_c, τ_c, K_c, K_f, the two envelope strengths, τ_ff, the second
+    stage's N, the after-drawdown u, σ'_d, s_d and the strength used
+    (`slice_table()`; `to_dict()["slices"]`).
+  * **The method of slices.** Every stage is solved by Spencer's method (the
+    GLE engine; `f_interslice` selects another side-force function), which the
+    manual recommends (G-5, p. G-9). The manual's example of the improved
+    procedure is by the Simplified Bishop Method (2.20 / 1.52 / 1.44, pp. G-15
+    to G-20) and its example of the 1970 procedure by the Modified Swedish
+    Method with the side forces at a fixed 19.4 degrees (3.49, then 1.35;
+    pp. G-9 to G-15). **The manual's check method (EM C-4):**
+    `rapid_drawdown.fixed_inclination_solution(slices, slip, theta_deg,
+    equilibrium)` is the force-equilibrium factor of safety at a fixed,
+    constant side-force inclination (the GLE engine's direct march at
+    λ = tan θ), and, with `equilibrium='moment'` at θ = 0, the Simplified
+    Bishop Method. It is a library function for reproducing the manual's
+    numbers (`rapid_drawdown_fos(stage_solver=('force', 19.4))` or
+    `'bishop'`, with `extra_boundaries` for the manual's own slice edges);
+    it is not one of the agent's tools and not a `method` name. On the
+    manual's example the 1970 procedure reads 3.486 / 1.341 by that method
+    (printed 3.49 / 1.35) and 1.239 by Spencer's method, the module's answer;
+    a Corps result says so in `notes`.
+  * **The removed input.** `stage3_effective_normal` ('fellenius', an
+    Ordinary Method of Slices normal, or 'gle', a drained solution of the
+    drawn-down slope) is gone: neither basis is the manual's. A caller who
+    names it is refused with the rule (`STAGE3_NORMAL_RULE`). This settles
+    OWN-17.
+  * **What this replaced.** Until step 9 the K_c = 1 strength took c_R and
+    φ_R as entered (13 % low on the manual's example: 1,200 psf and 16° are
+    1,379 psf and 18.2° by Eqs. G-5 and G-6, and Fig. G-5 prints both pairs),
+    K_c came from the base inclination with two special branches (1.68 to
+    3.00 on the example's slices, where Eq. G-11 gives the printed 1.71 on all
+    twelve), the drained check ran before any second-stage solution on an
+    Ordinary Method of Slices normal, and the second and third stages were one
+    solve. An earlier note here argued from values on a seepage line no page
+    prints that c_R and φ_R were already the τ_ff-against-σ'_c envelope; the
+    manual's own example shows otherwise, and that note is withdrawn. Pinned
+    stage by stage in `tests/test_rapid_drawdown_em_appendix_g.py`; record in
+    `module_work/gm140/STEP9_CHECK.md`.
 - **Rapid-drawdown critical-surface search (v5.4 E1)** — `rapid_drawdown.
   search_rapid_drawdown(geom, from_el, to_el, method=…, surface_type='circular'|
   'entry_exit'|'noncircular'|'noncircular_de', …)` → `RapidDrawdownSearchResult`
@@ -1611,8 +3120,10 @@ boundary, entry to exit, and `build_slices` cuts there.
   closure so the grid/entry-exit/random/DE loops, radius optimisation, entry/exit
   filtering, and noncircular guards are all SHARED — no search internals are duplicated.
   The result carries the ordinary rich `SearchResult` plus the stage-level
-  `RapidDrawdownResult` recomputed on the winning surface. **Robustness gate:** the
-  drawdown closure REJECTS a trial surface whose stage-1 or stage-3 GLE did not converge,
+  `RapidDrawdownResult` recomputed on the winning surface. **Every trial is scored by
+  `rapid_drawdown_fos` itself (GM-140 step 9), so a trial on which a stage has no
+  solution, or whose slices before and after drawdown differ, is not scored.**
+  The drawdown closure also REJECTS a trial surface
   whose drawn-down solve retained too few slices, or whose stage-1 (full-pool) FOS is
   implausibly low (<0.5) — a large near-flat circle self-clips to a handful of slices
   whose GLE "converges" to a spurious low FOS (~0.18) that would otherwise win the
@@ -1690,31 +3201,15 @@ boundary, entry to exit, and `build_slices` cuts there.
     byte-identical. Implemented via `reinforcement.moment_resistance` /
     `horizontal_resistance` (passive forces) alongside the existing `*_reduction`
     (active forces), split on `ReinforcementForce.passive`.
-- **Tension crack — side + model (v5.4 E4)**: `geom.tension_crack_depth` opens a
-  vertical crack at the CREST end of the slip surface; `tension_crack_water_depth`
-  fills it (hydrostatic thrust `0.5·γw·z_w²` at `z_w/3` above the crack base,
-  treated downstream as an always-driving magnitude). Two selectors, both
-  DEFAULT-PRESERVING:
-  * `tension_crack_side` = `'entry'` (default, low-x) or `'exit'` (high-x) — the
-    crack forms on whichever side the crest is on. The exit-side option removes
-    the old need to MIRROR the slope so the crest landed on the entry side (the
-    exit-side crack on the un-mirrored slope is machine-precision identical to the
-    entry-side crack on the mirror, by symmetry).
-  * `tension_crack_model` = `'strength'` (default) keeps the cracked wedge as
-    zero-shear-strength DRIVING soil; `'truncation'` REMOVES it from the sliding
-    mass (the mass ends at the vertical crack face), matching Slide2/UTEXAS.
-    Truncation is LESS conservative (removes the driving wedge). On Slide2 #2 /
-    ACADS 1(b) the truncation model reproduces the published water-crack FOS
-    (Bishop 1.596/Spencer 1.592/GLE 1.592) to <0.1%, resolving the V-026
-    strength-model conservatism (documented there as a CONVENTION). See
-    VALIDATION.md B9 / RESULTS V-026.
+- **Tension crack**: see "Tension cracks and reverse-curvature circles as printed" above (GM-140 step 4). Since that step the surface ends at the crack by default (`tension_crack_model='truncation'`), the crack is at the crest end (`tension_crack_side='crest'`) and its depth can be Rankine's or scanned; `'strength'` is the earlier default.
 - **Empty-space slices**: slices where the slip surface is below all soil layers
   are skipped (zero weight, no contribution)
 - **Nails**: `SlopeGeometry.nails` (`nails.SoilNail`) reach every method
   through `reinforcement.py`, with anchors, geosynthetics and stabilizing
   piles (see "Support forces in each method" above). The old nail path in
   `nails.py`'s own FOS integration is not used; its tests stay skipped.
-- **The legacy Spencer / Morgenstern-Price are APPROXIMATE (SS-1)**:
+- **The legacy Spencer / Morgenstern-Price were APPROXIMATE (SS-1)**
+  (removed by GM-140 step 2; the rest of this entry is history):
   `spencer_fos_legacy` / `morgenstern_price_fos_legacy` use a shifted
   m_alpha = cos(alpha−theta) + sin(alpha−theta)·tanφ/F formulation (with
   theta = const for Spencer, atan(λ·f(x)) for M-P) and a force-equilibrium
@@ -1730,10 +3225,11 @@ boundary, entry to exit, and `build_slices` cuts there.
   contribute negative resistance; consistent with the Fellenius
   effective-normal clamp. Spencer/M-P share the (W − u·b) form but are left
   unclamped to preserve the Duncan-validated behavior (noted for follow-up).
-- **Pore pressure model (SS-3)**: `_pore_pressure_at_base` uses the full
-  hydrostatic head to the GWT surface (no cos²β seepage correction for
-  inclined phreatic surfaces) — slightly conservative (overestimates u) on
-  steep water tables. The layer `ru` coefficient is the alternative.
+- **Pore pressure model (SS-3, rewritten by GM-140 step 5a)**: one function,
+  `pore_pressure.base_pore_pressure`, gives every base its pore pressure; see
+  "Pore pressure as printed" above. By default the water line is a
+  piezometric line and takes the full vertical head; `water_line_kind=
+  'water_table'` applies FHWA NHI-06-088 Eq. 6-16's cos² correction.
 - **Pore-pressure GRID / TIN input (v5.4 E3)**: `SlopeGeometry.pore_pressure_points`
   is an optional list of scattered `(x, z, u)` triples (kPa) — a flow-net / TIN
   sampling of the pore-pressure field. When set, the base pore pressure at each

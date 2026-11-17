@@ -69,8 +69,8 @@ from typing import (Any, Dict, Iterable, List, Optional, Sequence, Set,
 from pydantic import BaseModel, Field
 
 from report_ingest.model import (
-    UNITLESS_FIELDS, Investigation, LabTest, QAEntry, Quantity, ReportRecord,
-    Sample, lab_hole, si_numbers, unit_printed,
+    LAYER_INTERVAL_FIELDS, UNITLESS_FIELDS, Investigation, LabTest, QAEntry,
+    Quantity, ReportRecord, Sample, lab_hole, si_numbers, unit_printed,
 )
 from report_ingest.printed_depths import _WHOLE_RANGE, _range, _sample_cell
 from report_ingest.scoring import KEY_CONTENT
@@ -843,10 +843,23 @@ def _restated(kept: Any, other: Any, top: str, bottom: str) -> bool:
     for name in type(kept).model_fields:
         if name in (top, bottom, "prov", "note"):   # how, not what
             continue
+        if name in LAYER_INTERVAL_FIELDS:   # RI-103: what each printing
+            continue                        # adds; _fold_into keeps it
         if not _unset(kept, name) and not _unset(other, name) and \
                 getattr(kept, name) != getattr(other, name):
             return False
     return True
+
+
+def _same_note(held: Any, note: Any) -> bool:
+    """Is ``note`` one ``held`` already says: the same words and the same
+    depth (or neither with a depth)? Where it was printed is left out."""
+    if " ".join(held.text.split()) != " ".join(note.text.split()):
+        return False
+    a, b = depth_m(held.depth), depth_m(note.depth)
+    if a is None or b is None:
+        return held.depth is None and note.depth is None
+    return abs(a - b) <= DEPTH_TOL_M
 
 
 def _join_rows(kept: List[Any], more: Sequence[Any], top: str,
@@ -876,11 +889,32 @@ def _fold_into(first: Investigation, later: Investigation) -> Dict[str, Any]:
     said["restated"] += _join_rows(first.spt, later.spt,
                                    "depth_top", "depth_bottom")
     for layer in later.layers:
-        if not any(_restated(k, layer, "top", "bottom")
-                   and " ".join(k.description.split()) ==
-                   " ".join(layer.description.split())
-                   for k in first.layers):
+        twin = next((k for k in first.layers
+                     if _restated(k, layer, "top", "bottom")
+                     and " ".join(k.description.split()) ==
+                     " ".join(layer.description.split())), None)
+        if twin is None:
             first.layers.append(layer)
+            continue
+        # The same interval printed again on the next sheet. What its
+        # second printing adds under RI-103 (its notes, its line, its
+        # stratum label: set only under GEOTECH_INGEST_LOG_INTERVALS) is
+        # kept on the one copy, not lost with the other. A label goes with
+        # its source and its carried mark, and a line with its width: the
+        # first printing's own reading is never mixed with the second's.
+        if twin.top_elevation is None and layer.top_elevation is not None:
+            twin.top_elevation = layer.top_elevation
+        if not twin.stratum_label and layer.stratum_label:
+            twin.stratum_label = layer.stratum_label
+            twin.stratum_label_source = layer.stratum_label_source
+            twin.stratum_label_carried = layer.stratum_label_carried
+        if not twin.top_line and (layer.top_line or
+                                  twin.top_line_full_width is None):
+            twin.top_line = layer.top_line
+            twin.top_line_full_width = layer.top_line_full_width
+        for note in layer.notes:
+            if not any(_same_note(held, note) for held in twin.notes):
+                twin.notes.append(note)
     for water in later.water:
         if not any(w.when == water.when and depth_m(w.depth) is not None
                    and depth_m(water.depth) is not None

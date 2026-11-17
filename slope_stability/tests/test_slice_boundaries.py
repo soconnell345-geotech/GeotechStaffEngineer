@@ -97,7 +97,9 @@ def test_a_corner_close_to_another_boundary_is_kept():
     assert math.degrees(first.alpha) == pytest.approx(-90.0, abs=0.1)
     fos = [analyze_slope(geom, slip_surface=slip, method="spencer",
                          n_slices=n).FOS for n in (30, 60)]
-    assert fos == pytest.approx([2.521] * 2, abs=0.002)
+    # GM-344: 2.521 -> 2.525, the friction term as printed on the bases in
+    # tension (made-up surface, nothing printed)
+    assert fos == pytest.approx([2.525] * 2, abs=0.002)
 
 
 def test_a_corner_at_an_end_is_that_end():
@@ -202,10 +204,11 @@ def test_taylor_d2_noncircular_search_near_the_circle():
     the 0.706 circle (0.610 before, -13.6 %, as even slices under-read the
     corners). Spencer on a five-point polyline in phi = 0 clay; the 3.7 %
     is the polyline's freedom, not slicing: its surface reads the same on
-    30 to 240 slices."""
+    30 to 240 slices. The sampler alone (refine=False) since GM-140 step
+    7a; the refined search is checked after it."""
     geom = _taylor_d2()
     res = search_critical_surface(geom, surface_type="noncircular_de",
-                                  method="spencer", seed=1)
+                                  method="spencer", seed=1, refine=False)
     c = res.critical
     assert c.FOS == pytest.approx(0.680, abs=0.005)
     assert c.FOS == pytest.approx(TAYLOR_D2, rel=0.05)
@@ -213,3 +216,17 @@ def test_taylor_d2_noncircular_search_near_the_circle():
     again = [analyze_slope(geom, slip_surface=slip, method="spencer",
                            n_slices=n).FOS for n in (30, 60, 240)]
     assert again == pytest.approx([c.FOS] * 3, rel=0.002)
+    # GM-140 step 7a, refined (the default): the critical circle's start
+    # refines along the firm base below Taylor's circle, the composite
+    # surface of step 7b (D14); the slope brief's step 7a benchmarks ask
+    # that it be reported with its flags, not refused. No more than the
+    # sampler alone, flagged, and the same on 30 to 240 slices
+    ref = search_critical_surface(geom, surface_type="noncircular_de",
+                                  method="spencer", seed=1)
+    assert ref.critical.FOS <= c.FOS + 1e-9
+    assert ref.critical_flags
+    assert ref.lowest_unflagged["FOS"] > ref.critical.FOS
+    slip = PolylineSlipSurface(points=list(ref.critical.slip_points))
+    again = [analyze_slope(geom, slip_surface=slip, method="spencer",
+                           n_slices=n).FOS for n in (30, 60, 240)]
+    assert again == pytest.approx([ref.critical.FOS] * 3, rel=0.002)

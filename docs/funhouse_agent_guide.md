@@ -236,16 +236,16 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 |--------|-------------|
 | `gstools` | Geostatistical kriging (with `regions`: the kriged surface's totals over plan polygons and Gaussian pointwise expectations; a large grid goes to a CSV), variogram fitting, random field generation, and, from the release after 5.33.0, `conditional_simulation`: realizations that honour the observations, each integrated over plan polygons and levels, for the probability of a TOTAL (volume or area above or below a level, any encounter), with an exceedance curve and a plan map of P(z > level). Its spread is what the chosen model implies; the model itself (covariance, variance, length scale) is an assumption that usually matters more, so run cases |
 
-#### Geotech-References (32 modules + 2 search tools)
+#### Geotech-References (33 modules + 2 search tools)
 
-`dispatch.REFERENCE_MODULES` holds 34 names: the 32 reference modules below
+`dispatch.REFERENCE_MODULES` holds 35 names: the 33 reference modules below
 and the two search tools `reference_db` (text) and `figure_db` (figure
 catalogs). The live list is `list_agents()`.
 
 | Family | Modules |
 |--------|---------|
 | NAVFAC / FHWA geotechnical manuals | `dm7` (340+ equations), `gec4`, `gec5`, `gec6`, `gec7`, `gec8`, `gec9`, `gec10`, `gec11`, `gec12`, `gec13`, `gec14`, `micropile`, `fhwa_soils_foundations`, `fhwa_pavements` |
-| UFC and Corps of Engineers | `ufc_backfill`, `ufc_expansive`, `ufc_pavement` (UFC 3-250-01 roads and parking), `ufc_stabilization`, `ufc_flexible_practice`, `ufc_concrete_practice`, `ufc_structural`, `ufc_collapse`, `em_2104`, `em_2107` |
+| UFC and Corps of Engineers | `ufc_backfill`, `ufc_expansive`, `ufc_pavement` (UFC 3-250-01 roads and parking), `ufc_stabilization`, `ufc_flexible_practice`, `ufc_concrete_practice`, `ufc_structural`, `ufc_collapse`, `em_1905` (EM 1110-1-1905, shallow foundations on soils, 2025), `em_2104`, `em_2107` |
 | Other | `fema_p2082`, `gsa_collapse`, `california_trenching`, `eurocode_7_1`, `eurocode_7_2`, `aashto_1993`, `wood_handbook` |
 | Search | `reference_db`, `figure_db` |
 

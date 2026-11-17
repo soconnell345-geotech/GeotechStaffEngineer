@@ -228,20 +228,30 @@ def test_kpe_is_gec4_eq_44_with_beta_negated(phi, delta, kh, kv, beta, i):
 
 
 def test_passive_delta_default_and_the_04_limit():
-    """KPE takes 0.4 phi unless delta_passive is given (UFC 3-220-20 Fig.
-    4-8's limit for a planar passive wedge; the review moved it from phi/2)
-    and warns above it, naming NHI-06-089 p. 10-19's phi/3."""
+    """KPE takes phi / 3 unless delta_passive is given (NHI-06-089 p.
+    10-19; GM-310, the call for OWN-114: 0.4 phi, UFC 3-220-20 Fig. 4-8's
+    limit for a planar passive wedge, before it, and still the limit
+    above which the result warns). Made-up wall."""
     from funhouse_agent.adapters.seismic_geotech import METHOD_REGISTRY as R
-    r = R["seismic_earth_pressure"]({"phi": 34.0, "kh": 0.15,
+    r = R["seismic_earth_pressure"]({"phi": 30.0, "kh": 0.2,
                                      "include_passive": True})
-    assert r["delta_passive_deg"] == 13.6
-    assert r["KPE"] == pytest.approx(
-        round(mononobe_okabe_KPE(34.0, 13.6, 0.15), 4))
+    assert r["delta_passive_deg"] == 10.0
+    assert r["KPE"] == pytest.approx(3.500, abs=1e-3)     # the call's case
+    assert mononobe_okabe_KPE(30.0, 12.0, 0.2) == pytest.approx(
+        3.731, abs=5e-4)                                  # at 0.4 phi
     assert not r.get("warnings")
     c = next(c for c in r["choices"]
              if c["what"] == "wall friction delta for KPE")
     assert c["how"] == "default" and "p. 10-19" in c["basis"]
-    assert any("phi / 3" in a for a in c["alternatives"])
+    assert c["chosen"] == "10.0 deg (phi / 3)"
+    assert any("0.4 phi = 12.0 deg" in a and "Fig. 4-8" in a
+               for a in c["alternatives"])
+    # 0.4 phi given: UFC's reading, no warning
+    r = R["seismic_earth_pressure"]({"phi": 30.0, "kh": 0.2,
+                                     "include_passive": True,
+                                     "delta_passive": 12.0})
+    assert r["KPE"] == pytest.approx(3.731, abs=5e-4)
+    assert not r.get("warnings")
     r = R["seismic_earth_pressure"]({"phi": 34.0, "kh": 0.15,
                                      "include_passive": True,
                                      "delta_passive": 17.0})

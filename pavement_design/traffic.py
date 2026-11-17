@@ -74,9 +74,23 @@ def _single_lef(pavement_type, axle_config, load_kips, sn, d_in, pt,
                 references, notes=None):
     """One axle-group LEF; returns (lef, basis_string).
 
-    A load, SN or D outside the printed table is read at the nearest printed
-    value; the lookup's note saying so goes into ``notes``.
+    A load, SN or D outside the printed table is refused by the lookup
+    (Appendix D gives no LEF there; refs REF-76): the refusal is raised
+    again with the axle group named and the lookup's message whole.
     """
+    try:
+        return _single_lef_lookup(pavement_type, axle_config, load_kips, sn,
+                                  d_in, pt, references, notes)
+    except ValueError as exc:
+        raise ValueError(
+            f"{axle_config} axle group of {load_kips} kips: no AASHTO 1993 "
+            f"Appendix D LEF. {exc} Describe this traffic by truck factors "
+            "(vehicles) or give base_year_w18_two_way instead."
+        ) from exc
+
+
+def _single_lef_lookup(pavement_type, axle_config, load_kips, sn, d_in, pt,
+                       references, notes):
     if _lef_mod is not None:
         kw = {"sn": sn} if pavement_type == "flexible" else {"d_in": d_in}
         r = _lef_mod.load_equivalency_factor(

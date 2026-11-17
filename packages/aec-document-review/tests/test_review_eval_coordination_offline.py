@@ -369,6 +369,20 @@ def test_an_all_clear_that_lists_everything_is_not_a_finding():
     assert _alarm("coord-schedules", clear)["passed"]
 
 
+def test_not_found_on_a_plan_is_a_finding_and_not_finding_any_is_not():
+    # Foundry brief 8: a delivered "was not found on the plan" failed
+    found = ("Door 509 is scheduled on A-602 but was not found on the "
+             "fifth-floor plan.")
+    assert "door-not-on-plan-5" in _passes("coord-long-schedules", found)
+    for clear in ("Door 509 is on the fifth-floor plan; I did not find any "
+                  "problem with it.",
+                  "Door 509: I did not see anything wrong.",
+                  "Door 509 is tagged; I did not find a conflict."):
+        assert "door-not-on-plan-5" not in _passes("coord-long-schedules",
+                                                   clear), clear
+        assert _alarm("coord-long-schedules", clear)["passed"], clear
+
+
 def test_a_finding_said_in_a_heading_over_a_long_table_counts():
     rows = "".join(
         f"| {mark} | {sheet} | Tagged at grid {g}; see the plan. |\n"

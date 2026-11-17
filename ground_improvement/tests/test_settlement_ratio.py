@@ -117,7 +117,7 @@ _BASE = dict(column_diameter=0.9, spacing=2.1, S_unreinforced=150.0)
 
 
 def test_the_default_is_the_stress_ratio_and_its_numbers_hold():
-    r = analyze_aggregate_piers(**_BASE)
+    r = analyze_aggregate_piers(**_BASE, n=5.0)
     a_s = math.pi * 0.9 ** 2 / 4 / (math.sqrt(3) / 2 * 2.1 ** 2)
     assert r.settlement_reduction_factor == pytest.approx(
         1 / (1 + 4 * a_s))
@@ -130,7 +130,7 @@ def test_the_default_is_the_stress_ratio_and_its_numbers_hold():
     assert any("weighted_modulus" in a for a in c["alternatives"])
     assert any("balaam_rigid" in a for a in c["alternatives"])
     # with no method by the moduli the column modulus changes nothing
-    assert analyze_aggregate_piers(**_BASE, E_column=50000.0) \
+    assert analyze_aggregate_piers(**_BASE, n=5.0, E_column=50000.0) \
         .settlement_improved_mm == r.settlement_improved_mm
 
 
@@ -162,7 +162,7 @@ def test_the_methods_by_the_moduli(method, n_prime):
     assert "stress concentration ratio n" not in by
     assert "E_c/E_s = 10" in by["soil modulus E_s"]["basis"]
     with_q = analyze_aggregate_piers(**_BASE, E_column=50000.0,
-                                     settlement_method=method,
+                                     settlement_method=method, n=5.0,
                                      q_unreinforced=100.0)
     assert "stress concentration ratio n" in {
         c["what"] for c in with_q.choices}

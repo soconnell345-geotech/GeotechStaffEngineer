@@ -309,6 +309,43 @@ class DowndragResult:
             lines.append("* gives the headline numbers below.")
         return lines
 
+    def settlement_compatible_beside(self) -> list:
+        """The settlement-compatibility plane and drag, as summary lines
+        beside the headline (GM-310, the call for OWN-105 of 2026-11-12):
+        given where the headline is the intersection of the load and
+        resistance curves and those meet below the depth at which the
+        soil stops settling more than the pile. Empty otherwise. The
+        headline does not change: summary text only."""
+        if self.neutral_plane_method != "force_equilibrium":
+            return []
+        sc = next((r for r in self.neutral_plane_comparison
+                   if r.get("method") == "settlement_compatibility"), None)
+        if not sc or not sc.get("applies") or sc.get("reason"):
+            return []
+        z_sc = float(sc["neutral_plane_depth_m"])
+        if not z_sc < self.neutral_plane_depth - 0.005:
+            return []
+        return [
+            "",
+            "--- Beside the Headline: Pile and Soil Settling Equally ---",
+            f"The load and resistance curves meet at "
+            f"{self.neutral_plane_depth:.2f} m, below the depth at which "
+            f"the soil stops settling more than the pile ({z_sc:.2f} m).",
+            "With the neutral plane where the two settle equally (UFC "
+            "3-220-20 Sec. 6-5.8.4.3, p. 449):",
+            f"Neutral plane depth:    {z_sc:.2f} m",
+            f"Drag load:              {float(sc['dragload_kN']):.1f} kN",
+            f"Max pile load at NP:    {float(sc['max_pile_load_kN']):.1f} kN",
+            f"Drag force (Q_np - Q_dead): "
+            f"{float(sc['drag_force_kN']):.1f} kN",
+            "The headline stays the curves' intersection (UFC 3-220-20 "
+            "Sec. 6-7.4 step 3, p. 477), the larger load: a few "
+            "millimetres of relative movement mobilize the shaft "
+            "resistance, and a settlement profile is seldom known that "
+            "closely. The value here is for the engineer who can defend "
+            "the settlement profile.",
+        ]
+
     def summary(self) -> str:
         """Return a text summary of key results."""
         stress = ("final (sigma'v0 + fill / drawdown change; UFC 3-220-20 "
@@ -339,6 +376,7 @@ class DowndragResult:
             f"Pile weight to NP:      {self.pile_weight_to_np:.1f} kN",
             f"Max pile load at NP:    {self.max_pile_load:.1f} kN",
             f"Drag force (Q_np - Q_dead): {self.drag_force:.1f} kN",
+            *self.settlement_compatible_beside(),
             "",
             "--- Resistance Below NP ---",
             f"Positive skin friction: {self.positive_skin_friction:.1f} kN",
@@ -442,6 +480,17 @@ class DowndragResult:
         if self.ground_elevation is not None:
             d['ground_elevation_m'] = self.ground_elevation
         d['choices'] = [dict(c) for c in self.choices]
+        beside = self.settlement_compatible_beside()
+        if beside:
+            # GM-310 (OWN-105): the same words the summary carries
+            import re
+            # the summary's lines as one sentence: its label and value
+            # columns closed up, each number line ended with a semicolon
+            d['settlement_compatible_beside'] = " ".join(
+                re.sub(r"\s+", " ", line)
+                + (";" if line.endswith((" m", " kN")) else "")
+                for line in beside[2:]).replace("kN; The headline",
+                                                "kN. The headline")
         return d
 
     def get_tables(self) -> list:

@@ -82,7 +82,26 @@ class TestLiquefactionAdapterMetadata:
 
     def test_method_allows_both_flags(self):
         allowed = METHOD_INFO["liquefaction_analysis"]["parameters"]["method"]["allowed_values"]
-        assert set(allowed) == {"bi2014", "nceer2001"}
+        assert allowed == ["bi2014", "nceer2001"]
+        # the other spellings the adapter reads pass dispatch and run as
+        # the id each names (GM-317; review B3, C17: checked by calling,
+        # not by restating the table); "simplified" is read, not offered
+        import funhouse_agent.adapters.liquefaction_adapter as mod
+        from aec_agent_core.method_call import _check_parameter_values
+        spec = METHOD_INFO["liquefaction_analysis"]["parameters"]["method"]
+        for spelling, runs_as in [
+                ("Boulanger_Idriss", "bi2014"), (" b&i ", "bi2014"),
+                ("youd2001", "nceer2001"), ("seed_idriss", "nceer2001"),
+                ("simplified", "nceer2001")]:
+            _check_parameter_values(mod, "liquefaction_analysis",
+                                    {"method": spelling})
+            runs = _normalize_method({"method": spelling}, "SPT")
+            assert runs == runs_as, spelling
+        assert spec["value_aliases"]["seed_idriss"] == "nceer2001"
+        assert "simplified" not in spec["value_aliases"]
+        with pytest.raises(ValueError, match="Did you mean 'bi2014'"):
+            _check_parameter_values(mod, "liquefaction_analysis",
+                                    {"method": "bi2041"})
 
 
 # ============================================================================

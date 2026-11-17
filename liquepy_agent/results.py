@@ -34,9 +34,20 @@ class CPTLiquefactionResult:
     ldi_m : float
         Lateral Displacement Index (m).
     min_fos : float
-        Minimum factor of safety in liquefiable zone.
+        Minimum factor of safety over the readings named by
+        ``min_fos_basis``.
+    min_fos_basis : str
+        Which readings ``min_fos`` is taken over: the susceptible ones
+        (below the water table with Ic under the limit), or every reading
+        when there is none (GM-324; ``warnings`` then says so).
+    n_susceptible : int
+        Readings below the water table with Ic under the limit.
+    n_liquefiable : int
+        Susceptible readings with a factor of safety below 1.0.
     max_settlement_mm : float
         Maximum 1D volumetric settlement (mm).
+    warnings : list of str
+        What the reader should know about the scalars above.
 
     Attributes — Arrays
     -------------------
@@ -78,7 +89,11 @@ class CPTLiquefactionResult:
     lsn: float = 0.0
     ldi_m: float = 0.0
     min_fos: float = 0.0
+    min_fos_basis: str = ""
+    n_susceptible: int = 0
+    n_liquefiable: int = 0
     max_settlement_mm: float = 0.0
+    warnings: list = field(default_factory=list)
 
     # Arrays
     depth: np.ndarray = field(default_factory=lambda: np.array([]))
@@ -116,8 +131,13 @@ class CPTLiquefactionResult:
             "lsn": round(self.lsn, 2),
             "ldi_m": round(self.ldi_m, 4),
             "min_fos": round(self.min_fos, 3),
+            "min_fos_basis": self.min_fos_basis,
+            "n_susceptible": int(self.n_susceptible),
+            "n_liquefiable": int(self.n_liquefiable),
             "max_settlement_mm": round(self.max_settlement_mm, 1),
         }
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
         return d
@@ -364,7 +384,10 @@ class FieldCorrelationsResult:
     su_ratio : ndarray
         Undrained strength ratio su/σv'.
     permeability_cm_per_s : ndarray
-        Estimated permeability (cm/s).
+        Estimated permeability, as liquepy's Robertson and Cabal (2012)
+        function gives it. The unit in this name is not checked against
+        a printed page (no reference in the library prints the relation),
+        so the tool does not return it (GM-324).
     i_c : ndarray
         Soil behavior type index.
     """
@@ -373,6 +396,9 @@ class FieldCorrelationsResult:
     n_points: int = 0
     gwl_m: float = 0.0
     vs_method: str = ""
+    #: Ic below it: sand-like (the Dr range); at or above it: clay-like
+    #: (the su/sigma'v range).
+    i_c_limit: float = 2.6
 
     # Arrays
     depth: np.ndarray = field(default_factory=lambda: np.array([]))
@@ -394,24 +420,130 @@ class FieldCorrelationsResult:
             f"Vs method={self.vs_method}{vs_range}"
         )
 
+    #: The profile's columns: result key, the array it comes from and the
+    #: decimals kept. Permeability is left out: its unit is not checked
+    #: against a printed page.
+    PROFILE_COLUMNS = (
+        ("Vs_m_per_s", "vs_m_per_s", 1),
+        ("Dr", "relative_density", 3),
+        ("su_ratio", "su_ratio", 3),
+        ("I_c", "i_c", 3),
+    )
+
+    def profile(self, max_rows: int = 40):
+        """The correlations by depth, as rows a tool result can carry
+        (GM-324: the tool was told to return the profiles and returned
+        only their ranges).
+
+        Each reading stands for the depth halfway to its neighbours (the
+        first and last half a spacing beyond their reading, the first not
+        above the ground surface), as the CPT liquefaction result's
+        ``depth_profile`` does. Up to ``max_rows`` readings give one row
+        each; a longer sounding is summarised in bands of whole readings,
+        about equally many in each: every value is the band's average over
+        its finite readings.
+
+        Returns
+        -------
+        (rows, note) : (list of dict, str or None)
+            Rows of ``top_m``, ``bottom_m`` and the keys of
+            :data:`PROFILE_COLUMNS` (None where no reading in the row is
+            finite), in depth order; ``note`` says how the bands were made
+            (None for one row per reading).
+        """
+        z = np.asarray(self.depth, dtype=float).ravel()
+        n = len(z)
+        if n == 0:
+            return [], None
+        order = np.argsort(z, kind="stable")
+        z = z[order]
+        edges = np.empty(n + 1)
+        if n == 1:
+            edges[:] = z[0]
+        else:
+            edges[0] = max(0.0, z[0] - 0.5 * (z[1] - z[0]))
+            edges[1:-1] = 0.5 * (z[:-1] + z[1:])
+            edges[-1] = z[-1] + 0.5 * (z[-1] - z[-2])
+        cols = []
+        for key, attr, nd in self.PROFILE_COLUMNS:
+            a = np.asarray(getattr(self, attr), dtype=float).ravel()
+            cols.append((key, a[order] if len(a) == n else None, nd))
+
+        def value(a, idx, nd):
+            if a is None:
+                return None
+            v = a[idx]
+            v = v[np.isfinite(v)]
+            return round(float(np.mean(v)), nd) if len(v) else None
+
+        chunks = (np.array_split(np.arange(n), max_rows) if n > max_rows
+                  else [np.array([i]) for i in range(n)])
+        rows = []
+        for idx in chunks:
+            row = {"top_m": round(float(edges[idx[0]]), 2),
+                   "bottom_m": round(float(edges[idx[-1] + 1]), 2)}
+            for key, a, nd in cols:
+                row[key] = value(a, idx, nd)
+            rows.append(row)
+        note = None
+        if n > max_rows:
+            widest = max(r["bottom_m"] - r["top_m"] for r in rows)
+            note = (
+                f"{n} readings summarised in {len(rows)} depth bands, up to "
+                f"about {widest:.2g} m thick, to keep the result small. "
+                "Each value is the band's average over its readings.")
+        return rows, note
+
     def to_dict(self) -> dict:
-        """Return JSON-serializable dict of scalar results."""
+        """Return a JSON-serializable dict: the ranges and the profile
+        with depth (:meth:`profile`)."""
         d = {
             "n_points": self.n_points,
             "gwl_m": round(self.gwl_m, 2),
             "vs_method": self.vs_method,
+            # the split the Dr and su/sigma'v ranges are taken on
+            "i_c_limit": float(self.i_c_limit),
         }
-        if len(self.vs_m_per_s) > 0:
-            valid = self.vs_m_per_s[np.isfinite(self.vs_m_per_s)]
-            if len(valid) > 0:
-                d["vs_min_m_per_s"] = round(float(valid.min()), 1)
-                d["vs_max_m_per_s"] = round(float(valid.max()), 1)
-                d["vs_avg_m_per_s"] = round(float(valid.mean()), 1)
-        if len(self.relative_density) > 0:
-            valid = self.relative_density[np.isfinite(self.relative_density)]
-            if len(valid) > 0:
-                d["dr_min"] = round(float(valid.min()), 3)
-                d["dr_max"] = round(float(valid.max()), 3)
+
+        def finite(a):
+            a = np.asarray(a, dtype=float)
+            return a[np.isfinite(a)]
+
+        valid = finite(self.vs_m_per_s)
+        if len(valid) > 0:
+            d["vs_min_m_per_s"] = round(float(valid.min()), 1)
+            d["vs_max_m_per_s"] = round(float(valid.max()), 1)
+            d["vs_avg_m_per_s"] = round(float(valid.mean()), 1)
+        # Dr is a sand correlation and su/sigma'v a clay one: each range is
+        # taken over the readings of its own soil type by Ic, null when
+        # there is none (GM-324 review: an su ratio maximum came from a
+        # sand reading and a Dr minimum from a clay band).
+        ic = np.asarray(self.i_c, dtype=float)
+
+        def of_type(a, sand):
+            a = np.asarray(a, dtype=float)
+            if len(a) != len(ic):
+                return a[:0]
+            kind = ic < self.i_c_limit if sand else ic >= self.i_c_limit
+            return a[np.isfinite(a) & np.isfinite(ic) & kind]
+
+        for key, attr, sand in (("dr", "relative_density", True),
+                                ("su_ratio", "su_ratio", False)):
+            if len(np.asarray(getattr(self, attr))) == 0:
+                continue
+            valid = of_type(getattr(self, attr), sand)
+            d[f"{key}_min"] = (round(float(valid.min()), 3) if len(valid)
+                               else None)
+            d[f"{key}_max"] = (round(float(valid.max()), 3) if len(valid)
+                               else None)
+        valid = finite(self.i_c)
+        if len(valid) > 0:
+            d["i_c_min"] = round(float(valid.min()), 3)
+            d["i_c_max"] = round(float(valid.max()), 3)
+        rows, note = self.profile()
+        d["profile"] = rows
+        if note:
+            d["profile_note"] = note
         return d
 
     # ------------------------------------------------------------------

@@ -68,8 +68,21 @@ wraps it).
   1997-1 does not print: its D.3 (p. 158) and UFC 3-220-20 Table 5-7
   (p. 295) give i_c = [1 + √(1 − H/(A' c))]/2, listed with its value in
   the choices' alternatives.
-- Depth factors (GM-197), `depth_factor_method`: "hansen" (default)
-  takes Brinch Hansen's k = Df/B for Df/B < 1 and arctan(Df/B) from 1
+- **Meyerhof's default depth factors are his own (GM-310, the call for
+  OWN-131 of 2026-11-12).** With `factor_method="meyerhof"` a left-out
+  `depth_factor_method` is "linear": UFC 3-220-20 Table 5-6 (p. 294), k =
+  Df/B at any depth. The arctangent form is printed only for Brinch
+  Hansen's method (p. 295, Table 5-8 note B), so with Meyerhof's it stays
+  the "hansen" option, the default before GM-310. Beyond Df/B = 1 the
+  factors grow without limit: the analysis warns (a Python warning and in
+  the depth choice) and gives Brinch Hansen's factors and q_ult beside
+  them. This follows the print although it is the less conservative
+  reading: answers for footings deeper than they are wide rise, more the
+  deeper the footing, with no upper limit (a strip 1 m wide at Df 2.5 m,
+  phi' 34, gamma 19: 2,491 against 2,074 kPa, 20 % above; 27 % at Df/B 3).
+  Vesic's default stays "hansen" (`default_depth_factor_method`).
+- Depth factors (GM-197), `depth_factor_method`: "hansen" (the default
+  except with Meyerhof's factors) takes Brinch Hansen's k = Df/B for Df/B < 1 and arctan(Df/B) from 1
   (UFC 3-220-20 Tables 5-7 and 5-8 note B, pp. 295-296; GEC-6 Table 5-4
   prints d_q at Df/B = 1 from the arctan too; until GM-197 the Vesic
   factors took k = 1 there); Meyerhof's factors take k = Df/B up to and at
@@ -204,6 +217,8 @@ prints k = Df/B for Meyerhof; the module keeps Hansen's (1970) bound,
 k = arctan(Df/B) beyond Df/B = 1, for both factor sets (the smaller depth
 factors) by default. Since GM-309 `depth_factor_method="linear"` gives
 Meyerhof's factors with Table 5-6's k = Df/B at any depth as an option.
+Changed by GM-310: "linear" is now the default with Meyerhof's factors,
+and "hansen" the option (see the depth factors note above).
 
 **The result's `choices`** (`geotech_common.choices`, in `to_dict()`, the
 summary and the calc package): the bearing capacity method; its N-gamma,

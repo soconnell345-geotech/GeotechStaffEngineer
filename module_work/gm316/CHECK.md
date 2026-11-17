@@ -1,0 +1,677 @@
+# GM-316 and GM-317: warnings reach the agent; `allowed_values` enforced
+
+Branch `claude/gm-316-317-warnings-allowed-values`. Items: BACKLOG GM-316,
+GM-317; module audit 2026-11-12 (`module_work/module_audit_2026-11-12/
+AUDIT.md`) §2.1, §2.2 X1 and X2, §6 T1 (c) and T2. No print reference is
+involved: both are dispatch-layer changes, and no formula, default or
+coefficient changes.
+
+## Review of 2026-11-12: what each finding became
+
+Branch `fix/gm316-review` (from 52b0053), one commit per finding.
+
+| # | What | Became |
+|---|---|---|
+| A1 | `catch_warnings` blocks could leave "ignore everything" in front for good | Fixed: a `warnings.warn` wrapper records the packages' own warnings before any filter; our two analysis blocks removed (section "Review fix A1") |
+| B2 | `any_case` stripped where the handler did not (" strip " ran as a square) | Fixed: each list names its handler's fold (section "Review fix B2") |
+| B3 | aliases advertised as values ("grid" for a geogrid) | Fixed: `value_aliases`, shown in words; three misleading ones read but hidden (section "Review fix B3") |
+| B4 | package said its warnings were printed; Python ones were not | Fixed: printed as "Warnings Raised by the Calculation" (section "Review fix B4") |
+| B5 | a second pass over the 251 probes, 209 s, could not fail | Fixed: the check rides on the defaults guard's run |
+| C6 | a warning raised outside a call silenced the same one in later calls | Fixed by A1 for the packages' own warnings (test); numpy's still so (noted) |
+| C7 | thread note partly wrong | Corrected (Noted, not fixed, piece 1) |
+| C8 | O(n^2) bucket; 19 us per repeat | The bucket keeps a set (A1); the per-repeat cost is noted |
+| C9 | numpy's empty-slice warnings dropped (numpy frame) | Noted, not fixed: counting them risks noise from rejected trial surfaces |
+| C10 | texts kept raw (a path, scipy's six lines) | Noted, not fixed: the working folder is hidden as before |
+| C11 | recorder sees one per location; ResourceWarning source | Recorder now sees every occurrence (A1, test); docstring says the rest |
+| C12 | registry race | Only the numpy path pops the registry now; noted |
+| C13 | hook installed lazily | Installed at import of `method_call` |
+| C14 | raw `any_case` / `refused_values` and a backlog ID in describe_method | Fixed in B3: one `values_note` in words; "GM-191" taken out of the soe reasons |
+| C15 | "AUTO", "LINEAR" now refused | Acceptable (did-you-mean given) |
+| C16 | M-O case with no solution warns twice | Left: two lines for one condition, the module's with the detail |
+| C17 | test gaps | Outside-call raise, `logging.captureWarnings` round trip added (A1); liquefaction test now calls |
+| C18 | follow-ups without backlog IDs | Listed below for the lead to file |
+| C19 | 3.14 skip counts | Nothing to do |
+| C20 | package spec merge took the first tool's | Fixed in B3: aliases and refusals merged; a test checks `any_case` agrees |
+| C21 | in-window drop while a block is open | Fixed by A1 |
+
+### Follow-ups for the backlog (review C18)
+
+Each says whether doing it would change a value a user sees (a saved
+report's output).
+
+1. axial_pile: a pile tip below the soil profile runs on the profile
+   extended (now warned). Refuse or state it: **changes a value**.
+2. drilled_shaft: the same for a shaft longer than the profile: **changes a
+   value**.
+3. lateral_pile: soil layers ending above the pile toe give no resistance
+   below (now warned): **changes a value**.
+4. settlement `consolidation_settlement`: Cr greater than Cc runs with a
+   warning; likely a swapped input. Refusing it **changes a value**.
+5. Owner's call (B3): MSE `reinforcement_type` "grid" / "strip" and
+   liquefaction `method` "simplified" are still read (hidden). Refusing them
+   **changes a result** for calls that use them today.
+6. Parameters read on one path only (`pct_saturation_time`, lateral pile
+   `axis`, `hammer_type`, ...): off that path a listed value is ignored.
+   No value changes.
+7. fem2d `n_gp=3.9` runs as 3. No value changes for a whole number.
+8. `compute_trend` `log_linear` fits a power law; its description (wave
+   2e). Wording only, no value changes.
+9. Threads: a worker's warning after the call returns, or a plain thread's,
+   stays on stderr (C7). No value changes.
+10. numpy's floating-point warnings still depend on the filters and the
+    registry (C6, C12). No value changes.
+11. numpy's empty-slice warnings are dropped (C9). No value changes.
+12. A warning raised while a package itself is drawn is in the result, not
+    the package (B4). No value changes.
+13. Cost: about 19 us per repeated warning inside a call (C8). No value
+    changes.
+14. LaTeX and PDF packages set text tables in a `c` column, which does not
+    wrap: a warning longer than about 85 characters in "Warnings Raised by
+    the Calculation" (and a long "Basis" in Assumed Inputs, as before) runs
+    past the right margin (`calc_package/latex_renderer.py` `col_spec`).
+    Give text tables `p{}` columns. **Changes a saved PDF** (layout, not a
+    number). HTML, the default, wraps.
+15. The axial package's depth sweep prints one "exceeds soil profile" line
+    per trial depth past the profile (8 for a pile 40 m in 25 m), now with
+    rounded lengths (N5). One line per location with a count would be
+    shorter. No value changes.
+16. layout_ink's two locked `catch_warnings` blocks still swap the filters
+    (they quiet matplotlib's layout warnings, so `np.errstate` cannot
+    replace them) and numpy's warnings still follow the filters (N6). No
+    value changes.
+
+Only 1 to 5 and 14 change a saved report's output; by the owner's rule the
+others need no backlog item unless the lead decides otherwise.
+
+### Re-check of 2026-11-13 (on 1056ac6)
+
+The re-check closed A1 and B2 to B5 and found:
+
+| # | What | Became |
+|---|---|---|
+| N1 (A) | the value check reused `aliases` (parameter names) for value aliases, so a parameter given under its alias name after a listed one went unchecked (settlement_package `footing_shape: 'circle footing'` ran rectangular) | Fixed: own variable; tests with a listed parameter first and an aliased one second, and the reviewer's case |
+| N2 (B) | `applies_when` compared the raw value, so an alias or a folded spelling dropped the dependent default from `defaults_used` and Assumed Inputs (soe `passive_theory: 'log-spiral'` lost `passive_wall_friction_deg`) | Fixed: `_values_in_force` reads each given string as its listed value (`listed_value`: fold, then aliases); all 505 conditions on a method's own parameters name the listed value of any alias they name; tests made-up (shown, hidden, padded) and the reviewer's soe case |
+| N3 | under `-W error` the text was in `error` and in `warnings` | Fixed: a text the error holds is not added (test) |
+| N4 | LaTeX warnings table does not wrap | Follow-up 14 |
+| N5 | axial sweep lengths unrounded ("26.36842105263158m") | Lengths to 4 figures ("26.37m"); the repetition is follow-up 15 |
+| N6 | numpy path and layout_ink's blocks still follow the filters | Follow-up 16 |
+| N7 | `warnings.warn` about 1 us slower outside a call | Nothing to do |
+| CI | the GitHub run on 1056ac6 failed in the main test jobs (3.12, 3.13): `webapp/tests/test_review_boundary.py::test_review_page_reaches_into_gse_only_where_known` found the new coupling `aec_agent_core.hooks -> funhouse_agent.core_hooks` (the door filled `method_call.warning_packages` with a `"module:attribute"` string; every method call asks for it, the review page's first call too) | Fixed since piece 1's commit 95930f8: the door holds the list and fills the hook with a function of its own; `core_hooks` re-exports it. Reproduced on Windows 3.14 and Linux 3.12 before, passing after |
+
+## Piece 1, GM-316: a Python warning raised inside a method reaches the agent
+
+### What changed
+
+- New `packages/aec-agent-core/aec_agent_core/call_warnings.py`, used by
+  `run_method` (`aec_agent_core/method_call.py`): the whole call (checks,
+  handler, notes) runs inside `call_warnings.collecting()`, and the
+  warnings collected are added to the result before working-folder paths
+  are hidden. The old body of `run_method` is `_run_checked`, unchanged.
+- Two pieces, installed when `aec_agent_core.method_call` is imported
+  (and again by a call if something replaced them), both appending to a
+  `contextvars.ContextVar` list that `collecting()` sets, so calls
+  running at once in threads keep their own (changed by the review fix
+  A1, below):
+  - a thin wrapper round `warnings.warn`: while a call collects, a
+    warning the app's packages raise is recorded for the call BEFORE the
+    process's filters and once-per-location registry act, then handed to
+    the original `warn` unchanged (its `stacklevel` one deeper for the
+    wrapper's frame, so it is attributed, filtered and shown as before);
+    outside a call it only hands on;
+  - one `warnings.showwarning` hook, for what does not pass through the
+    Python `warn` (numpy's floating-point warnings, raised from C; code
+    that bound `warn` to its own name first). Outside a call, or for a
+    warning the wrapper recorded, it hands on to the hook it replaced,
+    unchanged. When a `catch_warnings(record=True)` block (pytest puts one
+    round every test) has swapped the hook out, the next call puts a new
+    hook on top of whatever is there (the block puts its own back when it
+    ends, so a hook installed earlier, e.g. `logging.captureWarnings`, is
+    not lost). A hook that hands on to another of these hooks does not
+    record twice.
+
+  `catch_warnings` is not used round the call.
+- The core names no application: GSE hands in its calculation packages
+  through the new hook `method_call.warning_packages`
+  (`funhouse_agent/core_hooks.py: WARNING_PACKAGES`, filled in
+  `funhouse_agent/__init__.py`; listed in `aec_agent_core/hooks.py`).
+
+### The rule: which warnings reach the agent
+
+A warning raised while a handler runs reaches the agent when
+
+1. the code that issued it, or the code its `stacklevel` attributes it to,
+   is in one of the app's calculation packages (GSE: the 34 calculation
+   packages pyproject ships, `funhouse_agent.adapters` and
+   `geotech_references`; a test checks the list against pyproject), or is
+   `aec_agent_core.method_call` (a module's `stacklevel` one too high lands
+   on the frame that called the handler); or
+2. it is numpy's floating-point RuntimeWarning (`overflow`, `invalid
+   value`, `divide by zero encountered in ...`), wherever it is attributed
+   (scipy's internals included): it means a NaN or an infinity in a
+   calculation;
+
+and never when its category is DeprecationWarning, PendingDeprecationWarning,
+FutureWarning, ImportWarning, ResourceWarning, SyntaxWarning, BytesWarning or
+EncodingWarning, or when a plotting library issued it (matplotlib,
+mpl_toolkits, plotly, PIL, kaleido, seaborn: matplotlib's `warn_external`
+attributes its layout warnings to the caller's line, so attribution alone
+would let them in). Anything else from a third-party library, attributed to
+that library, stays on stderr only.
+
+Improvement on the brief's starting point: the rule looks at the issuing
+frame as well as the attributed one, so a scipy warning raised with
+`stacklevel=2` against our own call (e.g. a fit that could not estimate its
+covariance) does reach the agent (it is about our calculation), while
+matplotlib's, attributed the same way, does not.
+
+**Repeats.** Python's default action shows a warning once per location
+(`__warningregistry__`). The wrapper records a package's warning on every
+call that raises it whatever the registry holds, and leaves the registry
+alone: on stderr such a warning is shown once per location for the life of
+the process, as before GM-316, and an "always" recorder (`pytest.warns`)
+sees every occurrence. For a warning only the hook sees (numpy's), the hook
+takes its key `(text, category, lineno)` back out of the registry of the
+module it is attributed to, so the next call raising it reaches the hook
+again; within one call it goes on to the replaced hook (stderr) once per
+location. No filter is added and no other registry is touched, so
+third-party warnings keep their once-per-location behaviour.
+
+**What the agent gets.** The message text only (no file path, no line
+number); at most 20 a call, then "and N more". A dict result gets them under
+`warnings`, after the entries the module already returns there, with no
+duplicates (a module that both warns and lists the same text gets it once).
+The `warnings` key is moved to the FRONT of the dict when anything is added:
+a reference module's result is cut at its tail for size
+(`funhouse_agent/deep/tools.py` `_result_cap_for_module` -> `_truncate`;
+calc modules are uncapped) and a result of 60,000 characters or more is
+shown to the model as a key map whose preview is its first 1,000 characters
+(`aec_agent_core/deep/result_map.py`); at the front, the warnings survive
+both. An error result (`{"error": ...}`) also carries the warnings raised
+before the error. **A result that is not a dict is returned unchanged**:
+no `call_agent` method returns one today (every probe returns a dict), and a
+library caller of `run_method` that gets a list keeps a list rather than
+finding it wrapped.
+
+### Consumers checked
+
+- `report_ingest/recompute.py:1854, 2356` copies a module result's
+  `warnings` to the row's `module_warnings`: it now also holds the Python
+  warnings the module raised, which is what the name says.
+- `funhouse_agent/chart_eval/arms.py:370` prints a result's warnings: same.
+- `funhouse_agent/tests/test_defaults_used.py` leaves `warnings` out of its
+  comparisons (`_VOLATILE`), so a warning does not make an input look
+  moved.
+- The calc packages: a Python warning raised while a package runs is added
+  to the result's `warnings` and, since review fix B4 (below), printed in
+  the package too.
+- `funhouse_agent/deep/prompt.py` and the core's prompts say nothing about
+  warnings, so no prompt text changed (page fingerprints unchanged).
+- The webapp reads no tool result's `warnings`.
+
+### Review fix B4: a package prints the warnings its calculation raised
+
+Two package descriptions (slope_report_package, downdrag_package) said
+their `warnings` were "also printed in the package"; the Python warnings
+GM-316 adds to that list were not. Now the package adapter
+(`_build_response`) reads the warnings recorded so far in the call
+(`call_warnings.so_far()`, new), less the module's own `warnings` its
+sections already print, cut at 20 like the result, and
+`generate_calc_package(raised_warnings=...)` prints them as "Warnings
+Raised by the Calculation", after Method Choices and before the steps, in
+every package and format (HTML, LaTeX, PDF: one section list). The
+calculation packages take the texts as an argument and import nothing from
+the core. A warning raised while the package itself is being drawn (a
+figure, after the list is read) is in the result only; both descriptions
+say so. Test: the axial-pile package with the pile 40 m in a 30 m profile
+prints the "exceeds soil profile" warnings in its HTML; a core test for
+`so_far`.
+
+### Probes that now carry warnings
+
+None. All 251 probes in `method_probes.json` were run with every warning
+recorded (`simplefilter("always")`) before and after the change: they raise
+no Python warning at all (they are the smallest happy-path inputs). Each
+probe stays checked, inside the run the defaults guard makes anyway
+(`test_defaults_used.py::test_the_defaults_a_run_lists_are_the_values_it_used`
+records the run's warnings; `method_probes.lost_warnings`): review fix B5
+dropped the second pass over the probes in `test_probe_warnings.py`, which
+cost 209 s per CI job and could not fail. The standing test (T2,
+`funhouse_agent/tests/test_probe_warnings.py`) runs four made-up calls that
+do raise the module warnings the audit named, each twice and under both the
+"always" and the default filter, plus the axial-pile package (B4):
+
+| Call (made-up inputs) | Warning the agent now sees |
+|---|---|
+| axial_pile `axial_pile_capacity`, pile 40 m in a 30 m profile | "Pile tip (head_depth 0m + pile_length 40m) exceeds soil profile (30m); using full profile depth" |
+| drilled_shaft `drilled_shaft_capacity`, length 20 m in 15 m | "Shaft length (20.0m) exceeds soil profile (15m); using full profile depth" |
+| lateral_pile `lateral_pile_analysis`, soil to 10 m, pile 15 m | "Soil layers extend to 10 m but pile length is 15.0 m. No soil resistance will be applied below 10 m." |
+| settlement `consolidation_settlement`, Cr 0.3 > Cc 0.05 | "Cr (0.3) > Cc (0.05); typically Cr < Cc" |
+
+Each of these is a module defect the audit lists for wave 2 (a profile
+shorter than the pile should be refused or stated, not extended); they are
+not fixed here.
+
+### Review fix A1: delivery no longer depends on the process's filters
+
+The review (2026-11-12, finding A1) showed GM-316 could be switched off for
+the life of the process. Three blocks on the tool-call path used
+`warnings.catch_warnings()` + `simplefilter("ignore")`:
+`drilled_shaft/capacity.py` `_alternative` (several times in every
+cohesionless `drilled_shaft_capacity` call), `lateral_pile/solver.py`'s
+capacity search, and `aec_agent_core/charts/layout_ink.py`'s two (under a
+lock of their own). `catch_warnings` swaps process-wide state: when two
+blocks interleave across threads (A enters, B enters, A exits, B exits), B
+puts back A's copy of the filters, so `('ignore', None, Warning, None, 0)`
+stays at the front for good, and from then on no warning reached the hook.
+The review's `p2_leak` probe showed it with two threads of drilled-shaft
+calls: after the leak, the axial-pile call's "exceeds soil profile" warning
+was gone from every result. Third-party libraries use `catch_warnings` too,
+so it could happen with none of our blocks.
+
+The fix, in two parts:
+
+1. **Delivery of the packages' own warnings is independent of the filter
+   list and the registry**: the `warnings.warn` wrapper above records them
+   before any filter acts. `catch_warnings` never swaps `warn`, so the
+   wrapper, once installed, stays; it is installed at import of
+   `method_call`. The `showwarning` hook stays for warnings raised from C
+   (numpy's floating-point ones), which never pass through the Python
+   `warn`; those still depend on the filters, so an "ignore" filter left
+   in front drops them (and everything on stderr), as it would in any
+   Python process. Chosen over the review's two suggestions: a shared lock
+   round every filter swap stops only OUR blocks from interleaving (not a
+   library's) and still drops a call's warnings while a block is open; a
+   context-local `quiet()` would mean the analysis modules importing the
+   core, which they must not. The wrapper costs one Python frame per
+   `warnings.warn` in the process; outside a call it changes nothing
+   (same attribution, same filters, same registry: test
+   `test_outside_a_call_a_warning_is_shown_as_before`, and
+   `skip_file_prefixes` on 3.12+).
+   Tests (`packages/aec-agent-core/tests/test_call_warnings.py`): an
+   ignore-everything filter put at the front, 100 calls each still carry
+   their warning; the p2_leak interleaving reproduced with two threads
+   and events (the blanket filter is left at the front), then 100 calls
+   each carry theirs.
+2. **The hazard we own is removed** where it was safe, the numbers
+   unchanged (every drilled_shaft and lateral_pile probe plus four made-up
+   calls, before and after: identical results and warnings):
+   - drilled_shaft `_alternative` silenced the warning the trial copy of
+     the analysis raises again in `__post_init__` (the shaft longer than
+     the profile, already raised by the analysis it was copied from) and
+     any numpy notice. Now a `ContextVar` (`_IN_TRIAL`, per thread and per
+     context) keeps the copy from raising it, and `np.errstate(all=
+     "ignore")` (per thread in numpy 2) quiets numpy's notices in the
+     trial.
+   - lateral_pile's capacity search silenced the solver's own "Singular
+     matrix in solver" warning in its trial solves (a factor of 0
+     follows) and any numpy notice. Now the trial calls `_solve_system`,
+     which returns None on a singular system without warning (the zeros
+     follow as before), under `np.errstate(all="ignore")`;
+     `_assemble_and_solve` still warns for a real solve.
+   - layout_ink's two blocks are left under their lock: they silence
+     matplotlib's layout warnings, which the rule never delivers anyway,
+     and they are the only filter swaps left on the path among ours.
+     They can still interleave with a library's own block, which part 1
+     covers.
+
+   Neither analysis module imports the core or the other. A standing test
+   (`funhouse_agent/tests/test_probe_warnings.py::
+   test_no_calculation_package_swaps_the_warning_filters`) fails if a
+   calculation package's code calls `catch_warnings`, `simplefilter`,
+   `filterwarnings` or `resetwarnings`: such a block would no longer hide
+   the package's own warnings from the agent, and it swaps the filters for
+   every thread.
+
+### Noted, not fixed
+
+- A handler that starts worker threads of its own: a worker started with
+  `contextvars.copy_context().run` (the core's vision tools do this) runs
+  in the call's context, so its warnings are recorded while the call runs;
+  one that finishes after the call has returned loses them to the agent
+  (stderr keeps them). A plain `threading.Thread` or pool worker has no
+  context of the call, so its warnings stay on stderr only (on a
+  free-threaded 3.14 build, whose threads inherit the context, they are
+  recorded too). No module does either through a probe today. (Corrected
+  after review C7.)
+- numpy's floating-point warnings (the hook's path) still depend on the
+  filters and, across calls, on taking the registry key out: a warning
+  raised OUTSIDE any call earlier at the same line with the same text is
+  suppressed by the registry until the filters next change, and an
+  "ignore" filter left in front drops them. A package's own
+  `warnings.warn` no longer has either limit (before review fixes C6 and
+  A1, it had both).
+
+## Piece 2, GM-317: a value outside a parameter's `allowed_values` is refused
+
+### What changed
+
+`_check_parameter_values` in `aec_agent_core/method_call.py`, run right after
+the parameter-name check (GM-110), on the same path and in the same voice:
+
+> `axial_pile_capacity: method='Beta' is not one of the values it takes.
+> Did you mean 'beta'? Valid values: ['auto', 'beta']. describe_method gives
+> each one's meaning.`
+
+The did-you-mean is the same value in another case, else the closest one or
+two by spelling (hyphens and spaces read as underscores). Nothing is coerced:
+the method gets the value as given or the call is refused.
+
+Where the code already refused a value with guidance of its own, that
+guidance is kept: a parameter may declare `refused_values` (value -> reason),
+given in place of the did-you-mean. Two do: bearing_capacity
+`factor_method="hansen"` ("Hansen's N-gamma is chosen separately with
+ngamma_method='hansen'...") and soe `design_ground_anchor` `soil_type`, whose
+rows removed by GM-191 say where each went (`soe.anchor_design.
+_REMOVED_TYPES`, the same text the module raises).
+
+**Shapes enforced.** Every declared list (346 parameter entries, 220 distinct
+lists, in 29 adapter files plus the core's `plot_data`) is on a top-level
+parameter; no adapter declares a list inside a dict or a list of dicts, so
+nested parameters are not checked. Checked: a string against a list of
+strings; each string of a list given for an array parameter (pynite
+`support_types`); a boolean or a number against a list of that kind. Left to
+the method: None (the method's default: several handlers refuse an explicit
+None themselves, dxf_export crashes on one; unchanged), and a value of
+another kind than the list's (fem2d `n_gp` converts "3" to 3 itself; a
+pile-group `method_6dof` of 0 or 1 is equal to False/True in the code). A
+parameter given under an alias (`parameter_aliases`) is checked as the
+parameter it names; a method with `parameters_of` (render_figures,
+render_tables) is checked against the named package's lists too.
+
+**Case.** Exact, unless the parameter says `any_case`, which names how its
+handler normalises the string before comparing (`method_call.VALUE_FOLDS`;
+corrected by review fix B2, below): `True` lower-cases only, `"strip"` also
+strips surrounding spaces, `"no_spaces"` lower-cases and drops ASCII spaces,
+`"no_spaces_hyphens"` drops all whitespace and hyphens, and
+`"spaces_as_underscores"` strips, lower-cases and reads a space as an
+underscore. `any_case` was added only where the code does fold case (list
+below).
+
+### Review fix B2: the check folds exactly as each handler does
+
+The first version of `any_case: True` stripped as well as lower-cased, and
+`"separators"` dropped spaces, hyphens and underscores; several handlers do
+less, so a value passed dispatch and then was refused by the module or,
+worse, ran as something else: Schmertmann `shape=" strip "` ran as a square
+footing (39.67 mm in place of 60.84 mm). Each list marked `any_case` was
+traced to its handler again (made-up values, code read):
+
+| Parameter (method) | Handler | `any_case` |
+|---|---|---|
+| bearing_capacity_analysis `shape` | `Footing.shape.lower()` (footing.py:67) | True |
+| bearing_capacity_analysis `factor_method`, `ngamma_method`, `failure_mode`, `depth_factor_method` | `str(...).strip().lower()` (capacity.py:165-196) | "strip" |
+| bearing_capacity_factors `method`, `ngamma_method`, `failure_mode` | adapter `.strip().lower()` (the non-Terzaghi `failure_mode` check lower-cases only: a padded "general" is refused there by the module, harmlessly) | "strip" |
+| calc package selectors | `_selector_value` strip + lower | "strip" |
+| dxf_export `units` (both) | writer `units.lower().strip()` | "strip" |
+| fem2d_consolidation `reset_displacements_after` | `str(ref).strip().lower()` | "strip" |
+| liquefaction `method`, `input_type` | `_normalize_method`, `_detect_input_type` strip + lower | "strip" |
+| rigid pavement `pavement_type`, `shoulder_type` | AASHTO tables `.strip().lower()` | "strip" |
+| rigid pavement `drainage_quality` | `.strip().lower().replace(" ", "_")` | "spaces_as_underscores" ("very-poor", "verypoor" refused) |
+| subsurface_profile `axis` | `str(axis).strip().lower()` | "strip" |
+| elastic_settlement `shape`, `rigidity`, `point` | `gec6_influence_factor` strip + lower (the only reader) | "strip" |
+| schmertmann_settlement `shape` | `footing_shape.lower() == "strip"` | True |
+| combined_settlement_analysis `shape` | `(footing_shape or "").lower()` | True |
+| consolidation / combined `stress_method` | `method.lower().replace(" ", "")` | "no_spaces" |
+| wave_equation `driving_system` | `"".join(name.lower().split()).replace("-", "")` | "no_spaces_hyphens" |
+| pynite continuous_beam `support_types` | `str(sp["type"]).lower()` per item | True |
+| plot_data `legend_position` | `str(position).lower()` | True |
+
+A padded value the handler strips still passes (refusing it would refuse a
+call that runs today). Tests (`funhouse_agent/tests/test_allowed_values.py`):
+the reviewer's Schmertmann case refused with "Did you mean 'strip'?",
+"STRIP" still runs as a strip; every fold kind on made-up lists; every
+declared `any_case` names a known fold.
+
+### Review fix B3: aliases are read, not advertised as values
+
+The first version put the other spellings a handler reads into
+`allowed_values`, so describe_method and the manual offered them as
+choices of their own with no meaning given: an agent choosing MSE
+`reinforcement_type="grid"` for a geogrid would get steel bar-mat factors
+(Kr/Ka 2.5 to 1.2, F* 20 t/St). Now `allowed_values` holds the listed values
+only, and a parameter declares `value_aliases` (alias -> listed value),
+which the check takes and describe_method gives in words ("Also read as:
+'barmat' = 'metallic_grid', ..." in the parameter's `values_note`, with the
+case rule and the refused values, in place of the raw `any_case`,
+`value_aliases`, `refused_values` keys: review C14). The manual builder
+prints them as "also read as:" and the 33 manual rows the first version
+had widened were hand-edited to match. A refusal lists and suggests listed
+values only (a value close to an alias suggests the value it stands for).
+
+Aliases moved out of the lists (each added by GM-317; lists as they were
+before GM-317 are unchanged, e.g. `caquot_kerisel` and `bar_mat` stay,
+their descriptions explaining them): retaining walls `passive_theory` and
+`theory` and soe `passive_theory` (`logspiral`, `log-spiral`); sheet pile
+`pressure_method` (`caquot_kerisel`, `logspiral`); MSE
+`reinforcement_type` (`barmat`, `welded_wire_grid`, `steel_grid`,
+`ribbed_strip`); liquefaction `method` (nine spellings of `bi2014` and
+`nceer2001`); fem2d `reset_displacements_after` (`first`, `0`, `none`);
+settlement `stress_method` (`2to1`) and the elastic and combined
+`shape`s (`circle`, `rectangle`); dxf_export `units` (`meters`, ...); the
+calc packages' older selector spellings (`mc`, `monte carlo`, `taylor`,
+...). A package that runs several tools now takes every tool's aliases and
+refused values, not the first tool's (review C20; a test checks that
+`any_case` agrees across the tools).
+
+**Calls made** (owner may revisit):
+- MSE `reinforcement_type` `"grid"` and `"strip"` (mse_wall,
+  retaining_wall_package) and liquefaction `method` `"simplified"` are
+  misleading enough not to be offered: "grid" reads as a geogrid but runs
+  the steel bar-mat curves, "strip" can read as a polymer strip but runs
+  the steel ribbed-strip curves, and "simplified" names both liquefaction
+  procedures (Boulanger and Idriss 2014 is a simplified procedure too) but
+  runs NCEER 2001. They are kept as `hidden_value_aliases` (read, never
+  shown) only because removing them would refuse calls that run today:
+  `mse_wall` / `retaining_wall_package` with `reinforcement_type="grid"`
+  (runs as `metallic_grid`) or `"strip"` (as `metallic_strip`), and
+  `liquefaction_analysis` with `method="simplified"` (as `nceer2001`).
+- `seed_idriss` stays offered as an alias of `nceer2001` (the NCEER 2001
+  procedure is the consensus update of Seed and Idriss's), with its
+  meaning shown.
+
+### How the lists were proved complete
+
+Each of the 220 distinct lists was traced from the adapter through to the
+module (four read-only reviewers, one per group of adapters, each value
+followed to the branch, lookup or validation that acts on it, with spot
+probes of in-list, upper-case, padded, hyphenated and made-up values; their
+reports are summarised here). 177 lists were complete as declared. The 43
+others were corrected:
+
+| Adapter (methods) | Parameter | Correction | Why |
+|---|---|---|---|
+| bearing_capacity (analysis, factors) | shape, factor_method, ngamma_method (both), failure_mode (both), depth_factor_method, method | any_case | the module lower-cases each (capacity.py:165-214, footing.py:67) |
+| settlement elastic_settlement | shape | add circle, rectangle; any_case | immediate.py:95, 225 reads both |
+| settlement elastic_settlement | rigidity, point | any_case | lower-cased before lookup |
+| settlement schmertmann_settlement | shape | add circular; any_case | the module documents and runs "circular" (axisymmetric, immediate.py:295) |
+| settlement consolidation / combined | stress_method | add 2to1; any_case ("no_spaces" since B2) | stress_distribution.py:375, 434 lower-cases and drops spaces; "2to1" is its alias |
+| settlement combined_settlement_analysis | shape | add circle; any_case | analysis.py:170-179 |
+| pavement_design rigid | pavement_type, shoulder_type | any_case | tables strip and lower-case |
+| pavement_design rigid | drainage_quality | any_case ("spaces_as_underscores" since B2) | spaces read as underscores ("Very Poor") |
+| liquefaction | method | add the ten spellings `_METHOD_NORMALIZE` reads (built from that table); any_case | liquefaction_adapter.py:41-54, 97 |
+| liquefaction | input_type | any_case | `_detect_input_type` strips and upper-cases |
+| fem2d fem2d_consolidation | reset_displacements_after | add first, none, "0"; any_case | fem2d/analysis.py:2911-2924 |
+| retaining_walls | passive_theory, theory | add logspiral, log-spiral | adapter alias map, retaining_walls.py:771-773 |
+| retaining_walls mse_wall | reinforcement_type | add barmat, welded_wire_grid, steel_grid, grid, strip, ribbed_strip | adapter alias map, retaining_walls.py:117-131 |
+| soe braced/cantilever | passive_theory | add logspiral, log-spiral | soe.py:136-144 |
+| sheet_pile cantilever/anchored | pressure_method | add caquot_kerisel, logspiral | sheet_pile/cantilever.py:29, 820-826 |
+| dxf_export (both methods) | units | add meters, millimeters, centimeters, feet, inches; any_case | the export's unit table |
+| wave_equation (three methods) | driving_system | any_case ("no_spaces_hyphens" since B2) | driving_systems.py:118-142 ignores case, spaces and hyphens |
+| pynite continuous_beam | support_types | any_case (each item) | lower-cased per item |
+| profile_figure subsurface_profile | axis | any_case | strip + lower |
+| core plot_data | legend_position | any_case | lower-cased |
+| calc_package slope_stability_package | method | add janbu, morgenstern_price, gle | analyze_slope runs each as its own method (analysis.py:156-192) |
+| calc_package selectors (design_type, analysis_type, wall_type x3, ground-improvement method, engine, method_6dof) | the selector | add each package's `selector_values` spellings; any_case | `_selector_value` (calc_package.py:1259-1267) strips, lower-cases and maps them |
+
+The calc packages copy their tools' specs (`_package_parameters`), so each
+tool correction above reaches its package too (settlement_package's shape and
+stress_method, pavement_design_package's three, bearing_capacity_package's
+five, the passive_theory, pressure_method, reinforcement_type and
+driving_system of the wall and wave packages).
+
+**No list named a value the code does not act on**, so none lost a value.
+Two lists are wider than one of the tools that reads them and that is left
+as is: retaining_wall_package `sliding_cohesion` is the union of the three
+wall tools' lists, and the MSE tools still refuse `friction_plus_adhesion`
+themselves with a reason; lateral_pile `head_condition` leaves out the
+solver's `partial`, rightly, since the adapter cannot pass its rotational
+stiffness. `compute_trend`'s list stays ["linear", "log_linear"]; nothing
+fits an exponential, so "exponential" is refused rather than added.
+
+### Out-of-list values that ran as something else (now refused)
+
+The two the audit confirmed, and the others the trace found:
+
+- subsurface `compute_trend` `trend_type="exponential"`: fitted a straight
+  line and labelled it exponential. Refused.
+- calc_package `format`: only "pdf" and "latex" are branched on; "docx",
+  "PDF", "tex" and " pdf" all wrote HTML into a file with that extension and
+  reported success (" pdf" overwrote a real PDF at the same path). Refused;
+  format is compared exactly, as the code compares it.
+- axial_pile `method`: anything but "beta" (e.g. "Beta", "nordlund") ran
+  "auto".
+- retaining_walls and sheet_pile `pressure_method`: anything unknown
+  ("Coulomb", "LOG_SPIRAL", "log-spiral" on sheet_pile) ran Rankine.
+- fem2d `fem2d_local_fos` `srm_field`: an unknown value reduced no strength
+  (global FOS 3.0, the SRF ceiling, against 1.444).
+- lateral_pile `head_condition`: an unknown value gave zero deflection and
+  zero moment; `pile_type`: ran as a generic circular pile.
+- settlement `drainage`: anything but "double" ran single drainage.
+- drawing_ir `units` read as metres, `origin` and pdf_import `origin` as
+  top-left; dxf_export `units` left the units header out of the file.
+- downdrag `detail`: anything but "full" returned the short result.
+- slope_stability_package / slope_report_package `method` and
+  `surface_type`: an unknown value ran Bishop / the circular grid search.
+- liquefaction `input_type`: an unknown value fell back to detecting the
+  data; wave_equation `hammer_type` "Diesel" skipped the diesel warning.
+- subsurface `color_by`, `output_format`: fell back silently.
+
+### Replay: calls newly refused
+
+None. The value check was run on every call in `method_probes.json` (251
+probes and their `before` calls), every `dispatch_calls` entry in
+`funhouse_agent/worked_examples.json` (28 examples) and every call in
+`docs/user_manual/worked_examples.json` (18): 322 calls, 0 refused. The
+validation_examples and the test suites that call the dispatch were run in
+full (counts under Tests).
+
+### User manual
+
+`docs/user_manual/manual.html`: only the "allowed:" spans of the parameter
+rows whose list changed were edited (35 rows), by matching each row's
+parameter name and old list within its method's section. `any_case` is not
+printed by the manual builder; no rebuild was run. Review fix B3 took the
+aliases back out of 33 of those rows and added an "also read as:" span
+(as `build_manual.py` now prints it), by script, no rebuild.
+
+### Tests changed because a message or a list changed
+
+- `test_adapter_ergonomics.py`: the retaining-wall `theory` and
+  `reinforcement_type` lists are as on master; since B3 the tests also
+  check their `value_aliases` (and the hidden "grid", "strip").
+- `test_liquefaction_router.py`: `method`'s list is the two ids, as on
+  master; since B3 and C17 the test passes spellings through the check and
+  `_normalize_method`.
+- `test_calc_package_tool_parity.py` (soe_package `wall_type="anchored"`),
+  `test_mse_level_depths_adapter.py` (`sigma_H_average="mean"`),
+  `test_drawing_ir_adapter.py` (`query="frobnicate"`): each was already
+  refused by the module; the refusal now comes from dispatch, in its words.
+
+## Tests run (this machine, Python 3.12 venv; pytest's exit code)
+
+- Piece 1, before its push: core `packages/aec-agent-core/tests` (incl. the
+  new `test_call_warnings.py`, 15), `test_top_level_params.py`,
+  `test_defaults_used.py`, `test_probe_warnings.py` (253 passed, 3 skipped),
+  `test_page_fingerprints.py`, `test_public_text.py`: 1443 passed, 2 failed
+  (both below, failing on master too), then the M-O test updated. Wider run
+  (funhouse_agent/tests, deep tools, report_ingest, the modules whose tests
+  read a result's warnings), `-m "not slow"`: 9972 passed, 2 failed (the same
+  two).
+- Piece 2: funhouse_agent/tests, funhouse_agent/deep/tests, core tests,
+  webapp/tests, calc_package, validation_examples, report_ingest/tests and
+  the tests of bearing_capacity, settlement, pavement_design, dxf_export,
+  sheet_pile, retaining_walls, soe, wave_equation, pynite_agent,
+  profile_figure, fem2d (`-m "not slow"`): 14727 passed, 10 failed: 8 were
+  the messages and lists above (fixed: `refused_values` for two, test
+  expectations for six), 2 fail on master too. Re-run of every touched test
+  file plus `test_allowed_values.py` (271 passed, 3 skipped: T1 (c) over
+  every probe and the shapes), fingerprints, public text and the core tests:
+  1093 passed, 3 skipped.
+- Failing on master as well, not touched: `test_defaults_used.py::
+  test_every_default_a_run_lists_changes_its_result[profile_figure|plot_data]`
+  (logx/logy change nothing in the result) and `test_calc_package_figure_
+  conventions.py::test_large_pile_group_leaves_the_forces_to_the_table`.
+- Page fingerprints unchanged: no tool description or prompt changed
+  (`allowed_values`, `any_case` and `refused_values` live in METHOD_INFO,
+  read by describe_method).
+- Review round (branch `fix/gm316-review`), each file alone, exit 0:
+  core `test_call_warnings.py` 24 passed; `test_allowed_values.py` 286;
+  `test_probe_warnings.py` 8 (4.8 s, was 209 s); `test_defaults_used.py`
+  per-probe guard (`-k the_defaults_a_run_lists`, not slow) 250;
+  `test_adapter_ergonomics.py` 170; `test_liquefaction_router.py` 28;
+  `test_calc_package_tool_parity.py` 181; `test_calc_package_adapter.py`
+  84; `calc_package/tests/test_assumed_inputs.py` 5;
+  `soe/tests/test_anchor_gec4.py` 20; lateral_pile `test_no_solution.py` 8
+  and `test_stickup_and_banded.py` 12; drilled_shaft
+  `test_gec10_2018_beta.py` 13 and `test_drilled_shaft.py` 74;
+  `test_page_fingerprints.py` 13 (fingerprints unchanged, none
+  re-recorded);
+  `test_public_text.py` 5. Full suites not run here (they run on GitHub).
+- Re-check round (on 1056ac6), each file alone, exit 0, Windows 3.14:
+  core `test_call_warnings.py` 25; `test_allowed_values.py` 295;
+  `test_probe_warnings.py` 8; the whole of `test_defaults_used.py` (the
+  per-probe guard 250 passed; the rest 328 passed, 13 skipped); the settlement,
+  soe, axial pile, drilled shaft, pile group, bearing capacity and calc package
+  test files the round touched; `test_page_fingerprints.py` 13 (unchanged);
+  `test_docs_currency.py` 6; `test_public_text.py` 5; `test_backlog.py` 11.
+  To find the CI failure (logs need a login): every test file in the
+  pyproject testpaths that imports `funhouse_agent`, `aec_agent_core`,
+  `calc_package`, `soe`, `axial_pile`, `drilled_shaft` or `lateral_pile` (348
+  files, funhouse_agent/tests whole) and the other 35 webapp test files, one
+  process a file, on Linux Python 3.12 with the latest numpy 2.5.4, scipy
+  1.18.1 and matplotlib 3.11.2 (as CI installs): all exit 0 but
+  `test_review_boundary.py` (fixed, above) and two that fail only in that
+  setup (`test_public_text.py`: git cannot read a Windows worktree from WSL,
+  passes on Windows; `test_databricks_launcher.py`: reads PYTHONPATH's first
+  entry, nothing of the branch).
+  `test_allowed_values.py`'s any_case check now skips an adapter whose
+  optional package is missing (it raised KeyError without PyNite).
+
+## Release note
+
+What a user of the agent will notice. **Warnings:** a calculation that hit
+something the module warns about (a pile or shaft longer than the soil
+profile, soil layers that stop short of a pile toe, Cr greater than Cc, a
+Mononobe-Okabe case with no solution, a numerical overflow or a division by
+zero inside a calculation) now says so in its result, under `warnings`, on
+every call; before, the message went to the server log and the agent never
+saw it, so the agent can now report it to the user. The numbers do not
+change. Report ingest's recompute rows (`module_warnings`) carry these too.
+**Allowed values:** a tool given a value outside the values it lists for a
+parameter (e.g. `trend_type="exponential"`, a calc package `format="docx"`
+or `"PDF"`, an axial pile `method="Beta"`, a sheet pile
+`pressure_method="Coulomb"`) is now refused with the list and a
+did-you-mean, where before many such values silently ran as something else
+(a straight-line trend labelled exponential, HTML written into a .docx
+file, the Nordlund/alpha method instead of beta, Rankine instead of
+Coulomb, a zero-deflection pile head, a local FOS with no strength
+reduction). Calls with a listed value are unchanged; spellings the code
+already accepted ("logspiral", "2to1", the calc packages' older selector
+names, the liquefaction method aliases) are still accepted and shown as
+"also read as", and case or surrounding spaces are ignored exactly where
+the code ignores them. A calc package now prints the warnings its
+calculation raised, under "Warnings Raised by the Calculation". This is an aec-agent-core change (method_call.py,
+call_warnings.py, hooks.py, plot_tool.py), so it ships with a core release.
+
+## Noted, not fixed (piece 2)
+
+- `pct_saturation_time`, `axis` (lateral pile), `hammer_type` and several
+  others are read only on one path (with `drainage_quality` and no `cd`;
+  for an H-pile; for the diesel warning); off that path any listed value is
+  ignored. Enforcement does not change that.
+- `ngamma_method` at phi = 0 returns before checking the name, so before
+  this change a made-up name ran silently; it is now refused at dispatch.
+- fem2d `n_gp` converts with `int()`, so 3.9 still runs as 3 (a float is a
+  different kind from the list's ints and is left to the method).
+- `log_linear` in `compute_trend` fits ln(value) against ln(depth), a power
+  law; its description is a matter for wave 2e (subsurface trends).

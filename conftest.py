@@ -81,6 +81,24 @@ def _shared_host_flag_reset():
     _fileio._REQUIRE_BINDING = saved
 
 
+@_pytest.fixture(autouse=True)
+def _chart_reads_pinned():
+    """Every test sees a host where reference charts can be read (a fetcher
+    or the PDFs), whatever this machine holds: a checkout with the PDFs and
+    CI without them would otherwise build different prompts and tools. A
+    test of a host without them pins False (``reference_docs.pin_chart_reads``)
+    or None to look for real; it is put back after each test."""
+    try:
+        from funhouse_agent import reference_docs
+    except Exception:                                  # noqa: BLE001
+        yield
+        return
+    saved = reference_docs._PINNED
+    reference_docs.pin_chart_reads(True)
+    yield
+    reference_docs._PINNED = saved
+
+
 @_pytest.fixture
 def fail_import(monkeypatch):
     """``fail_import(name, exc)``: ``name`` is found, as an installed package

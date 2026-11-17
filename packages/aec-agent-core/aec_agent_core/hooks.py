@@ -38,6 +38,12 @@ Step 11 (c)'s:
   (:mod:`aec_agent_core.review_eval`: the page whose turn a task runs on,
   the app's tasks, and where their documents are found).
 
+GM-316's:
+
+- ``method_call.warning_packages``: :mod:`aec_agent_core.call_warnings`
+  (the module-name prefixes of the app's calculation packages, whose Python
+  warnings raised during a method call reach the agent with its result).
+
 Step 13's (INF-33):
 
 - ``app.details``: :mod:`aec_agent_core.app_details` (which application

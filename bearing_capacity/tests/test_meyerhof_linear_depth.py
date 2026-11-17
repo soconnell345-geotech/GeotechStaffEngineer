@@ -51,8 +51,10 @@ def test_linear_reproduces_table_5_6_by_hand_beyond_df_b_one():
     assert dc == pytest.approx(1.9404, abs=5e-4)
     assert dq == pytest.approx(1.4702, abs=5e-4)
     assert dg == dq
-    # the default takes k = arctan(2.5) = 1.1903 rad: smaller factors
-    hc, hq, hg = depth_factors(34.0, 4.0, 1.6, "meyerhof")
+    # 'hansen' takes k = arctan(2.5) = 1.1903 rad: smaller factors
+    hc, hq, hg = depth_factors(34.0, 4.0, 1.6, "meyerhof", "hansen")
+    # GM-310: left out, Meyerhof's factors are his own (linear)
+    assert depth_factors(34.0, 4.0, 1.6, "meyerhof") == (dc, dq, dg)
     assert hq == pytest.approx(1 + 0.1 * 1.1903 * 1.8807, abs=5e-4)
     assert hq < dq and hc < dc
 
@@ -61,8 +63,8 @@ def test_linear_reproduces_table_5_6_by_hand_at_phi_zero():
     # phi = 0: K_P = 1; Df/B = 3.0 / 1.2 = 2.5: d_c = 1 + 0.2 x 2.5 = 1.5
     assert depth_factors(0.0, 3.0, 1.2, "meyerhof", "linear") == \
         pytest.approx((1.5, 1.0, 1.0))
-    # the default: 1 + 0.2 arctan(2.5) = 1.2381
-    assert depth_factors(0.0, 3.0, 1.2, "meyerhof")[0] == \
+    # 'hansen': 1 + 0.2 arctan(2.5) = 1.2381
+    assert depth_factors(0.0, 3.0, 1.2, "meyerhof", "hansen")[0] == \
         pytest.approx(1.2381, abs=5e-4)
 
 
@@ -71,7 +73,8 @@ def test_linear_reproduces_table_5_6_by_hand_at_phi_zero():
 def test_linear_and_the_default_agree_up_to_df_b_one(phi, df_b):
     # below Df/B = 1 both take k = Df/B (Table 5-6)
     assert depth_factors(phi, df_b * 2.0, 2.0, "meyerhof", "linear") == \
-        pytest.approx(depth_factors(phi, df_b * 2.0, 2.0, "meyerhof"))
+        pytest.approx(depth_factors(phi, df_b * 2.0, 2.0, "meyerhof",
+                                    "hansen"))
 
 
 def test_linear_below_df_b_one_by_hand():
@@ -95,7 +98,7 @@ def test_linear_goes_with_meyerhof_only():
 
 def test_analysis_carries_the_linear_factors_and_a_larger_capacity():
     lin = _analysis(depth_factor_method="linear").compute()
-    dflt = _analysis().compute()
+    dflt = _analysis(depth_factor_method="hansen").compute()
     assert lin.dq == pytest.approx(1.4702, abs=5e-4)
     assert lin.q_ultimate > dflt.q_ultimate
     # only the depth factors differ: the overburden and self-weight terms
@@ -104,24 +107,79 @@ def test_analysis_carries_the_linear_factors_and_a_larger_capacity():
         pytest.approx(lin.dq / dflt.dq, rel=1e-9)
 
 
-def test_the_choice_reports_linear_given_and_the_default_as_alternative():
+def test_the_choice_reports_linear_and_hansen_as_alternative():
     r = _analysis(depth_factor_method="linear").compute()
     c = _choice(r, "depth factors")
-    assert c["how"] == "given"
+    # outside a tool call "given" is judged by the value: linear is now
+    # Meyerhof's default (GM-310)
+    assert c["how"] == "default"
     assert c["chosen"].startswith("k = Df/B = 2.500")
     assert "(depth_factor_method 'linear')" in c["chosen"]
     assert "Table 5-6" in c["basis"] and "every depth" in c["basis"]
     assert any("depth_factor_method 'hansen'" in a for a in c["alternatives"])
 
 
-def test_the_default_is_unchanged_and_lists_linear_as_alternative():
-    r = _analysis().compute()
+def test_hansen_is_the_option_and_lists_linear_as_alternative():
+    r = _analysis(depth_factor_method="hansen").compute()
     c = _choice(r, "depth factors")
-    assert c["how"] == "default"
+    assert c["how"] == "given"
     assert "arctan(Df/B)" in c["chosen"]
     assert "(depth_factor_method 'hansen')" in c["chosen"]
+    assert "Brinch Hansen's method only" in c["basis"]
     alt = [a for a in c["alternatives"] if "'linear'" in a]
     assert len(alt) == 1 and "1.940, 1.470, 1.470" in alt[0]
+
+
+# GM-310 (the call for OWN-131, 2026-11-12): with Meyerhof's method the
+# depth factors follow his own Table 5-6 at every depth by default.
+
+def test_meyerhof_default_is_his_own_table_and_warns_beyond_df_b_one():
+    import warnings as w
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        r = _analysis().compute()
+    lin = _analysis(depth_factor_method="linear").compute()
+    han = _analysis(depth_factor_method="hansen").compute()
+    assert r.q_ultimate == lin.q_ultimate > han.q_ultimate
+    assert r.dq == pytest.approx(1.4702, abs=5e-4)
+    c = _choice(r, "depth factors")
+    assert c["how"] == "default"
+    assert "(depth_factor_method 'linear')" in c["chosen"]
+    # the warning, in the choice and as a Python warning: no limit, and
+    # Brinch Hansen's factors and q_ult beside it
+    for text in (c["chosen"], " ".join(str(x.message) for x in caught)):
+        assert "Df/B = 2.50 is beyond 1" in text
+        assert "grow without limit" in text
+        assert f"q_ult = {han.q_ultimate:,.0f} kPa" in text
+        assert f"{han.dc:.3f}, {han.dq:.3f}, {han.dgamma:.3f}" in text
+        assert "Table 5-8 note B, p. 295" in text
+
+
+def test_no_warning_up_to_df_b_one_or_with_vesic():
+    import warnings as w
+    shallow = BearingCapacityAnalysis(
+        footing=Footing(width=1.6, depth=1.6, shape="square"),
+        soil=BearingSoilProfile(layer1=SoilLayer(
+            friction_angle=34.0, unit_weight=18.5)),
+        factor_method="meyerhof")
+    assert shallow.depth_factor_method == "linear"
+    vesic = BearingCapacityAnalysis(
+        footing=Footing(width=1.6, depth=4.0, shape="square"),
+        soil=BearingSoilProfile(layer1=SoilLayer(
+            friction_angle=34.0, unit_weight=18.5)))
+    assert vesic.depth_factor_method == "hansen"
+    with w.catch_warnings():
+        w.simplefilter("error")
+        r = shallow.compute()
+        vesic.compute()
+    assert "beyond 1" not in _choice(r, "depth factors")["chosen"]
+    # up to Df/B = 1 the two forms are the same number
+    assert r.q_ultimate == pytest.approx(BearingCapacityAnalysis(
+        footing=Footing(width=1.6, depth=1.6, shape="square"),
+        soil=BearingSoilProfile(layer1=SoilLayer(
+            friction_angle=34.0, unit_weight=18.5)),
+        factor_method="meyerhof",
+        depth_factor_method="hansen").compute().q_ultimate)
 
 
 def test_vesic_does_not_list_linear():

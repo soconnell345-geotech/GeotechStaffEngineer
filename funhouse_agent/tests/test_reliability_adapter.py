@@ -90,6 +90,62 @@ class TestEngines:
             100 * math.tan(math.radians(32.0)) / 40.0, rel=0.01)
 
 
+class TestTruncationAndDropped:
+    """GM-322: fosm and pem refuse a truncated variable; monte_carlo
+    counts the realizations it leaves out."""
+
+    TRUNC = {"variables": {
+        "R": {"mean": 200.0, "std": 40.0, "lower": 130.0, "upper": 270.0},
+        "S": {"mean": 100.0, "std": 20.0, "dist": "lognormal"}},
+        "g_expression": "R / S"}
+
+    @pytest.mark.parametrize("method", ["fosm", "pem"])
+    def test_moment_engines_refuse_truncation(self, method):
+        r = call_agent("reliability", method, self.TRUNC)
+        assert "takes no truncation" in r["error"]
+        assert "monte_carlo or form" in r["error"]
+
+    def test_sampling_engines_take_truncation(self):
+        mc = call_agent("reliability", "monte_carlo",
+                        dict(self.TRUNC, n=50000, seed=7))
+        fo = call_agent("reliability", "form", self.TRUNC)
+        assert "error" not in mc and "error" not in fo
+        assert mc["pf"] == pytest.approx(0.0036, rel=0.25)
+        assert fo["pf"] == pytest.approx(0.0049, rel=0.02)
+
+    def test_descriptions_say_which_engines_truncate(self):
+        for method in ("fosm", "pem"):
+            d = METHOD_INFO[method]["parameters"]["variables"]["description"]
+            assert "takes no truncation" in d and "refused" in d
+        for method in ("monte_carlo", "form"):
+            d = METHOD_INFO[method]["parameters"]["variables"]["description"]
+            assert "reads the truncated distribution" in d
+
+    def test_monte_carlo_reports_dropped(self):
+        r = call_agent("reliability", "monte_carlo", {
+            "variables": {"x": {"mean": 10.0, "std": 1.0}},
+            "g_expression": "sqrt(12.0 - x)", "n": 4000, "seed": 12})
+        assert "error" not in r
+        assert r["n_requested"] == 4000
+        assert 0 < r["n_dropped"] < 200
+        assert r["n"] == 4000 - r["n_dropped"]
+        assert r["pf_bounds_dropped"][0] <= r["pf"] \
+            <= r["pf_bounds_dropped"][1]
+        assert any("not finite" in w for w in r["warnings"])
+
+    def test_monte_carlo_refuses_many_dropped(self):
+        r = call_agent("reliability", "monte_carlo", {
+            "variables": {"x": {"mean": 10.0, "std": 1.0}},
+            "g_expression": "sqrt(10.0 - x)", "n": 2000, "seed": 12})
+        assert "no probability is reported" in r["error"]
+
+    def test_every_returned_key_promised_is_there(self):
+        r = call_agent("reliability", "monte_carlo",
+                       dict(RS_PARAMS, n=500, seed=1))
+        for key in METHOD_INFO["monte_carlo"]["returns"]:
+            assert key in r, key
+
+
 class TestKnowledgeBase:
     def test_cov_guidance_duncan(self):
         r = call_agent("reliability", "cov_guidance",

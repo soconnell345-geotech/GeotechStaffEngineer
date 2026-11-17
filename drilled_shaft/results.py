@@ -51,6 +51,9 @@ class DrillShaftResult:
         What the analysis chose for the user (GM-115,
         ``geotech_common.choices``), e.g. the depth beta of a cohesionless
         side layer given no N60 (GM-148).
+    warnings : list of str
+        What the user must be told (GM-318): a shaft longer than the soil
+        profile run on its last layer carried down (``extend_last_layer``).
     """
     Q_ultimate: float = 0.0
     Q_skin: float = 0.0
@@ -69,6 +72,7 @@ class DrillShaftResult:
     sigma_v_tip: float = 0.0
     base_steps: Optional[Dict[str, Any]] = None
     choices: List[Dict[str, Any]] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         """Return a formatted summary string."""
@@ -109,6 +113,10 @@ class DrillShaftResult:
                     f"Qs={layer['side_resistance_kN']:.1f} kN "
                     f"({layer['soil_type']}, {layer['method']})"
                 )
+
+        if self.warnings:
+            lines.extend(["", "  Warnings:"])
+            lines.extend(f"    - {w}" for w in self.warnings)
 
         from geotech_common.choices import choices_lines
         lines.extend(choices_lines(self.choices))
@@ -159,6 +167,8 @@ class DrillShaftResult:
             d["base_steps"] = dict(self.base_steps)
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
         return d
 
     def get_tables(self) -> list:

@@ -2,9 +2,9 @@
 Reviewer agent — checks primary agent output against reference standards.
 
 Runs after the primary agent produces a final answer that included call_agent
-tool calls. Uses only the 14 geotech-references adapters (DM7, GECs, UFCs,
-FEMA, NOAA, micropile) to verify methodology, parameter ranges, required
-safety factors, and applicable code provisions.
+tool calls. Uses only the reference modules (``dispatch.REFERENCE_MODULES``:
+DM7, the GECs, the UFCs, Eurocode 7 and the others) to verify methodology,
+parameter ranges, required safety factors, and applicable code provisions.
 
 Returns a structured review that the primary agent can use to revise its answer.
 """
@@ -88,8 +88,7 @@ _REVIEW_RULES = """\
 3. Cite the specific reference section, table or figure — only ones a tool \
 returned in this review.
 4. Do NOT repeat the full analysis — only comment on what needs checking.
-5. Limit yourself to 3-4 reference lookups maximum. Focus on the most \
-critical checks.
+5. Focus on the most critical checks.
 """
 
 #: The text-protocol tail: the v1 agent parses <tool_call> tags out of text.
@@ -124,6 +123,23 @@ available: {_REFERENCE_LIST}.
 """
 
 REVIEWER_SYSTEM_PROMPT = REVIEWER_SYSTEM_PROMPT + _TEXT_PROTOCOL + _REVIEW_RULES
+
+#: The v1 reviewer's budget, stated after its rules with ``run_review``'s
+#: own ``max_rounds`` (as the deep reviewer is told its model calls): one
+#: tool call a response, and a review not given by the last response is
+#: never given ("[Review incomplete ...]").
+_V1_BUDGET = (
+    "\nYou have {n} responses for this review, each with at most one tool "
+    "call; a response with no tool call is your review. Give it by "
+    "response {n}, so make at most {lookups} lookups.\n"
+)
+
+
+def v1_reviewer_prompt(max_rounds: int) -> str:
+    """The v1 reviewer's system prompt with its budget for ``max_rounds``
+    responses."""
+    n = max(1, int(max_rounds))
+    return REVIEWER_SYSTEM_PROMPT + _V1_BUDGET.format(n=n, lookups=n - 1)
 
 #: The same reviewer for the deep agent (native tool calling).
 REVIEWER_DEEP_PROMPT = (REVIEWER_SYSTEM_PROMPT.split("## ReAct Protocol")[0]
@@ -206,10 +222,11 @@ def run_review(
     history.add_user(review_prompt)
 
     max_result_chars = 4000
+    system = v1_reviewer_prompt(max_rounds)
 
     for rnd in range(1, max_rounds + 1):
         prompt = history.format_prompt()
-        response = engine.chat(prompt, REVIEWER_SYSTEM_PROMPT, temperature)
+        response = engine.chat(prompt, system, temperature)
 
         if response is None:
             history.add_assistant("")
@@ -257,21 +274,88 @@ def needs_revision(review_text: str) -> bool:
     return "REVIEW_STATUS: REVISE" in review_text
 
 
+#: The librarian's chart sentence where values can be read off the charts
+#: (a fetcher or the PDFs on this host; ``reference_docs``), and where not
+#: (no PDFs here, or a v1 native consult, which has no chart reader).
+_CHART_READS = (
+    "If a value lives in a design chart, find it with figure_search and "
+    "read it off with read_reference_figure (never infer chart values from "
+    "memory). ")
+_NO_CHART_READS = (
+    "No value can be read off a reference chart here (you have no "
+    "chart-reading tool): if a value lives only in a design chart, find "
+    "the figure with figure_search, cite it, and say its value could not "
+    "be read; never give a chart value from its caption or from memory. ")
+#: The librarian's table sentence where a table's printed page can be read
+#: (the same host rule as the chart sentence), and where not.
+_TABLE_READS = (
+    "A printed table is found with table_search or table_get, whose "
+    "how_to_read says where its values are: the section to fetch, the "
+    "lookup to call, or the read_reference_table call for a table printed "
+    "only on its page (never give a table value from its caption or from "
+    "memory). ")
+_NO_TABLE_READS = (
+    "A printed table is found with table_search or table_get, whose "
+    "how_to_read says where its values are (the section to fetch or the "
+    "lookup to call); a table whose values are printed only on its page "
+    "cannot be read here: cite the table and its printed page and say its "
+    "values could not be read; never give a table value from its caption "
+    "or from memory. ")
+
+
+def consultant_role(chart_reads: Optional[bool] = None,
+                    tables: Optional[bool] = None) -> str:
+    """The librarian's role (:data:`CONSULTANT_ROLE`), its chart and table
+    sentences as this host allows (``chart_reads`` None: ask
+    :func:`funhouse_agent.reference_docs.chart_reads_available`;
+    ``tables`` None: whether the library has table catalogs,
+    :func:`funhouse_agent.reference_docs.table_catalogs_available`, and
+    with none the table sentence is left out)."""
+    from funhouse_agent import reference_docs
+    if chart_reads is None:
+        chart_reads = reference_docs.chart_reads_available()
+    if tables is None:
+        tables = reference_docs.table_catalogs_available()
+    role = CONSULTANT_ROLE
+    if not tables:
+        role = role.replace(_TABLE_READS, "")
+    elif not chart_reads:
+        role = role.replace(_TABLE_READS, _NO_TABLE_READS)
+    if not chart_reads:
+        role = role.replace(_CHART_READS, _NO_CHART_READS)
+    return role
+
+
+def consultant_framing(chart_reads: Optional[bool] = None) -> str:
+    """The v1 consult's prompt (:data:`CONSULTANT_FRAMING`) as this host
+    allows."""
+    return consultant_role(chart_reads) + "\n\nQuestion: "
+
+
 #: The librarian's role, with no question label: the deep references
 #: helper's system prompt, whose question arrives as its task (GM-230: the
-#: label had dangled there, followed by the concision rule).
+#: label had dangled there, followed by the concision rule). This is the
+#: role where chart values can be read; the builders take
+#: :func:`consultant_role`, which says otherwise on a host without the
+#: reference PDFs (2026-11-10 reach audit).
 CONSULTANT_ROLE = (
     "You are acting as a geotechnical REFERENCE LIBRARIAN. Using ONLY the "
-    "reference lookup tools available to you (NAVFAC DM7, the FHWA GEC series, "
+    "reference lookup tools available to you (DM 7.1 and 7.2 (UFS 3-220-10, "
+    "UFC 3-220-20), the FHWA GEC series, "
     "UFC, Eurocode 7, micropile, FEMA and the others that list_agents names — "
     "via "
     "chapter-text search, table/equation lookups, and figure search), answer "
     "the question you are asked. CITE the specific "
     "reference and section/table/figure number for every value or statement — "
-    "only references your tools returned in this consult; if the lookups find "
-    "nothing, say so rather than citing from memory. If "
-    "a value lives in a design chart, find it with figure_search and read it off "
-    "with read_reference_figure (never infer chart values from memory). Do NOT "
+    "only references your tools returned in this consult, never from "
+    "memory. Say \"not found\" only for a lookup that ran and returned "
+    "nothing, and name that lookup (the reference and the method or "
+    "search); a search whose hits are all marked match \"any word\" (each "
+    "holds only some of your words) found nothing for the whole query. A "
+    "lookup that errored, or one you did not make, is not "
+    "\"not found\": say it failed or was not made. "
+    + _CHART_READS + _TABLE_READS +
+    "Do NOT "
     "run engineering analyses — that is the asker's job. When the question "
     "gives the inputs and the reference gives the equation or table, return "
     "the value the reference's own function computes, or evaluate the "
@@ -312,5 +396,9 @@ def consult_references(
         temperature=temperature,
         verbose=verbose,
     )
-    result = sub.ask(CONSULTANT_FRAMING + question)
+    # A native-tools consultant has no read_reference_figure (OPENAI_TOOLS),
+    # so it is told no chart value can be read, whatever this host holds; a
+    # text-mode one has the tool where the host reaches the PDFs.
+    native = getattr(engine, "native_tool_calling", False)
+    result = sub.ask(consultant_framing(False if native else None) + question)
     return result.answer

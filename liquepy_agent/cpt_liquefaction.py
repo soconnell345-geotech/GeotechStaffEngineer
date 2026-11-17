@@ -181,6 +181,30 @@ def depth_profile(depth, factor_of_safety, volumetric_strain,
     return rows, note
 
 
+def refuse_missing_readings(**columns):
+    """Refuse a CPT profile with a missing or non-finite reading.
+
+    A reading that is not there (None or NaN, as a parsed CPT file gives a
+    void value) makes every result NaN, and a NaN factor of safety reads
+    downstream as "does not liquefy". So the profile is refused, naming
+    the column, the count and the first index; the caller leaves those
+    depths out of every array.
+    """
+    for name, column in columns.items():
+        if column is None:
+            continue
+        bad = ~np.isfinite(np.asarray(
+            [np.nan if v is None else v for v in column], dtype=float))
+        if bad.any():
+            raise ValueError(
+                f"{name} has {int(bad.sum())} missing or non-finite "
+                f"reading(s) of {len(bad)} (the first at index "
+                f"{int(np.argmax(bad))}). A reading that is not there "
+                f"cannot be analysed, and a zero in its place would read "
+                f"as very loose ground: leave those depths out of depth, "
+                f"q_c, f_s and u_2 alike and say which were left out.")
+
+
 def _validate_cpt_inputs(depth, q_c, f_s, u_2, gwl, pga, m_w):
     """Validate CPT liquefaction analysis inputs.
 
@@ -203,6 +227,7 @@ def _validate_cpt_inputs(depth, q_c, f_s, u_2, gwl, pga, m_w):
         raise ValueError(f"f_s length ({len(f_s)}) must match depth length ({n})")
     if u_2 is not None and len(u_2) != n:
         raise ValueError(f"u_2 length ({len(u_2)}) must match depth length ({n})")
+    refuse_missing_readings(depth=depth, q_c=q_c, f_s=f_s, u_2=u_2)
 
     if gwl is None:
         raise ValueError(WATER_TABLE_REQUIRED)
@@ -371,12 +396,27 @@ def analyze_cpt_liquefaction(
     # LDI (Lateral Displacement Index) — use safe version (trapezoid rule)
     ldi_val = _calc_ldi_safe(shear_strain, depth)
 
-    # Min FoS in liquefiable zone (below GWL, Ic < limit)
-    liquefiable = (depth >= gwl) & (i_c_arr < i_c_limit)
-    if np.any(liquefiable):
-        min_fos = float(np.min(fos[liquefiable]))
+    # Min FoS over the susceptible readings (below the water table, Ic
+    # under the limit). With none, the minimum is over every reading and
+    # the result says so (GM-324: it used to come back with no flag).
+    susceptible = (depth >= gwl) & (i_c_arr < i_c_limit)
+    n_susceptible = int(np.sum(susceptible))
+    n_liquefiable = int(np.sum(susceptible & (fos < 1.0)))
+    result_warnings = []
+    if n_susceptible:
+        min_fos = float(np.min(fos[susceptible]))
+        min_fos_basis = ("readings below the water table with Ic under "
+                         f"{i_c_limit:g}")
     else:
         min_fos = float(np.min(fos)) if len(fos) > 0 else 0.0
+        min_fos_basis = "all readings"
+        result_warnings.append(
+            "No reading is below the water table with Ic under "
+            f"{i_c_limit:g}, so none is susceptible to liquefaction by "
+            "this procedure. min_fos is the lowest factor of safety "
+            "liquepy gives over ALL readings, soil the procedure itself "
+            "takes as non-liquefiable; do not read it as a triggering "
+            "result.")
 
     # Max settlement (sum of volumetric strain * layer thickness)
     if len(depth) > 1:
@@ -398,7 +438,11 @@ def analyze_cpt_liquefaction(
         lsn=lsn_val,
         ldi_m=ldi_val,
         min_fos=min_fos,
+        min_fos_basis=min_fos_basis,
+        n_susceptible=n_susceptible,
+        n_liquefiable=n_liquefiable,
         max_settlement_mm=max_settlement_mm,
+        warnings=result_warnings,
         depth=depth,
         factor_of_safety=fos,
         csr=csr_arr,

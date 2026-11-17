@@ -18,8 +18,8 @@ questions CON-1 / FTG-1 / MRS-1 are the E11 addition (2026-07-07).
 | id | module | tool exercised | pinned key |
 |----|--------|----------------|-----------|
 | RDD-1 | slope_stability | `rapid_drawdown_fos` USACE 2-stage | FOS 1.317 |
-| RDD-2 | slope_stability | `rapid_drawdown_fos` Duncan-Wright-Wong 3-stage | FOS 1.385 |
-| RDD-3 | slope_stability | 3-stage `stage3_effective_normal='gle'` option (E2) | FOS 1.428 |
+| RDD-2 | slope_stability | `rapid_drawdown_fos` Duncan-Wright-Wong 3-stage | FOS 1.528 (1.385 before GM-140 step 9) |
+| RDD-3 | slope_stability | `rapid_drawdown_fos` Lowe and Karafiath two-stage (was the removed `stage3_effective_normal='gle'` option, 1.428) | FOS 1.588 |
 | RDD-4 | slope_stability | 2-stage with `stage1_phreatic_points` steady-seepage | FOS 1.441 |
 | RDS-1 | slope_stability | `search_rapid_drawdown` (E1) critical circle | min FOS 0.958 |
 | INF-1 | slope_stability | `infinite_slope_fos` dry cohesionless | FOS 1.349 |

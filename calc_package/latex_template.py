@@ -258,6 +258,17 @@ $\VAR{item.capacity_label_latex}$ = \VAR{item.capacity} \VAR{item.unit}%
 \item \VAR{ref}
 \BLOCK{endfor}
 \end{enumerate}
+\BLOCK{endif}\BLOCK{if sheets}
+
+% ======== DRAWINGS (GM-313) ========
+\section*{Drawings}
+\BLOCK{for sheet in sheets}
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{\VAR{sheet.image_path}}
+\caption*{\VAR{sheet.caption}}
+\end{figure}
+\BLOCK{endfor}
 \BLOCK{endif}
 
 % ======== FOOTER ========

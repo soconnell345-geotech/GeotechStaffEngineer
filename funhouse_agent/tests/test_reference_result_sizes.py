@@ -43,7 +43,8 @@ BROAD = ("a", "the", "of", "shall", "pile", "design", "pile capacity")
 #: adapter is walked when it needs no argument.
 _WALKED = {"list_chapters", "retrieve_section", "search_sections",
            "load_chapter", "reference_search", "reference_get",
-           "reference_query", "figure_search", "figure_get"}
+           "reference_query", "figure_search", "figure_get",
+           "table_search", "table_get"}
 
 
 def _call(agent: str, method: str, params: dict) -> dict:
@@ -151,6 +152,29 @@ def test_figure_db_fits():
     _call("figure_db", "list_indexed_figures", {})
 
 
+def test_table_db_fits():
+    tables_db = pytest.importorskip("geotech_references._tables_db")
+    tables_db._ensure_db()
+    conn = tables_db._ro_connect()
+    try:
+        rows = conn.execute(
+            "SELECT reference, table_number, pdf_page_index FROM tables "
+            "ORDER BY length(coalesce(pages, '')) "
+            "+ length(coalesce(caption, '')) "
+            "+ length(coalesce(note, '')) DESC LIMIT 25").fetchall()
+    finally:
+        conn.close()
+    for ref, number, page in rows:
+        out = _call("table_db", "table_get", {
+            "reference": ref, "table_number": number,
+            "pdf_page_index": page})
+        assert out["how_to_read"]
+    for q in BROAD + ("table", "resistance factor"):
+        out = _call("table_db", "table_search", {"query": q, "limit": 50})
+        assert all("how_to_read" in h for h in out["result"])
+    _call("table_db", "list_indexed_tables", {})
+
+
 @pytest.mark.parametrize("agent", sorted(dispatch.REFERENCE_MODULES))
 def test_every_method_without_arguments_fits(agent):
     mod = dispatch._load_adapter(agent)
@@ -162,7 +186,7 @@ def test_every_method_without_arguments_fits(agent):
                     if isinstance(v, dict) and v.get("required")]
         if not required:
             _call(agent, method, {})
-        elif (agent in ("reference_db", "figure_db")
+        elif (agent in ("reference_db", "figure_db", "table_db")
               or info.get("category") == "Text Retrieval"):
             # a text or search method this file does not walk with its
             # worst arguments yet: walk it above before it ships

@@ -312,3 +312,35 @@ def test_the_word_belongs_to_the_nearest_name():
     # a table row is one statement, whatever its cells hold
     assert not _alarm("| 34 | Q-101 | Not in the schedule. Seen at grid C. |"
                       )["passed"]
+
+
+def test_a_row_is_the_record_of_its_first_named_item():
+    # Foundry brief 8: correct rows on a planted door and a planted footing
+    # named the rooms either side, or the schedule's last mark, and failed
+    for fine in ("| 33 | Listed | Not on Q-102. The wall between 31 and 34 "
+                 "is solid, with no opening. | Scheduled, not drawn |",
+                 "| 33 | on the plan | No, the schedule ends at 32 | Drawn, "
+                 "not scheduled |",
+                 "| 2 | Q-102, the cut at grid C | 33 | Not in the set; the "
+                 "matching cut is marked 32, which is not this one. |"):
+        got = _alarm(fine)
+        assert got["passed"], (fine, got["detail"])
+    # a sound item's own row still charges that item, and only it
+    got = _alarm("| 32 | Listed | Not on Q-102; 31 and 34 are there. |")
+    assert not got["passed"] and "['door 32']" in got["detail"]
+    # a first cell naming a problem and a sound item reads as a sentence
+    got = _alarm("| 32, 33 | Not on Q-102 |")
+    assert not got["passed"] and "['door 32']" in got["detail"]
+
+
+def test_an_item_named_as_a_place_is_not_charged():
+    for fine in ("I zoomed on the wall between 31 and 32: two swings, each "
+                 "with its own tag, and no door missing a tag.",
+                 "The opening between rooms 31 and 34 is not drawn."):
+        got = _alarm(fine)
+        assert got["passed"], (fine, got["detail"])
+    # words that compare the two keep them charged
+    assert not _alarm("There is a conflict between 31 and 32 that is not "
+                      "resolved.")["passed"]
+    # a place does not hide the item the sentence is about
+    assert not _alarm("Door 32 is missing between rooms 31 and 34.")["passed"]

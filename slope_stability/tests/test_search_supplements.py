@@ -65,9 +65,23 @@ def test_brute_force_toe_circle_value():
     angle at its midpoint, and the base of the last one, width / cos(a),
     fell short of the arc rising to the vertical (2.378 on 10,240 slices,
     the error falling as one over the square root of the count)."""
-    f = analyze_slope(_toe_geom(), method="bishop", n_slices=40, xc=2.5,
-                      yc=4.0, radius=math.hypot(2.5, 4.0)).FOS
-    assert f == pytest.approx(2.379, abs=0.002)
+    # GM-140 step 4 and its review's F1: the circle's centre is 1 m below
+    # the crest, a reverse-curvature circle. With no crack asked for it is
+    # no admissible surface (before step 4 it was closed by a crack from
+    # its centre's level, 2.379, which no print gives).
+    from slope_stability import cracks
+    circle = dict(xc=2.5, yc=4.0, radius=math.hypot(2.5, 4.0))
+    with pytest.raises(cracks.ReverseCurvatureDiscarded) as exc:
+        analyze_slope(_toe_geom(), method="bishop", n_slices=40, **circle)
+    assert exc.value.outcome.refusal == cracks.NO_CRACK_ASKED
+    # With Rankine's crack asked for (EM 1110-2-1902 Eq. C-36 with the
+    # developed strengths, 1.80 m) it is closed there: 2.218 (module's
+    # own; printed 2.16 for the slope, Frontiers Earth Sci 13:1581457,
+    # FLAC 2.18).
+    g = _toe_geom()
+    g.tension_crack_depth_basis = "rankine"
+    f = analyze_slope(g, method="bishop", n_slices=40, **circle).FOS
+    assert f == pytest.approx(2.218, abs=0.002)
 
 
 def test_search_finds_toe_circle():
@@ -80,10 +94,16 @@ def test_search_finds_toe_circle():
     slices (2.316), which the search said; now 2.348 on 80 slices."""
     res = search_critical_surface(_toe_geom(), method="bishop", n_slices=40)
     c = res.critical
+    # GM-140 step 4 and its review's F1: no crack is asked for, so the
+    # reverse-curvature toe circles are discarded and counted; the critical
+    # one has its centre above the crest, as before step 4 (as first built,
+    # 2.113 on a circle closed by Rankine's crack nobody asked for).
+    # Printed 2.16 (FLAC 2.18) for the slope; the profile ends at the toe.
     assert c.FOS == pytest.approx(2.346, abs=0.005)
-    anchor = analyze_slope(_toe_geom(), method="bishop", n_slices=40, xc=2.5,
-                           yc=4.0, radius=math.hypot(2.5, 4.0)).FOS
-    assert c.FOS < anchor - 0.02             # a lower toe circle than 2.379
+    assert c.yc > 5.0
+    assert c.tension_crack is None
+    assert res.crack_refused["reverse_curvature_no_crack"]["n"] == \
+        res.n_discarded_reverse_curvature > 0
     assert res.governing_surface == TOE_CIRCLE
     assert c.is_circular
     assert c.x_entry == pytest.approx(0.0, abs=0.05)       # through the toe
@@ -144,17 +164,29 @@ def test_profile_end_check_covers_noncircular_surfaces():
     enters there at 4.82 (3.86 with windows set from the model width, before
     GM-57: the random surfaces are drawn inside the windows), and a circle
     past the left end gives 2.252 (Spencer; the profile-end circle of the
-    circular search is 2.237)."""
+    circular search is 2.237).
+
+    GM-140 step 7a's fix round: refined from every start scored as it
+    stands, the search reads 2.138 (flagged) on a surface that ends at the
+    left end, and no circle past the end is 1 % lower, so the result gives
+    the clipped-range statement instead (no surface past the end was tried;
+    circles past it are no lower). The check itself is a mechanism, so it
+    is tested here on the sampler alone (refine=False): 2.479, the critical
+    circle's polyline."""
     res = search_critical_surface(_toe_geom(), method="spencer",
                                   surface_type="noncircular", seed=1,
-                                  n_trials=300)
+                                  n_trials=300, refine=False)
     assert res.governing_surface == NONCIRCULAR
     w = [w for w in res.warnings if "end of the ground surface" in w]
     assert len(w) == 1
     assert w[0].startswith("The critical surface ends near")
     f = float(re.search(r"gives FOS ([0-9.]+)", w[0]).group(1))
     assert f < 0.99 * res.critical.FOS
-    assert f == pytest.approx(2.252, abs=0.03)
+    # GM-140 step 7a: 2.252 -> 2.221, the circle through the ends of the
+    # refined surface; its fix round, on the sampler alone: 2.219 (made-up
+    # slope, nothing printed; the profile-end circle of the circular search
+    # is 2.237)
+    assert f == pytest.approx(2.221, abs=0.03)
 
 
 def test_toe_circles_honour_given_windows():
@@ -199,17 +231,28 @@ def test_search_finds_infinite_slope_86():
     shallow slide at tan(phi')/tan(beta) = 0.942. The circle search's own
     minimum was ~1.57 with windows from the model width; with windows from
     the slope (GM-57: a circle across the face's mid-length) it reaches a
-    tiny shallow circle at the closed form itself, 0.9420, against 0.9430
-    for the planar surfaces (Janbu's f0 and the end ramps, +0.11 %; 0.9443
-    at a tenth of a slice width deep, before GM-131). It governs, and the
-    result says it is the infinite-slope mechanism (and gives no window-edge
-    warning: shallower slides only tend to the same value)."""
+    tiny shallow circle at the closed form itself, 0.9420, against 0.9442
+    for the planar surfaces (Spencer's method, which scores a plane where
+    Bishop's is named, and the end ramps, +0.24 %; GM-140 step 6: 0.9430
+    by Janbu's simplified method before, whatever method was named). It
+    governs, and the result says it is the infinite-slope mechanism (and
+    gives no window-edge warning: shallower slides only tend to the same
+    value)."""
     res = search_critical_surface(_fill_geom(), method="bishop")
     c = res.critical
     assert c.FOS == pytest.approx(_TAN_RATIO_86, abs=0.002)
     assert res.governing_surface in (INFINITE_SLOPE, CIRCULAR)
     assert res.candidates[CIRCULAR] == pytest.approx(_TAN_RATIO_86, abs=0.002)
-    assert res.candidates[INFINITE_SLOPE] == pytest.approx(0.9430, abs=0.001)
+    # GM-140 step 6: 0.9430 -> 0.9442; printed tan 37 deg / tan 38.66 deg
+    # = 0.9419 (the closed form; +0.24 % by Spencer's method, +0.11 % by
+    # Janbu's simplified method before, which the method named did not ask
+    # for)
+    assert res.candidates[INFINITE_SLOPE] == pytest.approx(0.9442, abs=0.001)
+    assert res.candidates[INFINITE_SLOPE] == pytest.approx(_TAN_RATIO_86,
+                                                           rel=0.003)
+    (planar,) = [r for r in res.candidate_methods
+                 if r["family"] == INFINITE_SLOPE]
+    assert planar["method"] == "spencer" and not planar["named"]
     assert any("infinite slope" in w for w in res.warnings)
     assert not any("edge of the automatic" in w for w in res.warnings)
     chk = res.infinite_slope_checks
@@ -224,18 +267,32 @@ def test_search_finds_infinite_slope_86():
         res.candidates[INFINITE_SLOPE], abs=1e-3)
 
 
-def test_planar_family_alone_on_86_is_janbu():
+def test_planar_family_alone_on_86_is_reported_under_its_method():
     """With the circles kept off the face (windows that make a circle
-    span it), the planar family governs on its own, scored by force
-    equilibrium as the closed form is."""
+    span it), the planar family governs on its own. GM-140 step 6: it is
+    scored by Spencer's method, Bishop's being for circles, and reported
+    under it, with Bishop's own lowest value beside it (before: by
+    Janbu's simplified method whatever method was named)."""
     res = search_critical_surface(_fill_geom(), method="bishop",
                                   x_entry_range=(0.0, 5.0),
                                   x_exit_range=(30.0, 75.0))
     c = res.critical
     assert res.governing_surface == INFINITE_SLOPE
     assert not c.is_circular and len(c.slip_points) == 4
-    assert c.method == "Janbu"
+    assert c.method == "Spencer"
+    assert res.method_used == "spencer"
+    assert res.named_method_lowest["method"] == "bishop"
+    assert res.named_method_lowest["FOS"] == pytest.approx(
+        min(res.candidates[k] for k in (CIRCULAR, TOE_CIRCLE,
+                                        "circle_above_toe")))
     assert c.FOS == pytest.approx(_TAN_RATIO_86, abs=0.01)
+    # Janbu's simplified method named scores the planes itself
+    janbu = search_critical_surface(_fill_geom(), method="janbu",
+                                    x_entry_range=(0.0, 5.0),
+                                    x_exit_range=(30.0, 75.0))
+    assert janbu.critical.method == "Janbu" and janbu.method_used == ""
+    assert janbu.candidates[INFINITE_SLOPE] == pytest.approx(0.9430,
+                                                             abs=0.001)
     assert res.to_dict()["critical"]["surface_type"] == "noncircular"
 
 
@@ -278,13 +335,29 @@ def test_infinite_slope_honours_pore_pressure_and_kh():
 
 
 def test_infinite_slope_mirrored_and_noncircular_search():
-    """The face falling toward +x, and a noncircular search, both report it."""
+    """The face falling toward +x, and a noncircular search, both report it.
+
+    GM-140 step 7a's fix round (ruling 8): a start scored as it stands
+    keeps its own span as the span floor, so the circular search's critical
+    circle, a shallow slide on the face (0.942), is now a noncircular start
+    as it stands and reads below the planar family (0.944): the
+    noncircular search governs, and the result names the infinite-slope
+    mechanism, as it does where a circle governs. The sampler alone
+    (refine=False) stays above the planar family, which governs."""
     res = search_critical_surface(_fill_geom(mirror=True), method="spencer",
                                   surface_type="noncircular", n_trials=100,
                                   seed=1)
     assert res.critical.FOS == pytest.approx(_TAN_RATIO_86, abs=0.01)
-    assert res.governing_surface == INFINITE_SLOPE
-    assert res.candidates[NONCIRCULAR] > res.critical.FOS
+    assert res.governing_surface in (NONCIRCULAR, INFINITE_SLOPE)
+    assert res.critical.FOS <= res.candidates[INFINITE_SLOPE] + 1e-9
+    assert any("the infinite slope mechanism" in w for w in res.warnings)
+    alone = search_critical_surface(_fill_geom(mirror=True),
+                                    method="spencer",
+                                    surface_type="noncircular", n_trials=100,
+                                    seed=1, refine=False)
+    assert alone.critical.FOS == pytest.approx(_TAN_RATIO_86, abs=0.01)
+    assert alone.governing_surface == INFINITE_SLOPE
+    assert alone.candidates[NONCIRCULAR] > alone.critical.FOS
 
 
 def test_infinite_slope_excluded_by_windows_is_warned():

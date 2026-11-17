@@ -7,7 +7,7 @@ from funhouse_agent.adapters import (
 )
 from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
 from drilled_shaft.lrfd import apply_lrfd, RESISTANCE_FACTORS
-from drilled_shaft.capacity import skipped_depths_note
+from drilled_shaft.capacity import extended_lengths_note, skipped_depths_note
 
 # Shaft + soil params shared by every method below.
 _SHAFT_PARAMS = ("diameter", "shaft_length", "socket_diameter",
@@ -25,7 +25,7 @@ _RATIONAL_PARAMS = ("beta_method", "alpha_method", "su_test_type", "pa",
                     "bottom_exclusion", "clay_base_method",
                     "rock_base_method", "rock_base_conditions_met",
                     "large_base_reduction", "rock_side_method",
-                    "rock_joints")
+                    "rock_joints", "extend_last_layer")
 # 'length' is a common guess for the shaft length.
 _SHAFT_ALIASES = {"length": "shaft_length", "pile_length": "shaft_length"}
 
@@ -67,7 +67,7 @@ def _build_soil_profile(params):
         layers.append(ShaftSoilLayer(
             thickness=l["thickness"], soil_type=l["soil_type"], unit_weight=l["unit_weight"],
             cu=l.get("cu", 0.0), phi=l.get("phi", 0.0), N60=l.get("N60", 0.0),
-            qu=l.get("qu", 0.0), RQD=l.get("RQD", 100.0),
+            qu=l.get("qu", 0.0), RQD=l.get("RQD"),
             N1_60=n1_60 or 0.0, sigma_v_ref=sigma_v_ref or 0.0, OCR=l.get("OCR", 0.0),
             sigma_p_correlation=l.get("sigma_p_correlation", "clean_sand"),
             description=l.get("description", ""),
@@ -119,11 +119,23 @@ def _run_capacity_vs_depth(params):
     curve = analysis.capacity_vs_depth(depth_min=params.get("depth_min", 3.0),
                                         depth_max=params.get("depth_max"), n_points=n_points,
                                         skipped=skipped)
-    out = {"capacity_vs_depth": curve}
+    # GM-318 review A1: the lengths past the profile stand on the last
+    # layer carried on (extend_last_layer); said once here, with the
+    # choice, and on each of their rows. The depth the layers given reach
+    # comes from the layers, not profile_depth_given, which is None when
+    # the design shaft ends inside the profile and only the sweep passes
+    # it (GM-318 re-check N1)
+    given = analysis._given_soil().total_thickness
+    past = [r["depth_m"] for r in curve if r["depth_m"] > given + 1e-9]
+    out = ({"warnings": [extended_lengths_note(given, past)]} if past
+           else {})
+    out["capacity_vs_depth"] = curve
     if skipped:
         # GM-203: a refused trial length was dropped without a word
         out["skipped_depths"] = skipped
         out["warning"] = skipped_depths_note(skipped, n_points)
+    if past:
+        out["choices"] = [analysis._extension_choice(base=past[-1])]
     return out
 
 
@@ -201,7 +213,7 @@ METHOD_REGISTRY = {
 # documents them identically (with allowed_values), so capacity_vs_depth and
 # lrfd_capacity stay in lockstep with drilled_shaft_capacity instead of drifting.
 _INFO_DIAMETER = {"type": "float", "required": True, "description": "Shaft diameter (m)."}
-_INFO_LAYERS = {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, cu, phi, N60, qu, RQD} dicts. soil_type: cohesive/cohesionless/rock. A cohesionless layer at the shaft tip needs its N60 (end bearing q_b = 57.5*N60 kPa, GEC-10 Eq. 10-14, N60 the mean of the cohesionless layers' N60 between the base and two base diameters below it, by thickness, limited to 50, p. 10-15; a layer there with no N60, or of cohesive soil or rock, is left out); without it the call is refused. Under beta_method 'rational' (the default, GEC-10 2018 Eq. 10-13) each cohesionless layer the shaft passes through needs its N60 (sigma'p by Eq. 10-11 or 10-12) or a direct OCR, else the call is refused; it also takes N1_60 (overburden-corrected SPT; phi' = 27.5+9.2*log10[(N1)60], GEC-10 Example 10-1 and Eq. A-2, where the layer gives no phi; a phi given is used and the result's choices give the correlation's value beside it), sigma_p_correlation ('clean_sand' default: Eq. 10-11 with m = 0.6, clean quartzitic sands; 'silty_sand': m = 0.8, silty sands to sandy silts; 'gravel': Eq. 10-12, sigma'p/pa = 0.15*N60, gravelly soils; GEC-10 p. 10-11) and sigma_v_ref (kPa, pre-scour effective stress for the OCR; default the layer's own sigma'v); under beta_method 'depth' the depth beta uses neither N1_60 nor OCR: they enter only the result's beta_method 'rational' alternative (choices). A rock layer's RQD (default 100) sets alpha_E of the side resistance under rock_side_method 'caving' (GEC-10 Table 10-3) and the base under rock_base_method 'rqd'; under the default 'gec10' an RQD below 100 within one base diameter below the base needs rock_base_conditions_met, or the tip rock layer's GSI and m_i. A rock layer also takes GSI (Geological Strength Index of the rock mass, 0 to 100, from the core descriptions; GEC-10 p. 10-23 names GSI, not RMR) and m_i (Hoek-Brown constant of the intact rock, by rock type, GEC 5 Table 9-10, as GEC-10 p. 10-24 points to): with the base in that layer they give GEC-10's base for a fractured rock mass, the Hoek-Brown base, Eqs. 10-24 to 10-29, taken where the rock is not taken to meet the conditions of Eq. 10-23 and shown beside 2.5*qu where it is (see rock_base_conditions_met); a rock layer within one base diameter below the base that gives them has its own Hoek-Brown base among the result's alternatives. GSI or m_i on any other layer (above the base, further below it, or with the base in soil) is refused: nothing would use them; capacity_vs_depth takes them on any layer a trial base is in."}
+_INFO_LAYERS = {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, cu, phi, N60, qu, RQD} dicts. soil_type: cohesive/cohesionless/rock. A cohesionless layer at the shaft tip needs its N60 (end bearing q_b = 57.5*N60 kPa, GEC-10 Eq. 10-14, N60 the mean of the cohesionless layers' N60 between the base and two base diameters below it, by thickness, limited to 50, p. 10-15; a layer there with no N60, or of cohesive soil or rock, is left out); without it the call is refused. Under beta_method 'rational' (the default, GEC-10 2018 Eq. 10-13) each cohesionless layer the shaft passes through needs its N60 (sigma'p by Eq. 10-11 or 10-12) or a direct OCR, else the call is refused; it also takes N1_60 (overburden-corrected SPT; phi' = 27.5+9.2*log10[(N1)60], GEC-10 Example 10-1 and Eq. A-2, where the layer gives no phi; a phi given is used and the result's choices give the correlation's value beside it), sigma_p_correlation ('clean_sand' default: Eq. 10-11 with m = 0.6, clean quartzitic sands; 'silty_sand': m = 0.8, silty sands to sandy silts; 'gravel': Eq. 10-12, sigma'p/pa = 0.15*N60, gravelly soils; GEC-10 p. 10-11) and sigma_v_ref (kPa, pre-scour effective stress for the OCR; default the layer's own sigma'v); under beta_method 'depth' the depth beta uses neither N1_60 nor OCR: they enter only the result's beta_method 'rational' alternative (choices). A rock layer's RQD sets alpha_E of the side resistance under rock_side_method 'caving' (GEC-10 Table 10-3; left out, 100 there) and the base under rock_base_method 'rqd' (refused where the tip rock layer gives no RQD). No RQD is assumed for a base in rock: under the default 'gec10', rock within one base diameter below the base with no RQD given, or with an RQD below 100, needs rock_base_conditions_met, or the tip rock layer's GSI and m_i; with none of the three the call is refused, naming them (GEC-10 p. 10-22's conditions are a finding about the rock). A rock layer also takes GSI (Geological Strength Index of the rock mass, 0 to 100, from the core descriptions; GEC-10 p. 10-23 names GSI, not RMR) and m_i (Hoek-Brown constant of the intact rock, by rock type, GEC 5 Table 9-10, as GEC-10 p. 10-24 points to): with the base in that layer they give GEC-10's base for a fractured rock mass, the Hoek-Brown base, Eqs. 10-24 to 10-29, taken where the rock is not taken to meet the conditions of Eq. 10-23 and shown beside 2.5*qu where it is (see rock_base_conditions_met); a rock layer within one base diameter below the base that gives them has its own Hoek-Brown base among the result's alternatives. GSI or m_i on any other layer (above the base, further below it, or with the base in soil) is refused: nothing would use them; capacity_vs_depth takes them on any layer a trial base is in."}
 _INFO_GWT = {"type": "float", "required": False, "description": "Groundwater depth (m)."}
 _INFO_FOS = {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."}
 # Side-resistance selectors and settings (GEC-10 2018 beta by default since GM-241).
@@ -214,12 +226,13 @@ _INFO_RATIONAL = {
     "su_test_type": {"type": "str", "required": False, "default": "ciuc", "allowed_values": ["ciuc", "uc", "uu"], "description": "For alpha_method 'rational': the lab test each layer's cu came from. 'ciuc' (default) = cu taken as su(CIUC), no transform; 'uc' / 'uu' = transformed to su(CIUC) on the layer's sigma'vo by GEC-10 Eq. 10-16 / 10-17 (Chen & Kulhawy 1993, p. 10-16; Example 10-2 takes a UU strength). The base in clay takes the same su(CIUC) (Example 10-3)."},
     "clay_base_method": {"type": "str", "required": False, "default": "gec10", "allowed_values": ["gec10", "oneill_reese"], "description": "Base resistance with the tip in cohesive soil. 'gec10' (default) = GEC-10 (2018) p. 10-19: q_BN = N*c*su (Eq. 10-19), su the mean of the cohesive soil over 2B below the base, by thickness (p. 10-19; the tip layer at its su(CIUC) as its side resistance took it, each clay layer below on its own cu, transformed alike; cohesionless or rock layers within 2B left out; where the profile ends short of 2B, the mean of what it gives, said in the choices), N*c from Table 10-2 by su (6.5 at 500 psf, 8.0 at 1,000 psf, 9.0 at 2,000 psf or more; held at 6.5 below 500 psf), (2/3)[1 + D/(6B)]*N*c*su where the depth D < 3B (Eq. 10-20), no upper limit. 'oneill_reese' = FHWA NHI-06-089 Eqs. 9-39, 9-40 (p. 9-131): Nc = 6[1 + 0.2 z/D] <= 9, x 0.67 where su < 0.5 ksf, q_t <= 80 ksf, on the tip layer's cu."},
     "rock_base_method": {"type": "str", "required": False, "default": "gec10", "allowed_values": ["gec10", "rqd"], "description": "Base resistance with the tip in rock. 'gec10' (default) = GEC-10 (2018) Eq. 10-23 (p. 10-22): q_BN = 2.5*qu, for rock massive or tightly jointed to one diameter below the base, no cavities beneath, a clean base (Example 10-4 takes it with RQD 37 to 100); for a fractured rock mass the Hoek-Brown base, Eqs. 10-24 to 10-29 (pp. 10-23, 10-24; Turner and Ramey 2010): m_b = m_i*exp((GSI-100)/28), s = exp((GSI-100)/9), a = 1/2+(1/6)(exp(-GSI/15)-exp(-20/3)), A = sigma'vb + qu*(m_b*sigma'vb/qu + s)^a, q_BN = A + qu*(m_b*A/qu + s)^a, q_BN/qu limited to 2.5 (p. 10-24), on the tip rock layer's qu, GSI and m_i and the vertical effective stress at the base; resistance factor 0.50 (p. 10-24, Table 8-4); which of the two by rock_base_conditions_met. 'rqd' = q_b/q_u reduced by the tip rock's RQD below 70 (1.5 at 50, 0.8 at 25, 0.4 at 0), cited to GEC-10's 2010 edition, not in the reference library, and not a method GEC-10 Table 8-4 gives a resistance factor for."},
-    "rock_base_conditions_met": {"type": "bool", "required": False, "description": "For rock_base_method 'gec10' with the tip in rock: whether the rock below the base meets the three conditions GEC-10 p. 10-22 sets on q_BN = 2.5*qu (massive or tightly jointed, no compressible seams or joints, to at least one diameter below the base; no solution cavities or voids beneath it; a clean base achieved and verified). The engineer's judgment: Example 10-4 takes 2.5 with RQD 37 to 100 because 'Rock coring and local experience indicate the rock mass below the socket tip is competent'. true = 2.5*qu (Eq. 10-23) as stated. false = GEC-10's base for a fractured rock mass, the Hoek-Brown base (Eqs. 10-24 to 10-29), on the tip rock layer's GSI and m_i; refused, naming them, where that layer does not give them. Left out = taken as met, said in the result's choices, where every layer within one base diameter below the base is rock with RQD 100 (the layer default), with the Hoek-Brown base on the tip rock layer's GSI and m_i beside it where they are given; where a layer there has an RQD below 100 or is soil, the Hoek-Brown base on the tip rock layer's GSI and m_i (2.5*qu bounds it above), and the call is refused, naming them, where that layer does not give them."},
+    "rock_base_conditions_met": {"type": "bool", "required": False, "description": "For rock_base_method 'gec10' with the tip in rock: whether the rock below the base meets the three conditions GEC-10 p. 10-22 sets on q_BN = 2.5*qu (massive or tightly jointed, no compressible seams or joints, to at least one diameter below the base; no solution cavities or voids beneath it; a clean base achieved and verified). The engineer's judgment: Example 10-4 takes 2.5 with RQD 37 to 100 because 'Rock coring and local experience indicate the rock mass below the socket tip is competent'. true = 2.5*qu (Eq. 10-23) as stated. false = GEC-10's base for a fractured rock mass, the Hoek-Brown base (Eqs. 10-24 to 10-29), on the tip rock layer's GSI and m_i; refused, naming them, where that layer does not give them. Left out = taken as met, said in the result's choices, where every layer within one base diameter below the base is rock with RQD 100 as given, with the Hoek-Brown base on the tip rock layer's GSI and m_i beside it where they are given; where a layer there has an RQD below 100, is soil, or is rock with no RQD given (an RQD left out is not taken as 100), the Hoek-Brown base on the tip rock layer's GSI and m_i (2.5*qu bounds it above), and the call is refused where that layer does not give them, naming the inputs that settle it: the rock layers' RQD, rock_base_conditions_met, or GSI with m_i."},
     "large_base_reduction": {"type": "bool", "required": False, "default": False, "description": "O'Neill & Reese's (1999) reduction of base resistance for a large base: 1.27/B in cohesionless soil for a base wider than 1.27 m, F_r = 2.5/(a*B + 2.5*b) <= 1 in cohesive soil for a base wider than 1.90 m (B the bell's where there is one). Default false: GEC-10 (2018) prints neither (Eqs. 10-14, 10-19, 10-20); true applies it."},
     "pa": {"type": "float", "required": False, "default": 101.325, "description": "Atmospheric pressure (kPa) for the rational chains."},
     "rock_side_C": {"type": "float", "required": False, "default": 1.0, "description": "C in the rock side resistance f_s = C*pa*sqrt(qu/pa) (GEC-10 Eq. 10-21, p. 10-20). Default 1.0, 'recommended for design of \"normal\" rock sockets' (pp. 10-20, 10-21; Example 10-4): conventional equipment, nominally clean sidewalls, no caving, no smearing. 0.65 = the value of Eq. 10-22 with alpha_E = 1.0 (rock_side_method 'caving' takes alpha_E from Table 10-3 by RQD). 1.9 for roughened sockets, verified by load tests or local experience (p. 10-22). For rock_side_method 'normal'; refused with 'caving', which takes no C. Needs a rock layer."},
     "rock_side_method": {"type": "str", "required": False, "default": "normal", "allowed_values": ["normal", "caving"], "description": "Rock side resistance. 'normal' (default) = GEC-10 Eq. 10-21, f_s = C*pa*sqrt(qu/pa) with rock_side_C, for a 'normal' socket: conventional equipment, nominally clean sidewalls (pp. 10-20, 10-21). 'caving' = Eq. 10-22 (O'Neill and Reese 1999), f_s = 0.65*alpha_E*pa*sqrt(qu/pa), alpha_E from Table 10-3 (p. 10-21) by each rock layer's RQD and rock_joints (closed joints 1.00, 0.85, 0.60, 0.50, 0.45; open or gouge-filled 0.85, 0.55, 0.55, 0.50, 0.45 at RQD 100, 70, 50, 30, 20 %; linear between the rows, held at 0.45 below RQD 20), for highly fractured or weathered rock that cannot be drilled without artificial support (casing, plug-ahead) or where caving is anticipated. Needs a rock layer."},
     "rock_joints": {"type": "str", "required": False, "default": "closed", "allowed_values": ["closed", "open"], "description": "For rock_side_method 'caving': the joint condition of GEC-10 Table 10-3, 'closed' (default) or 'open' (open or gouge-filled joints), from the cores."},
+    "extend_last_layer": {"type": "bool", "required": False, "default": False, "description": "A shaft longer than the soil profile. false (default): the run is refused, naming the depth the layers do not cover, because the base would bear in ground nobody explored (GEC-10 takes the base resistance from the ground at and to 2B below the base, Eqs. 10-14 and 10-19). true: the last layer is taken to go on to the base, with side resistance and base resistance in it; the result says so in its warnings and choices. Better: give layers down to the base."},
 }
 _INFO_SHAFT_GEOM = {
     "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter. One diameter for every rock layer: GEC-10 sizes a socket by one diameter B (Eq. 10-3, p. 10-9; Example 10-4) and gives none per rock layer. The rock side resistance and, with the tip in rock, the base (pi/4*B^2, GEC-10 Example 10-4, p. 10-28) take it."},
@@ -242,7 +255,7 @@ METHOD_INFO = {
             **_INFO_RATIONAL,
             **_INFO_SHAFT_GEOM,
         },
-        "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Side resistance.", "Q_tip_kN": "Tip resistance.", "base_diameter_m": "Diameter of the base the tip resistance acts on: the bell's, the rock socket's with the tip in rock, else the shaft's."},
+        "returns": {"warnings": "Only when there is something the user must be told: the last layer carried on to the base (extend_last_layer). Tell the user.", "Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Side resistance.", "Q_tip_kN": "Tip resistance.", "base_diameter_m": "Diameter of the base the tip resistance acts on: the bell's, the rock socket's with the tip in rock, else the shaft's."},
     },
     "capacity_vs_depth": {
         "category": "Drilled Shaft",
@@ -259,9 +272,11 @@ METHOD_INFO = {
             "depth_max": {"type": "float", "required": False, "description": "Maximum trial shaft length (m). Default: min(shaft_length, soil profile depth)."},
             "n_points": {"type": "int", "required": False, "default": 20, "description": "Number of trial lengths in the sweep."},
         },
-        "returns": {"capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN, Q_allowable_kN} dicts; Q_allowable_kN = Q_ultimate_kN / factor_of_safety.",
+        "returns": {"warnings": "Only when there is something the user must be told: with extend_last_layer, the trial lengths past the soil profile, run on the last layer carried on to their base. Tell the user.",
+                    "capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN, Q_allowable_kN} dicts, with warnings where that length's run had any (the last layer carried on to its base); Q_allowable_kN = Q_ultimate_kN / factor_of_safety. Each length is run on the layers as given.",
                     "skipped_depths": "Only when the analysis refused some trial lengths: {depth_m, reason} for each, left out of the curve.",
-                    "warning": "Only with skipped_depths: one sentence naming them. Tell the user."},
+                    "warning": "Only with skipped_depths: one sentence naming them. Tell the user.",
+                    "choices": "Only with extend_last_layer and lengths past the profile: the choice 'soil below the profile' (what, chosen, how, basis, alternatives)."},
     },
     "lrfd_capacity": {
         "category": "Drilled Shaft",
@@ -275,7 +290,7 @@ METHOD_INFO = {
             **_INFO_RATIONAL,
             **_INFO_SHAFT_GEOM,
         },
-        "returns": {"Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component (GEC-10 Table 8-4, p. 8-14: side 0.45 clay, 0.55 sand, 0.50 rock; base 0.40 clay, 0.50 sand and rock), the base factor by the soil the base is in. With the base in rock and concrete_fc given, phi_Qt_kN is the smaller of 0.50*Q_tip and the concrete's bearing 0.70*[0.85*f'c*A1*2.0] (GEC-10 p. 10-25, Eq. 12-7), phi_Qt_governed_by saying which."},
+        "returns": {"warnings": "Only when there is something the user must be told: the last layer carried on to the base (extend_last_layer). Tell the user.", "Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component (GEC-10 Table 8-4, p. 8-14: side 0.45 clay, 0.55 sand, 0.50 rock; base 0.40 clay, 0.50 sand and rock), the base factor by the soil the base is in. With the base in rock and concrete_fc given, phi_Qt_kN is the smaller of 0.50*Q_tip and the concrete's bearing 0.70*[0.85*f'c*A1*2.0] (GEC-10 p. 10-25, Eq. 12-7), phi_Qt_governed_by saying which."},
     },
     "get_resistance_factors": {
         "category": "Drilled Shaft",
@@ -316,7 +331,10 @@ _DS_APPLIES = {"su_test_type": {"alpha_method": ["rational"]},
                "rock_base_conditions_met": False,
                "large_base_reduction": False, "bottom_exclusion": False,
                "rock_joints": {"rock_side_method": ["caving"]},
-               "concrete_fc": False}
+               "concrete_fc": False,
+               # only a shaft longer than the profile reads it, and its
+               # default refuses that
+               "extend_last_layer": False}
 # The side resistance settings by soil (sand, clay, rock socket) apply by
 # the layers, which no other parameter says: listed where the run's
 # choices report them (capacity_vs_depth gives no choices, so keeps them).
@@ -346,11 +364,12 @@ _TOP_ZONE = ("1.5 m in cohesive soil, 0 in cohesionless soil and rock",
              "length")
 _ROCK_CONDITIONS = (
     "the three conditions of Eq. 10-23 taken as met where the layers "
-    "within one base diameter below the base show no RQD below 100 and no "
-    "soil (the Hoek-Brown base beside it where the tip rock layer gives GSI "
-    "and m_i); where they show either, the Hoek-Brown base of a fractured "
-    "rock mass (Eqs. 10-24 to 10-29) on the tip rock layer's GSI and m_i, "
-    "refused, naming them, where it gives none",
+    "within one base diameter below the base are rock with RQD 100 as "
+    "given, and no soil (the Hoek-Brown base beside it where the tip rock "
+    "layer gives GSI and m_i); where they show a lower RQD, soil, or rock "
+    "with no RQD given, the Hoek-Brown base of a fractured rock mass (Eqs. "
+    "10-24 to 10-29) on the tip rock layer's GSI and m_i, refused where it "
+    "gives none, naming the RQD, rock_base_conditions_met and GSI with m_i",
     "GEC-10 (FHWA-NHI-18-024) p. 10-22: N*cr = 2.5 is recommended where "
     "the rock below the base is massive or tightly jointed to at least one "
     "diameter below it, with no solution cavities or voids and a clean "

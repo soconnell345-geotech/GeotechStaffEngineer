@@ -199,7 +199,8 @@ def test_the_model_first_calc_instruction_asks_for_every_row():
     said = mf.instruction("calc", "R00", [0])
     assert mf.CALC_TABLE_ROWS in said
     assert mf.CALC_TABLE_ROWS not in mf.PLAIN_INSTRUCTIONS["calc"]
-    assert mf.READ_PROMPT_VERSION == "mf-10"
+    # mf-10 brought the sentence in; later versions keep it.
+    assert int(mf.READ_PROMPT_VERSION.split("-")[1]) >= 10
 
 
 # ---------------------------------------------------------------------------

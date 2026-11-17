@@ -229,13 +229,16 @@ def test_vision_tools_build_and_error_without_engine():
     # notes on a DXF copy, where ezdxf imports (wave 2c, E4)
     from funhouse_agent.deep.tools import _dxf_notes_available
     out_names |= {"annotate_dxf"} if _dxf_notes_available() else set()
+    # the table page reader, where the library has table catalogs (REF-92)
+    from funhouse_agent.deep.tools import reference_page_readers
     # the conversation's kept page readings, for helpers too (TA-28)
     assert names == {"list_files", "read_pdf_text", "read_text_file",
                      "analyze_image",
                      "analyze_pdf_page", "render_region", "kept_readings",
                      "read_reference_figure",
                      "view_worked_example_source", "save_file"} \
-        | document_names | docx_names | like_names | out_names
+        | document_names | docx_names | like_names | out_names \
+        | reference_page_readers()
 
     # read_reference_figure without args → clear error (no raise).
     out = _invoke(
@@ -484,7 +487,11 @@ def test_subagents_configured():
     assert refs["system_prompt"].startswith(CONSULTANT_ROLE)
     assert "Question:" not in refs["system_prompt"]
     assert "concise" in refs["system_prompt"].lower()
-    assert rev["system_prompt"] == REVIEWER_DEEP_PROMPT
+    # the reviewer's prompt, then its call budget (2026-11-10 review F3)
+    from funhouse_agent.deep.agent import _REVIEWER_BUDGET
+    from funhouse_agent.deep.limits import DEFAULT_REVIEWER_MAX_MODEL_CALLS
+    assert rev["system_prompt"] == REVIEWER_DEEP_PROMPT + \
+        _REVIEWER_BUDGET.format(n=DEFAULT_REVIEWER_MAX_MODEL_CALLS)
     assert "<tool_call>" not in rev["system_prompt"]
     assert "<tool_call>" in REVIEWER_SYSTEM_PROMPT        # v1 still parses it
     assert all(m in rev["system_prompt"] for m in REFERENCE_MODULES)

@@ -105,6 +105,24 @@ Reference: Phoon & Kulhawy (1999), Canadian Geotechnical Journal.
 - **COV**: coefficient of variation = std_residual / mean_value
 - **Grouped trends**: separate regression per USCS class or per investigation
 
+What a fit says about itself (GM-326, 2026-11-13):
+
+- **Fewer than 2 points is refused.** `compute_trend` raises `ValueError`
+  (log-linear: fewer than 2 points with depth > 0 and value > 0). It used to
+  return slope 0, R-squared 0 and COV 0, which read as a fitted flat line.
+- **A group that cannot be fitted is kept and flagged.**
+  `compute_grouped_trends` returns it with `fitted=False` and
+  `not_fitted_reason`; its slope, intercept, R-squared, residual and COV are
+  `None` in `to_dict`. `plot_parameter_vs_depth` names it in `skipped`.
+- **`n_points` is the number of points the fit used.** A point whose depth
+  or value is missing (NaN, a null reading) enters no fit, and the
+  log-linear fit cannot take a point at depth <= 0 or with a value <= 0 (the
+  logarithm does not exist); both are counted in `n_dropped` with
+  `dropped_reason`.
+- **Two points.** The line passes through both, so R-squared is 1 by
+  construction; `std_residual` and `cov` are `None` in `to_dict` and a note
+  says why (`scatter_defined=False`).
+
 ## DIGGS Parser
 
 Custom parser using `xml.etree.ElementTree` (stdlib only):
@@ -148,7 +166,18 @@ interpreted subsurface profiles.
   `waterStrike`). `gwl_depth_m` None alone means only "no reading".
 - Single investigation in cross-section: returns minimal plot
 - Parameter with no data: returns empty PlotResult
-- log-linear with zero values: masked out (log(0) undefined)
+- log-linear with zero or negative depths or values: left out of the fit
+  and counted (`n_dropped`); see Statistics
+- A CPT reading the file does not have (GEF `#COLUMNVOID` value): NaN in
+  `CPTParseResult`'s arrays, null in `to_dict`, counted per column in
+  `missing_values`. Never 0.0 and never interpolated: pygef's default
+  (`replace_column_voids=True`) fills a void with a value interpolated from
+  its neighbours, so `parse_cpt_file` reads with that switch off and marks
+  the voids itself. `load_cpt_to_investigation` makes no measurement of a
+  missing reading; `to_liquepy_inputs` leaves the depth out and says how
+  many (`rows_dropped`); the CPT liquefaction tools refuse a null reading.
+  BRO-XML files carry no void mapping in pygef, so a BRO void marker is not
+  recognised (BACKLOG follow-up in `module_work/gm326/CHECK.md`).
 
 ## References
 
