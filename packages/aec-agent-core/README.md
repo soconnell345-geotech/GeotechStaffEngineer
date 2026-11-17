@@ -29,6 +29,19 @@ handed in (`GeotechStaffEngineer` for the geotech app, as before;
 names another. GeotechStaffEngineer's old import path,
 `webapp.foundry_dataset_store`, is an alias of the moved module.
 
+Also in 1.1.0: a Python warning raised inside a method reaches the agent
+(`call_warnings`), and a value outside a parameter's listed values is
+refused with a did-you-mean (`method_call`); `plot_data` draws panels,
+sections to scale and contours; vision readings are told they see one
+image, a stalled reading is given up at 90 s and asked once more, and the
+wait for a reading slot is bounded (`GEOTECH_VISION_SLOT_WAIT_S`); the Tiny
+Apps client asks a request again once; the run record keeps stalled, late
+and retried calls; a refused key's probe verdict stays with its own
+caller; a reading helper's whole record is kept with what it left unread;
+planlens' sheet tools are bound where the installed planlens has them; and
+the review suite's checks read what a run delivered. Release note:
+GeotechStaffEngineer's `module_work/inf76/RELEASE_NOTE.md`.
+
 **1.0.1 (2026-11-10).** Fixes from a deployment review of Document
 Review (GeotechStaffEngineer's BACKLOG, TA-36): a control character in
 text no longer loses a Word or Excel file, and Excel text that opens
