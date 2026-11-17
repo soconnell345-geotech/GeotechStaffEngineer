@@ -131,3 +131,16 @@ def test_state_docs_point_at_the_install_triage_guide(doc):
         f"{doc} no longer points at docs/DATABRICKS_INSTALL.md. That pointer "
         "is the only thing standing between the next agent and a from-scratch "
         "re-derivation of the numpy cascade and the conflict-warning triage.")
+
+
+def test_claude_md_stays_under_40000_bytes():
+    """CLAUDE.md is loaded whole into every session, so its size is paid at
+    the start of each one. It was trimmed on 2026-11-17 from 230 KB of
+    release history and working notes; the old text is kept whole in
+    ``module_work/history/CLAUDE_before_trim_2026-11-17.md``."""
+    size = len((ROOT / "CLAUDE.md").read_bytes())
+    assert size < 40_000, (
+        f"CLAUDE.md is {size:,} bytes; keep it under 40,000. It is loaded "
+        "into every session. State and history go to HANDOFF.md section "
+        "0a-current and open work to BACKLOG.md, never here; the state block "
+        "is replaced, never appended to, and long notes go to module_work/.")

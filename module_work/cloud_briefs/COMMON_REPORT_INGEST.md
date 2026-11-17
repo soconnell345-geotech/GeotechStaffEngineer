@@ -12,7 +12,7 @@ Never do any of these: open a PR, push to master or main, create a tag, or edit 
 
 ## Read first
 
-- The repo's `CLAUDE.md` top block: READ-FIRST and Architecture Patterns.
+- The repo's `CLAUDE.md`: READ-FIRST TRIGGERS and the owner's rules; a module's layout is `MAINTAINERS.md` section 6 (the old "Architecture Patterns" is in `module_work/history/CLAUDE_before_trim_2026-11-17.md`).
 - `report_ingest/README.md`.
 - The BACKLOG.md items your task names, in full, and any trace review they cite under `module_work/field_feedback/`.
 - Do NOT edit BACKLOG.md, HANDOFF.md or CLAUDE.md; the lead folds your results in.

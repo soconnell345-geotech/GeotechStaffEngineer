@@ -21,7 +21,7 @@ You are a cloud helper for the GeotechStaffEngineer project. Its repository buil
 ## Read first
 
 1. The task file's top part and your section.
-2. This repository's `CLAUDE.md`, only the sections "READ-FIRST TRIGGERS", "Architecture Patterns" and "Packages, pages and hosts" (the file is about 170 KB: do not read the rest).
+2. This repository's `CLAUDE.md` (short since 2026-11-17; "Packages and Document Review" is the part for this work). The sections it moved are in `module_work/history/CLAUDE_before_trim_2026-11-17.md`: search it, do not read it whole.
 3. The `BACKLOG.md` items your section names, in full (search for `**ID**`), and the evidence they cite: `module_work/docreview_review_2026-11-10/REVIEW.md` (the deployment review of Document Review) and `module_work/review_eval_results/2026-11-12_foundry_brief7/TRACE_REVIEW.md` sections 7, 8 and 10 (the full read of 84 suite runs on Foundry, "brief 7"). Do NOT edit `BACKLOG.md`, `HANDOFF.md` or `CLAUDE.md`: the lead folds your results in.
 4. The README of each package you change. In planlens: its `CLAUDE.md`, `README.md` and the `DESIGN.md` of the subpackage you change.
 5. For anything that runs on the testers' host: the part of `tinyapps/TINYAPPS.md` about the area you change.

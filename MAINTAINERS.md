@@ -3,9 +3,11 @@
 This is the short way in for an engineer who keeps the app up and has never
 seen the repository. Read it first, then `RELEASING.md`, then section 0 of
 `BACKLOG.md` (the open work) and section 0a-current of `HANDOFF.md` (the
-current state and the release notes). `CLAUDE.md` is the long working notes
-of the AI coding sessions that built the app (about 2,700 lines): search it,
-do not read it whole.
+current state and the release notes). `CLAUDE.md` holds the standing
+instructions of the AI coding sessions; their long working notes up to
+release 5.36.0 (about 2,700 lines) are in
+`module_work/history/CLAUDE_before_trim_2026-11-17.md`: search them,
+do not read them whole.
 
 "The owner" below is the project's owner, who decides what the product does.
 
@@ -162,7 +164,7 @@ python -c "import webapp, aec_agent_core, geotech_references as g; print(webapp.
   `git ls-files`, so `git add` a new file before running it.
 - `webapp/tests/test_docs_currency.py`: `CLAUDE.md`, `HANDOFF.md`
   section 0a-current and the install guide's history name the version in
-  `pyproject.toml`.
+  `pyproject.toml`, and `CLAUDE.md` stays under 40,000 bytes.
 
 ```bash
 python -m pytest -q webapp/tests/test_backlog.py webapp/tests/test_public_text.py webapp/tests/test_docs_currency.py

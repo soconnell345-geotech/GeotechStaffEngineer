@@ -79,7 +79,7 @@ above), as releases 5.35.0 (2026-11-10) and 5.36.0 (2026-11-17) were made
    fails until each of the first three names the new version. Refresh the
    prose, not only the number.
    - `CLAUDE.md`, section "CURRENT WORKING STATE": what is released, with
-     its pins.
+     its pins (at most 12 lines: replace the block, never append to it).
    - `HANDOFF.md`, section "0a-current": a new item 0 for the release: the
      tags and branches, the gate's numbers, and the **release notes by
      module** (each change that moves an answer: for which inputs, a

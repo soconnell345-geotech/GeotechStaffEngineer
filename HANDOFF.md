@@ -12,6 +12,8 @@ detailed Phase-E history; this file supersedes it.
 
 **Close-out releases (2026-11-17, the owner's "full releases"):** planlens 0.16.0 is on PyPI (tag `v0.16.0`), and so are the core and Document Review 1.1.0, released as one unit (tag `aec-v1.1.0` on 03ae5ce; release note `module_work/inf76/RELEASE_NOTE.md`). The testers get it only when the owner bumps the wrapper's pin (OWN-147 first). The app's release pins core 1.1.0.
 
+**CLAUDE.md trimmed (2026-11-17):** the file every session loads went from 230,603 bytes (2,729 lines) to 22,807 bytes (116 lines): the owner's standing rules with pointers to their long form, who keeps what, what a session needs for `packages/` and Document Review, a state block of at most 12 lines that is replaced, never appended to, and where things are. `webapp/tests/test_docs_currency.py` now fails above 40,000 bytes. The old text, whole, is `module_work/history/CLAUDE_before_trim_2026-11-17.md`.
+
 ### Start here (written 2026-10-21 evening; work restarted 2026-10-22 after the weekly limit reset; updated 2026-10-23)
 
 - **Order of work (owner, 2026-10-21; BACKLOG §0 and its sections follow it):** report ingest and GSE on Foundry first, then the geotech calc modules, then Document Review and Tiny Apps last. Everything on master since 5.35.0 is released as 5.36.0 with geotech-references 1.8.0, planlens 0.16.0 and the shared core `aec-agent-core` 1.1.0 ("Where things stand", item 0); 5.35.0 (2026-11-10, through ed929c7) is item 0a and 5.34.0 (2026-11-04, through d57f28d) item 0b.
@@ -487,7 +489,7 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
 - The old text is in git history (commit 414525a, HANDOFF.md lines 192–487).
 
 **Then (2026-10-14 to 2026-10-21; the order of work now is "Start here" above and BACKLOG §0): core improvements while CfA sets up Tiny Apps.** CfA says the SharePoint connection and the per-user Prompter keys (one per user) are a few weeks out, so the Tiny Apps production items (OWN-30, OWN-44, TA-03; the rest merged into OWN-44 on 2026-11-04) moved to Next until they arrive, and on 2026-10-21 the owner deferred them to Later; the FIPS and metered-route questions are answered.
-- **Done on master 2026-10-14 (released in 5.34.0, 2026-11-04):** see CLAUDE.md's state block and BACKLOG "Done since the last sweep" for every item and commit. In short:
+- **Done on master 2026-10-14 (released in 5.34.0, 2026-11-04):** see the state block of the CLAUDE.md archive (`module_work/history/CLAUDE_before_trim_2026-11-17.md`) and BACKLOG "Done since the last sweep" for every item and commit. In short:
   - unsafe-side module answers: downdrag (every method side by side, final stress), the slope search (sand slopes, toe circles, reinforcement), fem2d (the slope mesher's soil-filled notch, the failure criterion, staged `n_steps`, straight T6 excavation walls, a staged excavation that unloads in lifts), SOE free earth with no solution, the anchored sheet-pile moment, Terzaghi factors;
   - Ensoft-style calculation tables in 13 modules' calc packages;
   - Document Review: markups keep correcting and return the found box, geotech tools off the page, turned lettering, cut lines, sideways boxes, zoom and tiles on images; planlens: distinct sheets no longer called duplicates (reached the app with planlens 0.14.0 in 5.34.0);
@@ -1111,7 +1113,7 @@ row naming a run is from the cluster runs recorded in the private ledger,
   the model read the caption as the answer.
 
 **(f) NEXT: Tiny Apps (a new session).** Plan of record `tinyapps/TINYAPPS.md`;
-the "TinyApps pilot" section of `CLAUDE.md`; the Tiny Apps items further down
+the "TinyApps pilot" section of the CLAUDE.md archive (`module_work/history/CLAUDE_before_trim_2026-11-17.md`); the Tiny Apps items further down
 this file. The stubs exist: `webapp/tinyapps_entry.py` and
 `tinyapps/wrapper_repo/` (`app.py`, `packages.txt`, `run.sh`). Engine wiring is
 blocked on office-hours answer #1, the key-auth Prompter client. Nothing about
@@ -1723,7 +1725,7 @@ recorded failure and each stage retries such an item, printing "previous
 attempt failed (...); retrying". Two tests (one on the logs stage end to
 end, one on the three blob shapes). Also in this release: the first real
 numbers are in the private ledger (`MEASUREMENTS.md`, "CLUSTER RUN 1") and
-summarised in CLAUDE.md's state block — labels 0.902 → 0.928 on 307 pages,
+summarised in the state block of the CLAUDE.md archive (`module_work/history/CLAUDE_before_trim_2026-11-17.md`) — labels 0.902 → 0.928 on 307 pages,
 vision-first 0.928. Like 5.20.1 this reaches the cluster a day or two after
 PyPI; until then the owner clears frozen failures with a one-off notebook
 cell that deletes any run file carrying an error.
@@ -2891,7 +2893,7 @@ Current release: **5.11.2** (PyPI; refs 1.3.3). Master carries the big
 UNRELEASED 5.12.0-candidate train: security hardening, geophysics
 excision, structural stack, drawing Phases 1+2 (verified ship-as-is),
 ground-truth harvest, the **planlens split**, and the launcher
-baseUrlPath fix. CLAUDE.md "Post-5.11.2" + "PLANLENS SPLIT" = summary.
+baseUrlPath fix. The CLAUDE.md archive (`module_work/history/CLAUDE_before_trim_2026-11-17.md`) "Post-5.11.2" + "PLANLENS SPLIT" = summary.
 
 DONE TODAY (2026-09-04): drawing Phase 2 COMPLETE + independently
 verified; Mecklenburg ground truth harvested (10 DWG+PDF pairs + truth
@@ -2965,7 +2967,7 @@ never return; (3) the launcher's `bootstrap.run(flag_options)` NEVER
 APPLIED flags — `load_config_options()` was the missing call (76e21ff), so
 the 5.11.1 ping fix was inert and EVERY launcher flag had been ignored
 since birth. Lab probe rig: aiohttp `ws_connect(autoping=False)` against
-`/_stcore/stream` (session tmp scripts; recipe in CLAUDE.md). Plus
+`/_stcore/stream` (session tmp scripts; recipe in the CLAUDE.md archive, `module_work/history/CLAUDE_before_trim_2026-11-17.md`). Plus
 `webapp/turn_jobs.py`: turns now run in a socket-independent worker and
 reattach across reconnects — belt and braces. "Hard proxy TTL" was an
 interim theory, RETIRED.
@@ -2996,7 +2998,7 @@ for build work (owner directive, Max plan).
 
 Current release: **5.11.0** (PyPI, verified live; refs 1.3.3). Master ==
 released (`ae126e8`). Gate green (1,778 on the release chunk; full gate needs
-detached >10-min chunks). CLAUDE.md release sections + auto-memory carry the
+detached >10-min chunks). The release sections of the CLAUDE.md archive (`module_work/history/CLAUDE_before_trim_2026-11-17.md`) + auto-memory carry the
 narrative; `module_work/FUTURE_IDEAS.md` holds the **Funhouse SDK survey
 ledger** (9 ranked findings — streaming landmines, Tiny Apps, auto-continue
 taxonomy, Document Intelligence, environment facts) and the forward specs.
@@ -3041,7 +3043,7 @@ developer — actionable results, no git lectures.
 ## 0a. FOR THE NEXT AGENT (written 2026-07-20 at the Fable→Opus handoff) — prioritized pickup list [HISTORICAL — Foundry items superseded]
 
 Current release: **5.9.1** (PyPI; refs 1.3.3). Master == released. Full gate
-green (~10k tests). Auto-memory carries the running narrative; CLAUDE.md
+green (~10k tests). Auto-memory carries the running narrative; in the CLAUDE.md archive (`module_work/history/CLAUDE_before_trim_2026-11-17.md`) the
 release sections carry per-release detail; `module_work/wiki_verification/
 TIER_A_LEDGER.md` is the verification/defect master ledger.
 
@@ -3082,7 +3084,7 @@ lectures; wiki/Das content = internal anchors only, never shipped.
 
 ## 0. Delta since the table below (2026-07-15 → 07-18; table not yet rewritten) [HISTORICAL]
 
-Everything here is also in CLAUDE.md's release sections (read those) and the
+Everything here is also in the release sections of the CLAUDE.md archive (`module_work/history/CLAUDE_before_trim_2026-11-17.md`; read those) and the
 auto-memory. Headlines:
 
 - **Releases 5.7.0 → 5.8.0 → 5.8.1 → 5.8.2** (all owner-OK'd, all on PyPI, tags
@@ -3107,7 +3109,7 @@ auto-memory. Headlines:
 - **Eval suite is now 108 questions / 68 keyed** (PAV-1..PAV-8 added, ground
   truth run on v5.8.0) and `eval_harness --ids PAV` runs a subset.
 - **Do NOT casually delete `foundry/`** — attempted 2026-07-18, reverted: 9
-  agent-wrapper test suites import it throughout (scope in CLAUDE.md).
+  agent-wrapper test suites import it throughout (scope in the CLAUDE.md archive, "Architecture Patterns").
 - Gate at handoff: 9,169 + 844 (slope/fem2d) + wrapper suites green, ~9,950
   tests + 48-ish skips.
 
@@ -3259,7 +3261,7 @@ master; final gate 8279 passed / 48 skipped). Plan of record + per-item log:
 
 ---
 
-## 4. How to run things (all offline unless noted) [HISTORICAL; current: CLAUDE.md]
+## 4. How to run things (all offline unless noted) [HISTORICAL; current: CLAUDE.md "Tests and environment" and MAINTAINERS.md section 4]
 
 **Environment:**
 - Work in the git worktree `C:\Users\socon\OneDrive\dev\GeotechStaffEngineer\.claude\worktrees\v5.1-todos`
