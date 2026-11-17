@@ -152,7 +152,8 @@ This repository builds three packages; the app also needs two more of the same p
   released: 5.35.0 keeps the core at 1.0.0. Since INF-76 master pins
   1.1.0, the core and Document Review's first release as one unit (tag
   `aec-v1.1.0`, with planlens 0.16.0), and the wrapper's `packages.txt`
-  pins that set. Since those releases
+  pins that set. planlens 0.16.0 is on PyPI (2026-11-17, tag `v0.16.0`);
+  `aec-v1.1.0` is not tagged yet. Since those releases
   (unreleased): the review suite has 52 tasks, fourteen of them coordination
   tasks on one made-up building's documents with planted problems (DR-25;
   `review_eval/coordination_fixture.py` in `aec-document-review`; run on Foundry
