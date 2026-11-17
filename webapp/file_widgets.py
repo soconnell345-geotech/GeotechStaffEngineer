@@ -27,6 +27,12 @@ a Blob opened directly carries the app's origin. The HTML preview on a card
 is framed the same way (:func:`sandboxed_html_page`) on every host, since
 Streamlit's own frames allow the app's origin.
 
+**Open in new tab** has a switch, ``GEOTECH_OPEN_IN_NEW_TAB``
+(:func:`open_in_new_tab_shown`): ``1`` shows it, ``0`` hides it, and unset
+it is hidden on the hosted platform (``GEOTECH_DEPLOYMENT=foundry``), whose
+app frame does not let the page open a tab, and shown elsewhere. Hidden,
+the component has the download button only, and no text names the button.
+
 The inline PDF preview is a ``data:application/pdf`` frame, which the
 Foundry frame blocks as well ("This content is blocked"; a ``data:`` HTML
 page of page images was blocked too). :func:`pdf_page_preview` shows the
@@ -64,6 +70,24 @@ HTML_SANDBOX = ("allow-scripts allow-popups allow-popups-to-escape-sandbox "
 
 #: File types a browser runs scripts in when it opens them in a tab.
 ACTIVE_MIMES = ("text/html", "application/xhtml+xml", "image/svg+xml")
+
+#: Whether the download component offers **Open in new tab**: ``1`` shows
+#: it, ``0`` hides it; unset, hidden on the hosted platform (its app frame
+#: does not let the page open a tab) and shown elsewhere.
+OPEN_IN_NEW_TAB_ENV = "GEOTECH_OPEN_IN_NEW_TAB"
+
+#: The button and its script, put into the component only when it is shown.
+_OPEN_BUTTON = (
+    '<button id="open" type="button" title="Opens in the browser\'s own '
+    'viewer; the first button keeps the file\'s name">Open in new tab'
+    '</button>\n')
+_OPEN_SCRIPT = """document.getElementById("open").onclick = function () {
+  try {
+    if (!window.open(openUrl(), "_blank"))
+      say("The browser blocked the new tab: allow pop-ups for this app.");
+  } catch (e) { say("Could not open it: " + e); }
+};
+"""
 
 #: Session-state key: the downloads prepared since the conversation last
 #: moved on.
@@ -118,6 +142,15 @@ def download_limit_bytes() -> Optional[int]:
     return None
 
 
+def open_in_new_tab_shown() -> bool:
+    """Whether the download component shows **Open in new tab**
+    (:data:`OPEN_IN_NEW_TAB_ENV`)."""
+    value = os.environ.get(OPEN_IN_NEW_TAB_ENV, "").strip()
+    if value in ("0", "1"):
+        return value == "1"
+    return not engine_config.is_foundry_deployment()
+
+
 def _js_string(value: str) -> str:
     """A JavaScript string literal that cannot end the script element or
     change how the browser reads it: ``<``, ``>`` and ``&`` are written as
@@ -128,9 +161,15 @@ def _js_string(value: str) -> str:
 
 
 def browser_download_html(data: bytes, file_name: str, mime: Optional[str],
-                          label: str) -> str:
+                          label: str,
+                          open_tab: Optional[bool] = None) -> str:
     """The component page: a button saving ``data`` as ``file_name`` from a
-    Blob made in the browser, and one opening it in a new tab."""
+    Blob made in the browser, and one opening it in a new tab when
+    ``open_tab`` (default :func:`open_in_new_tab_shown`)."""
+    if open_tab is None:
+        open_tab = open_in_new_tab_shown()
+    open_button = _OPEN_BUTTON if open_tab else ""
+    open_script = _OPEN_SCRIPT if open_tab else ""
     b64 = base64.b64encode(bytes(data)).decode("ascii")
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
 :root {{ color-scheme: light dark; }}
@@ -147,8 +186,7 @@ button:hover {{ border-color: #ff4b4b; color: #ff4b4b; }}
   overflow: hidden; text-overflow: ellipsis; }}
 </style></head><body><div class="row">
 <button id="save" type="button" title="Save {html.escape(file_name)}">{html.escape(label)}</button>
-<button id="open" type="button" title="Opens in the browser's own viewer; the first button keeps the file's name">Open in new tab</button>
-<span id="note"></span></div>
+{open_button}<span id="note"></span></div>
 <script>
 const B64 = {_js_string(b64)};
 const NAME = {_js_string(file_name)};
@@ -200,13 +238,7 @@ document.getElementById("save").onclick = function () {{
     document.body.appendChild(a); a.click(); a.remove();
   }} catch (e) {{ say("Download failed: " + e); }}
 }};
-document.getElementById("open").onclick = function () {{
-  try {{
-    if (!window.open(openUrl(), "_blank"))
-      say("The browser blocked the new tab: allow pop-ups for this app.");
-  }} catch (e) {{ say("Could not open it: " + e); }}
-}};
-</script></body></html>"""
+{open_script}</script></body></html>"""
 
 
 def _component(page: str, height: int) -> None:
@@ -312,12 +344,15 @@ def pdf_page_preview(path: str, key: Optional[str] = None) -> None:
         size = os.path.getsize(path)
     except OSError:
         size = None
+    tab = open_in_new_tab_shown()
     if size is None or size > download_cap_bytes():
         how = "The file is too large to open here."
     elif size > download_prepare_bytes():
         how = ("Prepare the download above, then use Open in new tab to read "
-               "the whole file in the browser's PDF viewer.")
+               "the whole file in the browser's PDF viewer." if tab else
+               "Prepare the download above to save the whole file.")
     else:
         how = ("Use Open in new tab above to read the whole file in the "
-               "browser's PDF viewer.")
+               "browser's PDF viewer." if tab else
+               "Download it above to read the whole file.")
     st.caption(shown + how)

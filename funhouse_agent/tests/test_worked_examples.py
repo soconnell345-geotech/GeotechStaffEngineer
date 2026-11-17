@@ -161,3 +161,38 @@ def test_get_worked_example_wrong_id_says_did_you_mean():
                      {"example_id": eid.lower() + "x"})
     assert "Did you mean" in res["error"]
     assert eid in res["error"].split("Known ids")[0]
+
+
+def test_we_sf_1_names_the_input_that_reproduces_the_print():
+    """WE-SF-1's printed q_ult has no depth factors: the record says so and
+    names depth_factor_method 'none', and its 'none' calls give the
+    record's own no-depth-factor values."""
+    from funhouse_agent.dispatch import call_agent
+    (entry,) = [e for e in we.load_examples() if e["id"] == "WE-SF-1"]
+    assert "depth_factor_method 'none'" in entry["report_notes"]
+    plain = [c for c in entry["dispatch_calls"]
+             if c["params"].get("depth_factor_method") == "none"]
+    assert len(plain) == 2
+    got = [call_agent(c["module"], c["method"], c["params"])["q_ultimate_kPa"]
+           for c in plain]
+    cr = entry["computed_result"]
+    assert got[0] == pytest.approx(cr["q_ultimate_dry_no_depth_factors_kPa"],
+                                   abs=0.1)
+    assert got[1] == pytest.approx(cr["q_ultimate_gwt_no_depth_factors_kPa"],
+                                   abs=0.1)
+
+
+def test_depth_factors_are_a_stated_choice():
+    """An embedded footing's result names the depth factors it applied, with
+    their values, and offers leaving them out (made-up footing)."""
+    from funhouse_agent.dispatch import call_agent
+    params = {"width": 2.0, "depth": 1.0, "shape": "strip", "cohesion": 5.0,
+              "friction_angle": 30.0, "unit_weight": 18.0}
+    res = call_agent("bearing_capacity", "bearing_capacity_analysis", params)
+    (depth,) = [c for c in res["choices"] if c["what"] == "depth factors"]
+    assert f"{res['dc']:.3f}" in depth["chosen"] and res["dc"] > 1.0
+    assert any("'none'" in a for a in depth["alternatives"])
+    none = call_agent("bearing_capacity", "bearing_capacity_analysis",
+                      {**params, "depth_factor_method": "none"})
+    assert none["dc"] == none["dq"] == none["dgamma"] == 1.0
+    assert none["q_ultimate_kPa"] < res["q_ultimate_kPa"]

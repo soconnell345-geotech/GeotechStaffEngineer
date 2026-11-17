@@ -1956,13 +1956,16 @@ def displayable_markdown(text: str, artifact_paths: Iterable[str] = ()) -> str:
 #                     build_deep_agent library default stays OFF).
 #   trace          -- per-conversation "turn details" tracer toggle: True/False
 #                     explicit, None = follow the GEOTECH_TRACE env default.
-# Defaults: references anytime, ref budget 8, recursion_limit 50 (raised from
-# the LangGraph-default 25 in 5.10.2 — see the inline note), route_calc ON
+# Defaults: references anytime, ref budget 10, recursion_limit 150 (25, the
+# LangGraph default, until 5.10.2; 50 until 2026-11-16 — see the inline
+# note), route_calc ON
 # (owner-approved A2), analysis_depth "standard" == no preset, agent_type
 # "full".
 
 ANALYSIS_DEPTHS = ("screening", "standard", "comprehensive")
 REFERENCE_CHOICES = ("anytime", "off")
+#: The most steps the sidebar's "Primary step cap" allows one turn.
+MAX_RECURSION_LIMIT = 200
 
 #: Selectable agent variants (value -> sidebar label). "full" is the default
 #: general geotech agent; the rest are the narrow domain reviewers (F8/D6),
@@ -1984,8 +1987,12 @@ DEFAULT_BEHAVIOR = {
     "ref_max_calls": 10,
     # 25 (the LangGraph default) proved too tight once SharePoint fetch +
     # multi-page PDF reads entered normal workflows (owner hit the cap on the
-    # downdrag task 2026-08); 50 covers those while still bounding runaways.
-    "recursion_limit": 50,
+    # downdrag task 2026-08); 50 covered those. 150 since 2026-11-16: at 50
+    # a normal submittal review on the hosted platform ended with no answer
+    # after 292 s, the next turn at 150 answered, and another real review
+    # used 42 of 50. Still a bound on runaways; the sidebar allows up to
+    # MAX_RECURSION_LIMIT.
+    "recursion_limit": 150,
     "analysis_depth": "standard",
     "agent_type": "full",
     "route_calc": True,
@@ -2098,6 +2105,45 @@ def is_step_cap(exc: BaseException) -> bool:
     return "recursion" in text and "limit" in text
 
 
+def step_cap_of(exc: BaseException) -> Optional[int]:
+    """The step cap a turn hit, from LangGraph's "Recursion limit of N"
+    text; ``None`` when the text does not give it."""
+    m = re.search(r"recursion limit of (\d+)", str(exc), re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+
+def step_cap_answer_on() -> bool:
+    """Whether a turn stopped at its step cap answers from what it gathered
+    (``GEOTECH_STEP_CAP_ANSWER``; TA-33): on in the app unless the variable
+    says ``0`` (or false, no, off). The library's own default
+    (``review_flags.step_cap_answer``, the eval arm) stays off."""
+    value = str(os.environ.get("GEOTECH_STEP_CAP_ANSWER", "")).strip()
+    return value.lower() not in ("0", "false", "no", "off")
+
+
+#: How the app's turn record names the step-cap answer while
+#: ``GEOTECH_STEP_CAP_ANSWER`` is unset (:func:`with_app_switches`).
+STEP_CAP_APP_DEFAULT = "GEOTECH_STEP_CAP_ANSWER=1 (app default)"
+
+
+def with_app_switches(engine: Any) -> Any:
+    """``engine`` (:func:`engine_record`) with its switches line as the app
+    has them: the library's line (``review_flags.describe``) leaves the
+    step-cap answer out while its variable is unset, but the app answers at
+    the cap unless it says ``0`` (:func:`step_cap_answer_on`; review C3).
+    Only the app's turn uses it: the eval, which never answers at the cap,
+    keeps the library's line. A copy; ``engine`` itself is not changed."""
+    build = engine.get("build") if isinstance(engine, dict) else None
+    if (not isinstance(build, dict)
+            or str(os.environ.get("GEOTECH_STEP_CAP_ANSWER", "")).strip()):
+        return engine
+    line = str(build.get("switches") or "")
+    out = dict(engine)
+    out["build"] = dict(build, switches=", ".join(
+        p for p in (line, STEP_CAP_APP_DEFAULT) if p))
+    return out
+
+
 #: What the last call is told when a turn has hit its step cap
 #: (``GEOTECH_STEP_CAP_ANSWER``; TA-33).
 STEP_CAP_NUDGE = (
@@ -2109,31 +2155,89 @@ STEP_CAP_NUDGE = (
     "limit. Never invent a result that was not gathered.")
 #: Each tool result is cut to this many characters for that call.
 STEP_CAP_RESULT_CHARS = 4000
+#: The written-out work is cut to this many characters, its start and its
+#: end kept: a turn at a cap of 150 steps would otherwise send all of it.
+STEP_CAP_WORK_CHARS = 120_000
+
+
+def _text_of(content: Any) -> str:
+    """The text of a message's content (text blocks only: no image data)."""
+    if isinstance(content, list):
+        return "".join(b.get("text", "") if isinstance(b, dict) else str(b)
+                       for b in content
+                       if not isinstance(b, dict) or b.get("type", "text")
+                       == "text")
+    return str(content or "")
+
+
+def _work_so_far(turn_messages: List[dict]) -> str:
+    """The turn's replies, tool calls and tool results written out as plain
+    text, each result cut to :data:`STEP_CAP_RESULT_CHARS` and the whole to
+    :data:`STEP_CAP_WORK_CHARS`. Plain text, not tool messages: a request
+    that carries tool calls without tools is refused by some model
+    services."""
+    lines, names = [], {}
+    for m in turn_messages or ():
+        if not isinstance(m, dict):
+            continue
+        text = _text_of(m.get("content")).strip()
+        if m.get("role") == "tool":
+            if len(text) > STEP_CAP_RESULT_CHARS:
+                text = (text[:STEP_CAP_RESULT_CHARS]
+                        + " ...[cut for the step-limit answer]")
+            name = m.get("name") or names.get(m.get("tool_call_id")) or "a tool"
+            lines.append(f"[result of {name}] {text}")
+            continue
+        if text:
+            lines.append(f"[{m.get('role') or 'assistant'}] {text}")
+        for c in m.get("tool_calls") or []:
+            if not isinstance(c, dict):
+                continue
+            names[c.get("id")] = c.get("name")
+            args = _json.dumps(c.get("args"), default=str, ensure_ascii=False)
+            if len(args) > 500:
+                args = args[:500] + " ..."
+            lines.append(f"[called {c.get('name')}] {args}")
+    work = "\n".join(lines)
+    if len(work) > STEP_CAP_WORK_CHARS:
+        head = STEP_CAP_WORK_CHARS // 4
+        work = (work[:head] + "\n...[steps cut for the step-limit answer]...\n"
+                + work[-(STEP_CAP_WORK_CHARS - head):])
+    return work
 
 
 def answer_at_step_cap(agent, question: Any,
-                       turn_messages: List[dict]) -> Optional[str]:
+                       turn_messages: List[dict],
+                       usage: Optional[dict] = None) -> Optional[str]:
     """One last model call, with no tools, that answers from what a turn
     gathered before it hit its step cap (TA-33; live wave w8, F55: the user
     got a raw error and five chart cards, no answer). ``turn_messages`` are
-    the turn's own replies and tool results (``webapp.turn_record``);
-    ``None`` when there is no model or nothing was gathered."""
+    the turn's own replies and tool results (``webapp.turn_record``),
+    written out as plain text in one message (:func:`_work_so_far`);
+    ``None`` when there is no model or nothing was gathered. ``usage``,
+    when given, gets ``"tokens"``: the call's tokens, which the turn's
+    count adds (review C1)."""
     model = getattr(agent, "geotech_model", None)
     if model is None or not turn_messages:
         return None
-    msgs: List[dict] = []
+    work = _work_so_far(turn_messages)
+    if not work.strip():
+        return None
     q = question.get("content") if isinstance(question, dict) else question
-    if q:
-        msgs.append({"role": "user", "content": str(q)})
-    for m in turn_messages:
-        m = dict(m)
-        if m.get("role") == "tool" and isinstance(m.get("content"), str) \
-                and len(m["content"]) > STEP_CAP_RESULT_CHARS:
-            m["content"] = (m["content"][:STEP_CAP_RESULT_CHARS]
-                            + " ...[cut for the step-limit answer]")
-        msgs.append(m)
-    msgs.append({"role": "user", "content": STEP_CAP_NUDGE})
-    reply = model.invoke(msgs)
+    q = _text_of(q).strip()
+    parts = [f"The request:\n{q}"] if q else []
+    parts.append("What this turn did, step by step (its replies, tool calls "
+                 "and tool results, written out):\n" + work)
+    parts.append(STEP_CAP_NUDGE)
+    reply = model.invoke([{"role": "user", "content": "\n\n".join(parts)}])
+    if usage is not None:
+        meta = getattr(reply, "usage_metadata", None) or {}
+        try:
+            usage["tokens"] = int(meta.get("total_tokens") or (
+                int(meta.get("input_tokens") or 0)
+                + int(meta.get("output_tokens") or 0)))
+        except (AttributeError, TypeError, ValueError):
+            pass
     text = getattr(reply, "content", reply)
     if isinstance(text, list):
         text = "".join(b.get("text", "") if isinstance(b, dict) else str(b)
@@ -2196,12 +2300,22 @@ def friendly_turn_error(exc: BaseException, kept: Optional[str] = None) -> str:
     if is_step_cap(exc):
         # Plain words only (live wave w8, TA-33: the user got LangGraph's
         # error name and a LangChain documentation link); the raw text is in
-        # the activity log.
-        return ("The agent ran out of its steps for this turn before it "
-                "finished. For document-heavy or multi-part requests, raise "
-                "'Primary step cap (recursion limit)' under Behavior > "
-                "Advanced caps in the sidebar (e.g. 50-100) and re-ask, or "
-                "split the request across turns; "
+        # the activity log. It names the cap the turn hit, from the error.
+        cap = step_cap_of(exc)
+        top = MAX_RECURSION_LIMIT
+        if cap and cap >= top:
+            what = (f"the step cap is already at the most the sidebar allows "
+                    f"({top}), so split the request across turns; ")
+        else:
+            what = ("raise 'Primary step cap (recursion limit)' under "
+                    "Behavior > Advanced caps in the sidebar "
+                    + (f"above {cap} (up to {top})" if cap
+                       else f"(up to {top})")
+                    + " and re-ask, or split the request across turns; ")
+        return ("The agent ran out of its steps for this turn"
+                + (f" (all {cap} of them)" if cap else "")
+                + " before it finished. For document-heavy or multi-part "
+                "requests, " + what
                 + (kept if kept else "work done so far (downloads, saved "
                    "files) is kept."))
     kind = _busy_kind(exc)

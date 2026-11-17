@@ -2107,6 +2107,37 @@
      "factor_method": "vesic",
      "ngamma_method": "vesic"
     }
+   },
+   {
+    "module": "bearing_capacity",
+    "method": "bearing_capacity_analysis",
+    "params": {
+     "width": 1.8288,
+     "depth": 1.524,
+     "shape": "strip",
+     "cohesion": 23.94,
+     "friction_angle": 20.0,
+     "unit_weight": 19.636,
+     "factor_method": "vesic",
+     "ngamma_method": "vesic",
+     "depth_factor_method": "none"
+    }
+   },
+   {
+    "module": "bearing_capacity",
+    "method": "bearing_capacity_analysis",
+    "params": {
+     "width": 1.8288,
+     "depth": 1.524,
+     "shape": "strip",
+     "cohesion": 23.94,
+     "friction_angle": 20.0,
+     "unit_weight": 19.636,
+     "gwt_depth": 1.524,
+     "factor_method": "vesic",
+     "ngamma_method": "vesic",
+     "depth_factor_method": "none"
+    }
    }
   ],
   "published_result": "Nc = 14.8, Nq = 6.4, Ngamma = 5.4 (Table 8-2 at phi = 20 deg). Dry case: qult = 7,400 + 4,000 + 2,025 = 13,425 psf (642.8 kPa). GWT at footing base (buoyant unit weight 125 - 62.4 = 62.6 pcf in the weight term): qult = 7,400 + 4,000 + 1,014 = 12,414 psf (594.4 kPa).",
@@ -2114,10 +2145,12 @@
    "factors": "Nc = 14.83, Nq = 6.40, Ngamma = 5.39 - matches Table 8-2 (14.8 / 6.4 / 5.4) to the printed precision (Ngamma = 2(Nq+1)tan(phi) is the same AASHTO/Vesic expression).",
    "q_ultimate_dry_kPa": 804.2,
    "q_ultimate_gwt_kPa": 755.9,
-   "vs_published": "Dry +25.1% (804.2 vs 642.8 kPa); GWT case +27.2% (755.9 vs 594.4 kPa). The entire difference is the Vesic/Hansen DEPTH FACTORS (dc = 1.311, dq = 1.263, dgamma = 1.0 at Df/B = 0.83) that our GEC-6-style analysis applies but the manual's plain Eq. 8-1 omits.",
-   "depth_factor_reconciliation": "Dividing the returned terms by the returned depth factors reproduces the manual: (465.69/1.3113) + (241.8/1.2626) + 96.71 = 643.4 kPa vs printed 642.8 kPa (+0.1%); GWT case (355.2 + 191.5 + 48.4) = 595.1 kPa vs printed 594.4 kPa (+0.1%). The GWT effect itself (weight term halved via gamma' = gamma - 9.81) matches the manual's buoyant-weight treatment."
+   "q_ultimate_dry_no_depth_factors_kPa": 643.4,
+   "q_ultimate_gwt_no_depth_factors_kPa": 595.0,
+   "vs_published": "Dry +25.1% (804.2 vs 642.8 kPa); GWT case +27.2% (755.9 vs 594.4 kPa). The entire difference is the DEPTH FACTORS the analysis applies by default to an embedded footing (depth_factor_method 'hansen', Brinch Hansen: dc = 1.311, dq = 1.263, dgamma = 1.0 at Df/B = 0.83), which the manual's Eq. 8-1 leaves out.",
+   "depth_factor_reconciliation": "The printed solution has no depth factors: depth_factor_method 'none' (the fourth and fifth calls) reproduces it, 643.4 kPa vs printed 642.8 kPa dry (+0.1%) and 595.0 kPa vs printed 594.4 kPa with the water table at the base (+0.1%). Dividing the default run's terms by its depth factors gives the same: (465.69/1.3113) + (241.8/1.2626) + 96.71 = 643.4 kPa. The GWT effect itself (weight term halved via gamma' = gamma - 9.81) matches the manual's buoyant-weight treatment."
   },
-  "report_notes": "The module reproduces the manual's bearing capacity factors exactly and its three-term assembly to 0.1% once the depth-factor convention is accounted for: FHWA NHI-06-089 Eq. 8-1 is the bare Terzaghi-form equation with NO depth factors, while bearing_capacity_analysis follows AASHTO/GEC-6 practice and applies Vesic depth factors for embedded footings (here +25%). A report should state which convention is used and note that omitting depth factors is conservative. The result echoes dc/dq/dgamma explicitly so the reviewer can reconcile the two conventions line by line, as done here.",
+  "report_notes": "The module reproduces the manual's bearing capacity factors exactly and its three-term assembly to 0.1% once the depth factors are left out: FHWA NHI-06-089 Eq. 8-1 is the three-term equation with NO depth factors, while bearing_capacity_analysis applies Brinch Hansen depth factors to an embedded footing by default (depth_factor_method 'hansen', here +25%). To reproduce the printed solution, pass depth_factor_method 'none' (643.4 against 642.8 kPa dry; 595.0 against 594.4 kPa with the water table at the base); GEC-6 Sec. 5.2.3.3 also leaves them out unless the cover over the footing is competent and sure to stay. A report should state which convention is used and note that omitting depth factors is conservative. The result names the depth factors it applied (dc, dq, dgamma and its choices entry, with 'none' among the alternatives) so the reviewer can reconcile the two conventions line by line.",
   "provenance": "NHI-06-089 Example 8-1, pdf p.55",
   "source_doc": "FHWA NHI-06-089 Soils and Foundations Vol 2.pdf",
   "source_pdf_pages": [

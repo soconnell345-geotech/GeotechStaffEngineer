@@ -487,6 +487,14 @@ images, with a note to open the whole file in a new tab (the pages are drawn
 only when asked for, so a long conversation with many PDFs stays quick).
 Elsewhere both are unchanged (`webapp/file_widgets.py`).
 
+**Open in new tab** does not work in the published app (its frame does not
+let the page open a tab), so since the release after 5.35.0 it is hidden
+there, with no text that names it: the card has the download button only,
+and the PDF preview's note says to download the file.
+`GEOTECH_OPEN_IN_NEW_TAB` changes this: `1` shows the button, `0` hides
+it; unset, it is hidden when `GEOTECH_DEPLOYMENT=foundry` and shown
+elsewhere.
+
 ## 4b. Retiring the workspace glue
 
 The first run (INF-25) needed two files the AI FDE wrote in the workspace:
