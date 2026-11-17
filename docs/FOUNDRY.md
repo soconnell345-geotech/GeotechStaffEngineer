@@ -612,12 +612,12 @@ Code Workspace on its own, from its own package `aec-document-review`, as a
 second host in case Tiny Apps is withdrawn (BACKLOG INF-74). It is the same
 Streamlit page the testers use on Tiny Apps, with the geotech app's Foundry
 behaviour: the models are Foundry model RIDs, and the conversations can be
-saved to a Foundry dataset. It needs the first `aec-document-review`
-release after 0.1.1, which has the Foundry entry, with the core release it
-pins; 0.1.1 and earlier cannot save to a Foundry dataset. From that release
-on the two packages carry one version number and are published together
-(BACKLOG INF-76), so `aec-document-review==X` installs `aec-agent-core==X`. Until that
-release, use test wheels as in section 1, step 3, with three wheels
+saved to a Foundry dataset. It needs `aec-document-review` 1.1.0 or later,
+the first release with the Foundry entry, and the core release it pins
+(1.1.0); 0.1.1 and earlier cannot save to a Foundry dataset. From 1.1.0 on
+the two packages carry one version number and are published together
+(BACKLOG INF-76), so `aec-document-review==X` installs `aec-agent-core==X`.
+Until 1.1.0 is on PyPI, use test wheels as in section 1, step 3, with three wheels
 instead of four: `aec-document-review`, `aec-agent-core` and `planlens`
 (nothing geotechnical).
 
@@ -633,10 +633,10 @@ instead of four: `aec-document-review`, `aec-agent-core` and `planlens`
    (Connection diagnostics warn "version drift" on 1.67); and with test
    wheels installed with `--no-deps`, also install `ezdxf`, which planlens
    needs. On these hosts OpenCV cannot load (FIPS mode): planlens tests
-   the import in a child process and works without it, and until the
-   planlens release after 0.15.1 each test leaves a `core.<number>` file
-   in the working directory (add `core.[0-9]*` to the repository's
-   `.gitignore`).
+   the import in a child process and works without it. With planlens
+   0.15.1 and earlier each test leaves a `core.<number>` file in the
+   working directory (add `core.[0-9]*` to the repository's
+   `.gitignore`); 0.16.0, which Document Review 1.1.0 pins, leaves none.
 2. **Create the app file.** The workspace's **Publish application** step
    creates the app file itself and fails if a file of that name already
    exists ("FileExists"). So publish first, naming a new file (for example

@@ -104,7 +104,14 @@ The Prompter engine itself is in the core:
   `Shared Documents/GeotechStaffEngineer/conversations/<tester>/document_review/<title>_<date>/`
   on the published app (the owner's folder, 2026-10-21;
   `GEOTECH_SHAREPOINT_ROOT` changes the first part). With one person and no
-  sign-in (dosdev) the `<tester>/` segment is left out.
+  sign-in (dosdev) the `<tester>/` segment is left out. From 1.1.0 a
+  tester whose sign-in name is not plain (letters, digits, dots and
+  hyphens, single underscores only inside the user name, no dot at
+  either end, at most about 60 characters) has a folder of their own, on the host and on SharePoint; their earlier
+  conversations stay in the old folder and nothing copies them (the
+  release note, `module_work/inf76/RELEASE_NOTE.md`; BACKLOG OWN-147).
+  The save after a turn runs in the background; a file above 2048 MB
+  is not sent and is named (`GEOTECH_SHAREPOINT_MAX_UPLOAD_MB`).
 - Python on dosdev: 3.11.9 (the package requires 3.11 or newer).
 - Approval path: MOU, then the GHE repo, then the SIA (1-2 weeks), then a
   change board only for connections outside the pilot's boundary (the
@@ -186,7 +193,10 @@ is not served.
 **Resolution order** for a tester (`aec_document_review/tinyapps_keys.py`,
 `resolve_for`):
 
-1. **The per-tester secret** `PROMPTER-API-KEY--<TESTER>`. The optional
+1. **The per-tester secret** `PROMPTER-API-KEY--<TESTER>` (for a sign-in
+   name with anything other than letters and digits, its exact secret
+   name comes first and its `PROMPTER-KEYS` entry before this one: see
+   "Naming `<TESTER>`" below). The optional
    `PROMPTER-MODEL--<TESTER>` and `PROMPTER-URL--<TESTER>` fall back to the
    shared `PROMPTER-MODEL` / `PROMPTER-URL`.
 2. **The JSON secret `PROMPTER-KEYS`**:
@@ -207,10 +217,32 @@ is not served.
 and turn every run of characters other than a letter or digit into ONE
 hyphen: `CORP\jdoe` becomes `CORP-JDOE`, `CORP\j.doe` becomes `CORP-J-DOE`,
 `jdoe@example.org` becomes `EXAMPLE-ORG-JDOE`. As an app setting or a `.env`
-line the same name uses underscores: `PROMPTER_API_KEY__CORP_JDOE`. A name
-longer than 127 characters is never looked up; two people whose names differ
-only in punctuation would share a secret name; give either a `PROMPTER-KEYS`
-entry instead.
+line the same name uses underscores: `PROMPTER_API_KEY__CORP_JDOE`.
+
+Sign-in names that differ only in punctuation or accents (`CORP\j.doe`,
+`CORP\j-doe`, `CORP\j_doe`; `o'brien` and `o_brien`) give the same
+`<TESTER>`. So a name holding anything other than letters and digits also
+has an exact secret name, `PROMPTER-API-KEY--<TESTER>--<HASH>`, which the
+app looks up first; then that person's `PROMPTER-KEYS` entry; then
+`PROMPTER-API-KEY--<TESTER>`, so a key set up earlier still works. To give
+two such testers different keys, give each the exact secret (or a
+`PROMPTER-KEYS` entry) and delete the plain `PROMPTER-API-KEY--<TESTER>`
+once both are served: while it exists, whichever of them has neither is
+served by it. A name of letters and digits has only the plain name, and a
+look-alike with punctuation or an accent at an end of a part (`CORP\jdoe_`
+beside `CORP\jdoe`) that has no key of its own is served by it too: the key
+that is such a tester's alone is a `PROMPTER-KEYS` entry. The app shows the
+exact name, never a key: in the refusal a tester without a key sees, in the
+sidebar's Connection diagnostics, and from `python -m
+aec_document_review.tinyapps_keys "CORP\j.doe"`. As an app setting or `.env`
+line the name is spelt with underscores
+(`PROMPTER_API_KEY__CORP_J_DOE__<HASH>`). A tester's own model and URL sit
+beside the key under the same ending.
+
+A name of letters and digits whose secret name would pass Key Vault's 127
+characters has no secret name (give it a `PROMPTER-KEYS` entry); any other
+name that long is looked up by its exact secret name, whose readable part is
+cut to fit.
 
 **Behaviour to know.**
 
@@ -233,20 +265,56 @@ entry instead.
   up from them; a helper that stops writes what it read to the
   conversation's `kept/` folder.
 - Model calls wait out busy refusals (retry-after, else 15/30/60/120 s); at
-  most two helpers run at once; every model request has a 180 s time limit
-  and is retried like a busy refusal when it times out.
+  most two helpers run at once; every model request has a 180 s time
+  limit. The model client asks a request again once, at once (a timeout,
+  a dropped connection, a brief rate limit); a request that timed out
+  twice is not asked again, so a stuck call ends in about 6 minutes.
+- A page reading (a vision call) is given up after 90 s and asked once
+  more; one refused as busy is asked at most six times; a look that
+  waits 10 minutes for a free reading slot comes back as not read.
+- The page's model-call budget (40) covers the whole turn: an automatic
+  "continue" and the calls that finish a cut-off reply count against it.
 
 Settings (environment or app settings, not Key Vault; all optional, listed
 in `wrapper_repo/.env.example`): `GEOTECH_TOKENS_PER_MINUTE` (pace calls a
 little under the deployment's limit; unset means no pacing),
 `GEOTECH_MAX_HELPERS` (2), `GEOTECH_HELPER_MAX_MODEL_CALLS` (30),
 `GEOTECH_AGENT_BUSY_TRIES` (5), `GEOTECH_BUSY_TURN_MAX_S` (900),
-`GEOTECH_PROMPTER_STREAM_USAGE` (on), and the figure helper's two switches,
+`GEOTECH_PROMPTER_STREAM_USAGE` (on), `GEOTECH_PROMPTER_MAX_RETRIES` (1; `0`
+turns the client's own retry off), `GEOTECH_VISION_CALL_TIMEOUT_S` (90),
+`GEOTECH_VISION_SLOT_WAIT_S` (600; `0` = no bound), and the figure helper's
+two switches,
 `GEOTECH_FIGURE_HELPER` and `GEOTECH_PLOT_CODE` (on; `0` turns each off).
 On the App Service the wrapper's `app.py` sets `GEOTECH_PLOT_CODE=0` unless
 the app setting says `1`: the box that code runs in limits Python, not the
 operating system (INF-16), and one process holds every tester's files. The
 figure helper still draws, with the fixed plotting tool.
+
+**Off by default** (app settings or `.env` lines, not Key Vault; `1` turns
+each on; listed in `wrapper_repo/.env.example`; turning one on for a tester
+round is the owner's call):
+
+- `GEOTECH_STOP_BUTTON`: a Stop button while the tester's own turn runs.
+  What the turn had done is kept, and the agent can be asked to continue. A
+  stop pressed while the final answer is being written lets the turn
+  finish, and tool calls the model already issued in that reply still run.
+- `GEOTECH_SPEND_ESTIMATE`: a sidebar line estimating the tester's own AI
+  spend this calendar month, from the token counts in their own
+  conversations' records, priced by `GEOTECH_SPEND_INPUT_USD_PER_MTOK` and
+  `GEOTECH_SPEND_OUTPUT_USD_PER_MTOK` (US dollars per million tokens), with
+  `GEOTECH_SPEND_MONTHLY_BUDGET_USD` as the month's budget if set. Without
+  the prices it counts tokens only. It is an estimate: set it beside the
+  key's own meter before relying on it (BACKLOG TA-42).
+- `GEOTECH_REVIEW_SHEET_TOOLS`: planlens' sheet tools on the page: the
+  sheet index read from the title blocks, every callout checked against the
+  sheet it names, and (planlens 0.16.0) the set's schedules checked against
+  the marks on its sheets, with `open_document` bringing the sheet index and
+  the schedule check. Not measured on a model yet.
+- `GEOTECH_REVIEW_TODOS_WITH_CALLS`: one sentence asking the agent to update
+  its to-do list in the same step as its next tool call. Not measured yet.
+- `GEOTECH_VISION_SHOW_ME`: the agent may have a page or region shown to
+  its own model, instead of a separate reading's description of it. Not
+  measured on the review suite yet.
 
 ## The owner's first round on the test machine (paste-ready checklist)
 
