@@ -204,3 +204,55 @@ before anything changed.
     `test_review_harness_offline.py` 55 passed; public text, manual and
     fingerprints 19 passed. `check_manual --rebuild --write` left the
     manual unchanged, and `--rebuild` exits 0.
+
+## Review round (2026-11-16)
+
+The independent review found one B in the figure cap (F1), one B to decide
+(F2) and three C items. The lead's rulings and what changed:
+
+- **F1, the cap refused a different figure.** Inside one figure-helper call
+  the fourth draw of any figure was refused, the first draw of another
+  figure included, and the note said that figure had had 3 draws. The caps
+  are now kept per figure: `plot_box.draw_refusal` refuses only when the
+  figure itself (its name, a name the code saves under, a figure it
+  replaces, the figure it is a version of) has had 3 draws this turn. A
+  backstop per call stays, `CALL_DRAW_CAP` = 10 draws of any figures; when
+  it refuses, the result carries `"cap": "call"` and the note says the
+  call's total refused it, not the figure's own draws, and that figures
+  not yet drawn need a new call. `looks_report` then names the figures not
+  drawn and sends them to a new call; a figure at its own cap is named in
+  "The cap was reached for ...". The draw note at draw 3 of a call
+  (`draw_cap_note`, still counting the call's draws, against renamed
+  drafts) now says a different figure the brief asks for may still be
+  drawn.
+  - The Mohr run: all five draws were `plot_code` with name `mohr_circle`
+    (`save_figure(fig, 'mohr_circle')`), and all five looks were at
+    `mohr_circle.png`. One name, so the per-figure key caps that run at 3
+    draws and 3 looks; no suffix stripping was needed.
+  - Tests (`test_figure_turn.py`): two figures in one call both drawn (plan
+    three times, then section); four figures in one call all drawn; a
+    fourth draw of one figure in one call refused, named in the record; the
+    backstop's note and record. `test_figure_runs.py`'s plot_data case
+    goes back to master's expectation: the figure helper's fourth draw of a
+    new figure is drawn (draw 4, with the note).
+- **F2, the eval on GSE pages now runs at 150 steps in every arm.**
+  Accepted: the eval measures the app as shipped. The default comes from
+  `webapp/core.py` `DEFAULT_BEHAVIOR["recursion_limit"]` (150), read by
+  `webapp/suite_page.default_recursion_limit()` and used by the eval runner
+  when no `recursion_limit` is passed. No code change.
+- **C1:** `core.answer_at_step_cap` takes `usage=` and fills `"tokens"`
+  from the reply's usage; `turn_jobs` adds them to the turn's tokens, so
+  the cost shown for a capped turn includes the last call.
+- **C2:** a refused look or draw with no helper running (the main agent)
+  is worded for it: show the figure as it stands and describe it from the
+  figure helper's record; no "hand it back".
+- **C3:** the app's turn record (`turn_jobs`, `meta.json`, the activity
+  log's engine) shows `GEOTECH_STEP_CAP_ANSWER=1 (app default)` while the
+  variable is unset (`core.with_app_switches`); the eval's record, which
+  never answers at the cap, keeps the library's line.
+- Checks, one file at a time: `test_figure_turn.py` 25, `test_figure_runs.py`
+  13, `test_plot_box_drafts.py` 19, `test_figure_helper.py` 15,
+  `test_review_harness_offline.py` 23, `test_turn_jobs.py` 10,
+  `test_core.py` 97, `test_public_text.py` 5, `test_user_manual_current.py`
+  1, `test_page_fingerprints.py` 13: all passed. `check_manual --rebuild
+  --write` left the manual unchanged and `--rebuild` exits 0.
