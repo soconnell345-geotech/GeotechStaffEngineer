@@ -199,7 +199,7 @@ jobs:
       - name: Install the core, planlens and the fleet pins (nothing geotech)
         run: |
           pip install --upgrade pip
-          pip install packages/aec-agent-core "planlens>=0.15" pytest
+          pip install packages/aec-agent-core "planlens>=0.16.0" pytest
           pip install -r tinyapps/wrapper_repo/requirements-thirdparty.txt
           pip list
           python - <<'PY'
@@ -372,7 +372,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install "numpy==1.26.4"
-          pip install --no-deps -e packages/aec-agent-core -e . -e geotech-references/ "planlens>=0.15"
+          pip install --no-deps -e packages/aec-agent-core -e . -e geotech-references/ "planlens>=0.16.0"
           python constraints/foundry_requirements.py > foundry-requirements.txt
           pip install -r foundry-requirements.txt -c constraints/foundry-numpy126.txt
           pip install pytest pytest-xdist -c constraints/foundry-numpy126.txt
