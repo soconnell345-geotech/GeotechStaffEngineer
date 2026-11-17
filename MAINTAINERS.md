@@ -334,16 +334,17 @@ later from the maintainer's copy. Keep four things for that:
 1. **A change log** (`LOCAL_CHANGES.md` at the root, newest first, the first
    entry naming the release the copy started from): one entry per change,
    with what, why, the printed source and page where a formula, curve or
-   default moved, and the tests added.
+   default moved, the tests added, and the upstream versions it ran against
+   (planlens, aec-agent-core, aec-document-review: `pip show <name>`), which
+   a renewal pins against.
 2. **Version numbers above the final release**, with the local label
    (`RELEASING.md` section 3); the renewal chooses the next public number.
 3. **The one backlog file, current**, with its ids (section 7).
 4. **An export on request** of the source with its tests, as a zip
    (`git -c core.autocrlf=false archive --format=zip --prefix=gse/ -o gse-<date>.zip HEAD`)
-   or a git bundle (`git bundle create gse-<date>.bundle --all`), with the
-   versions of the upstream wheels it ran against (the versions line at the
-   end of `RELEASING.md` section 3). It comes back public, so the rules of
-   section 5 and `test_public_text.py` hold in the copy too.
+   or a git bundle (`git bundle create gse-<date>.bundle --all`). It comes
+   back public, so the rules of section 5 and `test_public_text.py` hold in
+   the copy too.
 
 ## 10. How the commands here were checked
 
@@ -360,7 +361,8 @@ listed as not run. Files a command rewrote were restored afterwards.
   `check_manual.py --rebuild --write` (exit 0).
 - Section 9, on master `17314a3` committed into a new repository: the zip
   export (37 MB, Unix line endings) and the bundle (32 MB), checked with
-  `git bundle verify` and a clone from it.
+  `git bundle verify` and a clone from it; `pip show planlens aec-agent-core
+  aec-document-review` (exit 0; it warns for one not installed).
 
 Not run here:
 
