@@ -210,12 +210,12 @@
   "OWN-07": {
     "kind": "decision",
     "ask_who": null,
-    "question": "Confirm or correct the seven DRAFT house rules the narrative reader follows when answering your standing report questions.",
+    "question": "Confirm or correct the six DRAFT house rules the narrative reader follows when answering your standing report questions.",
     "why": "The rules decide how the reader answers where a report is silent or ambiguous, and its scores are measured against your own answer keys. Where a rule differs from how you wrote the keys, a correct reading is scored as a failure.",
-    "background": "report_ingest/narrative_glossary.py holds seven rules, all DRAFT and all in force: (1) explorations the report says were not done count 0, not null; (2) null means the report does not say, never 'none' or 'N/A'; (3) the three 'mention' fields mean the work was done for the project (site response means a site-specific analysis, not a code site class); (4) soilCorrosion is the finding (yes, no or mixed, plus the basis); (5) postName is the city only, null for outside projects; (6) primeAe is the architect-engineer of record, not the geotechnical firm or contractor; (7) earthHazardsExposed uses the listed phrases and never seismic shaking. After rules 3-4 were re-read from your keys (2026-10-04), the next run went from 75/77 % to 83/85 % recall/precision.",
+    "background": "report_ingest/narrative_glossary.py holds seven rules, all in force; six are DRAFT, and rule (4) is CONFIRMED since 2026-11-13 (OWN-125): (1) explorations the report says were not done count 0, not null; (2) null means the report does not say, never 'none' or 'N/A'; (3) the three 'mention' fields mean the work was done for the project (site response means a site-specific analysis, not a code site class); (4) soilCorrosion is the finding (yes, no or mixed, plus the basis); (5) postName is the city only, null for outside projects; (6) primeAe is the architect-engineer of record, not the geotechnical firm or contractor; (7) earthHazardsExposed uses the listed phrases and never seismic shaking. After rules 3-4 were re-read from your keys (2026-10-04), the next run went from 75/77 % to 83/85 % recall/precision.",
     "options": [
       {
-        "label": "Confirm all seven",
+        "label": "Confirm all six",
         "effect": "Status becomes CONFIRMED; answers do not change. The prompt stops marking the rules as unconfirmed."
       },
       {
@@ -224,7 +224,7 @@
       }
     ],
     "recommendation": "Check rules 1, 3 and 7 first: they touch the most fields, including the exploration counts. The others follow your keys as already read.",
-    "if_no_answer": "All seven stay in force marked DRAFT; nothing breaks, but the scores keep resting on the lead's reading of your keys.",
+    "if_no_answer": "The six DRAFT rules stay in force marked DRAFT; nothing breaks, but the scores keep resting on the lead's reading of your keys.",
     "message_to_send": null,
     "unblocks": [],
     "sources": [
@@ -347,18 +347,18 @@
     "ask_who": null,
     "question": "Should report ingest be offered on the geotech page on Foundry as an opt-in switch, after one measured Foundry run?",
     "why": "Report ingest turns a geotechnical report into a cited record and a DIGGS file that the geotech page can analyse. It is built but no user can reach it. It runs only on Foundry now (your answer of 2026-10-21), so the Funhouse $50 limit no longer applies, but a report can still take many model calls.",
-    "background": "Your answer of 2026-10-21: keep parked for now; report ingest only on Foundry; cost-conscious; more Foundry testing first. Being built now (off by default): the sub-agent's limits enforced (RI-02) and a record built on demand with the report checklist run on it (RI-35); RI-03 is now the ingest engine on Foundry's models. Cost on Foundry so far (13 reports): 60-897 model calls and 8 minutes to 3.2 hours per report, about 3 M input tokens on average.",
+    "background": "Your answer of 2026-10-21: keep parked for now; report ingest only on Foundry; cost-conscious; more Foundry testing first. Built since, off by default (RI-01 to RI-03 are done): the sub-agent's limits enforced (RI-02) and a record built on demand with the report checklist run on it (RI-35); RI-03 is now the ingest engine on Foundry's models. Cost on Foundry so far (13 reports): 60-897 model calls and 8 minutes to 3.2 hours per report, about 3 M input tokens on average.",
     "options": [
       {
         "label": "Yes: after one measured Foundry run, an opt-in switch",
-        "effect": "Ingest reaches the geotech page on Foundry, off by default, once RI-01 to RI-03 are done and one run is measured."
+        "effect": "Ingest reaches the geotech page on Foundry, off by default, once one run is measured (RI-01 to RI-03 are done)."
       },
       {
         "label": "Keep parked",
         "effect": "No switch yet; the work toward it continues off by default, and Foundry testing comes first."
       }
     ],
-    "recommendation": "Keep parked until RI-01 to RI-03 are done and one Foundry run is measured, then the switch, off by default.",
+    "recommendation": "Keep parked until one Foundry run is measured (RI-01 to RI-03 are done), then the switch, off by default.",
     "if_no_answer": "Report ingest stays unreachable from the geotech page; the work toward it continues off by default.",
     "message_to_send": null,
     "unblocks": [
@@ -487,7 +487,7 @@
     "message_to_send": null,
     "unblocks": [],
     "sources": [
-      "funhouse_agent/review_eval/tasks.py (produce-markup task and its target list)",
+      "packages/aec-document-review/aec_document_review/review_eval/tasks.py (produce-markup task and its target list; GSE's frozen copy funhouse_agent/review_eval/tasks.py)",
       "module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md (§2.6)",
       "module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW_B_AEFG.md (B1)"
     ]
@@ -526,7 +526,7 @@
     "ask_who": null,
     "question": "Make the PyNiteFEA frame-analysis package an optional extra, so cluster installs stop upgrading numpy and numba?",
     "why": "PyNiteFEA alone forces numpy from the cluster's 2.1.3 to 2.4.6, which drags numba and llvmlite up and leaves four notebook packages unsatisfied in every install log. Harmless so far, but noisy, and it may matter on hosts with a fixed numpy.",
-    "background": "Settled in the install guide: PyNiteFEA 3.1.0 requires numpy 2.4.0 or later; numba caps numpy below 2.5, so the resolver lands on 2.4.6; numba goes 0.61 to 0.67 and llvmlite 0.44 to 0.49 (numba 0.67 verified numerically identical for pystrata). Nothing else needs numpy above 2.1.3, so moving this one dependency removes four of the install log's conflict warnings. Cost: frame analysis (continuous beams, 2D/3D frames) would need an extra at install; the module already hides itself when PyNite is missing. Since 5.8.1 a plain install brings the whole stack, at your request. EV-08 (a Foundry eval where numpy 1.26 broke 17 questions) might benefit; not verified.",
+    "background": "Settled in the install guide: PyNiteFEA 3.1.0 requires numpy 2.4.0 or later; numba caps numpy below 2.5, so the resolver lands on 2.4.6; numba goes 0.61 to 0.67 and llvmlite 0.44 to 0.49 (numba 0.67 verified numerically identical for pystrata). Nothing else needs numpy above 2.1.3, so moving this one dependency removes four of the install log's conflict warnings. Cost: frame analysis (continuous beams, 2D/3D frames) would need an extra at install; the module already hides itself when PyNite is missing. Since 5.8.1 a plain install brings the whole stack, at your request. EV-08 (a Foundry eval where numpy 1.26 broke 17 questions) closed on 2026-10-26 without it: no repository on the hosted platform can have numpy 2.",
     "options": [
       {
         "label": "Yes, make it an optional extra",
@@ -2963,7 +2963,7 @@
     "ask_who": null,
     "question": "Question list row 2 (yes/no): which document types should count as yes?",
     "why": "Code can now answer row 2 from the document type triage gave the file: yes when the type is one you list, otherwise not said (code never answers no). Which types mean yes is your call.",
-    "background": "Triage's types include geotechnical report, recommendation letter, report addendum, report appendix or figure(s) and partial report. Rows 25 and 27 need no decision; the lead maps all three in the private code map beside your list, which never goes in the repo.",
+    "background": "Triage's types include geotechnical report, recommendation letter, report addendum, report appendix or figure(s) and partial report. Rows 25 and 27 need no decision; all three are mapped in the private code map beside your list (rows 2, 25 and 27 of its v2 are rows 2, 26 and 28 of v3), which never goes in the repo.",
     "options": [
       {
         "label": "Geotechnical report, recommendation letter, report addendum",
@@ -2979,7 +2979,7 @@
       }
     ],
     "recommendation": "The first option: it answers yes only where the file is plainly the report itself.",
-    "if_no_answer": "The lead maps rows 25 and 27 now, and row 2 with the first option.",
+    "if_no_answer": "Rows 25 and 27 stay as mapped, and row 2 is mapped with the first option.",
     "message_to_send": null,
     "unblocks": [
       "RI-102 rows mapped"
@@ -3074,9 +3074,9 @@
   "OWN-132": {
     "kind": "decision",
     "ask_who": null,
-    "question": "The test machine's name (the one your Tiny Apps round runs on) is in about 26 files of the public app repo. Keep it, or replace it with \"the test machine\" everywhere?",
+    "question": "The test machine's name (the one your Tiny Apps round runs on) is in 27 files of the public app repo. Keep it, or replace it with \"the test machine\" everywhere?",
     "why": "The GitHub repo is public. The name's first three letters can read as a government department's abbreviation, the kind of name the repo otherwise keeps out.",
-    "background": "It sits in tinyapps/TINYAPPS.md, HANDOFF, CLAUDE.md and older module_work notes. The place names were removed the same way on 2026-11-10 (INF-69), and the repo's privacy test now guards them in every file. Git history keeps old text either way (OWN-56).",
+    "background": "On master (2026-11-17) it sits in 27 tracked files: tinyapps/TINYAPPS.md, HANDOFF, BACKLOG and BACKLOG_DONE, three desk-card files, module_work notes and the CLAUDE.md archive in module_work/history/, docs/webapp_guide.md, webapp/README.md, .github/workflows/nightly.yml, and the Tiny Apps entry, keys and settings code and tests in packages/aec-document-review/ and webapp/ (the trimmed root CLAUDE.md no longer has it). The place names were removed the same way on 2026-11-10 (INF-69), and the repo's privacy test now guards them in every file. Git history keeps old text either way (OWN-56).",
     "options": [
       {
         "label": "Replace it",
@@ -3156,7 +3156,7 @@
     "question": "Which of these references should be added to the library, and when?",
     "multi": true,
     "why": "You said on 2026-11-10 not to build any of these yet and to keep them on a later item. Each fills a gap where the library holds no printed method today: DoD minimum factors of safety, slope stability and seepage as USACE prints them, liquefaction triggering and seismic settlement, frost depth, dewatering, overseas seismic ground motions.",
-    "background": "The reference review checked 58 public candidates on 2026-11-10; these are the 12 it ranked first (the other 46 are in CANDIDATES.md). All are US-government works in the public domain except Boulanger and Idriss (2014) and EPRI EL-6800, which are free to read or download but copyrighted and not to be redistributed. The recorded helper runs asked for EM 1110-2-1902 and GEC-3 content most (REF-35 is GEC-3); EM 1110-2-1902's Appendix G is also the source for step 9 of the slope plan (OWN-101), and USBR DS-13 prints Youd et al. (2001), which the library does not hold (OWN-12). The USACE listings could not be confirmed by an automated check, because the official site refuses automated reads; they need a browser. UFC 3-220-01 (2026) is published only in WBDG's viewer; its newest PDF is the 2012 edition. EM 1110-1-1905 (2025) is separate: you asked for it and its build continues (REF-72). Held documents the same search reported superseded or archived are REF-90.",
+    "background": "The reference review checked 58 public candidates on 2026-11-10; these are the 12 it ranked first (the other 46 are in CANDIDATES.md). All are US-government works in the public domain except Boulanger and Idriss (2014) and EPRI EL-6800, which are free to read or download but copyrighted and not to be redistributed. The recorded helper runs asked for EM 1110-2-1902 and GEC-3 content most (REF-35 is GEC-3); EM 1110-2-1902's Appendix G is also the source for step 9 of the slope plan (OWN-101), and USBR DS-13 prints Youd et al. (2001), which the library does not hold (OWN-12). The USACE listings could not be confirmed by an automated check, because the official site refuses automated reads; they need a browser. UFC 3-220-01 (2026) is published only in WBDG's viewer; its newest PDF is the 2012 edition. EM 1110-1-1905 (2025) is separate: you asked for it, and it was built and released in geotech-references 1.7.0 (REF-72, done 2026-11-13). Held documents the same search reported superseded or archived are REF-90.",
     "options": [
       {
         "label": "1. UFC 3-220-01 Geotechnical Engineering (2026)",
@@ -3208,7 +3208,7 @@
       }
     ],
     "recommendation": "The lead's suggested order: EM 1110-2-1902, EM 1110-2-1901, GEC-3, USBR DS-13 Chapter 13, UFC 3-130-03 (the 2025 PDF), UFC 3-220-05; then UFC 3-220-01 once its text can be had. The two copyrighted ones (Boulanger and Idriss 2014; EPRI EL-6800) not stored in the public repository.",
-    "if_no_answer": "Nothing is built; the library keeps what it holds. EM 1110-1-1905 (REF-72) carries on.",
+    "if_no_answer": "Nothing is built; the library keeps what it holds. EM 1110-1-1905 (REF-72) is in the library since 1.7.0.",
     "message_to_send": null,
     "steps": [
       "Before a USACE manual is built: open the EM listing in a browser (https://www.publications.usace.army.mil/USACE-Publications/Engineer-Manuals/, three pages) and check that EM 1110-2-1902 (31 Oct 2003) and EM 1110-2-1901 (30 Sep 1986, Change 1 1993) are listed with those dates.",
@@ -3228,7 +3228,7 @@
     "ask_who": null,
     "question": "Do the lead's calls stand where a printed equation, table or chart looked wrong?",
     "why": "You left these calls to the lead on 2026-11-10 and asked for a later item to revisit them. Each sets a number the references helper returns; if a call is wrong, the helper's answer is wrong the same way every time.",
-    "background": "Each call is one of three kinds: the print contradicts itself or its own worked example; a unit or symbol is missing; or a table or chart gives no rule between its printed values. In every case the function's description and result state the printed form, the coded form and the page, so a reader sees the departure. The calls are on the fix branches (REF-65 to REF-71) and reach the library when they merge; a branch still running may add one, which goes on this card (parts 32 to 42 were added 2026-11-12). Two were settled from public prints and are not on it: FHWA-NHI-05-037 Table 5-34's DCP index is in mm per blow (TM 3-34.48-2 Figure G-11; WES Instruction Report GL-92-3, p. 17), and UFC 3-250-11 Table 2-3 note (c) is PI <= 20 + (50 - percent passing No. 200)/4 (the 2004 edition's Table 2-1 note b; at 10 % passing the limit is 30, not 60). Pages are 'PDF page, printed page'. The full table is findings/RULINGS.md.",
+    "background": "Each call is one of three kinds: the print contradicts itself or its own worked example; a unit or symbol is missing; or a table or chart gives no rule between its printed values. In every case the function's description and result state the printed form, the coded form and the page, so a reader sees the departure. The calls are in the library since 1.7.0 (REF-65 to REF-71, merged and released 2026-11-13); a branch still running may add one, which goes on this card (parts 32 to 42 were added 2026-11-12). Two were settled from public prints and are not on it: FHWA-NHI-05-037 Table 5-34's DCP index is in mm per blow (TM 3-34.48-2 Figure G-11; WES Instruction Report GL-92-3, p. 17), and UFC 3-250-11 Table 2-3 note (c) is PI <= 20 + (50 - percent passing No. 200)/4 (the 2004 edition's Table 2-1 note b; at 10 % passing the limit is 30, not 60). Pages are 'PDF page, printed page'. The full table is findings/RULINGS.md.",
     "parts": [
       {
         "label": "1. DM 7.1 Eq. 3-2, relative density from dry density (PDF 169, printed 141): the typeset second form has gamma_d-max in the numerator's bracket, negative for any soil looser than its densest state. Kept the code (gamma_d-min), the only form that makes the print's two forms equal.",
@@ -3863,7 +3863,7 @@
     "ask_who": null,
     "question": "Do the lead's geotechnical judgement calls of 2026-11-12 stand?",
     "why": "You left these calls to the lead on 2026-11-12 (\"go with your recommendation but make a 'Later' backlog item with the decision for me to revisit in future rounds\"). Each sets a default or a rule in a module; if a call is wrong, every run that leaves the input out gets the same wrong answer.",
-    "background": "The lead applied one rule. (1) Where only one printed form exists, the module follows the print. (2) Where two held references print different values or rules and neither is named as governing, the default is the conservative one and the other is offered and stated. (3) Where the code already follows a printed source and states the alternatives, it stays as built. (4) A module never fills a missing input that the reference treats as a finding about the site (a rock quality, a tested value): it refuses and names the input. Two calls depart from the rule and say so: part 4 (OWN-104) and part 15 (OWN-131). Parts 1 to 6 unblock work (the slope build GM-140; the recompute check DR-11); parts 7 to 16 change defaults (one batch, GM-310, with tests and a release note; part 16 is the build GM-311); parts 17 to 27 confirm what is built and change no answer. Part 28 was added on 2026-11-13 from the slope build (GM-140 step 1): two rules for layered input that no page held prints. Every call is a default or a rule the module states in its result, with the other reading offered. You supplied the Duncan, Wright and Brandon (2014) pages on 2026-11-13 (section 6.5.3, pp. 91 to 93, and all of chapter 8, pp. 159 to 168; kept local only), so slope step 8 no longer waits on you. One thing stays yours: getting Jeanjean (2009, OTC 20158) so that p-y criterion can be checked. Parts 29 and 30 were added on 2026-11-13 from the pile group fix (GM-319): one where no reference held prints the general form, one where the manual is not in the library. Not decided here: the report-question conventions (OWN-07, OWN-88, OWN-125, OWN-127) and every release, hosting, licensing and data item.",
+    "background": "The lead applied one rule. (1) Where only one printed form exists, the module follows the print. (2) Where two held references print different values or rules and neither is named as governing, the default is the conservative one and the other is offered and stated. (3) Where the code already follows a printed source and states the alternatives, it stays as built. (4) A module never fills a missing input that the reference treats as a finding about the site (a rock quality, a tested value): it refuses and names the input. Two calls depart from the rule and say so: part 4 (OWN-104) and part 15 (OWN-131). Parts 1 to 6 unblock work (the slope build GM-140; the recompute check DR-11); parts 7 to 16 change defaults (one batch, GM-310, merged 2026-11-13 with tests and a release note; part 16 is the build GM-311); parts 17 to 27 confirm what is built and change no answer. Part 28 was added on 2026-11-13 from the slope build (GM-140 step 1): two rules for layered input that no page held prints. Every call is a default or a rule the module states in its result, with the other reading offered. You supplied the Duncan, Wright and Brandon (2014) pages on 2026-11-13 (section 6.5.3, pp. 91 to 93, and all of chapter 8, pp. 159 to 168; kept local only), so slope step 8 no longer waits on you. One thing stays yours: getting Jeanjean (2009, OTC 20158) so that p-y criterion can be checked. Parts 29 and 30 were added on 2026-11-13 from the pile group fix (GM-319): one where no reference held prints the general form, one where the manual is not in the library. Not decided here: the report-question conventions (OWN-07, OWN-88, OWN-125, OWN-127) and every release, hosting, licensing and data item.",
     "parts": [
       {
         "label": "1. OWN-101, the slope plan (GM-140): the ten steps of the slope account (section 12) agreed. Priority goes to the steps that change a factor of safety: 1 (one material per point), 2 (a method's own solution or no number), 3 (the printed acceptability checks), 4 (tension cracks and reverse curvature), 5 (water and loads), 6 (one method across the search) and 9 (rapid drawdown as EM 1110-2-1902 App. G prints it). Step 5 is split into 5a (the pore-pressure rules, this week) and 5b (new load types: line, inclined and varying loads, the vertical seismic coefficient; after). Step 10 (reporting) is small and is built alongside, its method-per-family part after step 6; steps 8 (supports) and 7 (search coverage) follow. Step 1 is built first and alone; then 2, 3, 6 and 7 in series; 4, 5a, 8, 9 and 10 in parallel once step 1 is merged. Step 1 is a weight error on every model with a sloping layer boundary (one slice 39.1 kN/m by hand against the module's 116.0).",
@@ -4748,7 +4748,7 @@
     "ask_who": null,
     "question": "Where should rebuilt sample calc packages live, and will you supply real sample calcs for the calc helper?",
     "why": "You asked whether the calc helper is handed a set of sample calcs. It is not, and the sample packages on GitHub are months old. A script will rebuild them; where they go and whether your own calcs join them are your calls.",
-    "background": "The calc helper fills each module's fixed package template (16 modules have one) or writes its own page. No finished sample package is shown to it. It can reach the 28 published worked examples (FHWA, Caltrans, AASHTO and UFC design examples with their printed pages) but is never told they exist; only the main agent is. On GitHub, docs/examples holds two packages from June (slope and FEM) and sample_pdfs holds 13 from February; none shows today's layout (given and assumed inputs, choices, calculation tables), and pavement, support of excavation and reliability have none. Your July ask for real calcs from real reports was parked on 2026-11-04 with nothing built (OWN-41). The lead is building a script that rebuilds one sample package per module from a published worked example, and telling the calc helper about the worked examples. Rebuilt samples are about 0.5 to 1.5 MB each, so committing a new set at every release grows the public repository; the manual's PDF was taken out of the repository for that reason.",
+    "background": "The calc helper fills each module's fixed package template (16 modules have one) or writes its own page. No finished sample package is shown to it. It can reach the 28 published worked examples (FHWA, Caltrans, AASHTO and UFC design examples with their printed pages) but is never told they exist; only the main agent is. On GitHub, docs/examples holds two packages from June (slope and FEM) and sample_pdfs holds 13 from February; none shows today's layout (given and assumed inputs, choices, calculation tables), and pavement, support of excavation and reliability have none. Your July ask for real calcs from real reports was parked on 2026-11-04 with nothing built (OWN-41, merged into this item on 2026-11-17). The lead is building a script that rebuilds one sample package per module from a published worked example, and telling the calc helper about the worked examples. Rebuilt samples are about 0.5 to 1.5 MB each, so committing a new set at every release grows the public repository; the manual's PDF was taken out of the repository for that reason.",
     "parts": [
       {
         "label": "Rebuilt samples",

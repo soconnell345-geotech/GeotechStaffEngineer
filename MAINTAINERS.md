@@ -95,6 +95,15 @@ the core's hooks (`aec_agent_core/hooks.py`; the app fills them in
 `funhouse_agent/__init__.py` and `webapp/__init__.py`), do it there, in the
 app's own code.
 
+**The agent's caps (5.36.0).** A turn stops at its step cap: 150 by
+default, at most 200 (the page's settings). With `GEOTECH_STEP_CAP_ANSWER`
+(on in the app; `0` turns it off) a turn that reaches the cap still answers
+from what it gathered, in one last call without tools, and that call's
+tokens count in the turn's total (`funhouse_agent/DESIGN.md`). A figure
+gets 3 draws and 3 looks a turn, and a figure-helper call at most 10 draws.
+`GEOTECH_OPEN_IN_NEW_TAB` shows (`1`) or hides (`0`) the open-in-new-tab
+button; unset, it is hidden on the platform (`docs/FOUNDRY.md` section 4a).
+
 ## 3. The reference library
 
 `geotech-references` holds the printed manuals the modules cite (NAVFAC DM 7,
@@ -121,6 +130,12 @@ When the library is released: move the submodule to its tag
 (`git -C geotech-references fetch origin --tags`, then
 `git -C geotech-references checkout vX.Y.Z` and `git add geotech-references`),
 raise the pin, rebuild the manual (`RELEASING.md` step 7), run the suite.
+A library move can change the size of reference results: with the new
+library run `funhouse_agent/tests/test_table_db_adapter.py` and
+`funhouse_agent/tests/test_reference_result_sizes.py` first. A local pass
+does not prove CI's run, which installs the whole library repository (with
+its PDFs, so the page-reading signposts differ) and has failed where a
+wheel-only install passed.
 
 From a git clone, fetch it with `git submodule update --init geotech-references`.
 From source zips, extract the library's zip into the empty
@@ -187,8 +202,10 @@ python -m pytest -q webapp/tests/test_page_fingerprints.py
 ```
 
 **The full suite** is `python -m pytest -n auto --dist worksteal -q` (test
-paths are in `pyproject.toml`). On CI it takes 33 to 45 minutes a job on
-four workers; in one process, 50 to 100 minutes. Release 5.35.0's gate was
+paths are in `pyproject.toml`), about 33,100 tests at 5.36.0. On GitHub's
+runners it takes 1 h (Python 3.13) to 1 h 25 (3.12) a job (plan a run on
+the platform for that, one at a time); in one process, 50 to 100 minutes.
+Release 5.35.0's gate was
 25,877 passed, 84 skipped, 0 failed on Python 3.12. Judge a run by pytest's
 exit code, never through a pipe that hides it.
 
@@ -287,6 +304,12 @@ Each is binding; where it is written follows the dash.
 7. Rebuild the manual with the submodule at the pinned commit:
    `python module_work/doc10/check_manual.py --rebuild --write`; commit
    `manual.html` and `toc.json`.
+   There are two worked-example files, and a change to one does not
+   regenerate the other: `docs/user_manual/worked_examples.json` is written
+   by `docs/user_manual/gen_worked_examples.py` (local calls only, 18
+   examples) and feeds the manual; `funhouse_agent/worked_examples.json`
+   holds the agent's own examples, edited by hand.
+   `check_manual.py --rebuild` must exit 0 after a change to either.
 8. If an answer moves, write the release note (what moves, for which
    inputs, with a before-and-after number) for `HANDOFF.md` section
    0a-current, and close the BACKLOG item with its commit.
@@ -295,6 +318,16 @@ The practice here is a short `module_work/<item>/CHECK.md` per item: what
 the print says, what changed, numbers before and after, the tests run.
 
 ## 7. Where the open work and the history are
+
+In the maintainer's copy the notes files (`BACKLOG.md`, `HANDOFF.md`,
+`MAINTAINERS.md`, `RELEASING.md`, `CLAUDE.md`) are the maintainer's own
+working documents, edited freely there. Open work stays in `BACKLOG.md`
+only, and a new id there starts at 900 in its prefix (`GM-900`, after
+which `sweep_done.py --next` counts on), so that the two lists can be
+merged later with no id used twice (the top of `BACKLOG.md`).
+`python module_work/backlog_dashboard/keeper_view.py maintainer` prints the
+maintainer's own open items from it, by tier; section 0 (a) of
+`BACKLOG.md` says who keeps each item, and the rest are there to be read.
 
 **`BACKLOG.md`** is the one list. An id is `PREFIX-N`; the prefix names the
 area and its section:
@@ -345,7 +378,8 @@ wheel and its source folder; replace `packages/aec-agent-core/` whole with
 the release's copy, set `aec-agent-core==X.Y.Z` in `pyproject.toml`, and
 run `webapp/tests/test_wheels.py`. A new planlens: install it and run
 `webapp/tests/test_page_fingerprints.py`, which records the document tools
-by planlens version; record the new one in a commit of its own. Then the
+by planlens version; record the new one in a commit of its own, from a
+checkout with the reference submodule (`RELEASING.md` section 4). Then the
 full suite. Never edit the upstream files to make a test pass.
 
 ## 9. Bringing the work back

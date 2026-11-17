@@ -268,3 +268,16 @@ def test_every_desk_card_has_the_shape_the_page_opens():
             if errors:
                 bad[card_id] = errors
     assert not bad, f"Backlog Desk cards the page cannot open: {bad}"
+
+
+def test_every_open_item_has_one_keeper():
+    """Section 0 (a) says who keeps each open item: the maintainer, the
+    developer's sessions, both (shared) or the owner. ``keeper_view.py``
+    prints each keeper's own list from those lines, so no open item may be
+    without a keeper and no id may sit in two of the lists."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "keeper_view", ROOT / "module_work" / "backlog_dashboard" / "keeper_view.py")
+    keeper_view = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(keeper_view)
+    assert keeper_view.problems(BACKLOG) == []

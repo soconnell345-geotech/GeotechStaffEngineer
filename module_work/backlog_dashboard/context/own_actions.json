@@ -268,7 +268,7 @@
     "ask_who": null,
     "question": "Supply the missing report-ingest data: OCR text for the scanned reports (Foundry's own OCR once RI-91 measures it against DI, else Azure DI), the R39 PDF, and blind truth for new readers.",
     "why": "The report-ingest numbers are mostly in-sample: tuned and scored on the same reports. Scanned pages with no text cannot be read at all where the app runs, and the calculation, test-pit and sounding readers have no blind test set, so their scores say little about unseen reports.",
-    "background": "Report ingest runs on Foundry now (OWN-11), not behind Tiny Apps. Ingest takes a page's words and positions from a saved Azure DI output where one sits beside the report, else from the PDF's own text layer; a scanned page with neither gives the log reader no depths. Foundry has its own OCR that may serve instead of DI; RI-91 measures it on reports you already have DI for. Owed: R02, R31, R32, R38, the scanned pages of R03 and R33, and a fresh R17. That is about 1,700 pages whole, of which roughly 300 need OCR (DI costs about $2 per 1,000 pages, so under $4). R39 is the PDF behind a 153-page hand-label sheet never matched to a report; its DI result already exists, making it the cheapest blind set. Also wanted: hand truth for a few unseen calculation, test-pit and sounding items, and a private question set for the report library (RI-10).",
+    "background": "Report ingest runs on Foundry now (OWN-11), not behind Tiny Apps. Ingest takes a page's words and positions from a saved Azure DI output where one sits beside the report, else from the PDF's own text layer; a scanned page with neither gives the log reader no depths. Foundry has its own OCR, but its first look (build j, 2026-11-17) returns text blocks without words or word boxes, so as it stands it cannot replace DI word for word; RI-91 measures it on reports you already have DI for. Owed: R02, R31, R32, R38, the scanned pages of R03 and R33, and a fresh R17. That is about 1,700 pages whole, of which roughly 300 need OCR (DI costs about $2 per 1,000 pages, so under $4). R39 is the PDF behind a 153-page hand-label sheet never matched to a report; its DI result already exists, making it the cheapest blind set. Also wanted: hand truth for a few unseen calculation, test-pit and sounding items, and a private question set for the report library (RI-10: not wanted, the owner on 2026-10-26).",
     "options": [],
     "recommendation": "Do R39 now: it costs nothing and gives the first genuinely blind page-label test. For the scanned reports, let RI-91 decide between Foundry's OCR and DI.",
     "if_no_answer": "Report-ingest accuracy stays measured mainly on the reports it was tuned on, and scanned pages without text stay unread.",
@@ -314,37 +314,6 @@
       "webapp/README.md (§3 Reference PDFs)",
       "geotech-references/.gitignore (Wood Handbook line)",
       "module_work/STRUCTURAL_REFS_SURVEY.md (campaign outcome; FEMA P-2192)"
-    ]
-  },
-  "OWN-41": {
-    "kind": "decision",
-    "ask_who": null,
-    "question": "Should your firm's own calculation packages become worked examples the agent learns from, kept local and never published?",
-    "why": "The 27 worked examples all come from published manuals and benchmarks. You asked for 'real ones in real reports': your own packages would show the agent how your office sets up and documents problems. It means building a harvest step and confirming each example yourself.",
-    "background": "Not built. The sketch (module_work/FUTURE_IDEAS.md §1, Phase 2): a local folder named by GEOTECH_EXAMPLES_DIR holds the PDFs; their text is pulled into one draft entry per report (the problem, the key numbers, which module methods reproduce them); the agent proposes the reconstruction and you confirm it before it is trusted, each marked 'firm report, unverified' or 'verified reproduction'. Firm reports stay strictly local and never go into the published package. Today every worked example is verified by running its calculation calls in the test suite.",
-    "options": [
-      {
-        "label": "Yes, after Tiny Apps settles",
-        "effect": "You pick a few packages; a session builds the local harvest step, and you confirm each reconstruction before the agent may use it."
-      },
-      {
-        "label": "Not now",
-        "effect": "Stays on the Later list; the agent keeps the 27 published examples."
-      },
-      {
-        "label": "Drop it",
-        "effect": "Removed from the backlog. Report ingest's library of read reports may cover part of the same need later."
-      }
-    ],
-    "recommendation": "Not now. Tiny Apps and report review come first; revisit when report ingest resumes, since its library of read reports may serve part of the same purpose.",
-    "if_no_answer": "Stays parked on the Later list; nothing is built.",
-    "message_to_send": null,
-    "steps": null,
-    "unblocks": [],
-    "sources": [
-      "BACKLOG.md (OWN-41)",
-      "module_work/FUTURE_IDEAS.md (§1 Worked-examples corpus, Phase 2)",
-      "funhouse_agent/worked_examples.json (27 entries)"
     ]
   },
   "OWN-42": {
@@ -819,38 +788,15 @@
       "module_work/review_eval_results/2026-11-10_coordination_tasks_blind/README.md"
     ]
   },
-  "OWN-145": {
-    "kind": "action",
-    "ask_who": null,
-    "question": "Send Foundry brief 8 to the AI FDE: stand Document Review up on Foundry, find out how a Google model is reached, and build the standing tests (about five minutes).",
-    "why": "It does the three things you asked for on 2026-11-12. A second host for Document Review in case Tiny Apps is withdrawn. The facts needed before any code is written for a Google model such as Argon 4. And a fixed, repeated set of tasks to run on each new model: brief 7 showed that the model matters far more than our settings, and that one run cannot tell two set-ups apart.",
-    "background": "Part A publishes Document Review on Foundry from test wheels and checks it end to end: an upload, a review answer, a Word file back, the conversation saved to a dataset and restored. It has never run there. On Foundry nothing separates one viewer from another, so the trial is for one person at a time, and the brief asks the FDE whether a published app can know who is viewing. Part B is questions and a few small calls. Part C is the paid part: eight of the fourteen coordination tasks, five once and three repeated three times, on GPT-5.6 Sol as shipped (about 35 million input tokens); then with the sheet tools on the three repeated tasks (about 30 million); then, optionally, on the newest Claude model the workspace has (about 35 million). Brief 7 used 134 million. The brief has pause lines. The wheels are test builds; nothing is released.",
-    "options": [],
-    "recommendation": "Send it. Every run comes back whole and is read in full.",
-    "if_no_answer": "Document Review stays untried on Foundry, the Google model route stays unknown, and the sheet tools stay unmeasured.",
-    "message_to_send": null,
-    "steps": [
-      "In the local hand-off folder (foundry_handoff, beside the repositories), take brief8_2026-11-12.zip. It holds the brief (AI_FDE_BRIEF_8.md) and three wheel files.",
-      "Upload the zip to Foundry and ask the AI FDE to follow the brief inside it. Its three parts can be done in any order; part C is the one that costs tokens.",
-      "Answer done on this card, or say hold. When the answers and run folders come back, put them where you put brief 7's and say so here."
-    ],
-    "unblocks": [
-      "EV-43"
-    ],
-    "sources": [
-      "BACKLOG.md OWN-145, EV-43",
-      "module_work/review_eval_results/2026-11-12_foundry_brief7/FIRST_PASS_AND_PLAN.md"
-    ]
-  },
   "OWN-147": {
     "kind": "action",
     "ask_who": null,
-    "question": "Before the next Document Review release: are all your testers' sign-in names plain? And one look in the key vault.",
-    "why": "The next release keeps two testers from ever sharing an AI key or a folder. The price: a tester whose sign-in name is not plain gets a new, empty folder, on the host and on SharePoint. Their earlier conversations stay in the old folder and nothing copies them, so their list of past conversations looks empty.",
-    "background": "Plain means letters, digits, dots and hyphens, with single underscores only inside the user name (CORP\\j_doe is plain). Not plain: an apostrophe, a space, an accented letter, an underscore in the domain part or at an end of the user name, a doubled underscore, a dot at either end, or a name longer than about 60 characters. Most directory names are plain, so the likely answer is that nobody moves. The change is on master, tested, and not released. The vault question is separate: a tester with punctuation in the name who has BOTH an entry in PROMPTER-KEYS and a secret of the old kind is served the PROMPTER-KEYS entry's key from this release on.",
+    "question": "Before the testers' wrapper moves to Document Review 1.1.0: are all your testers' sign-in names plain? And one look in the key vault.",
+    "why": "Document Review 1.1.0 (on PyPI since 2026-11-17; testers get it when their wrapper's pin moves to it) keeps two testers from ever sharing an AI key or a folder. The price: a tester whose sign-in name is not plain gets a new, empty folder, on the host and on SharePoint. Their earlier conversations stay in the old folder and nothing copies them, so their list of past conversations looks empty.",
+    "background": "Plain means letters, digits, dots and hyphens, with single underscores only inside the user name (CORP\\j_doe is plain). Not plain: an apostrophe, a space, an accented letter, an underscore in the domain part or at an end of the user name, a doubled underscore, a dot at either end, or a name longer than about 60 characters. Most directory names are plain, so the likely answer is that nobody moves. The change is released in Document Review 1.1.0 (2026-11-17); testers get it when their wrapper's pin moves to it. The vault question is separate: a tester with punctuation in the name who has BOTH an entry in PROMPTER-KEYS and a secret of the old kind is served the PROMPTER-KEYS entry's key from this release on.",
     "options": [],
     "recommendation": "Look down the list of testers once. If all are plain, answer \"all plain\" and nothing else is needed.",
-    "if_no_answer": "The release goes out with a general sentence in its note, and a tester with an unusual name finds an empty list and has to ask.",
+    "if_no_answer": "The wrapper moves to 1.1.0 with a general sentence in the release note, and a tester with an unusual name finds an empty list and has to ask.",
     "message_to_send": null,
     "steps": [
       "Look at the testers' sign-in names as the host sees them: the domain, a backslash, the user name.",
@@ -904,7 +850,7 @@
     "why": "Today a release publishes the moment its tag is pushed, and the old publish workflow can also be started by hand. A Claude session that pushed a tag by mistake would publish a package nobody can take back. With you as the required reviewer of the pypi environment, every publish stops and waits until you approve it on GitHub.",
     "background": "The publish workflows run in a GitHub environment named pypi. It has no protection rule in the app's repository. The reviewer of the new release workflows (INF-76) found this; nothing has gone wrong, and the new workflows already stop when a tag does not match the version. A required reviewer is a GitHub setting only you can change. It costs you one click per release.",
     "options": [],
-    "recommendation": "Add yourself as required reviewer of the pypi environment in the app's repository and in planlens. Then let me remove the hand start of the old publish workflow when the new workflows merge.",
+    "recommendation": "Add yourself as required reviewer of the pypi environment in the app's repository and in planlens. Then let me remove the hand start of the old publish workflow (the new workflows merged with the 1.1.0 release on 2026-11-17).",
     "if_no_answer": "Releases work as today: a pushed tag publishes at once. The new workflows still check that the tag matches the version.",
     "message_to_send": null,
     "steps": [

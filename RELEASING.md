@@ -44,6 +44,16 @@ repository is quiet: a maintainer's builds are the labelled builds of
 section 3, and section 2 is for the owner, on the day the work is brought
 back (`MAINTAINERS.md` section 9).
 
+**A package release, with its times** (the developer's, from the public
+repository): the planlens tag (it publishes in about 1 minute; its tests
+take about 8); then the planlens fingerprints of the app and of Document
+Review recorded (section 4); then the core and Document Review bump merged
+(Document Review pins planlens exactly); then `aec-vX.Y.Z` on a commit
+whose `packages/aec-agent-core/` matches what the app will pin
+(`publish.yml` refuses a core changed since its tag); Document Review's
+run waits up to 30 minutes for the core on the index; then the app, whose
+full GitHub run takes 60 to 85 minutes.
+
 ## 2. An app release, step by step
 
 Made by the repository's owner, from the public repository (the first fact
@@ -322,6 +332,18 @@ CI and fails on CI. `python -m webapp.tests.page_builds record` adds the
 entry for the installed planlens and keeps the others; commit it on its
 own. Raise `planlens>=` only when the app needs the new release. Then the
 suite.
+
+In the public repository CI installs planlens from the index, so a planlens
+release turns CI red at once, in the app's fingerprints and in Document
+Review's (`python -m tests.page_builds record` from
+`packages/aec-document-review`): record the new entries the same hour the
+release reaches the index (582f9a2 did it for 0.16.0). `record` rewrites
+the app part too, and in a checkout without the `geotech-references`
+submodule the geotech page's app part differs (`read_reference_table` is
+missing), so the app hash it writes is wrong. Record from a full checkout,
+or write only the planlens part: `python -m webapp.tests.page_builds
+fingerprints <file>`, then add its `planlens[<surface>]` entry to
+`webapp/tests/page_fingerprints.json` by hand (how 582f9a2 was made).
 
 **A new Document Review:** not a dependency of the app. Replace
 `packages/aec-document-review/` with the release's copy to keep the tree

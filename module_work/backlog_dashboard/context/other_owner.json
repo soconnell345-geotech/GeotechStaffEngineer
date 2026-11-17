@@ -128,16 +128,15 @@
   "PL-16": {
     "kind": "decision",
     "ask_who": null,
-    "question": "Cap OpenCV below version 6 in the next planlens release, and re-run the planlens suite on OpenCV 5?",
+    "question": "Cap OpenCV below version 6 in the next planlens release? (The suite's run on OpenCV 5 is done: 2026-10-12, 1,658 passed.)",
     "why": "planlens accepts any OpenCV from 4.8 up, so a future OpenCV 6 would reach the cluster unannounced, as OpenCV 5 did. A cap turns the next major version into a decision instead of a surprise.",
-    "background": "The cluster resolved opencv-python-headless 5.0.0.93. It was checked safe on 2026-09-11 with the planlens suite as it stood (792 tests); the suite is about 1,430 tests now and has not been re-run on OpenCV 5. The OpenCV calls used are few and long-stable. On the FIPS hosts OpenCV cannot load at all and find_like already works without it, so the exposure is the Databricks cluster. planlens' own pyproject says tightening the pin is 'a deliberate release, not a drive-by'.",
+    "background": "The cluster resolved opencv-python-headless 5.0.0.93. It was checked safe on 2026-09-11 with the planlens suite as it stood (792 tests); the whole suite was re-run on OpenCV 5.0.0.93 at planlens 0.13.0 on 2026-10-12: 1,658 passed, 2 skipped. The OpenCV calls used are few and long-stable. On the FIPS hosts OpenCV cannot load at all and find_like already works without it, so the exposure is the Databricks cluster. planlens' own pyproject says tightening the pin is 'a deliberate release, not a drive-by'.",
     "options": [
-      {"label": "Cap below 6 and re-run on 5", "effect": "One line in planlens' pyproject at its next release plus one suite run on OpenCV 5. A future OpenCV 6 is then held back until tested."},
-      {"label": "Re-run on 5, no cap", "effect": "Confirms today's cluster; the next major version can still arrive unannounced."},
+      {"label": "Cap below 6", "effect": "One line in planlens' pyproject at its next release. A future OpenCV 6 is then held back until tested."},
       {"label": "Leave as is", "effect": "No work; rely on the install guide's major-version watch list."}
     ],
-    "recommendation": "Cap below 6 and re-run on 5, folded into the next planlens release; the cost is one suite run.",
-    "if_no_answer": "No cap; OpenCV 5 coverage stays at the September check.",
+    "recommendation": "Cap below 6, folded into the next planlens release; no further suite run is needed.",
+    "if_no_answer": "No cap; OpenCV 5 coverage stays at the 2026-10-12 run.",
     "message_to_send": null,
     "steps": null,
     "unblocks": [],
