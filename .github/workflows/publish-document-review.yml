@@ -1,73 +1,219 @@
 name: Publish aec-document-review to PyPI
 
 # Document Review as its own package (BACKLOG INF-33 step 13), from
-# packages/aec-document-review only, on a `document-review-v<version>` tag
-# (for example `document-review-v0.1.0`). It refuses a tag that does not
-# match the package's version, and a release whose exact pins
-# (aec-agent-core, planlens) are not on PyPI yet: publish the core first
-# (publish-core.yml, `core-v<version>`). The app's own publish
-# (publish.yml, `v*` tags) and the core's (publish-core.yml, `core-v*`)
-# never build it, and this workflow builds nothing else.
+# packages/aec-document-review only. Since INF-76 the core and Document
+# Review release as ONE unit: one version number and one tag,
+# aec-v<version> (for example `aec-v1.1.0`), which starts this workflow
+# and its twin, publish-core.yml. This one waits (at most CORE_WAIT_SECONDS)
+# until the twin has put aec-agent-core of that version on PyPI, so the
+# core goes up first and this release always installs. Both refuse a tag
+# unless both packages carry its version and Document Review pins the core
+# at exactly that version; this one also refuses while the pinned planlens
+# is not on PyPI. Before INF-76 this workflow ran on
+# `document-review-v<version>` tags (document-review-v0.1.0 and v0.1.1);
+# those tags stay as the record of those releases. GeotechStaffEngineer's
+# own `v*` tags (publish.yml) never match aec-v*, and this workflow builds
+# nothing else.
 #
 # PyPI takes this workflow through trusted publishing: the project's
 # publisher on pypi.org names this repository, this file
-# (publish-document-review.yml) and the `pypi` environment.
+# (publish-document-review.yml) and the `pypi` environment. The tag pattern
+# is not part of the publisher, so INF-76 needs no change on pypi.org.
 
 on:
   push:
     tags:
-      - "document-review-v*"
+      - "aec-v*"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The wait for the core below is bounded by CORE_WAIT_SECONDS; this is
+    # the backstop.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          # every tag and the history, for the pinned-core check below
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install build
-      - run: python -m build --outdir dist/ packages/aec-document-review
-      - name: Only aec-document-review is in dist/, at the tag's version
+      # INF-76: the core and Document Review release as ONE unit. One tag,
+      # aec-v<version>, starts this workflow and its twin (publish-core.yml
+      # and publish-document-review.yml carry this step word for word,
+      # webapp/tests/test_inf76_release_unit.py checks it). The tag must
+      # name the version both packages carry, and Document Review must pin
+      # the core at exactly that version.
+      - name: One version, one tag (the core and Document Review)
         shell: python
         env:
           TAG: ${{ github.ref_name }}
         run: |
           import os
+          import re
+          import sys
+          import tomllib
+
+          def project(path):
+              with open(path, "rb") as f:
+                  return tomllib.load(f)["project"]
+
+          core = project("packages/aec-agent-core/pyproject.toml")
+          review = project("packages/aec-document-review/pyproject.toml")
+          tag = os.environ["TAG"]
+          version = core["version"]
+          errors = []
+          if review["version"] != version:
+              errors.append(f"aec-agent-core is {version} but "
+                            f"aec-document-review is {review['version']}: "
+                            f"the two carry one version.")
+          if tag != f"aec-v{version}":
+              errors.append(f"The tag {tag} does not match the version "
+                            f"{version} (expected aec-v{version}).")
+          pins = []
+          for dep in review["dependencies"]:
+              name = re.split(r"[\s<>=!~;\[(]", dep, maxsplit=1)[0]
+              if re.sub(r"[-_.]+", "-", name).lower() == "aec-agent-core":
+                  pins.append(re.sub(r"\s+", "", dep.split(";")[0]))
+          if pins != [f"aec-agent-core=={version}"]:
+              errors.append(f"aec-document-review must pin "
+                            f"aec-agent-core=={version} exactly; it has "
+                            f"{pins or 'no pin'}.")
+          for e in errors:
+              print(f"::error::{e}")
+          if errors:
+              sys.exit(1)
+          print(f"aec-agent-core and aec-document-review {version}, "
+                f"tag {tag}: one release.")
+      - run: pip install build
+      - run: python -m build --outdir dist/ packages/aec-document-review
+      - name: Only aec-document-review is in dist/, at the tag's version
+        shell: python
+        run: |
           import sys
           import tomllib
           from pathlib import Path
 
           with open("packages/aec-document-review/pyproject.toml", "rb") as f:
               version = tomllib.load(f)["project"]["version"]
-          tag = os.environ["TAG"]
-          if tag != f"document-review-v{version}":
-              print(f"::error::The tag {tag} does not match the package's "
-                    f"version {version} (expected document-review-v{version}).")
-              sys.exit(1)
           files = sorted(p.name for p in Path("dist").iterdir())
           print("\n".join(files))
           bad = [n for n in files if not n.startswith(f"aec_document_review-{version}")]
           if bad or not files:
               print(f"::error::Unexpected files in dist/: {bad or 'none built'}")
               sys.exit(1)
+      # INF-76: a release must go out with a core that has what it imports.
+      # The pinned core version being on PyPI is not enough: the core in
+      # this checkout (which the release was tested with) may have gained
+      # a module since that version was cut (foundry_dataset_store did,
+      # after 1.0.1). So the core's folder must be unchanged since the tag
+      # of the pinned version: aec-v<version>, or core-v<version> for a
+      # core released before INF-76. Otherwise release the core first.
+      # publish.yml and publish-document-review.yml carry this step word
+      # for word; only PYPROJECT differs.
+      - name: The pinned core is the core in this checkout
+        shell: python
+        env:
+          PYPROJECT: packages/aec-document-review/pyproject.toml
+        run: |
+          import os
+          import re
+          import subprocess
+          import sys
+          import tomllib
+
+          NAME = "aec-agent-core"
+          CORE = "packages/aec-agent-core/"
+          with open(os.environ["PYPROJECT"], "rb") as f:
+              deps = tomllib.load(f)["project"]["dependencies"]
+          pins = []
+          for dep in deps:
+              name = re.split(r"[\s<>=!~;\[(]", dep, maxsplit=1)[0]
+              if re.sub(r"[-_.]+", "-", name).lower() == NAME:
+                  pins.append(re.sub(r"\s+", "", dep.split(";")[0]))
+          pin = re.fullmatch(r"aec-agent-core==([^,]+)", pins[0]) \
+              if len(pins) == 1 else None
+          if pin is None:
+              print(f"::error::Expected one exact pin ({NAME}==<version>) "
+                    f"in {os.environ['PYPROJECT']}, found {pins}.")
+              sys.exit(1)
+          version = pin.group(1)
+
+          def git(*args):
+              return subprocess.run(["git", *args], capture_output=True,
+                                    text=True)
+
+          tags = (f"aec-v{version}", f"core-v{version}")
+          tag = next((t for t in tags if git(
+              "rev-parse", "-q", "--verify",
+              f"refs/tags/{t}^{{commit}}").returncode == 0), None)
+          if tag is None:
+              print(f"::error::No tag {' or '.join(tags)} in this checkout, "
+                    f"so nothing says which core {NAME} {version} was cut "
+                    f"from. Release the core first (an aec-v<version> tag).")
+              sys.exit(1)
+          diff = git("diff", "--name-only", tag, "HEAD", "--", CORE)
+          if diff.returncode != 0:
+              print(f"::error::git diff against {tag} failed: "
+                    f"{diff.stderr.strip()}")
+              sys.exit(1)
+          changed = diff.stdout.split()
+          if changed:
+              print(f"::error::{CORE} has changed since {tag}, the release "
+                    f"of the pinned {NAME} {version} ({len(changed)} files, "
+                    f"e.g. {', '.join(changed[:5])}). This release would "
+                    f"install a core without those changes. Release the "
+                    f"core and Document Review first (a new aec-v<version> "
+                    f"tag), pin that version, then release this.")
+              sys.exit(1)
+          print(f"{CORE} is unchanged since {tag}: {NAME} {version} is the "
+                f"core this release was tested with.")
       # A release must install: the package pins aec-agent-core and planlens
-      # exactly (plan Step 13), and pip can only find those versions once
-      # they are on PyPI. A release tagged before the core is published would
-      # install nowhere, and PyPI never takes the same version twice, so this
-      # stops the publish instead (as publish.yml does for the app).
+      # exactly, and pip can only find those versions once they are on
+      # PyPI, and PyPI never takes the same version twice. planlens must be
+      # there already. The core is published by this tag's other workflow,
+      # publish-core.yml, at the same time: wait for it, polling every
+      # CORE_POLL_SECONDS for at most CORE_WAIT_SECONDS, then refuse.
       - name: The aec-agent-core and planlens versions the package pins are on PyPI
         shell: python
+        env:
+          PYPI_JSON_URL: https://pypi.org/pypi
+          CORE_WAIT_SECONDS: "1800"
+          CORE_POLL_SECONDS: "30"
         run: |
+          import os
           import re
           import sys
+          import time
           import tomllib
           import urllib.error
           import urllib.request
 
+          BASE = os.environ["PYPI_JSON_URL"].rstrip("/")
+          WAIT = float(os.environ["CORE_WAIT_SECONDS"])
+          POLL = float(os.environ["CORE_POLL_SECONDS"])
           NAMES = ("aec-agent-core", "planlens")
           with open("packages/aec-document-review/pyproject.toml", "rb") as f:
               deps = tomllib.load(f)["project"]["dependencies"]
+
+          def on_pypi(name, version):
+              url = f"{BASE}/{name}/{version}/json"
+              try:
+                  with urllib.request.urlopen(url, timeout=60) as resp:
+                      return resp.status == 200
+              except urllib.error.HTTPError as exc:
+                  if exc.code == 404:
+                      return False
+                  print(f"::error::Could not ask PyPI about {name} "
+                        f"{version} ({url}: HTTP {exc.code}). Re-run this "
+                        f"workflow.")
+                  sys.exit(1)
+              except urllib.error.URLError as exc:
+                  print(f"::error::Could not reach PyPI ({url}: "
+                        f"{exc.reason}). Re-run this workflow.")
+                  sys.exit(1)
+
           failed = False
           for NAME in NAMES:
               specs = []
@@ -84,26 +230,23 @@ jobs:
                   failed = True
                   continue
               version = pin.group(1)
-              url = f"https://pypi.org/pypi/{NAME}/{version}/json"
-              try:
-                  with urllib.request.urlopen(url, timeout=60) as resp:
-                      ok = resp.status == 200
-              except urllib.error.HTTPError as exc:
-                  if exc.code != 404:
-                      print(f"::error::Could not ask PyPI about {NAME} "
-                            f"{version} ({url}: HTTP {exc.code}). Re-run this "
-                            f"workflow.")
-                      sys.exit(1)
-                  ok = False
-              except urllib.error.URLError as exc:
-                  print(f"::error::Could not reach PyPI ({url}: {exc.reason}). "
-                        f"Re-run this workflow.")
-                  sys.exit(1)
+              deadline = time.monotonic() + (WAIT if NAME == "aec-agent-core"
+                                             else 0)
+              ok = on_pypi(NAME, version)
+              while not ok and time.monotonic() < deadline:
+                  print(f"{NAME} {version} is not on PyPI yet; waiting for "
+                        f"publish-core.yml.", flush=True)
+                  time.sleep(POLL)
+                  ok = on_pypi(NAME, version)
               if not ok:
+                  waited = (f" after waiting {WAIT:.0f} s"
+                            if NAME == "aec-agent-core" else "")
                   print(f"::error::Not published: aec-document-review pins "
-                        f"{NAME}=={version}, which is not on PyPI, so this "
-                        f"release could not be installed. Publish {NAME} "
-                        f"{version} first, then tag this package again.")
+                        f"{NAME}=={version}, which is not on PyPI{waited}, "
+                        f"so this release could not be installed. Publish "
+                        f"{NAME} {version} first (for the core: see this "
+                        f"tag's publish-core.yml run), then re-run this "
+                        f"workflow.")
                   failed = True
               else:
                   print(f"{NAME} {version} is on PyPI.")

@@ -1,46 +1,94 @@
 name: Publish aec-agent-core to PyPI
 
 # The shared core of the app split (BACKLOG INF-32), from
-# packages/aec-agent-core only, on a `core-v<version>` tag (for example
-# `core-v1.0.0.dev0`). The app's own publish (publish.yml, `v*` tags) never
-# builds the core, and this workflow never builds the app.
+# packages/aec-agent-core only. Since INF-76 the core and Document Review
+# release as ONE unit: one version number and one tag, aec-v<version> (for
+# example `aec-v1.1.0`), which starts this workflow and its twin,
+# publish-document-review.yml. The twin waits until this one has put the
+# core of that version on PyPI, so the core goes up first. Both refuse a
+# tag unless both packages carry its version and Document Review pins the
+# core at exactly that version. Before INF-76 this workflow ran on
+# `core-v<version>` tags (core-v1.0.0, core-v1.0.1); those tags stay as the
+# record of those releases. GeotechStaffEngineer's own `v*` tags
+# (publish.yml) never match aec-v*, and this workflow never builds the app.
 #
 # PyPI takes this workflow through trusted publishing: the project's
 # publisher on pypi.org names this repository, this file
-# (publish-core.yml) and the `pypi` environment.
+# (publish-core.yml) and the `pypi` environment. The tag pattern is not
+# part of the publisher, so INF-76 needs no change on pypi.org.
 
 on:
   push:
     tags:
-      - "core-v*"
+      - "aec-v*"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install build
-      - run: python -m build --outdir dist/ packages/aec-agent-core
-      - name: Only aec-agent-core is in dist/, at the tag's version
+      # INF-76: the core and Document Review release as ONE unit. One tag,
+      # aec-v<version>, starts this workflow and its twin (publish-core.yml
+      # and publish-document-review.yml carry this step word for word,
+      # webapp/tests/test_inf76_release_unit.py checks it). The tag must
+      # name the version both packages carry, and Document Review must pin
+      # the core at exactly that version.
+      - name: One version, one tag (the core and Document Review)
         shell: python
         env:
           TAG: ${{ github.ref_name }}
         run: |
           import os
+          import re
+          import sys
+          import tomllib
+
+          def project(path):
+              with open(path, "rb") as f:
+                  return tomllib.load(f)["project"]
+
+          core = project("packages/aec-agent-core/pyproject.toml")
+          review = project("packages/aec-document-review/pyproject.toml")
+          tag = os.environ["TAG"]
+          version = core["version"]
+          errors = []
+          if review["version"] != version:
+              errors.append(f"aec-agent-core is {version} but "
+                            f"aec-document-review is {review['version']}: "
+                            f"the two carry one version.")
+          if tag != f"aec-v{version}":
+              errors.append(f"The tag {tag} does not match the version "
+                            f"{version} (expected aec-v{version}).")
+          pins = []
+          for dep in review["dependencies"]:
+              name = re.split(r"[\s<>=!~;\[(]", dep, maxsplit=1)[0]
+              if re.sub(r"[-_.]+", "-", name).lower() == "aec-agent-core":
+                  pins.append(re.sub(r"\s+", "", dep.split(";")[0]))
+          if pins != [f"aec-agent-core=={version}"]:
+              errors.append(f"aec-document-review must pin "
+                            f"aec-agent-core=={version} exactly; it has "
+                            f"{pins or 'no pin'}.")
+          for e in errors:
+              print(f"::error::{e}")
+          if errors:
+              sys.exit(1)
+          print(f"aec-agent-core and aec-document-review {version}, "
+                f"tag {tag}: one release.")
+      - run: pip install build
+      - run: python -m build --outdir dist/ packages/aec-agent-core
+      - name: Only aec-agent-core is in dist/, at the tag's version
+        shell: python
+        run: |
           import sys
           import tomllib
           from pathlib import Path
 
           with open("packages/aec-agent-core/pyproject.toml", "rb") as f:
               version = tomllib.load(f)["project"]["version"]
-          tag = os.environ["TAG"]
-          if tag != f"core-v{version}":
-              print(f"::error::The tag {tag} does not match the core's "
-                    f"version {version} (expected core-v{version}).")
-              sys.exit(1)
           files = sorted(p.name for p in Path("dist").iterdir())
           print("\n".join(files))
           bad = [n for n in files if not n.startswith(f"aec_agent_core-{version}")]

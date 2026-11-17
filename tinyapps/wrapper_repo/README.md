@@ -33,16 +33,16 @@ error if `APP_SOURCE` names a route whose files are missing.
 
 | Route | Put in the repo | Setting |
 | --- | --- | --- |
-| **C. Nexus** (the normal one) | Nothing beyond this template. `packages.txt` pins `aec-document-review==0.1.1`, `aec-agent-core==1.0.1` and `planlens==0.15.1`, and includes `requirements-thirdparty.txt`; `run.sh` installs it all from Nexus. | `APP_SOURCE=nexus` |
-| **B. Wheels** (the backup) | The two wheels in `wheels/`: `aec_agent_core-1.0.1-py3-none-any.whl` and `aec_document_review-0.1.1-py3-none-any.whl`. `run.sh` installs them with `requirements-thirdparty.txt`; planlens 0.15.1 (pinned exactly by Document Review's wheel) and every other dependency resolve from Nexus. A planlens wheel may sit in `wheels/` too. | `APP_SOURCE=wheel` |
+| **C. Nexus** (the normal one) | Nothing beyond this template. `packages.txt` pins `aec-document-review==1.1.0`, `aec-agent-core==1.1.0` and `planlens==0.16.0`, and includes `requirements-thirdparty.txt`; `run.sh` installs it all from Nexus. | `APP_SOURCE=nexus` |
+| **B. Wheels** (the backup) | The two wheels in `wheels/`: `aec_agent_core-1.1.0-py3-none-any.whl` and `aec_document_review-1.1.0-py3-none-any.whl`. `run.sh` installs them with `requirements-thirdparty.txt`; planlens 0.16.0 (pinned exactly by Document Review's wheel) and every other dependency resolve from Nexus. A planlens wheel may sit in `wheels/` too. | `APP_SOURCE=wheel` |
 | **A. Source folder** (development copies) | `app_src/aec_document_review/` (from `packages/aec-document-review/` in the source repository) and `app_src/requirements.txt`, below. `run.sh` puts `app_src/` first on `PYTHONPATH` and installs `requirements-thirdparty.txt` plus that file from Nexus. | `APP_SOURCE=source` |
 
 **Route A's `app_src/requirements.txt`** lists what the copied source needs
 from Nexus:
 
 ```
-aec-agent-core==1.0.1
-planlens==0.15.1
+aec-agent-core==1.1.0
+planlens==0.16.0
 websockets>=14,<16
 ```
 
@@ -69,7 +69,7 @@ On route B, install the wheels with `requirements-thirdparty.txt`, naming
 both files (Windows does not expand `wheels/*.whl`):
 
 ```bash
-python -m pip install wheels/aec_agent_core-1.0.1-py3-none-any.whl wheels/aec_document_review-0.1.1-py3-none-any.whl -r requirements-thirdparty.txt
+python -m pip install wheels/aec_agent_core-1.1.0-py3-none-any.whl wheels/aec_document_review-1.1.0-py3-none-any.whl -r requirements-thirdparty.txt
 ```
 
 On route A, install `requirements-thirdparty.txt` and `app_src/requirements.txt`;
@@ -86,6 +86,10 @@ serves every tester there, and it serves nobody it cannot name.
 On route C, bump the three pins in `packages.txt` to a release tested on
 the test machine (the new `aec-document-review` release names its core and
 planlens versions exactly; copy those); on route B, replace the wheels.
+Document Review and the core release together and carry one version
+number (from the release after 0.1.1 and 1.0.1), so their two pins, and
+their two wheels' names, always show the same number; planlens has its
+own.
 Push, and ask the App Services team to sync.
 
 ## Settings
@@ -99,7 +103,7 @@ setting names, so existing deployments keep working.
 | Value | Purpose |
 | --- | --- |
 | `PROMPTER_URL`, `PROMPTER_MODEL`, `PROMPTER_API_KEY`, `PROMPTER_CA_BUNDLE` | the model endpoint. The deployment must accept image inputs: the app's vision tools depend on it |
-| `PROMPTER-API-KEY--<TESTER>` per tester (optional `PROMPTER-MODEL--<TESTER>`, `PROMPTER-URL--<TESTER>`) | each tester's OWN key on the published app. `<TESTER>` is the sign-in `DOMAIN\user` in upper case, every run of other characters one hyphen: `CORP\jdoe` becomes `PROMPTER-API-KEY--CORP-JDOE` |
+| `PROMPTER-API-KEY--<TESTER>` per tester (optional `PROMPTER-MODEL--<TESTER>`, `PROMPTER-URL--<TESTER>`) | each tester's OWN key on the published app. `<TESTER>` is the sign-in `DOMAIN\user` in upper case, every run of other characters one hyphen: `CORP\jdoe` becomes `PROMPTER-API-KEY--CORP-JDOE`. Sign-in names that differ only in punctuation or accents (`CORP\j.doe`, `CORP\j-doe`, `CORP\j_doe`; `o'brien` and `o_brien`) give the same `<TESTER>`. So a name holding anything other than letters and digits also has an exact secret name, `PROMPTER-API-KEY--<TESTER>--<HASH>`, which the app looks up first; then that person's `PROMPTER-KEYS` entry; then `PROMPTER-API-KEY--<TESTER>`, so a key set up earlier still works. To give two such testers different keys, give each the exact secret (or a `PROMPTER-KEYS` entry) and delete the plain `PROMPTER-API-KEY--<TESTER>` once both are served: while it exists, whichever of them has neither is served by it. A name of letters and digits has only the plain name, and a look-alike with punctuation or an accent at an end of a part (`CORP\jdoe_` beside `CORP\jdoe`) that has no key of its own is served by it too: the key that is such a tester's alone is a `PROMPTER-KEYS` entry. The app shows the exact name, never a key: in the refusal a tester without a key sees, in the sidebar's Connection diagnostics, and from `python -m aec_document_review.tinyapps_keys "CORP\j.doe"`. As an app setting or `.env` line the name is spelt with underscores (`PROMPTER_API_KEY__CORP_J_DOE__<HASH>`). A tester's own model and URL sit beside the key under the same ending. A name of letters and digits whose secret name would pass Key Vault's 127 characters has no secret name (give it a `PROMPTER-KEYS` entry); any other name that long is looked up by its exact secret name, whose readable part is cut to fit. |
 | `PROMPTER-KEYS` (optional) | the alternative: one JSON secret, `{"CORP\\jdoe": {"key": "...", "model": "...", "url": "..."}}` (`model`, `url` optional) |
 | `PROMPTER_SHARED_KEY_FALLBACK` (optional) | `1` lets a signed-in tester with no key of their own use the shared `PROMPTER_API_KEY`. Off by default: a tester without a key is told politely to ask the app owner |
 | `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `SHAREPOINT_SITE_URL` | the app registration that mirrors conversations to the team's SharePoint site; a certificate may replace the secret (`GRAPH_CLIENT_CERT`, `GRAPH_CLIENT_KEY`, see `.env.example`). Test with `python -m aec_document_review.graph_sharepoint --check` |
@@ -111,9 +115,13 @@ setting names, so existing deployments keep working.
 | `DEV_IDENTITY` (local only) | stands in for the signed-in user; not read on the App Service |
 | `APP_ORIGINS` (app setting) | the published address(es) of the app, as the browser shows them; several are separated by a space or a comma. `run.sh` passes each to Streamlit as `--server.corsAllowedOrigins`. Unset, the `https://CHANGE-ME` line in `run.sh` is used, and until one of the two is set the start log carries a warning and the page does not load through IIS |
 | `GEOTECH_PLOT_CODE` (app setting; optional) | `1` lets the figure helper run plotting code the model writes. `app.py` turns it off on the App Service: one process holds every tester's conversations there, and the box the code runs in limits Python, not the operating system. Figures are still drawn, with the fixed plotting tool |
+| `GEOTECH_STOP_BUTTON`, `GEOTECH_SPEND_ESTIMATE` (app settings; optional, off by default) | `1` shows a Stop button while a tester's own turn runs (what the turn did is kept); `1` shows each tester an estimate of their own AI spend this month, priced by `GEOTECH_SPEND_INPUT_USD_PER_MTOK` and `GEOTECH_SPEND_OUTPUT_USD_PER_MTOK` (US dollars per million tokens; `GEOTECH_SPEND_MONTHLY_BUDGET_USD` optional). Turning either on for testers is the owner's call |
+| `GEOTECH_SHAREPOINT_MAX_UPLOAD_MB` (app setting; optional) | the largest file sent to SharePoint, default 2048 MB; a larger file is not sent and the save names it |
 
-The optional tuning settings (pacing, helpers, retries, the figure helper)
-are listed, commented out, in `.env.example`.
+The optional tuning settings (pacing, helpers, retries and time limits,
+the figure helper) and the switches that are off by default (the sheet
+tools, to-do updates with the next call, the agent's own look) are listed, commented out, in
+`.env.example`.
 
 Support: CfA's Tiny Apps support mailbox (its address is in the Tiny Apps
 user guide).

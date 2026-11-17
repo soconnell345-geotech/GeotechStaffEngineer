@@ -57,7 +57,13 @@ dependencies = [
     # 1.0.1 on master since 2026-11-10 (the deployment review's fixes,
     # BACKLOG TA-36; released for Document Review on Tiny Apps). The app's
     # next release takes it; 5.35.0 on PyPI pins 1.0.0.
-    "aec-agent-core==1.0.1",
+    # Since INF-76 the core releases with aec-document-review as one unit
+    # (one version, tag aec-v<version>, which v* never matches), and
+    # publish.yml also refuses while packages/aec-agent-core has changed
+    # since the tag of the pinned version: release the core, then pin it.
+    # 1.1.0 on master (INF-76's first one-unit version; not on PyPI until
+    # the lead releases it with Document Review 1.1.0).
+    "aec-agent-core==1.1.0",
     # -- agent stack (formerly the [deep] extra) --
     # Agent-stack UPPER BOUNDS (5.10.2): unpinned drift has broken deployed
     # clusters twice (Pygments via pydiggs; then deepagents 0.7.11 dropping the
