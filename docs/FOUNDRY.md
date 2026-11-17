@@ -15,7 +15,8 @@ section 6.
      Streamlit, PDF reporting, and both LLM clients (`langchain-openai` for
      GPT-family RIDs, `langchain-anthropic` for Claude RIDs). From 5.35.0 it
      also brings the shared core `aec-agent-core`, which the app pins
-     exactly (`aec-agent-core==1.0.0` on 5.35.0), and it needs Python 3.11
+     exactly (`aec-agent-core==1.0.0` on 5.35.0, `aec-agent-core==1.1.0`
+     on 5.36.0), and it needs Python 3.11
      or newer (Foundry runs 3.12).
    - (On 5.8.0 or older, use the old form: `geotech-staff-engineer[deep,full,pdf]`
      plus `streamlit` plus `langchain-openai`.)
