@@ -90,6 +90,16 @@ DRAW_TOOLS = ("plot_code", "plot_data")
 #: The draw from which a result asks for the best version to be handed
 #: back: a first draw and at most two redraws.
 DRAW_CAP = 3
+#: Looks one figure may have in a turn (analyze_image on its picture or its
+#: look copy, by any agent): one for each draw. With :data:`DRAW_CAP` this
+#: is the most one figure costs in a turn, however often a helper is asked
+#: to redraw it. A hosted run (2026-11-16) drew one figure five times and
+#: looked five times over three calls of the figure helper (401 s, about
+#: 588 thousand tokens): the draw note asked it to stop, but nothing refused
+#: a draw. Past either cap a draw or a look is now refused
+#: (:func:`draw_refusal`, :func:`look_refusal`) and the figure as last drawn
+#: stays.
+LOOK_CAP = DRAW_CAP
 
 #: What ``replaces`` may remove: pictures and charts of a figure, never data
 #: or documents.
@@ -262,6 +272,76 @@ def draw_cap_note(n: int) -> str:
             "helper every draw of its run counts): look at it once if no "
             "look has read it, then hand back the best version and name "
             "what is left. Do not draw again.")
+
+
+def cap_reached_note(what: str = "draw") -> str:
+    """The one line a refused draw or look returns."""
+    return (("Not drawn" if what == "draw" else "Not looked at")
+            + f": this figure has had the most a figure may have in a turn "
+            f"({DRAW_CAP} draws and {LOOK_CAP} looks, by any helper). Its "
+            "last drawing stays as the best version: hand it back and say in "
+            "one line that the cap was reached and what is left.")
+
+
+def _output_root() -> Optional[str]:
+    try:
+        from aec_agent_core._fileio import host_output_dir
+        return host_output_dir()
+    except Exception:                                      # noqa: BLE001
+        return None
+
+
+def _saved_names(code) -> List[str]:
+    """The file names plotting ``code`` saves under, as written in it
+    (``save_figure(fig, "plan")``, ``fig.savefig("plan.png")``)."""
+    import re
+    return re.findall(
+        r"(?:save_figure\s*\([^,()]*,|savefig\s*\()\s*(?:name\s*=\s*)?"
+        r"[rRuU]?['\"]([^'\"\n]+)['\"]", str(code or ""))
+
+
+def draw_refusal(name: Any = "", replaces: Any = None,
+                 root: Optional[str] = None,
+                 code: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """What a draw returns INSTEAD of drawing once the cap is reached: the
+    running figure helper has drawn :data:`DRAW_CAP` times (any figure), or
+    the figure ``name`` (a file name or a name without its extension; a
+    name ``code`` saves under; a figure it ``replaces``; the figure it is a
+    version of) has been drawn :data:`DRAW_CAP` times this turn, whoever
+    drew it. ``None`` when the draw may go ahead. Nothing is drawn, so the
+    file of the last draw stays."""
+    made = draws_so_far() or 0
+    if root is None:
+        root = _output_root()
+    names = [name] + _saved_names(code) + (
+        [replaces] if isinstance(replaces, str) else list(replaces or ()))
+    for n in names:
+        if not isinstance(n, str) or not n.strip():
+            continue
+        stem = figures.figure_stem(n, root) or n.strip()
+        for cand in (n, figures.version_base(stem)):
+            if cand:
+                made = max(made, figures.draws_of(cand, root))
+    if made < DRAW_CAP:
+        return None
+    return {"status": "capped", "draws_so_far": made, "draw_cap": DRAW_CAP,
+            "look_cap": LOOK_CAP, "note": cap_reached_note("draw")}
+
+
+def look_refusal(name: Any,
+                 root: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """What a look returns INSTEAD of looking at a figure drawn this turn
+    that has had :data:`LOOK_CAP` looks; ``None`` when it may look (the
+    look is then counted). A file that is no figure drawn this turn (an
+    upload, a page) is never refused."""
+    if root is None:
+        root = _output_root()
+    booked = figures.book_look(name, root, LOOK_CAP)
+    if not booked or booked["allowed"]:
+        return None
+    return {"status": "capped", "figure": booked["figure"],
+            "looks_so_far": booked["looks"], "draw_cap": DRAW_CAP,
+            "look_cap": LOOK_CAP, "note": cap_reached_note("look")}
 
 
 def drawn_count(helper_draw: Optional[int], figure_draw: Optional[int]):
@@ -939,6 +1019,9 @@ def make_plot_code_tool():
                   replaces: Optional[List[str]] = None,
                   print_width_in: Optional[float] = None) -> str:
         """Run plotting code in the locked box (see the description)."""
+        refused = draw_refusal(name, replaces, code=code)
+        if refused is not None:
+            return json.dumps(refused)
         before = draws_so_far()
         return json.dumps(run_plot_code(
             code, data=data, name=name, time_limit_s=time_limit_s,
@@ -954,4 +1037,5 @@ __all__ = ["next_step", "run_plot_code", "make_plot_code_tool", "plot_code_descr
            "MAX_CODE_CHARS", "SETTINGS_ENVS", "retire_drafts",
            "draws_so_far", "draw_cap_note", "drawn_count", "booked_notes",
            "drew_figure", "DRAW_TOOLS", "DRAW_CAP", "CAPPED_HELPER",
+           "LOOK_CAP", "cap_reached_note", "draw_refusal", "look_refusal",
            "figures"]

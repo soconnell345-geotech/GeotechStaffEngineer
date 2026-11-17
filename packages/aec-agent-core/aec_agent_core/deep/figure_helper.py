@@ -613,6 +613,8 @@ def _record_draws(rec):
             draws.append(files)
             by_tool[name] = by_tool.get(name, 0) + 1
         elif name == "analyze_image":
+            if '"status": "capped"' in text:
+                continue                     # refused: no look was taken
             args = calls.get(step.get("id")) or {}
             target = _base(args.get("attachment_key"))
             figure = look_copy.get(target, target)
@@ -644,7 +646,10 @@ def looks_report(rec) -> str:
             last_draw[f] = n
     for figure, after, _found in looks:
         last_look[figure] = after
-    if not draws and not looks:
+    capped = any(s.get("kind") == "result"
+                 and '"status": "capped"' in str(s.get("text") or "")
+                 for s in list(rec.steps))
+    if not draws and not looks and not capped:
         return ""
     tools = ", ".join(f"{k} {v}" for k, v in sorted(by_tool.items()))
     who = ("FIGURE HELPER RECORD (written in code from what the helper "
@@ -664,6 +669,13 @@ def looks_report(rec) -> str:
     if unseen:
         lines.append("Not looked at since its last draw: "
                      + ", ".join(unseen) + ".")
+    if capped:
+        from aec_agent_core.plot_box import DRAW_CAP, LOOK_CAP
+        lines.append(
+            f"The cap was reached: a figure may have {DRAW_CAP} draws and "
+            f"{LOOK_CAP} looks in a turn, by any helper, and a further one "
+            "was refused. Show the figure as last drawn; do not ask for it "
+            "to be drawn again this turn.")
     if looks:
         lines.append("Do not look again at what these looks read; look "
                      "only to judge an item the reply leaves open.")

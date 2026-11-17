@@ -497,3 +497,42 @@ def test_the_calc_helper_gets_its_looks_only_behind_the_switch(monkeypatch):
             # inside the delivered log, so activity.jsonl shows its notes
             assert kinds.index("FigureLooks") == \
                 kinds.index("DeliveredToolResults") + 1
+
+
+def test_a_figure_past_its_cap_is_neither_drawn_nor_looked_at(folder):
+    """One figure costs at most DRAW_CAP draws and LOOK_CAP looks in a turn,
+    however often the figure helper is called for it (a hosted run,
+    2026-11-16: three calls of the helper drew one figure five times and
+    looked five times). Past the cap a draw or a look is refused, the last
+    drawing stays, and the helper's record says so in one line."""
+    assert (plot_box.DRAW_CAP, plot_box.LOOK_CAP) == (3, 3)
+    with keep_work.turn_scope():
+        def first_call(rec):
+            out = []
+            for k in (1, 2, 3):
+                out.append(_plot_code(rec, "mohr", call_id=f"d{k}"))
+                assert plot_box.look_refusal("mohr.png") is None
+            return out
+        drawn = _in_helper(FIGURE_HELPER_NAME, first_call, "t1")
+        assert [d["draw"] for d in drawn] == [1, 2, 3]
+        before = os.path.getmtime(folder / "mohr.png")
+        note = figures.redraw_note(["mohr"], str(folder))
+        # the helper is called again for the same figure
+        rec, again = _in_helper(FIGURE_HELPER_NAME, lambda r: (
+            r, _plot_code(r, "mohr", call_id="e1")), "t2")
+        # a version of it, drawn by another helper, is the same figure
+        other = _in_helper("calc", lambda r: _plot_code(
+            r, "mohr_v2", call_id="c1"), "t3")
+        look = plot_box.look_refusal(".scratch/mohr_look.png")
+        upload = plot_box.look_refusal("site_photo.png")
+        assert figures.draws_of("mohr") == 3
+    assert "refuse another draw of it" in note
+    assert again["status"] == "capped" and other["status"] == "capped"
+    assert "Not drawn" in again["note"]
+    assert "3 draws and 3 looks" in again["note"]
+    assert os.path.getmtime(folder / "mohr.png") == before
+    assert not (folder / "mohr_v2.png").exists()
+    assert look["status"] == "capped" and "Not looked at" in look["note"]
+    assert upload is None
+    report = looks_report(rec)
+    assert "drew 0 time(s)" in report and "The cap was reached" in report

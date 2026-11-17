@@ -830,6 +830,13 @@ def make_vision_tools(
         # it, of those this agent has (GM-175: the calc helper was told to
         # use analyze_pdf_page, which it did not have).
         args["_tools"] = sorted(include)
+        from aec_agent_core import review_flags as _rf
+        if _rf.figure_helper() or _rf.plot_code():
+            # a figure drawn this turn has at most LOOK_CAP looks
+            from aec_agent_core import plot_box as _box
+            refused = _box.look_refusal(attachment_key)
+            if refused is not None:
+                return json.dumps(refused)
         _wait_for_drawing(attachment_key)
         return _dispatch("analyze_image", args)
 
@@ -1344,6 +1351,13 @@ def make_vision_tools(
         # The chart stack's own call (INF-31 step 6): as call_agent's, it
         # adds defaults_used and the output note, and puts the file in the
         # working folder.
+        from aec_agent_core import review_flags as _rf
+        if _rf.figure_helper() or _rf.plot_code():
+            # past the figure's cap a draw is refused; its last drawing stays
+            from aec_agent_core import plot_box as _box
+            refused = _box.draw_refusal(output_path, root=folder)
+            if refused is not None:
+                return json.dumps(refused)
         from aec_agent_core.charts.plot_tool import call_plot_data
         with drawing(folder):
             result = call_plot_data(params, attachments)
