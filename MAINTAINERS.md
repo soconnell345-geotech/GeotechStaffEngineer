@@ -9,6 +9,10 @@ do not read it whole.
 
 "The owner" below is the project's owner, who decides what the product does.
 
+After the final release this public repository goes quiet: the work goes on
+in the maintainer's own copy, and the owner means to bring it back here
+later (section 9 says what to keep for that).
+
 ## 1. What the repository holds
 
 One repository builds the app, `geotech-staff-engineer`, and two smaller
@@ -64,6 +68,10 @@ folder, section 8), never edited in place:**
 - `planlens`, the document layer, from its own repository
   (`planlens>=` in `pyproject.toml`).
 
+These three stay upstream after this repository goes quiet: upstream keeps
+fixing and releasing them on the public package index, and the owner passes
+each new wheel on (section 8).
+
 Modules that moved into the core keep their old import names: `funhouse_agent.vision_tools`
 is the same module object as `aec_agent_core.vision_tools` (the list is
 `CORE_ALIASES` in `funhouse_agent/__init__.py` and `webapp/__init__.py`). So
@@ -85,7 +93,11 @@ text, and figure and table catalogs. The references helper and the
 reference adapters (`funhouse_agent/adapters/dm7_adapter.py`,
 `gec6_adapter.py` and the like) read it. It is
 its own repository, checked out as a submodule at `geotech-references/`,
-with its own README and CHANGELOG. Its wheel carries no PDFs; the PDFs are
+with its own README and CHANGELOG. The same maintainer keeps it, and its
+own `MAINTAINERS.md` and `RELEASING.md` (at the root of that repository)
+cover its layout, its tests, how content is added and checked, and its
+releases; this section covers only how the app uses and pins it. Its open
+work is in this repository's `BACKLOG.md` (`REF-` ids). Its wheel carries no PDFs; the PDFs are
 in the repository's `docs/` and a host provides them separately
 (`docs/FOUNDRY.md` section 3d, `webapp/README.md` "Reference PDFs").
 
@@ -314,7 +326,57 @@ run `webapp/tests/test_wheels.py`. A new planlens: install it and run
 by planlens version; record the new one in a commit of its own. Then the
 full suite. Never edit the upstream files to make a test pass.
 
-## 9. How the commands here were checked
+## 9. Bringing the work back
+
+After the final release this repository goes quiet, and the work goes on in
+the maintainer's own copy. The owner means to come back later, perhaps after
+some months, and have this repository renewed from that copy, most likely by
+an AI coding session that has never seen it. Four things make that possible:
+
+1. **A change log.** One file at the root of the copy, `LOCAL_CHANGES.md`,
+   newest entry on top, one entry per change. The first entry names the
+   release the copy started from (its tag and commit). Each later one:
+
+   ```
+   ## 5.36.0+site.20261204.1 (2026-12-04)
+   - What: the change in a sentence or two, and the files it touched.
+   - Why: the case that showed the need (made-up values) or the backlog id.
+   - Source: where a formula, curve, table or default moved, the printed
+     page it now follows (document, edition, page, equation or figure).
+   - Tests: the tests added or changed, by file and name.
+   - Backlog: the ids closed or opened.
+   ```
+
+2. **Version numbers above the final release.** Every build carries the
+   final release's number with a local label (`5.36.0+<label>.<date>.<n>`,
+   `RELEASING.md` section 3), and the library its own the same way. Leave
+   the public number itself alone; the renewal chooses the next public one.
+
+3. **The one backlog file, current.** New work gets the next free id
+   (section 7), finished work goes under Done with its date and build label,
+   no id is reused, and `test_backlog.py` passes. No other to-do lists.
+
+4. **An export of the source with its tests, on request**, as a zip or a git
+   bundle (a bundle keeps the history, which a renewal reads best):
+
+   ```bash
+   git -c core.autocrlf=false archive --format=zip --prefix=gse/ -o gse-<date>.zip HEAD
+   git bundle create gse-<date>.bundle --all
+   git bundle verify gse-<date>.bundle
+   ```
+
+   If the copy is kept in git, make its first commit the release's source
+   exactly as received, so that every later change is a diff against the
+   release. Export the library from its own copy the same way.
+
+What comes back is published, so the public rules hold in the copy too: no
+identifiers of the closed platform's projects, hosts, datasets or people in
+tracked files, no private documents, made-up values in tests (section 5).
+Run the three guards before every export. `test_public_text.py` catches the
+words this repository already guards, not new ones, so read the change log
+and the diff for them as well.
+
+## 10. How the commands here were checked
 
 Each command was run once on 2026-11-17 against master `6941d9d` (version
 5.35.0) on a Windows laptop with Python 3.14, by exit code, unless it is
@@ -327,6 +389,10 @@ listed as not run. Files a command rewrote were restored afterwards.
   the recorded file unchanged).
 - `sweep_done.py --next GM` (printed `GM-355`), `close_item.py`, and
   `check_manual.py --rebuild --write` (exit 0).
+- Section 9, on master `17314a3`: its export committed as the first commit
+  of a new repository (2,337 files), a second commit, the zip export (37 MB,
+  Unix line endings), the bundle (32 MB), `git bundle verify` ("a complete
+  history") and a clone from the bundle (both commits).
 
 Not run here:
 

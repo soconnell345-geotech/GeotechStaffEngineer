@@ -19,7 +19,7 @@ Two facts shape everything below:
 
 | Package | Its version lives in | Tag | Workflow |
 |---|---|---|---|
-| `geotech-references` | its own repository | `vX.Y.Z` there | its own (see its repository) |
+| `geotech-references` | its own repository | `vX.Y.Z` there | its own (its `RELEASING.md`) |
 | `planlens` | its own repository | `vX.Y.Z` there | its own |
 | `aec-agent-core` | `packages/aec-agent-core/pyproject.toml` and `__version__` in `packages/aec-agent-core/aec_agent_core/__init__.py` | `core-vX.Y.Z` | `.github/workflows/publish-core.yml` |
 | `aec-document-review` | `packages/aec-document-review/pyproject.toml` and `__version__` in its `__init__.py` | `document-review-vX.Y.Z` | `.github/workflows/publish-document-review.yml` |
@@ -28,7 +28,10 @@ Two facts shape everything below:
 The order is the order of the pins: the reference library, planlens, the
 core, Document Review, then the app. The core and Document Review are
 upstream's to release (`MAINTAINERS.md` section 2); a maintainer of the app
-releases the app and the reference library.
+releases the app and the reference library. After the final release the
+public repository is quiet: a maintainer's builds are the labelled builds of
+section 3, and section 2 is for the day the work is brought back
+(`MAINTAINERS.md` section 9).
 
 ## 2. An app release, step by step
 
@@ -281,6 +284,7 @@ whole; nothing in the app changes.
 
 **The reference library** is maintained with the app: its release reaches
 the app through the submodule and the pin (`MAINTAINERS.md` section 3).
+Its own steps are in its `RELEASING.md`.
 
 ## 5. How the commands here were checked
 
