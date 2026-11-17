@@ -422,3 +422,42 @@ def test_the_html_preview_is_sandboxed_on_every_host(monkeypatch, tmp_path):
     assert "&lt;h1&gt;Report&lt;/h1&gt;" in protos   # only inside srcdoc
     assert f'sandbox=\\"{file_widgets.HTML_SANDBOX}\\"' in protos \
         or f'sandbox="{file_widgets.HTML_SANDBOX}"' in protos
+
+
+@pytest.mark.parametrize("deployment, setting, shown", [
+    ("foundry", None, False), ("foundry", "1", True), ("foundry", "0", False),
+    ("", None, True), ("tinyapps", None, True), ("", "0", False),
+    ("", "yes", True), ("foundry", "on", False)])
+def test_open_in_new_tab_has_a_switch(monkeypatch, deployment, setting,
+                                      shown):
+    """``GEOTECH_OPEN_IN_NEW_TAB``: 1 shows the button, 0 hides it; unset (or
+    any other value) it is hidden on the hosted platform, whose frame does
+    not let the page open a tab, and shown elsewhere. Hidden, the page
+    carries neither the button, its script nor any text naming it."""
+    monkeypatch.setenv("GEOTECH_DEPLOYMENT", deployment)
+    if setting is None:
+        monkeypatch.delenv(file_widgets.OPEN_IN_NEW_TAB_ENV, raising=False)
+    else:
+        monkeypatch.setenv(file_widgets.OPEN_IN_NEW_TAB_ENV, setting)
+    assert file_widgets.open_in_new_tab_shown() is shown
+    page = file_widgets.browser_download_html(b"made-up bytes", "a.pdf",
+                                              "application/pdf", "Download")
+    assert ('id="open"' in page) is shown
+    assert ("new tab" in page.lower()) is shown
+    assert 'id="save"' in page and "URL.createObjectURL" in page
+
+
+def test_hidden_the_pdf_note_does_not_name_the_button(monkeypatch, tmp_path):
+    _foundry(monkeypatch)
+    monkeypatch.delenv(file_widgets.OPEN_IN_NEW_TAB_ENV, raising=False)
+    seen = _record(monkeypatch)
+    monkeypatch.setattr(file_widgets.st, "toggle", lambda *a, **k: True)
+    monkeypatch.setattr(file_widgets.st, "image", lambda *a, **k: None)
+    pdf = tmp_path / "made_up.pdf"
+    _pdf(pdf, 2)
+    file_widgets.pdf_page_preview(str(pdf), key="k")
+    assert seen["caption"] and "new tab" not in seen["caption"][-1].lower()
+    assert "Download it above" in seen["caption"][-1]
+    monkeypatch.setenv(file_widgets.OPEN_IN_NEW_TAB_ENV, "1")
+    file_widgets.pdf_page_preview(str(pdf), key="k2")
+    assert "Open in new tab" in seen["caption"][-1]

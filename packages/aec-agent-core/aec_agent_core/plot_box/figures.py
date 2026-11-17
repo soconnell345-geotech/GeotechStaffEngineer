@@ -185,6 +185,40 @@ def draws_of(name, root: Optional[str] = None) -> int:
         return int(entry["draws"]) if entry else 0
 
 
+#: The tail of a look copy's name: ``.scratch/plan_look.png`` is a look at
+#: ``plan.png`` (:mod:`aec_agent_core.plot_box.child`).
+LOOK_TAIL = "_look"
+
+
+def book_look(name, root: Optional[str],
+              cap: int) -> Optional[Dict[str, Any]]:
+    """Count one look at a figure drawn this turn (its picture, chart or
+    look copy) unless it has had ``cap`` looks: ``{"figure", "looks",
+    "allowed"}``, ``looks`` counting this one when allowed; ``None`` for a
+    file that is no figure drawn this turn."""
+    book = _book()
+    stem = figure_stem(name, root)
+    if not book or not stem:
+        return None
+    k = stem.lower()
+    keys = [k]
+    if k.endswith(LOOK_TAIL):
+        k0 = k[:-len(LOOK_TAIL)]
+        keys += [k0, k0.rsplit("/", 1)[-1]]
+    with _LOCK:
+        for key in keys:
+            entry = book.get(key)
+            if not entry or not entry.get("draws"):
+                continue
+            seen = int(entry.get("looks") or 0)
+            shown = entry.get("file") or key
+            if seen >= cap:
+                return {"figure": shown, "looks": seen, "allowed": False}
+            entry["looks"] = seen + 1
+            return {"figure": shown, "looks": seen + 1, "allowed": True}
+    return None
+
+
 def record_draw(files: Iterable, tool: str, root: Optional[str],
                 replaces=None, code: Optional[str] = None,
                 data_json: Optional[str] = None,
@@ -236,6 +270,7 @@ def record_draw(files: Iterable, tool: str, root: Optional[str],
                 continue
             entry = book.get(k)
             prior = int(entry["draws"]) if entry else 0
+            looked = int((entry or {}).get("looks") or 0)
             base = version_base(stems[k])
             base_k = base.lower() if base else None
             linked = []
@@ -249,6 +284,7 @@ def record_draw(files: Iterable, tool: str, root: Optional[str],
                     linked.append((other, "version"))
             for other, how in linked:
                 prior = max(prior, int(book[other]["draws"]))
+                looked = max(looked, int(book[other].get("looks") or 0))
                 if how != "version":
                     continue
                 left = book[other]["file"]
@@ -259,7 +295,8 @@ def record_draw(files: Iterable, tool: str, root: Optional[str],
                 last = max(linked, key=lambda o: book[o[0]]["order"])[0]
                 info["continues"] = book[last]["file"]
             book[k] = {"stem": stems[k], "file": names[k],
-                       "draws": prior + 1, "order": next(_ORDER),
+                       "draws": prior + 1, "looks": looked,
+                       "order": next(_ORDER),
                        "tool": tool,
                        "code_file": kept.get(k) or (entry or {}).get(
                            "code_file")}
@@ -493,6 +530,14 @@ def redraw_note(stems: Iterable[str], root: Optional[str]) -> str:
                 f"under another name ({name}_v2) too: the draw's result says "
                 f"when to stop. A drawing under another name leaves {fig} "
                 "showing beside it unless the draw names it in replaces=.")
+        from aec_agent_core.plot_box import DRAW_CAP
+        if n >= DRAW_CAP:
+            lines.append(
+                f"It has had the {DRAW_CAP} draws a figure may have in a "
+                "turn: plot_code and plot_data refuse another draw of it. "
+                f"Do not draw; hand back {fig} as it stands and say in one "
+                "line that the cap was reached and what the brief asked "
+                "that is left.")
         if rec["tool"] == "plot_code":
             code = rec.get("code") or ""
             if len(code) <= MAX_BRIEF_CODE:
@@ -604,5 +649,5 @@ def stand_in(titles=(), axes=(), series=(), notes=(),
 
 __all__ = ["CODE_DIR", "REDRAW_HEADING", "record_draw", "write_code",
            "forget_code", "kept_code", "kept_figures", "named_in",
-           "redraw_note", "replacing", "draws_of", "figure_stem",
+           "redraw_note", "replacing", "draws_of", "book_look", "figure_stem",
            "version_base", "is_figure_file", "stand_in", "STAND_IN_NOTE"]

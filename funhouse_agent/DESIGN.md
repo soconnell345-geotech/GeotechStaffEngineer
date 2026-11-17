@@ -607,12 +607,17 @@ the eyes). What changed from 5.34.0 on, in short:
   `deep/tests/test_figure_runs.py`.
 - **The step cap** (TA-33; 2026-10-16): the message for a turn that runs
   out of steps is plain words (no LangGraph error name, no documentation
-  link; the raw text goes to the activity log). Behind
-  `GEOTECH_STEP_CAP_ANSWER` (OFF; arm `step_cap_answer`) such a turn
-  answers from what it gathered instead: one last model call with no
-  tools over the turn's own replies and tool results (each cut to 4,000
-  characters), told to say what was found, what was not finished and
-  that it stopped at its step limit (`webapp/core.answer_at_step_cap`).
+  link; the raw text goes to the activity log). With
+  `GEOTECH_STEP_CAP_ANSWER` (on in the app since 2026-11-16, `0` turns it
+  off; off in the library and the eval's `baseline`, arm `step_cap_answer`)
+  such a turn also answers from what it gathered: one last model call with
+  no tools over the turn's own replies, tool calls and tool results written
+  out as plain text (each result cut to 4,000 characters, the whole to
+  120,000), told to say what was found, what was not finished and that it
+  stopped at its step limit (`webapp/core.answer_at_step_cap`). The plain
+  message, naming the cap hit and the setting to raise, stays under it;
+  if that call fails, the plain message shows alone. The default step cap
+  is 150 since 2026-11-16 (50 before).
 - **Large results and the record** (TA-30, EV-20; 2026-10-15/16): a JSON
   result of 60,000 characters or more opens with a map of its keys (the
   line each starts on, what it holds), so the preview deepagents shows of

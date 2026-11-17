@@ -61,13 +61,17 @@ def _versions_check() -> dict:
     parts = [f"python {sys.version.split()[0]}"]
     # numpy: the app runs on 1.26 and 2.x (INF-53); Foundry's transforms
     # repos hold 1.26.4, and scipy must then be 1.17 or older.
-    for pkg in ("geotech-staff-engineer", "geotech-references", "planlens",
+    # aec-agent-core: the agent the app runs on; aec-document-review is
+    # named only where it is installed (the app does not need it).
+    for pkg in ("geotech-staff-engineer", "aec-agent-core",
+                "aec-document-review", "geotech-references", "planlens",
                 "numpy", "streamlit", "langchain", "langchain-openai",
                 "langchain-anthropic", "deepagents", "websockets"):
         try:
             parts.append(f"{pkg} {md.version(pkg)}")
         except Exception:
-            parts.append(f"{pkg} NOT INSTALLED")
+            if pkg != "aec-document-review":
+                parts.append(f"{pkg} NOT INSTALLED")
     return _check("versions", PASS, " | ".join(parts))
 
 

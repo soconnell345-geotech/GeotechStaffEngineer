@@ -158,3 +158,95 @@ class TestRegistry:
         # ...and a new turn can start afterwards
         j2 = tj.start_turn_job(object(), [], tid, 50, _ctx(tid, files, [], []))
         assert j2 is not job
+
+
+class TestStepCapAnswer:
+    """A turn that reaches its step cap does not end empty: one last call
+    with no tools answers from the work so far, and the plain step-cap
+    message (the cap hit, the setting to raise) stays under it; if that
+    call fails, the plain message shows as before (TA-33, on in the app)."""
+
+    @staticmethod
+    def _capped(agent, messages, thread_id, recursion_limit=None,
+                record=None, **_kw):
+        from langchain_core.messages import AIMessage, ToolMessage
+        record.add([
+            AIMessage(content="", id="a1", tool_calls=[
+                {"name": "call_agent", "args": {"module": "made_up"},
+                 "id": "t1", "type": "tool_call"}]),
+            ToolMessage(content="Ka = 0.333 (made up)", tool_call_id="t1",
+                        id="r1")])
+        yield {"kind": "token", "text": "Reading. "}
+        raise RuntimeError("Recursion limit of 150 reached without hitting "
+                           "a stop condition.")
+
+    def _run(self, monkeypatch, tid, model):
+        monkeypatch.setattr(core, "stream_turn", self._capped)
+        agent = type("A", (), {"geotech_model": model})()
+        _id, files = _mk_conv(tid)
+        job = tj.start_turn_job(
+            agent, [{"role": "user", "content": "the wall"}], tid, 150,
+            _ctx(tid, files, [{"role": "user", "text": "the wall"}], []))
+        _wait_done(job)
+        return job.result
+
+    def test_the_turn_answers_from_its_work_with_the_plain_message(
+            self, monkeypatch):
+        monkeypatch.delenv("GEOTECH_STEP_CAP_ANSWER", raising=False)
+        seen = []
+
+        class _Model:
+            def invoke(self, msgs):
+                seen.append(msgs)
+                return type("R", (), {"content": (
+                    "Ka = 0.333 was found; the wall check is left. The turn "
+                    "stopped at its step limit.")})()
+
+        result = self._run(monkeypatch, "TJCAP1", _Model())
+        assert result["final"].startswith("Ka = 0.333 was found")
+        assert "Ka = 0.333 (made up)" in seen[0][0]["content"]
+        assert "ran out of its steps" in result["error"]
+        assert "(all 150 of them)" in result["error"]
+        assert "Primary step cap" in result["error"]
+
+    def test_if_that_call_fails_the_plain_message_still_shows(
+            self, monkeypatch):
+        monkeypatch.delenv("GEOTECH_STEP_CAP_ANSWER", raising=False)
+
+        class _Busy:
+            def invoke(self, msgs):
+                raise RuntimeError("made-up overload")
+
+        result = self._run(monkeypatch, "TJCAP2", _Busy())
+        assert result["final"] == core.NOTHING_KEPT
+        assert "ran out of its steps" in result["error"]
+        assert "made-up overload" not in result["error"]
+
+    def test_zero_turns_it_off(self, monkeypatch):
+        monkeypatch.setenv("GEOTECH_STEP_CAP_ANSWER", "0")
+        seen = []
+
+        class _Model:
+            def invoke(self, msgs):
+                seen.append(msgs)
+                return type("R", (), {"content": "should not be asked"})()
+
+        result = self._run(monkeypatch, "TJCAP3", _Model())
+        assert not seen and result["final"] == core.NOTHING_KEPT
+        assert "ran out of its steps" in result["error"]
+
+    def test_the_last_call_counts_in_the_turn_tokens(self, monkeypatch):
+        """Review C1: the cost shown for a capped turn includes it."""
+        monkeypatch.delenv("GEOTECH_STEP_CAP_ANSWER", raising=False)
+
+        class _Model:
+            def invoke(self, msgs):
+                return type("R", (), {
+                    "content": "Ka = 0.333 was found.",
+                    "usage_metadata": {"input_tokens": 700,
+                                       "output_tokens": 50,
+                                       "total_tokens": 750}})()
+
+        result = self._run(monkeypatch, "TJCAP4", _Model())
+        assert result["final"].startswith("Ka = 0.333 was found")
+        assert result["turn_tokens"] == 750

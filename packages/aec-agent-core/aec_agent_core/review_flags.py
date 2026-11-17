@@ -78,7 +78,9 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     answers from what it gathered, in one last model call with no tools
     (``webapp.core.answer_at_step_cap``), instead of ending on an error; the
     raw error goes to the activity log. Both pages (BACKLOG TA-33; live wave
-    w8 F55 ended on a raw GraphRecursionError and five chart cards).
+    w8 F55 ended on a raw GraphRecursionError and five chart cards). Off
+    here and in the eval's ``baseline``; the app turns it on unless the
+    variable is ``0`` (``webapp.core.step_cap_answer_on``, 2026-11-16).
 ``GEOTECH_CITED_PAGES``
     What the app does when an answer cites pages that no tool or helper read
     or looked at in the conversation (:mod:`funhouse_agent.cited_pages`; the
