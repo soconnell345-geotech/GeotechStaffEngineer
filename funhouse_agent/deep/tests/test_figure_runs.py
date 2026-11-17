@@ -430,12 +430,16 @@ def test_plot_data_in_another_helper_is_not_capped(tmp_path, monkeypatch):
                     "series": series, "output_path": f"{helper}_4.png"}))
         finally:
             keep_work._HELPER.reset(token)
+        # a new figure is drawn whatever other figures the call drew: the
+        # caps are per figure (review of 2026-11-16, F1); in the figure
+        # helper the note still counts the call's draws, against renamed
+        # drafts, and says a different figure may still be drawn
+        assert out["status"] == "success", out
         if capped:
-            # past the cap of three the draw is refused: nothing is drawn
-            assert out["status"] == "capped", out
-            assert not (tmp_path / f"{helper}_4.png").exists()
+            assert out["draw"] == 4
+            assert "Do not draw again" in out["redraw_note"]
+            assert "different figure" in out["redraw_note"]
         else:
-            assert out["status"] == "success"
             assert out["draw"] == 1 and "redraw_note" not in out, helper
 
 

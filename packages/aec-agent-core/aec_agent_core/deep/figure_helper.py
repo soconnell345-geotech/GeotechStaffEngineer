@@ -39,6 +39,7 @@ leaves it out.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Optional
 
@@ -646,9 +647,17 @@ def looks_report(rec) -> str:
             last_draw[f] = n
     for figure, after, _found in looks:
         last_look[figure] = after
-    capped = any(s.get("kind") == "result"
-                 and '"status": "capped"' in str(s.get("text") or "")
-                 for s in list(rec.steps))
+    refused = []
+    for s in list(rec.steps):
+        text = str(s.get("text") or "")
+        if s.get("kind") != "result" or '"status": "capped"' not in text:
+            continue
+        try:
+            out = json.loads(text)
+        except ValueError:
+            out = {}
+        refused.append(out if isinstance(out, dict) else {})
+    capped = bool(refused)
     if not draws and not looks and not capped:
         return ""
     tools = ", ".join(f"{k} {v}" for k, v in sorted(by_tool.items()))
@@ -670,12 +679,31 @@ def looks_report(rec) -> str:
         lines.append("Not looked at since its last draw: "
                      + ", ".join(unseen) + ".")
     if capped:
-        from aec_agent_core.plot_box import DRAW_CAP, LOOK_CAP
-        lines.append(
-            f"The cap was reached: a figure may have {DRAW_CAP} draws and "
-            f"{LOOK_CAP} looks in a turn, by any helper, and a further one "
-            "was refused. Show the figure as last drawn; do not ask for it "
-            "to be drawn again this turn.")
+        from aec_agent_core.plot_box import CALL_DRAW_CAP, DRAW_CAP, LOOK_CAP
+
+        def _stem(f):
+            return os.path.splitext(os.path.basename(str(f or "")))[0]
+        own = [r for r in refused if r.get("cap") != "call"]
+        by_call = [r for r in refused if r.get("cap") == "call"]
+        if own:
+            at = sorted({_stem(r.get("figure")) for r in own} - {""})
+            lines.append(
+                "The cap was reached" + (f" for {', '.join(at)}" if at else "")
+                + f": a figure may have {DRAW_CAP} draws and {LOOK_CAP} looks "
+                "in a turn, by any helper, and a further one was refused. "
+                "Show it as last drawn; do not ask for it to be drawn again "
+                "this turn.")
+        if by_call:
+            drawn = {_stem(f) for f in last_draw}
+            missing = sorted({_stem(r.get("figure")) for r in by_call}
+                             - {""} - drawn)
+            made = max(int(r.get("draws_in_call") or 0) for r in by_call)
+            lines.append(
+                f"This call made {made} draws in all, the most one call may "
+                f"make ({CALL_DRAW_CAP}), so a further draw was refused"
+                + (f"; not drawn: {', '.join(missing)}" if missing else "")
+                + ". That was the call's total, not those figures' own "
+                "draws: ask for them in a new figure helper call.")
     if looks:
         lines.append("Do not look again at what these looks read; look "
                      "only to judge an item the reply leaves open.")

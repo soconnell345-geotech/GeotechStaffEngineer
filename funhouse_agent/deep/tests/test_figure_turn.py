@@ -536,3 +536,69 @@ def test_a_figure_past_its_cap_is_neither_drawn_nor_looked_at(folder):
     assert upload is None
     report = looks_report(rec)
     assert "drew 0 time(s)" in report and "The cap was reached" in report
+
+
+def test_one_call_draws_every_figure_its_brief_names(folder):
+    """The caps are per figure (review of 2026-11-16, F1): one helper call
+    briefed for several figures draws them all, and a figure is never
+    refused for another figure's draws."""
+    with keep_work.turn_scope():
+        def two(rec):
+            out = [_plot_code(rec, "plan", call_id=f"p{k}") for k in (1, 2, 3)]
+            out.append(_plot_code(rec, "section", call_id="s1"))
+            return out
+        drawn = _in_helper(FIGURE_HELPER_NAME, two, "t1")
+        names = ("bore", "spt", "cpt", "su")
+        many = _in_helper(FIGURE_HELPER_NAME, lambda rec: [
+            _plot_code(rec, n, call_id=n) for n in names], "t2")
+    assert [d["status"] for d in drawn] == ["success"] * 4
+    assert (folder / "section.png").exists()
+    assert [d["status"] for d in many] == ["success"] * 4
+    assert all((folder / f"{n}.png").exists() for n in names)
+
+
+def test_a_fourth_draw_of_one_figure_in_one_call_is_refused(folder):
+    with keep_work.turn_scope():
+        rec, out = _in_helper(FIGURE_HELPER_NAME, lambda rec: (rec, [
+            _plot_code(rec, "plan", call_id=f"p{k}") for k in range(4)]),
+            "t1")
+    assert [d["status"] for d in out] == ["success"] * 3 + ["capped"]
+    assert "3 draws and 3 looks" in out[3]["note"] and "cap" not in out[3]
+    assert out[3]["figure"] == "plan"
+    assert "The cap was reached for plan" in looks_report(rec)
+
+
+def test_the_call_backstop_is_worded_as_the_call_total(folder):
+    """Past CALL_DRAW_CAP draws in one helper call a draw is refused, and
+    the note and the record say it was the call's total, name the figure
+    not drawn and send it to a new call; never that it had three draws."""
+    with keep_work.turn_scope():
+        def full(rec):
+            for k in range(plot_box.CALL_DRAW_CAP):
+                rec.add_result("plot_code", f"x{k}", json.dumps(
+                    {"status": "success", "images": []}))
+            return rec, _plot_code(rec, "su", call_id="last")
+        rec, out = _in_helper(FIGURE_HELPER_NAME, full, "t1")
+    assert out["status"] == "capped" and out["cap"] == "call"
+    assert (f"has made {plot_box.CALL_DRAW_CAP} draws in all"
+            in out["note"])
+    assert "3 draws and 3 looks" not in out["note"]
+    assert not (folder / "su.png").exists()
+    report = looks_report(rec)
+    assert "not drawn: su" in report and "new figure helper call" in report
+    assert "The cap was reached" not in report
+
+
+def test_a_look_refused_to_the_main_agent_is_worded_for_it(folder):
+    """Review C2: the main agent is not told to "hand it back"."""
+    with keep_work.turn_scope():
+        def three(rec):
+            _plot_code(rec, "mohr", call_id="d1")
+            for _ in range(3):
+                assert plot_box.look_refusal("mohr.png") is None
+            return plot_box.look_refusal("mohr.png")
+        helper = _in_helper(FIGURE_HELPER_NAME, three, "t1")
+        main = plot_box.look_refusal("mohr.png")
+    assert "hand it back" in helper["note"]
+    assert main["status"] == "capped" and "hand it back" not in main["note"]
+    assert "figure helper's record" in main["note"]
