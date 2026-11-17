@@ -437,6 +437,63 @@ class TestTheGates:
         assert any("cannot be negative" in u["why"]
                    for u in result.unresolved)
 
+    # BACKLOG RI-213: a depth is checked against a depth axis and an
+    # elevation against an elevation axis, never one against the other.
+    # Made-up axes; no PDF is needed for the gate itself.
+    @staticmethod
+    def _builder(reading, axes):
+        from report_ingest.sounding_reader import (
+            PlotAxis, SoundingFloor, _Builder,
+        )
+        floor = SoundingFloor(kind="cpt", axes=[PlotAxis(**a) for a in axes])
+        return _Builder(reading, floor, [0], "RXX")
+
+    def test_a_depth_is_not_checked_against_an_elevation_axis(self):
+        builder = self._builder(
+            _reading(investigation_id="CPT-9", depth_unit="ft"),
+            [{"role": "elevation", "unit": "ft", "title": "Elevation",
+              "ticks": [1.0, 3.0, 5.0]}])
+        kept = builder._depth(25.5, "depth of a reading")
+        assert kept is not None and kept.value == 25.5
+        assert builder.unresolved == []
+
+    def test_a_depth_is_still_checked_against_a_depth_axis(self):
+        builder = self._builder(
+            _reading(investigation_id="CPT-9", depth_unit="m"),
+            [{"role": "depth", "unit": "m", "ticks": [0.0, 5.0, 10.0]},
+             {"role": "elevation", "unit": "m", "ticks": [90.0, 95.0, 100.0]}])
+        assert builder._depth(7.0, "a reading") is not None
+        assert builder._depth(44.0, "a reading") is None
+        assert any("outside the sheet's own depth axis" in u["why"]
+                   for u in builder.unresolved)
+
+    def test_an_elevation_reading_is_checked_against_the_elevation_axis(self):
+        builder = self._builder(
+            _reading(investigation_id="CPT-9", depth_unit="m",
+                     vertical_axis="elevation", datum="made-up datum"),
+            [{"role": "depth", "unit": "m", "ticks": [0.0, 5.0, 10.0]},
+             {"role": "elevation", "unit": "m", "ticks": [90.0, 95.0, 100.0]}])
+        # A level inside the elevation axis is kept though the depth axis
+        # stops at 10; one far outside the elevation axis is refused.
+        assert builder._depth(93.0, "a reading") is not None
+        assert builder._depth(40.0, "a reading") is None
+        assert len(builder.unresolved) == 1
+        assert "outside the sheet's own elevation axis" in (
+            builder.unresolved[0]["why"])
+
+    def test_the_record_and_the_gate_read_the_axis_alike(self):
+        from report_ingest.sounding_reader import _on_elevation
+        assert _on_elevation(_reading(vertical_axis=" Elevation "))
+        assert not _on_elevation(_reading(vertical_axis="depth"))
+
+    def test_an_elevation_reading_with_no_elevation_axis_is_not_gated(self):
+        builder = self._builder(
+            _reading(investigation_id="CPT-9", depth_unit="m",
+                     vertical_axis="elevation"),
+            [{"role": "depth", "unit": "m", "ticks": [0.0, 5.0, 10.0]}])
+        assert builder._depth(93.0, "a reading") is not None
+        assert builder.unresolved == []
+
     def test_a_series_with_no_depth_unit_places_nothing(self, plotted):
         doc, _gt = plotted
         engine = FakeEngine([{"final": _reading(
