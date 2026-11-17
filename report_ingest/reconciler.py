@@ -3255,6 +3255,7 @@ def _check_drives(record: ReportRecord, qa: List[QAEntry]) -> None:
                    if fold_id(s.sample_id)}
         complete: List[Tuple[int, Any]] = []        # (drive count, record)
         off: List[Dict[str, Any]] = []              # drives vs interval
+        loose: List[Tuple[str, List[str], List[int]]] = []   # unit-less a/b
         for spt in inv.spt:
             drives = _drive_sets(spt)
             top = depth_m(spt.depth_top)
@@ -3270,6 +3271,9 @@ def _check_drives(record: ReportRecord, qa: List[QAEntry]) -> None:
             if spt.sample_id:
                 at += f" ({spt.sample_id})"
             pages = _record_pages(inv, spt.prov)
+            unread = [str(b) for b in spt.blows if _unitless_over(b)]
+            if unread:
+                loose.append((at, unread, pages))
             # A record that shows plainly that it ends in a halt is checked
             # as a refusal, whether its drives show the halt or its own drive
             # lengths do (16-29-50 over 6, 6 and 2.5 in; RI-50): it stops
@@ -3316,6 +3320,43 @@ def _check_drives(record: ReportRecord, qa: List[QAEntry]) -> None:
                         "pages": pages})
         _report_drive_sums(name, off, qa)
         _check_drive_counts(inv, name, complete, qa)
+        _report_unitless(name, loose, qa)
+
+
+# A blows entry written 'a/b' that names no unit for b (RI-214).
+_UNITLESS_OVER = re.compile(r'^\s*\d+\s*/\s*[0-9]*\.?[0-9]+\s*$')
+
+
+def _unitless_over(entry: Any) -> bool:
+    """Is this blows entry 'a/b' with no unit ('5/8', '20/90', '50/4')?"""
+    return isinstance(entry, str) and bool(_UNITLESS_OVER.match(entry))
+
+
+def _report_unitless(name: str,
+                     loose: Sequence[Tuple[str, List[str], List[int]]],
+                     qa: List[QAEntry]) -> None:
+    """One note per exploration for its blows entries written 'a/b' with
+    no unit (BACKLOG RI-214). Nothing is changed: the record keeps each as
+    printed and the DIGGS file holds it as a count over a penetration, as
+    before. Logs print three different things this way -- a refusal (50
+    over 5 in), a short seating drive before the test drives, and seating
+    and test counts -- and the entry alone cannot tell which, so the reader
+    is asked to check it against the print."""
+    if not loose:
+        return
+    at = "; ".join(f"{where}: {', '.join(repr(e) for e in entries)}"
+                   for where, entries, _pages in loose[:5])
+    more = f"; and {len(loose) - 5} more" if len(loose) > 5 else ""
+    qa.append(QAEntry(
+        kind="partial", where=f"{name}.spt",
+        detail=f"{name}: {len(loose)} driven record(s) hold a blows entry "
+               f"written 'a/b' with no unit ({at}{more}). The record keeps "
+               f"each as printed; the DIGGS file reads each as a count over "
+               f"a penetration in inches, whatever the hole's unit; check "
+               f"against the print: a log may write a refusal, a short "
+               f"seating drive or a seating and test count this way",
+        values=[e for _where, entries, _p in loose for e in entries][:5],
+        pages=sorted({p for _w, _e, pages in loose for p in pages})))
 
 
 def _report_drive_sums(name: str, off: Sequence[Dict[str, Any]],

@@ -1250,6 +1250,34 @@ class TestALogAgainstItself:
         assert "0.381 m" in entry.detail and "0.150 m" in entry.detail
         assert entry.pages == [30, 31]
 
+    def test_an_ab_with_no_unit_is_noted_and_nothing_changes(self):
+        # RI-214: made-up records. Each unit-less 'a/b' is named in one note
+        # for the hole; the drive checks run as before (the '8' still read
+        # as inches, so its drive-sum conflict stays); a unit is not noted.
+        rows = [{"depth_top": _m(1.2), "depth_bottom": _m(1.65),
+                 "blows": [3, "5/8", 11, 12, 16], "n": 47},
+                {"depth_top": _m(3.0), "depth_bottom": _m(3.3),
+                 "blows": ["20/90"]},
+                {"depth_top": _m(4.5), "depth_bottom": _m(4.95),
+                 "blows": [12, "50/5cm"]}]
+        record = _reconciled(_hole(rows))
+        notes = [e for e in kinds_of(record, "partial")
+                 if "with no unit" in e.detail]
+        (entry,) = notes
+        assert "2 driven record(s)" in entry.detail
+        assert "check against the print" in entry.detail
+        assert entry.values == ["5/8", "20/90"]
+        assert entry.rank == "note"
+        assert kinds_of(record, "conflict")
+
+    def test_no_note_without_a_unitless_ab(self):
+        rows = [{"depth_top": _m(1.2), "depth_bottom": _m(1.65),
+                 "blows": [4, 6, 9], "n": 15},
+                {"depth_top": _m(3.0), "depth_bottom": _m(3.3),
+                 "blows": [12, '50/5"']}]
+        record = _reconciled(_hole(rows))
+        assert not [e for e in record.qa if "with no unit" in e.detail]
+
     def test_a_refusal_that_stops_short_of_its_interval_is_fine(self):
         rows = [{"depth_top": _m(10.05), "depth_bottom": _m(10.5),
                  "blows": [32, "50/5cm"], "increment": _m(0.15),
