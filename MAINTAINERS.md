@@ -11,7 +11,11 @@ do not read it whole.
 
 After the final release this public repository goes quiet: the work goes on
 in the maintainer's own copy, and the owner means to bring it back here
-later (section 9 says what to keep for that).
+later (section 9 says what to keep for that). A maintainer working from
+their own copy builds wheels with a local version label for the platform
+(`RELEASING.md` section 3) and never publishes to the public package index:
+only the public GitHub repositories can publish (trusted publishing), and
+releasing from them stays with the repository's owner.
 
 ## 1. What the repository holds
 
@@ -51,7 +55,11 @@ skip.
 
 **A maintainer owns:** the calculation modules and the wrappers, `geotech_common`,
 the agent and its tools (`funhouse_agent`), the geotech page (`webapp`),
-report ingest, the user manual, the validation examples, and `BACKLOG.md`.
+report ingest, the user manual, the validation examples, `BACKLOG.md`, and
+the reference library (`geotech-references`, its own repository: its
+functions, chapter text, catalogs and labelled builds; section 3). Public
+releases of the app and the library stay with the owner (`RELEASING.md`,
+the first of its three facts).
 
 **Arriving from upstream as released wheels (the core with its source
 folder, section 8), never edited in place:**
@@ -94,7 +102,8 @@ reference adapters (`funhouse_agent/adapters/dm7_adapter.py`,
 `gec6_adapter.py` and the like) read it. It is
 its own repository, checked out as a submodule at `geotech-references/`,
 with its own README and CHANGELOG. The same maintainer keeps it, and its
-own `MAINTAINERS.md` and `RELEASING.md` (at the root of that repository)
+own `MAINTAINERS.md` and `RELEASING.md` (at the root of that repository,
+from its release 1.8.0; an older submodule commit lacks them)
 cover its layout, its tests, how content is added and checked, and its
 releases; this section covers only how the app uses and pins it. Its open
 work is in this repository's `BACKLOG.md` (`REF-` ids). Its wheel carries no PDFs; the PDFs are
@@ -107,7 +116,8 @@ The app pins it twice, and the two move together:
 - **`geotech-references>=X.Y.Z`** in `pyproject.toml`: what an install takes.
 
 When the library is released: move the submodule to its tag
-(`git -C geotech-references checkout vX.Y.Z`, then `git add geotech-references`),
+(`git -C geotech-references fetch origin --tags`, then
+`git -C geotech-references checkout vX.Y.Z` and `git add geotech-references`),
 raise the pin, rebuild the manual (`RELEASING.md` step 7), run the suite.
 
 From a git clone, fetch it with `git submodule update --init geotech-references`.
@@ -181,11 +191,17 @@ four workers; in one process, 50 to 100 minutes. Release 5.35.0's gate was
 exit code, never through a pipe that hides it.
 
 CI (`.github/workflows/tests.yml`) runs eight jobs: the suite on Python 3.12
-and 3.13; the suite in an environment holding numpy at 1.26.4 (installed
-with `constraints/foundry-numpy126.txt`); the wheel checks; and the two
-upstream packages alone (`core-only` and `document-review`, each on Python
-3.11 and 3.12). A commit that changes only notes (`*.md`, `module_work/`,
-`docs/` other than the user manual) starts no run.
+and 3.13; a subset of the suite (the numerical modules and wrappers the job
+names, slow tests left out) in an environment holding numpy at 1.26.4
+(installed with `constraints/foundry-numpy126.txt`); the wheel checks; and
+the two upstream packages alone (`core-only` and `document-review`, each on
+Python 3.11 and 3.12). It runs on pushes to `master` and to `ci/<name>`
+branches, on pull requests to master, and by hand from the Actions tab. The
+full suite runs there, not on a laptop: push a feature branch as
+`ci/<name>` (`git push origin <branch>:ci/<name>`) and merge only on a green
+run. A commit that changes only notes (`*.md`, `module_work/`, `docs/`
+other than the user manual) starts no run. A copy kept anywhere else has no
+such runs: there, run the full suite itself.
 
 The code must also run on numpy 1.26: take a name numpy 2
 added from `geotech_common.numpy_compat` (`trapezoid`, never
@@ -208,7 +224,9 @@ Each is binding; where it is written follows the dash.
   lists its judgement calls, each with its source or "no reference found".
   - `geotech_common/choices.py`; `funhouse_agent/judgment_check.py`.
 - **Made-up values in tests.** Never a value from a real project's
-  documents; no names of clients, posts, departments or people. The
+  documents; no names of clients, projects, posts, departments or people,
+  and no identifiers of a hosted platform (workspace, dataset or model ids,
+  internal host names); the guard catches only some of these. The
   repository is public.
   - `COMMON_MODULES.md` ("Public repo"); `webapp/tests/test_public_text.py`.
 - **One backlog file, stable ids.** Every to-do, follow-up and question goes
@@ -221,7 +239,8 @@ Each is binding; where it is written follows the dash.
 - **The generated manual is never edited by hand.** Change the words in
   `docs/user_manual/manual_content.py` or the tool's `METHOD_INFO`, then
   rebuild.
-  - `docs/user_manual/README.md`; `webapp/tests/test_user_manual_current.py`.
+  - `docs/user_manual/README.md` lists `manual.html` and `toc.json` as build
+    output; `webapp/tests/test_user_manual_current.py` fails on a hand edit.
 - **Figures.** No ink that carries no data; plans to scale; elevation up a
   profile; kPa and kN; units and the coordinate system named.
   - The figure checklist in `packages/aec-agent-core/aec_agent_core/deep/figure_helper.py`
@@ -235,7 +254,7 @@ Each is binding; where it is written follows the dash.
 | Inputs | `footing.py` (`Footing`), `soil_profile.py` (`SoilLayer`, `BearingSoilProfile`) | SI units: m, kPa, kN, degrees. |
 | Computation | `factors.py`, `capacity.py` (`BearingCapacityAnalysis.compute()`) | The printed equations, each cited. No import from another calculation module (`geotech_common` is the exception). |
 | Result | `results.py` | A dataclass with `summary()` and `to_dict()`, and `choices`: one entry per choice (`what`, `chosen`, `how` = given, default, module or assumed, `basis`, `alternatives`). |
-| Calc package steps | `calc_steps.py` | What a calculation package prints; `calc_package`'s `bearing_capacity_package` runs the same code path. |
+| Calc package steps | `calc_steps.py` | What a calculation package prints; `calc_package.generate_calc_package(module="bearing_capacity", ...)` loads these steps (`_IMPORT_MAP` in `calc_package/__init__.py`). |
 | The adapter | `funhouse_agent/adapters/bearing_capacity.py` | Flat dict in, dict out. `_ANALYSIS_VALID_PARAMS` (an unknown name is refused), aliases, `METHOD_REGISTRY` (method name to function) and `METHOD_INFO`: what the agent reads, each parameter's type, default, allowed values and a description that says what the code does and cites the print. `declare_applies_when` says when a default applies; `declare_when_absent` what a left-out input stands for. |
 | `defaults_used` | added by `funhouse_agent/dispatch.py` | The declared defaults a call left in force, on every result; it never contradicts `choices`. |
 | Registration | `MODULE_REGISTRY` in `funhouse_agent/adapters/__init__.py` | The adapter's path and a one-line brief. |
@@ -297,10 +316,11 @@ python module_work/backlog_dashboard/sweep_done.py --next GM
 ```
 
 Finishing an item: delete its line and add it under "Done since the last
-sweep" with the date and the commit. One command does both:
+sweep" with the date and the commit. One command does both (`GM-0000` is a
+made-up id: put the item's own id in its place):
 
 ```bash
-python module_work/backlog_dashboard/close_item.py GM-354 "2026-11-20 (abc1234): what was done"
+python module_work/backlog_dashboard/close_item.py GM-0000 "2026-11-20 (abc1234): what was done"
 ```
 
 `BACKLOG.md` keeps Windows line endings (CRLF); edit it by exact text and
@@ -338,13 +358,20 @@ later from the maintainer's copy. Keep four things for that:
    (planlens, aec-agent-core, aec-document-review: `pip show <name>`), which
    a renewal pins against.
 2. **Version numbers above the final release**, with the local label
-   (`RELEASING.md` section 3); the renewal chooses the next public number.
+   (`RELEASING.md` section 3); publish nothing to the public index. The
+   renewal chooses the next public number, and the owner releases it.
 3. **The one backlog file, current**, with its ids (section 7).
 4. **An export on request** of the source with its tests, as a zip
    (`git -c core.autocrlf=false archive --format=zip --prefix=gse/ -o gse-<date>.zip HEAD`)
-   or a git bundle (`git bundle create gse-<date>.bundle --all`). It comes
-   back public, so the rules of section 5 and `test_public_text.py` hold in
-   the copy too.
+   or a git bundle (`git bundle create gse-<date>.bundle --all`); neither
+   carries the library, so export it from its own copy the same way. Keep
+   the copy in git (the bundle and `test_public_text.py`, which reads
+   `git ls-files`, need it), and make its first commit the release's source
+   exactly as received, so that every later change is a diff against the
+   release. The export comes back public, so the rules of section 5 and
+   `test_public_text.py` hold in the copy too. `test_public_text.py` catches
+   the words this repository already guards, not new ones, so read the
+   change log and the diff for new identifiers as well before an export.
 
 ## 10. How the commands here were checked
 

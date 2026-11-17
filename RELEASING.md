@@ -5,8 +5,18 @@ and the test that checks it; then how to build wheels for a closed platform
 without a release; then how to take an upstream release. `MAINTAINERS.md`
 explains the repository.
 
-Two facts shape everything below:
+Three facts shape everything below:
 
+- **Only the public repository publishes, and only its owner releases.**
+  The package index takes these packages only from the public GitHub
+  repository's own publish workflows, in its `pypi` environment (trusted
+  publishing; there is no token to copy), and takes the reference library
+  only from the library's own public repository, the same way. A tag pushed
+  from any other copy publishes nothing, and that copy's workflows may not
+  run at all. So the engineer who keeps the app going on a hosted platform
+  does not tag or publish: that engineer builds wheels with a local version
+  label from their own copy (section 3). Releasing from GitHub (section 2,
+  and the library's release in section 4) stays with the repository's owner.
 - **A pushed tag publishes at once.** The publish workflows run on the tag,
   and the package index never takes the same version twice. A mistake found
   after the push needs a new version. So the tree is green first, the
@@ -21,22 +31,24 @@ Two facts shape everything below:
 |---|---|---|---|
 | `geotech-references` | its own repository | `vX.Y.Z` there | its own (its `RELEASING.md`) |
 | `planlens` | its own repository | `vX.Y.Z` there | its own |
-| `aec-agent-core` | `packages/aec-agent-core/pyproject.toml` and `__version__` in `packages/aec-agent-core/aec_agent_core/__init__.py` | `core-vX.Y.Z` | `.github/workflows/publish-core.yml` |
-| `aec-document-review` | `packages/aec-document-review/pyproject.toml` and `__version__` in its `__init__.py` | `document-review-vX.Y.Z` | `.github/workflows/publish-document-review.yml` |
+| `aec-agent-core` and `aec-document-review`: one unit at one version (from 1.1.0) | `packages/aec-agent-core/pyproject.toml` and `packages/aec-document-review/pyproject.toml`, and `__version__` in each package's `__init__.py` | `aec-vX.Y.Z` (before 1.1.0: `core-vX.Y.Z` and `document-review-vX.Y.Z`) | `.github/workflows/publish-core.yml` and `.github/workflows/publish-document-review.yml`, both started by the one tag |
 | `geotech-staff-engineer` | `pyproject.toml` (`[project]` `version`) | `vX.Y.Z` | `.github/workflows/publish.yml` |
 
 The order is the order of the pins: the reference library, planlens, the
-core, Document Review, then the app. The core and Document Review are
-upstream's to release (`MAINTAINERS.md` section 2); a maintainer of the app
-releases the app and the reference library. After the final release the
-public repository is quiet: a maintainer's builds are the labelled builds of
-section 3, and section 2 is for the day the work is brought back
-(`MAINTAINERS.md` section 9).
+core and Document Review together, then the app. The core, Document Review
+and planlens are upstream's to release (`MAINTAINERS.md` section 2). The
+app and the reference library are the maintainer's to change, but a public
+release of either is made by the repository's owner, from the public
+repository (the first fact above). After the final release the public
+repository is quiet: a maintainer's builds are the labelled builds of
+section 3, and section 2 is for the owner, on the day the work is brought
+back (`MAINTAINERS.md` section 9).
 
 ## 2. An app release, step by step
 
-As release 5.35.0 was made (2026-11-10; its record is in `HANDOFF.md`
-section 0a-current).
+Made by the repository's owner, from the public repository (the first fact
+above), as release 5.35.0 was made (2026-11-10; its record is in
+`HANDOFF.md` section 0a-current).
 
 1. **Upstream first.** Every version the app's pins name is on the index:
    the reference library, planlens, the core.
@@ -53,7 +65,8 @@ section 0a-current).
 
 3. **The pins.** In `pyproject.toml`: `geotech-references>=`, `planlens>=`
    and `aec-agent-core==` (exact). The submodule at the library's release
-   tag (`git -C geotech-references checkout vX.Y.Z`, then
+   tag (`git -C geotech-references fetch origin --tags`, then
+   `git -C geotech-references checkout vX.Y.Z` and
    `git add geotech-references`). Where `tests.yml` installs planlens by its
    own line (`"planlens>=0.15"` in the `core-only` and numpy 1.26 jobs), the
    same floor. Check: `webapp/tests/test_wheels.py` (the core pin equals the
@@ -77,6 +90,9 @@ section 0a-current).
      until one is confirmed).
    - `docs/user_manual/manual_content.py`: the version history row
      (`"5.4.0 &ndash; X.Y.Z"`).
+   - `MAINTAINERS.md` and `RELEASING.md` (no test checks them): the
+     versions in their examples (the labels and pins of section 3), the
+     gate numbers, and each one's record of how its commands were checked.
 
 6. **The backlog.** Every item the release closed is under "Done since the
    last sweep" with its commit. Then the sweep moves that list, unchanged,
@@ -107,25 +123,42 @@ section 0a-current).
    explain. `check_manual.py --rebuild` rebuilds the manual in memory and
    exits 1 if the committed `manual.html` or `toc.json` differ (the cover
    carries the version, so after a bump it always does); `--write` writes
-   them. Read the diff, commit `worked_examples.json`, `manual.html` and
+   them. Read the diff, commit `docs/user_manual/worked_examples.json`, `manual.html` and
    `toc.json`. Check: `webapp/tests/test_user_manual_current.py`. The PDF
    (`docs/user_manual/render_pdf.py`, needs Chrome or Edge) is made on
    demand and not kept in the repository.
 
 8. **The gate, on the exact tree to be tagged.** The full suite and every
    CI job green on the release commit (5.35.0: one `tests.yml` run on the
-   release commit, all eight jobs green). CI's "Wheels" job builds the
+   release commit, all eight jobs green). A push of `release/X.Y.Z` alone
+   starts no run: `tests.yml` runs on pushes to `master` and to `ci/<name>`
+   branches, on pull requests to master, and by hand from the Actions tab.
+   So push the release branch under a `ci/` name as well, and push both
+   names again after each later commit on the branch (or open a pull
+   request to master):
+
+   ```bash
+   git push origin release/X.Y.Z release/X.Y.Z:ci/release-X.Y.Z
+   ```
+
+   CI's "Wheels" job builds the
    wheels the way a release does (the sdist first, then the wheel from the
    sdist), installs them in a fresh virtual environment and imports them
    there; it also checks that neither package's sdist carries tests and that
-   every classifier is one the index accepts. The same checks by hand:
+   every classifier is one the index accepts. The same checks by hand,
+   after installing the build tools the Wheels job installs. Without the
+   switch `GEOTECH_REQUIRE_WHEEL_TEST=1` the build checks skip and pytest
+   still exits 0, which reads as green; with it, a missing tool fails them:
 
    ```bash
-   GEOTECH_REQUIRE_WHEEL_TEST=1 python -m pytest -q webapp/tests/test_wheels.py
-   python -m pytest -q webapp/tests/test_sdists.py webapp/tests/test_classifiers.py
+   pip install build "setuptools>=68" wheel trove-classifiers
+   env -u PYTHONPATH GEOTECH_REQUIRE_WHEEL_TEST=1 python -m pytest -q webapp/tests/test_wheels.py
+   GEOTECH_REQUIRE_WHEEL_TEST=1 python -m pytest -q webapp/tests/test_sdists.py webapp/tests/test_classifiers.py
    ```
 
-   Run `test_wheels.py` with `PYTHONPATH` unset: the build leaves
+   Run `test_wheels.py` with `PYTHONPATH` unset (`env -u PYTHONPATH` above;
+   in PowerShell, `Remove-Item Env:PYTHONPATH` first): with the switch it
+   fails while `PYTHONPATH` names the source tree. The build leaves
    `*.egg-info` folders in the tree, and with the tree on `PYTHONPATH` pip
    takes them for installed packages and installs nothing into the test's
    fresh environment (two tests then fail with `No module named
@@ -145,13 +178,23 @@ section 0a-current).
     but `geotech_staff_engineer-*` is in `dist/`, stops if the pinned core
     is not on the index, then publishes by trusted publishing (the GitHub
     environment `pypi`; no token is stored in the repository).
-    `publish-core.yml` (`core-v*`) and `publish-document-review.yml`
-    (`document-review-v*`) do the same for their package, and each stops if
-    the tag does not match the package's version; Document Review's also
-    stops if the core and planlens it pins are missing from the index.
+    `publish-core.yml` and `publish-document-review.yml` do the same for
+    their package. From aec 1.1.0 one tag, `aec-vX.Y.Z`, starts both; each
+    stops unless the two packages carry the same version, the tag is
+    `aec-v` plus that version and Document Review pins the core at exactly
+    that version, and Document Review's waits until the core of that
+    version is on the index. (Before 1.1.0 they ran on `core-v*` and
+    `document-review-v*` tags, each checked against its own package's
+    version.) Document Review's also stops if the core and planlens it pins
+    are missing from the index.
 
-11. **After.** Merge the release branch into master
-    (`git merge --no-ff release/X.Y.Z`; 5.35.0 was `ce49b16`). A package
+11. **After.** Merge the release branch into master and push master:
+
+    ```bash
+    git checkout master && git pull && git merge --no-ff release/X.Y.Z && git push origin master
+    ```
+
+    (5.35.0's merge was `ce49b16`.) A package
     mirror can take a day or two to carry the new versions. When an install
     on a host is confirmed, replace that version's row in the install
     guide's history.
@@ -192,7 +235,8 @@ python -m build --wheel --outdir ../dist .
   `git -c core.autocrlf=false archive --format=zip ...`.
 - The export leaves `geotech-references/` empty; the app's wheel does not
   include the library, so the build does not need it.
-- `python -m build` fetches `setuptools>=68` into an isolated build
+- `python -m build` needs the `build` package (`pip install build`). It
+  fetches `setuptools>=68` into an isolated build
   environment from the configured index. Where only a private package index
   is reachable, point pip at it (`PIP_INDEX_URL`), or install `setuptools`
   and `wheel` and add `--no-isolation`.
@@ -251,7 +295,8 @@ python -c "import importlib.metadata as m; print(*[m.version(p) for p in ('geote
 
 What arrives: the released wheels of the core, Document Review and planlens,
 and, for the core, its source folder (the public repository's
-`packages/aec-agent-core` at tag `core-vX.Y.Z`). The source folder matters:
+`packages/aec-agent-core` at tag `aec-vX.Y.Z`; before 1.1.0,
+`core-vX.Y.Z`). The source folder matters:
 the root `conftest.py` makes the tests import the tree's
 `packages/aec-agent-core`, not the installed wheel, so a new core wheel
 without its folder leaves the tests on the old core.
@@ -284,7 +329,14 @@ whole; nothing in the app changes.
 
 **The reference library** is maintained with the app: its release reaches
 the app through the submodule and the pin (`MAINTAINERS.md` section 3).
-Its own steps are in its `RELEASING.md`.
+A public release of it is made by the owner, from the library's public
+repository: raise `version` in its `pyproject.toml` (the only place it is
+written), add the `CHANGELOG.md` entry, run its tests, then tag `vX.Y.Z` in
+the library's repository (its `publish.yml` publishes). Then, in the app,
+fetch the library's tags, move the submodule and raise the pin
+(`MAINTAINERS.md` section 3). The detail is in the library's own
+`RELEASING.md` (in the library from its release 1.8.0). On the platform the
+library ships as a labelled build instead (section 3).
 
 ## 5. How the commands here were checked
 
@@ -326,4 +378,4 @@ Not run here:
   changes code, and `docs/FOUNDRY.md` section 1 records the `pip check`
   line.
 - Section 4's `pip install --no-deps planlens-X.Y.Z...`: no planlens newer
-  than the installed 0.15.1 exists yet.
+  than the installed 0.15.1 existed then.
