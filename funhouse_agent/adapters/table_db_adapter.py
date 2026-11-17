@@ -48,6 +48,11 @@ _LIMIT_ALIASES = ("top_k", "k", "n", "max_results", "top", "num_results")
 _SIGNPOST_ROOM = 480
 _LEAST_LIBRARY_BUDGET = 4000
 
+#: Room a search keeps for what the call adds after the adapter returns
+#: (``defaults_used`` for the parameters left out, about 50 characters, and
+#: a caught warning), so the whole result stays within RESULT_BUDGET_CHARS.
+_CALL_ROOM = 200
+
 #: Room ``table_get`` keeps beside the library's fitted row for the app's
 #: own ``how_to_read`` (the library's sentence is replaced).
 _GET_ROOM = 600
@@ -379,7 +384,8 @@ def _build():
             # kept for next steps was more than they took): give the
             # library room for as many more hits as fit with theirs
             per_hit = size / shown
-            more = int((RESULT_BUDGET_CHARS - size - 300) // per_hit)
+            more = int((RESULT_BUDGET_CHARS - _CALL_ROOM - size - 300)
+                       // per_hit)
             if more < 1:
                 break
             budget += int(more * library_size / shown)
@@ -388,15 +394,14 @@ def _build():
             # whole result, next steps and all
             result["note"] = result["note"].replace(
                 f"{budget:,} characters", f"{RESULT_BUDGET_CHARS:,} characters")
-        popped = 0
+        # Hits are dropped from the end until the result, with the note it
+        # will be sent with, fits with room for what the call adds after.
         while (len(result["result"]) > 1 and len(json.dumps(
-                result, default=str)) > RESULT_BUDGET_CHARS):
+                result, default=str)) > RESULT_BUDGET_CHARS - _CALL_ROOM):
             result["result"].pop()
-            popped += 1
             result["shown"] = len(result["result"])
             result["left_out"] = int(result.get("left_out") or 0) + 1
             result["next_offset"] = offset + len(result["result"])
-        if popped:
             last = offset + len(result["result"])
             result["note"] = (
                 f"Showing hits {offset + 1}-{last}, best first (the rest "
