@@ -328,53 +328,22 @@ full suite. Never edit the upstream files to make a test pass.
 
 ## 9. Bringing the work back
 
-After the final release this repository goes quiet, and the work goes on in
-the maintainer's own copy. The owner means to come back later, perhaps after
-some months, and have this repository renewed from that copy, most likely by
-an AI coding session that has never seen it. Four things make that possible:
+After the final release this public repository goes quiet; it is renewed
+later from the maintainer's copy. Keep four things for that:
 
-1. **A change log.** One file at the root of the copy, `LOCAL_CHANGES.md`,
-   newest entry on top, one entry per change. The first entry names the
-   release the copy started from (its tag and commit). Each later one:
-
-   ```
-   ## 5.36.0+site.20261204.1 (2026-12-04)
-   - What: the change in a sentence or two, and the files it touched.
-   - Why: the case that showed the need (made-up values) or the backlog id.
-   - Source: where a formula, curve, table or default moved, the printed
-     page it now follows (document, edition, page, equation or figure).
-   - Tests: the tests added or changed, by file and name.
-   - Backlog: the ids closed or opened.
-   ```
-
-2. **Version numbers above the final release.** Every build carries the
-   final release's number with a local label (`5.36.0+<label>.<date>.<n>`,
-   `RELEASING.md` section 3), and the library its own the same way. Leave
-   the public number itself alone; the renewal chooses the next public one.
-
-3. **The one backlog file, current.** New work gets the next free id
-   (section 7), finished work goes under Done with its date and build label,
-   no id is reused, and `test_backlog.py` passes. No other to-do lists.
-
-4. **An export of the source with its tests, on request**, as a zip or a git
-   bundle (a bundle keeps the history, which a renewal reads best):
-
-   ```bash
-   git -c core.autocrlf=false archive --format=zip --prefix=gse/ -o gse-<date>.zip HEAD
-   git bundle create gse-<date>.bundle --all
-   git bundle verify gse-<date>.bundle
-   ```
-
-   If the copy is kept in git, make its first commit the release's source
-   exactly as received, so that every later change is a diff against the
-   release. Export the library from its own copy the same way.
-
-What comes back is published, so the public rules hold in the copy too: no
-identifiers of the closed platform's projects, hosts, datasets or people in
-tracked files, no private documents, made-up values in tests (section 5).
-Run the three guards before every export. `test_public_text.py` catches the
-words this repository already guards, not new ones, so read the change log
-and the diff for them as well.
+1. **A change log** (`LOCAL_CHANGES.md` at the root, newest first, the first
+   entry naming the release the copy started from): one entry per change,
+   with what, why, the printed source and page where a formula, curve or
+   default moved, and the tests added.
+2. **Version numbers above the final release**, with the local label
+   (`RELEASING.md` section 3); the renewal chooses the next public number.
+3. **The one backlog file, current**, with its ids (section 7).
+4. **An export on request** of the source with its tests, as a zip
+   (`git -c core.autocrlf=false archive --format=zip --prefix=gse/ -o gse-<date>.zip HEAD`)
+   or a git bundle (`git bundle create gse-<date>.bundle --all`), with the
+   versions of the upstream wheels it ran against (the versions line at the
+   end of `RELEASING.md` section 3). It comes back public, so the rules of
+   section 5 and `test_public_text.py` hold in the copy too.
 
 ## 10. How the commands here were checked
 
@@ -389,10 +358,9 @@ listed as not run. Files a command rewrote were restored afterwards.
   the recorded file unchanged).
 - `sweep_done.py --next GM` (printed `GM-355`), `close_item.py`, and
   `check_manual.py --rebuild --write` (exit 0).
-- Section 9, on master `17314a3`: its export committed as the first commit
-  of a new repository (2,337 files), a second commit, the zip export (37 MB,
-  Unix line endings), the bundle (32 MB), `git bundle verify` ("a complete
-  history") and a clone from the bundle (both commits).
+- Section 9, on master `17314a3` committed into a new repository: the zip
+  export (37 MB, Unix line endings) and the bundle (32 MB), checked with
+  `git bundle verify` and a clone from it.
 
 Not run here:
 
