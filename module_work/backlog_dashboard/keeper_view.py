@@ -134,8 +134,8 @@ def view(keeper, backlog=BACKLOG):
         cited = {}
         for it in mine:
             for i in ANY_ID.findall(it["line"]):
-                if i in own and i != it["id"]:
-                    cited.setdefault(i, []).append(it["id"])
+                if i in own and i != it["id"] and it["id"] not in cited.setdefault(i, []):
+                    cited[i].append(it["id"])
         if cited:
             out += [f"## The owner's open decisions these items cite ({len(cited)})", ""]
             for i in sorted(cited, key=lambda x: int(x.split("-")[1])):
