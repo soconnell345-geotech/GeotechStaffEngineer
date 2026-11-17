@@ -387,3 +387,26 @@ def test_run_diagnostics_includes_the_optional_packages(monkeypatch):
     _only(monkeypatch, "SALib")
     names = [c["name"] for c in diag.run_diagnostics("ri.fake")]
     assert names.index("optional packages") == names.index("version drift") + 1
+
+
+def test_the_versions_line_names_the_agent_packages(monkeypatch):
+    """The versions line lists aec-agent-core, and aec-document-review only
+    where it is installed (made-up version numbers)."""
+    import importlib.metadata as md
+    found = {"aec-agent-core": "9.8.7", "aec-document-review": "6.5.4"}
+
+    def version(pkg):
+        if pkg in found:
+            return found[pkg]
+        raise md.PackageNotFoundError(pkg)
+
+    monkeypatch.setattr(md, "version", version)
+    line = diag._versions_check()["detail"]
+    assert "aec-agent-core 9.8.7" in line
+    assert "aec-document-review 6.5.4" in line
+    del found["aec-document-review"]
+    line = diag._versions_check()["detail"]
+    assert "aec-agent-core 9.8.7" in line
+    assert "aec-document-review" not in line
+    del found["aec-agent-core"]
+    assert "aec-agent-core NOT INSTALLED" in diag._versions_check()["detail"]
