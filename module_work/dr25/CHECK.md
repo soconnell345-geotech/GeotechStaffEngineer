@@ -75,9 +75,20 @@ unless named.
   `fixture_coord_window_submittal`
   (`submittal_08_51_13-01_aluminum_windows.pdf`). The core gains three
   dictionary entries and nothing else; the geotech page never reads them.
-- `tasks.py`: nine checks in `_PLANTED_CHECKS`, the regexes they use
-  (`_LEFT_BEHIND`, `_CLOUDED`, `_UNLISTED`, `_NO_CHANGE`, `_WATER_TEST` and
-  the window numbers), and two tasks at the end of `COORDINATION_TASKS`:
+- `packages/aec-agent-core/aec_agent_core/review_eval/checks.py` (review
+  fix): `stated_together` gains `scope="finding"` (`_findings`,
+  `_together_in_findings`). The answer is cut as `scope="item"` cuts it (a
+  line; a list item with what is nested under it), with two differences: a
+  table row is read with its column heads, each cell as "head: cell", so a
+  yes/no table ("Carried? | No") says what each cell answers; and the
+  heading rule reads one piece at a time, so a heading over a list does not
+  join two of its items. Off unless a check names it: every older check
+  scores as before.
+- `tasks.py`: nine checks in `_PLANTED_CHECKS`, each with
+  `scope="finding"`, the regexes they use (`_LEFT_BEHIND`, `_CLOUDED`,
+  `_UNLISTED`, `_NO_CHANGE`, `_WATER_TEST`, `_NOT_GIVEN`, `_NOT_REPORTED`,
+  `_NOT_A_SECTION`, the cell reading `_SAYS_NO` and `_NOT_NO`, and the
+  window numbers), and two tasks at the end of `COORDINATION_TASKS`:
   - `coord-spec-submittal` (check; the manual, the section and the
     submittal): "Review this window submittal against its specification
     section and the project manual. What does not comply, what is missing,
@@ -90,20 +101,23 @@ unless named.
 
 ### The planted problems and what each check asks for
 
-Each check is the core's `stated_together`: the pieces side by side in the
-reply (within 300 characters unless noted). A problem's one right answer:
+Each check is the core's `stated_together` with `scope="finding"`: the
+pieces in one finding of the reply (one line, one list item with what is
+nested under it, or one table row read with its column heads), within 300
+characters unless noted. A heading over the finding may hold some of them.
+A problem's one right answer:
 
-| key | the problem | the check wants together |
+| key | the problem | the check wants in one finding |
 |---|---|---|
 | `window-u-value` | whole-window U-value 1.90 W/(m2.K) against at most 1.60 (the sheet's 1.10 is the centre of the glass) | 1.90 and 1.60 |
-| `window-anchorage` | SD-05 anchorage calculations not submitted | "anchorage" (or SD-05, "design data") and a word of absence, within 200 |
-| `window-section-missing` | the schedule of values cites Section 08 80 00, not in the manual | 08 80 00 and a word of absence, within 200 |
-| `window-water-test` | the test report gives air leakage and structural tests, no water penetration test | a water penetration test (not "field water") and a word of absence, within 200 |
+| `window-anchorage` | SD-05 anchorage calculations not submitted | "anchorage" (or SD-05, "design data") and a word that it was not handed in ("not submitted", "not in the submittal", "missing", "omits", "none submitted", "left out", "no ... calculations"; not any "no" or "not") |
+| `window-section-missing` | the schedule of values cites Section 08 80 00, not in the manual | 08 80 00 and a word that the section is not in the manual ("does not exist", "no such section", "not in the manual", "missing from the contents") |
+| `window-water-test` | the test report gives air leakage and structural tests, no water penetration test | a water penetration test not named with the field, the site or 3.3, and a word that it was not reported, in a clause that does not name the field or the site |
 | `window-sov-total` | the lines add up to 174,500, the total says 178,500 | 178,500 and 174,500 |
-| `parapet-twin` | A-201 raised T.O. PARAPET to 109.60; A-301 still shows 109.30 | 109.60, 109.30, A-301 and a word that A-301 was left behind ("still", "not updated", "disagree"; not "unchanged") |
-| `cloud-not-listed` | S-501's F3 reinforcing changed to 12-20M inside a cloud, no revision-block entry | S-501, 12-20M, a cloud said to be there (not "not clouded" or "no cloud") and a word that the entry is missing, within 400 |
-| `entry-no-change` | A-102 lists "DOOR 205 RELOCATED" and nothing on it changed | A-102, door 205 or "relocated", and a word that nothing changed, in one line or list item |
-| `door-renumbered` | A-601 renumbered door 106 as 110; A-101 still tags 106 | 106, 110, A-101 or "plan", and a word that the plan was left behind |
+| `parapet-twin` | A-201 raised T.O. PARAPET to 109.60; A-301 still shows 109.30 | A-301, 109.30 or "parapet", and a word that A-301 was left behind ("still shows", "not updated", "needs updating", "differ", "Carried? No"; not "unchanged", "still consistent", "no conflict") |
+| `cloud-not-listed` | S-501's F3 reinforcing changed to 12-20M inside a cloud, no revision-block entry | S-501, 12-20M, a cloud said to be there (not "not clouded", "no revision cloud", "without a revision cloud", "Clouded?: No") and a word that the entry is missing ("no entry", "revision 0 only", "In rev block?: No"), within 400 |
+| `entry-no-change` | A-102 lists "DOOR 205 RELOCATED" and nothing on it changed | A-102, door 205 or "relocated", and a word that nothing changed ("has not moved", "no corresponding change", "identical to issue 1"; not "nothing else changed", "otherwise unchanged", "the rest of the sheet identical") |
+| `door-renumbered` | A-601 renumbered door 106 as 110; A-101 still tags 106 | A-101 or "first floor plan", 106, and a word that the plan was left behind |
 
 ## Judgement calls
 
@@ -135,12 +149,24 @@ reply (within 300 characters unless noted). A problem's one right answer:
   clouded and listed, each entry matched by a change, carried to the other
   sheets). `coord-revisions` names the first two the same way. It names no
   sheet, value or kind of fault; a test holds that.
-- **`entry-no-change` is scored in one line or list item.** "Every other
-  sheet is unchanged" closes most change lists, and a window would join it
-  to the sheet above.
+- **Every new check is scored in one finding** (review fix). A list of
+  changes puts "A-301: no change" on the line beside the next sheet's
+  finding, and a window of characters joined them: the first version passed
+  replies that said the opposite. `scope="item"` alone would not read a
+  yes/no table, the shape the reissue question invites (a row's "No" says
+  nothing without its column head), and lets a heading join two items.
 - **`parapet-twin` and `door-renumbered` want a word that the other sheet
   was left behind,** not "unchanged": a list of untouched sheets names
-  A-301 and A-101 without finding anything.
+  A-301 and A-101 without finding anything. "Still" counts only before
+  what a sheet shows ("still shows 109.30", "still tags 106"), not "still
+  consistent" or "the plan still agrees"; "conflict", "differs" and the
+  like count only without a "no" or "not" before them. The first version
+  also asked for 109.60 and 110; a finding about the sheet left behind
+  need not name the new value, so they were dropped.
+- **The absence words are one per check,** not the shared `_ABSENT` of the
+  older tasks: any "no" or "not" within 200 characters passed the section's
+  own wording ("water penetration at 450 Pa with no leakage"), a field test
+  "not due", and the schedule's sum "not the 178,500".
 - **The reissue's false alarms are not scored.** The issue 1 clouds on A-401
   and A-601 stay in issue 2, so a careless reader may call them issue 2
   changes; a check for that would read words like "revised" next to sheet
@@ -189,8 +215,26 @@ and passes here:
 - `test_each_new_check_takes_its_own_truth_and_no_other`, and
   `test_no_older_check_takes_a_new_truth`.
 - `test_a_clouded_change_is_not_an_unclouded_one`,
-  `test_the_twin_wants_the_other_sheet_left_behind`.
+  `test_the_twin_wants_the_other_sheet_left_behind`: on replies of several
+  list items whose neighbours say "clouded and listed" and "still tags"
+  of other sheets (review fix: they were one sentence each).
+- `test_every_new_check_has_its_table_of_replies` and
+  `test_each_check_takes_the_right_replies_and_no_wrong_one` (review fix,
+  one case per check): `REPLIES` holds, for each of the nine checks, made-up
+  replies that must pass (a sentence, a list item and a table row at least)
+  and replies that must fail (the careless reading, the opposite, the
+  all-clear, a neighbouring item that says the right word of something
+  else, each case the review found). Counts below.
 - `test_the_dry_run_resolves_the_new_documents`.
+
+In the core, `packages/aec-agent-core/tests/test_review_checks_together.py`
+(review fix): `test_scope_finding_reads_a_table_row_with_its_column_heads`
+(a "No" under "Index matches?" passes under `"finding"` and not under
+`"item"`; a "Yes" or an empty cell does not) and
+`test_scope_finding_reads_a_heading_with_one_item_at_a_time` (a heading
+over two items joins them under `"item"`, not under `"finding"`; a finding
+with its own nested lines, a heading over one item that holds the rest, and
+a plain sentence pass; a plain list of sheets does not).
 
 Existing tests edited (each assertion my change makes untrue):
 
@@ -205,13 +249,50 @@ Run here, each exit 0: the new file with the three edited ones and
 `webapp/tests/test_public_text.py`,
 `packages/aec-agent-core/tests/test_core_suite_and_records.py` and
 `funhouse_agent/review_eval/tests/test_review_eval_offline.py` (it reads the
-core's document list).
+core's document list). After the review fixes, also from the root
+`packages/aec-agent-core/tests/test_review_checks_together.py` and
+`test_ev48_working_text_said.py` (the core's check tests): all exit 0.
 
 Issue 0, issue 1, the 40-sheet set, the scan, the manual, the memorandum and
 the concrete submittal build to the same bytes from this branch's module as
 from the committed one (a one-off comparison of SHA-256 digests, run here;
 not kept as a test, since a different PyMuPDF writes different bytes): all
-seven the same.
+seven the same. Run again after the review fixes, against the base commit
+(a7a48d8): all seven the same, and the 52 older tasks the same in every
+field (id, question, documents, category, document type, checks, truth).
+
+## Review fixes (2026-11-18)
+
+An independent review ran replies of its own through `run_check`: the
+documents were fair, but the nine checks passed wrong and opposite replies
+and failed right ones. What changed: every check reads one finding
+(`scope="finding"`, above); the words for "left behind", "a cloud is
+there", "not in the revision block" and "nothing changed" are guarded
+against "no conflict", "still consistent", "no revision cloud", "without a
+revision cloud", "nothing else changed", "otherwise unchanged" and "the
+rest of the sheet identical", and read a yes/no cell under its head; the
+three absence checks have narrow words of their own; the twin checks no
+longer ask for the new value. The package's readme says 54 tasks.
+
+The replies table, the first version of the checks (HEAD before the fix)
+against this one, each count "right replies passed" and "wrong replies
+passed":
+
+| check | right, before | wrong, before | right, now | wrong, now |
+|---|---|---|---|---|
+| `window-u-value` | 3 of 3 | 1 of 4 | 3 of 3 | 0 of 4 |
+| `window-anchorage` | 3 of 6 | 2 of 4 | 6 of 6 | 0 of 4 |
+| `window-section-missing` | 4 of 4 | 1 of 4 | 4 of 4 | 0 of 4 |
+| `window-water-test` | 3 of 6 | 5 of 6 | 6 of 6 | 0 of 6 |
+| `window-sov-total` | 3 of 3 | 1 of 3 | 3 of 3 | 0 of 3 |
+| `parapet-twin` | 2 of 6 | 1 of 8 | 6 of 6 | 0 of 8 |
+| `cloud-not-listed` | 3 of 4 | 4 of 6 | 4 of 4 | 0 of 6 |
+| `entry-no-change` | 3 of 4 | 3 of 5 | 4 of 4 | 0 of 5 |
+| `door-renumbered` | 3 of 4 | 2 of 5 | 4 of 4 | 0 of 5 |
+
+40 right replies and 45 wrong ones in all. The table was written with the
+fix, so it shows the fix holds for these replies, not that no other reply
+gets past it; the next reviewer's own replies are the test of that.
 
 ## The orientation turn (not changed)
 
@@ -290,6 +371,15 @@ the checks see only that the pieces were put side by side.
   item 12, noted the same for `coord-submittal`).
 - The reissue's false alarms (the issue 1 clouds reported as issue 2
   changes) are not scored; see the judgement calls.
+- A value-pair check (`window-u-value`, `window-sov-total`) passes a table
+  row that marks the pair "Yes"; every such check in the suite has this
+  limit.
+- A finding is a line: a reply written as one long paragraph is one
+  finding, and the 300 characters are then all that keep two of its
+  sentences apart. Replies on record write findings as list items or rows.
+- The checks need the core's `scope="finding"`: a core without it reads
+  the scope as none and scores by the window alone. The two packages are
+  released together (one tag), so a release has both.
 - Not built: a real long drawing set (the owner's documents, private).
 
 ## For the lead
