@@ -44,6 +44,12 @@ GM-316's:
   (the module-name prefixes of the app's calculation packages, whose Python
   warnings raised during a method call reach the agent with its result).
 
+DR-42's:
+
+- ``keep_work.saved_files_hint``: :mod:`aec_agent_core.deep.keep_work`
+  (the sentence after the names of the files a helper saved, in the note
+  the primary is given; unfilled, the geotech page's wording).
+
 Step 13's (INF-33):
 
 - ``app.details``: :mod:`aec_agent_core.app_details` (which application

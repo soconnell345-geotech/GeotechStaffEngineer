@@ -171,32 +171,44 @@ def is_image_name(name) -> bool:
 
 def attachment_note(atts: List[Attachment]) -> str:
     """Build the system-style note telling the agent about staged attachments —
-    the attachment key (for analyze_image / analyze_pdf_page / read_pdf_text)
-    AND that the same NAME is a file in the working folder (for pdf_import /
-    dxf_import / drawing_ir tools that need a file path: a bare name is
-    looked up there). Returns ``""`` for an empty list.
+    the name to pass as a tool's ``source`` or ``attachment_key``, AND that
+    the same NAME is a file in the working folder (a tool that takes a file
+    path looks a bare name up there). Returns ``""`` for an empty list.
 
     No server path: the note named the absolute staging path until
     2026-10-09, and the model used it and repeated it to users (live smoke
     wave 1, A6). Every file tool resolves the bare name.
 
-    The same note on both pages (the Document Review page's lean build,
-    which had its own wording, was removed in BACKLOG DR-39)."""
+    No tool names (BACKLOG DR-42): the note named four tools only the
+    geotech page has, and the page's builds differ in their tools; the two
+    argument names are on the looking and document tools of every build.
+    Which tool opens what is the system prompt's to say."""
     atts = list(atts or [])
     if not atts:
         return ""
     lines = ["[System note] The user attached files, available to you as:"]
     for a in atts:
         lines.append(
-            f"- '{a.key}': attachment key '{a.key}' "
-            f"(to review a PDF, open_document with source='{a.key}'; use "
-            f"analyze_image / analyze_pdf_page / read_pdf_text with "
-            f"attachment_key='{a.key}'); it is also the file '{a.key}' in the "
-            f"working folder (tools that take a file path -- pdf_import / "
-            f"dxf_import / drawing_ir, a call_agent file_path -- take that "
-            f"name)."
+            f"- '{a.key}': pass source='{a.key}' or "
+            f"attachment_key='{a.key}' to the tools that open, read or look "
+            f"at it (a report, drawing set, spreadsheet or image); it is also "
+            f"the file '{a.key}' in the working folder, so a tool that takes "
+            f"a file path takes that name."
         )
     return "\n".join(lines)
+
+
+#: What follows the names of the files a helper saved, in the note the
+#: primary is given (``keep_work.saved_note``, through the core's hook
+#: ``keep_work.saved_files_hint``; BACKLOG DR-42): the core's own wording
+#: names a tool only the geotech page has.
+SAVED_FILES_HINT = ("Give a file to the next tool by its name (as its "
+                    "source or file path) -- never retype what it holds.")
+
+
+def saved_files_hint(names) -> str:
+    """This page's :data:`SAVED_FILES_HINT` (the same for any files)."""
+    return SAVED_FILES_HINT
 
 
 def assemble_user_message(pending_notes: Iterable[str], user_text: str) -> str:

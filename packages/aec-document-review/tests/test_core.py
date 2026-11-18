@@ -62,7 +62,9 @@ def test_attachment_note_mentions_key_and_name_never_the_server_path(tmp_path):
     assert atts[0].path not in note and str(tmp_path) not in note
     assert "the file 'report.pdf' in the working folder" in note
     assert "attachment_key='report.pdf'" in note      # vision key
-    assert "read_pdf_text" in note and "dxf_import" in note
+    assert "source='report.pdf'" in note              # document tools
+    # no tool named (DR-42: tests/test_dr42_notes_name_page_tools.py)
+    assert "read_pdf_text" not in note and "dxf_import" not in note
 
 
 def test_attachment_note_empty_for_no_attachments():

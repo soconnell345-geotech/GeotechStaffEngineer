@@ -338,8 +338,8 @@ class TestFindByName:
         assert REPORT in out and "looking through" in out
 
     def test_search_still_says_no_when_answering_and_absent(self, tree):
-        out = spt.sharepoint_search_files.invoke({"query": "Kinshasa"})
-        assert out.startswith("No files matching 'Kinshasa'")
+        out = spt.sharepoint_search_files.invoke({"query": "Zorvale"})
+        assert out.startswith("No files matching 'Zorvale'")
         assert "folders were looked through" in out
 
     def test_two_files_of_that_name_are_listed_not_guessed(self, tree):

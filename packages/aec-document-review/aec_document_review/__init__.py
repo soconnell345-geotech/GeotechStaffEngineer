@@ -47,6 +47,10 @@ _set_hook("prompter.resolve_for",
           "aec_document_review.tinyapps_keys:resolve_for")
 _set_hook("prompter.tester_keys_possible",
           "aec_document_review.tinyapps_keys:tester_keys_possible")
+# What the primary is told after a helper's saves names no tool this page
+# lacks (BACKLOG DR-42).
+_set_hook("keep_work.saved_files_hint",
+          "aec_document_review.core:saved_files_hint")
 
 from aec_agent_core.app_details import hand_in as _hand_in  # noqa: E402
 

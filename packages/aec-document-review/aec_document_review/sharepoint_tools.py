@@ -1196,8 +1196,8 @@ def _download(path: str, save_as: str, refresh: bool,
 
 
 _DOWNLOAD_DOC = """Download a file from SharePoint into the session working folder, so it
-can be READ with the file tools (read_pdf_text, open_document, subsurface
-parsers, ...). It is an input, not a deliverable. A file already downloaded
+can be READ with the file tools (open_document, read_pdf_text,
+read_text_file, ...). It is an input, not a deliverable. A file already downloaded
 in this conversation is reused unless ``refresh`` is true, and a refresh
 replaces that same copy, so each SharePoint file has ONE local copy.
 
@@ -1537,8 +1537,8 @@ _SEARCH_DOC = """Search SharePoint for files by name -- the file's own name or t
 folders it sits in ("riverside dr" finds the files under a "Riverside Drive"
 folder, and the folder itself).
 
-query: filename or folder text to search for (e.g. "boring log",
-"Kinshasa"), or a whole file name.
+query: filename or folder text to search for (e.g. "site plan",
+"Block C"), or a whole file name.
 path: optional folder to scope the search — relative to the base folder,
 or absolute. Default searches from the base folder.
 
