@@ -107,7 +107,7 @@ only an application knows, it asks for a **hook**
 | Hook | What the application hands in |
 |---|---|
 | `prompter.get_setting`, `prompter.resolve_for`, `prompter.tester_keys_possible` | how its settings are read, whose Prompter key serves a caller |
-| `vision_tools.reference_read_roots`, `.read_reference_figure`, `.view_worked_example_source` | its reference library's folders and readers |
+| `vision_tools.reference_read_roots`, `.read_reference_figure`, `.read_reference_table`, `.view_worked_example_source` | its reference library's folders and readers |
 | `held_records.record_fields` | the shapes of the records a stopped helper held |
 | `cited_documents.reference_modules` | its reference modules' names |
 | `review_eval.page_host` | its chat page's turn path, for the review suite |

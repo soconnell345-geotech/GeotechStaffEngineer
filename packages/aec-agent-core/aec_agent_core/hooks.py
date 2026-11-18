@@ -24,7 +24,9 @@ The hooks step 11 (a) defines (each documented where it is asked for):
   ``vision_tools.read_reference_figure``,
   ``vision_tools.view_worked_example_source``:
   :mod:`aec_agent_core.vision_tools` (an app's own reference library: the
-  folders the read tools may also read, and two readers of it).
+  folders the read tools may also read, and two readers of it); since
+  REF-114 also ``vision_tools.read_reference_table`` (its reader of a table
+  printed only on its page).
 
 Step 11 (c)'s:
 

@@ -345,10 +345,15 @@ dispatch_vision_tool = dispatch_extended_tool
 
 
 #: Extended tools an app's own reference library serves (GSE: the reference
-#: figures and the worked examples' printed pages). The core holds no reader
-#: of its own: each is the hook ``vision_tools.<name>``
-#: (:mod:`aec_agent_core.hooks`), called as ``reader(arguments, engine)``.
-APP_READER_TOOLS = ("read_reference_figure", "view_worked_example_source")
+#: figures, the tables printed only on their pages and the worked examples'
+#: printed pages). The core holds no reader of its own: each is the hook
+#: ``vision_tools.<name>`` (:mod:`aec_agent_core.hooks`), called as
+#: ``reader(arguments, engine)``; where the app filled no hook of that name
+#: the tool is an unknown one, as it was before the core listed it (BACKLOG
+#: REF-114: the table reader was missing here, so an app had to send it
+#: under the figure reader's name).
+APP_READER_TOOLS = ("read_reference_figure", "read_reference_table",
+                    "view_worked_example_source")
 
 
 def _dispatch_app_reader(tool_name: str, arguments: Dict[str, Any],
