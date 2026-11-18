@@ -26,9 +26,11 @@ drawn behind the boxes when the document's PDF is in the run folder or under
 WHAT IT SHOWS
 
 1. The run: what was asked, the model, when; totals (model calls, tokens in
-   and out where recorded, vision calls, helpers started, wall time); the
+   and out where recorded, vision calls, helpers started, wall time, and
+   the turns' own count of image calls where their records keep it); the
    files the run delivered; the notes the record itself carries (an error, a
-   step cap reached, a page-citation check, a helper's work kept, waits).
+   step cap reached, a turn's image calls against its ceiling, a
+   page-citation check, a helper's work kept, waits).
 2. Step by step: every step in order, who took it (the main agent, or which
    helper, under the brief it was given), the model's own words, and each
    tool call with its arguments and its result (a long result folded, with
@@ -42,6 +44,17 @@ WHAT IT SHOWS
    drawn behind when its PDF is found.
 5. What the record holds: each file found or missing and what that leaves
    out, and the older shapes met.
+
+THE PAGE VIEWER. Choosing a square of the page grid (or "Open in the page
+viewer" under a drawing) opens that page over the report: its image with a
+box for every look, tile and zoom, each box telling its call (number, tool,
+who made it and in which step); choosing a box shows what was asked and the
+start of what came back. Previous / next page and previous / next page
+looked at (also the arrow keys, with Shift for the pages looked at); Esc or
+the browser's Back closes it. It is the report's own inline script reading
+a JSON block of the same file: no network. Page images are bounded (see
+the constants below): a page with no image still shows its outline where
+the record gives one, and lists its looks.
 
 Only what the record says is shown: nothing is inferred from a model's
 account. A missing or older-shaped file is named in part 5 (and, for the
@@ -93,11 +106,34 @@ OPEN_CHARS = 600
 MAX_SHOWN_CHARS = 200_000
 #: A whole copy beside the log is read up to this size.
 MAX_SIDECAR_BYTES = 20 * 1024 * 1024
-#: Pages drawn behind their boxes: at most this many, each this many pixels
-#: on its long side, as JPEG of this quality.
-MAX_PAGE_IMAGES = 150
+#: Page images, all JPEG of quality :data:`JPEG_QUALITY`, bounded so that a
+#: long document still gives a file a browser opens. Measured on made-up
+#: 200-page PDFs (module_work/ev17/CHECK.md): at 420 pixels on the long
+#: side a page takes about 20 KB, at 900 about 75 to 100 KB.
+#: - Each page looked at is drawn small (:data:`PAGE_IMAGE_PX`) behind its
+#:   boxes in part 4, at most :data:`MAX_PAGE_IMAGES` of them;
+#: - and large (:data:`VIEW_IMAGE_PX`) for the page viewer while the large
+#:   images stay under :data:`MAX_VIEW_IMAGE_BYTES` (past it the viewer
+#:   shows the small one);
+#: - the other pages of a document whose PDF is found are drawn small for
+#:   the viewer, the pages taken in some other way first, while they stay
+#:   under :data:`MAX_OTHER_IMAGE_BYTES`;
+#: - and no more than :data:`MAX_PAGES_DRAWN` pages are drawn in all (a page
+#:   looked at, drawn at both sizes, counts once).
+#: The two byte caps count JPEG bytes; the file holds each image as base64,
+#: a third more. The small images of part 4 have no byte cap: at most
+#: :data:`MAX_PAGE_IMAGES` pages.
+MAX_PAGE_IMAGES = 300
 PAGE_IMAGE_PX = 420
+VIEW_IMAGE_PX = 900
 JPEG_QUALITY = 60
+MAX_VIEW_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_OTHER_IMAGE_BYTES = 4 * 1024 * 1024
+MAX_PAGES_DRAWN = 800
+#: In the page viewer, what a call was asked and what came back, each up to
+#: this many characters (the whole is in part 2).
+VIEW_ASKED_CHARS = 1500
+VIEW_BACK_CHARS = 1500
 #: A page outline's long side on screen, in CSS pixels.
 FIGURE_PX = 300
 
@@ -161,6 +197,16 @@ _PLACE_KEYS = frozenset({"turn", "ts", "t", "agent", "event", "task_id",
                          "helper", "run_id", "parent_run_id"})
 #: Fields whose seconds a counted event's line adds up.
 _WAIT_KEYS = ("wait_s", "waited_s", "queued_s", "held_s")
+#: Under the totals, where a turn's record keeps its own count of image
+#: calls (``turn_end``'s ``image_calls``, from 1.2.0): what each count is.
+IMAGE_COUNTS_NOTE = (
+    "Vision calls counts the vision model's answers that the activity log "
+    "holds, the vision probe's included; image calls counts the images the "
+    "turn itself counted as sent for a separate reading (each image once "
+    "with its retries; a page looked at twice counts twice), not those its "
+    "ceiling refused; so the two can differ when a call failed or was given "
+    "up, when an ask given up at its time limit answered after all, or when "
+    "the probe ran.")
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +228,18 @@ def _int(value: Any) -> Optional[int]:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return int(value)
+
+
+def _b64_len(n_bytes: int) -> int:
+    """How many characters ``n_bytes`` of data take as base64."""
+    return 4 * ((int(n_bytes) + 2) // 3)
+
+
+def _size(n_bytes: int) -> str:
+    """``"1.2 MB"``, or ``"35 kB"`` below a megabyte."""
+    if n_bytes >= 1024 * 1024:
+        return f"{n_bytes / (1024 * 1024):.1f} MB"
+    return f"{max(1, round(n_bytes / 1024)) if n_bytes else 0} kB"
 
 
 def _secs(value: Any) -> str:
@@ -504,6 +562,20 @@ class RunRecord:
                     turn += 1
                 elif e.get("role") == "assistant" and turn and e.get("text"):
                     out[turn] = str(e["text"])
+        return out
+
+    def answer_files(self) -> Dict[int, List[str]]:
+        """Each turn's files shown with its answer, from the transcript."""
+        out: Dict[int, List[str]] = {}
+        turn = 0
+        for e in self.transcript:
+            if e.get("role") == "user":
+                turn += 1
+            elif e.get("role") == "assistant" and turn:
+                files = [str(f) for f in e.get("artifacts") or []
+                         if isinstance(f, (str, int, float))]
+                if files:
+                    out.setdefault(turn, []).extend(files)
         return out
 
     def delivered(self) -> List[dict]:
@@ -859,6 +931,29 @@ def _all_calls(turns: List[Turn]) -> List[Call]:
     return sorted(out, key=lambda c: c.number)
 
 
+def _places(turns: List[Turn]) -> Dict[int, dict]:
+    """Call number -> where part 2 shows it: ``turn``, the ``step`` of its
+    agent (from 1) and ``who`` made it (the main agent, or a helper with its
+    type)."""
+    out: Dict[int, dict] = {}
+
+    def walk(actor: Actor, t: Turn) -> None:
+        who = actor.label if actor.key == "primary" else (
+            f"{actor.label} ({actor.agent})" if actor.agent else actor.label)
+        for i, step in enumerate(actor.steps, 1):
+            for call in step.calls:
+                out[call.number] = {"turn": t.number, "step": i, "who": who}
+                if call.helper is not None and call.helper.task_call is call:
+                    walk(call.helper, t)
+
+    for t in turns:
+        walk(t.primary, t)
+        for a in t.helpers:
+            if a.task_call is None:
+                walk(a, t)
+    return out
+
+
 def _owner(turns: List[Turn]) -> Dict[int, str]:
     """Call number -> the label of the agent that made it."""
     out: Dict[int, str] = {}
@@ -1177,41 +1272,69 @@ class PageImages:
         doc = self._doc(path)
         return int(doc.page_count) if doc is not None else None
 
-    def page(self, path: str, page: int, draw: bool
-             ) -> Tuple[Optional[tuple], Optional[str]]:
-        """``(rect, jpeg_base64)`` of one page; the image only when ``draw``
-        and under the cap."""
+    def rect(self, path: str, page: int) -> Optional[tuple]:
+        """``(x0, y0, width, height)`` of one page, in PDF points."""
         if self.fitz is None:
-            return None, None
+            return None
         doc = self._doc(path)
         if doc is None or not 0 <= page < doc.page_count:
-            return None, None
+            return None
+        try:
+            r = doc.load_page(page).rect
+            return (float(r.x0), float(r.y0), float(r.width),
+                    float(r.height))
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _jpeg(self, pix) -> bytes:
+        try:
+            return pix.tobytes("jpg", jpg_quality=JPEG_QUALITY)
+        except Exception:  # noqa: BLE001 - an older PyMuPDF
+            import io
+            from PIL import Image
+            img = Image.frombytes("RGB", (pix.width, pix.height),
+                                  pix.samples)
+            buf = io.BytesIO()
+            img.save(buf, "JPEG", quality=JPEG_QUALITY)
+            return buf.getvalue()
+
+    def draw(self, path: str, page: int, sizes: Tuple[int, ...]
+             ) -> Dict[int, bytes]:
+        """JPEGs of one page, one per long-side size in ``sizes`` (the
+        largest rendered, the others scaled from it where PyMuPDF can);
+        ``{}`` when the page cannot be drawn (said once in ``problems``)."""
+        if self.fitz is None or not sizes:
+            return {}
+        doc = self._doc(path)
+        if doc is None or not 0 <= page < doc.page_count:
+            return {}
+        out: Dict[int, bytes] = {}
         try:
             pg = doc.load_page(page)
             r = pg.rect
-            rect = (float(r.x0), float(r.y0), float(r.width), float(r.height))
-            if not draw or self.drawn >= MAX_PAGE_IMAGES:
-                return rect, None
-            scale = PAGE_IMAGE_PX / max(r.width, r.height)
+            top = max(sizes)
+            scale = top / max(r.width, r.height)
             pix = pg.get_pixmap(matrix=self.fitz.Matrix(scale, scale),
                                 alpha=False)
-            try:
-                data = pix.tobytes("jpg", jpg_quality=JPEG_QUALITY)
-            except Exception:  # noqa: BLE001 - an older PyMuPDF
-                import io
-                from PIL import Image
-                img = Image.frombytes("RGB", (pix.width, pix.height),
-                                      pix.samples)
-                buf = io.BytesIO()
-                img.save(buf, "JPEG", quality=JPEG_QUALITY)
-                data = buf.getvalue()
+            out[top] = self._jpeg(pix)
+            for px in sorted(set(sizes) - {top}, reverse=True):
+                f = px / top
+                w, h = max(1, round(pix.width * f)), max(1, round(
+                    pix.height * f))
+                try:
+                    small = self.fitz.Pixmap(pix, w, h, None)
+                except Exception:  # noqa: BLE001 - render it instead
+                    s = px / max(r.width, r.height)
+                    small = pg.get_pixmap(matrix=self.fitz.Matrix(s, s),
+                                          alpha=False)
+                out[px] = self._jpeg(small)
             self.drawn += 1
-            return rect, base64.b64encode(data).decode("ascii")
+            return out
         except Exception as exc:  # noqa: BLE001
             self.problems.append(f"page {page + 1} of "
                                  f"{os.path.basename(path)} could not be "
                                  f"drawn ({type(exc).__name__})")
-            return None, None
+            return {}
 
     def close(self) -> None:
         for doc in self._open.values():
@@ -1265,7 +1388,7 @@ letter-spacing:.05em;font-family:ui-monospace,Consolas,monospace}
 .k-zoom{background:rgba(192,38,45,.15)}.k-tiles{background:rgba(31,95,168,.15)}
 .k-whole{background:rgba(128,128,128,.2)}
 .k-text,.k-contact,.k-text_empty,.k-sweep{background:rgba(128,128,128,.07)}
-.counts span{margin-right:1rem;white-space:nowrap}
+.counts span{margin-right:1rem;white-space:nowrap;display:inline-block}
 .figs{display:flex;flex-wrap:wrap;gap:1.2rem}
 .fig{break-inside:avoid;max-width:100%}.fig ol{font-size:.85rem;
 padding-left:1.1rem;margin:.3rem 0;max-width:22rem}
@@ -1276,9 +1399,235 @@ svg rect.bw{fill:none;stroke:var(--whole);stroke-width:2px;
 stroke-dasharray:6 3}svg text{paint-order:stroke;stroke:var(--bg);
 stroke-linejoin:round}svg text.bz{fill:var(--zoom)}
 svg text.bt{fill:var(--tile)}svg text.bw{fill:var(--whole)}
+#viewer{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10;
+background:var(--bg);display:flex;flex-direction:column;
+padding:.5rem 1rem;box-sizing:border-box}#viewer[hidden]{display:none}
+body.vw-open{overflow:hidden}
+.vw-bar{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;
+border-bottom:1px solid var(--line);padding-bottom:.4rem}
+.vw-bar b{margin-right:auto}.vw-keys{margin:.2rem 0;font-size:.8rem}
+.vw-body{flex:1;display:flex;gap:1rem;min-height:0}
+#vw-page{flex:1 1 62%;min-width:0;min-height:0;display:flex}
+#vw-page svg{width:100%;height:100%}
+#vw-side{flex:1 1 38%;overflow:auto;font-size:.9rem;min-height:0}
+#vw-side pre{max-height:40vh;overflow:auto}#vw-side h4{margin:.8rem 0 .3rem}
+.vb{cursor:pointer}.vb rect{pointer-events:all}
+.vb.sel rect{stroke-width:4px}.vw-on .vb:not(.sel){opacity:.35}
+.vw-looks li{cursor:pointer}.vw-looks li.sel{font-weight:700}
+.vw-ref{background:none;border:0;padding:0;color:var(--tile);
+text-decoration:underline;cursor:pointer;font:inherit}
+.has-viewer .pg{cursor:pointer}
+@media (max-width:50rem){.vw-body{flex-direction:column}
+#vw-page{flex:0 0 55vh}}
 @media print{body{max-width:none;font-size:11px}#tools{display:none}
+#viewer{display:none!important}
 .step,.call,.fig{break-inside:avoid-page}a{color:inherit}}
 """
+
+_VIEWER_HTML = (
+    '<div id="viewer" hidden tabindex="-1" role="dialog" aria-modal="true" '
+    'aria-labelledby="vw-title"><div class="vw-bar"><b id="vw-title"></b>'
+    '<span id="vw-where" class="muted"></span>'
+    '<button type="button" data-go="pl">Previous page looked at</button>'
+    '<button type="button" data-go="prev">Previous page</button>'
+    '<button type="button" data-go="next">Next page</button>'
+    '<button type="button" data-go="nl">Next page looked at</button>'
+    '<button type="button" data-go="close">Close</button></div>'
+    '<p class="vw-keys muted">The page viewer. Left and right arrow keys: '
+    'the previous and next page; with Shift, the previous and next page '
+    'looked at; Esc or the browser\'s Back closes it.</p>'
+    '<div class="vw-body"><div id="vw-page"></div><div id="vw-side"></div>'
+    '</div></div>')
+
+#: The page viewer: reads the JSON block ``viewer-data`` of the same file and
+#: draws one page at a time. No network, no library; the address's
+#: ``#view-<document>-<PDF page>`` names the page open, so Back closes it.
+_VIEWER_SCRIPT = r"""
+(function(){
+var data=document.getElementById('viewer-data'),V=document.getElementById('viewer');
+if(!data||!V)return;
+var D;try{D=JSON.parse(data.textContent);}catch(e){return;}
+var pg=document.getElementById('vw-page'),side=document.getElementById('vw-side'),
+title=document.getElementById('vw-title'),where=document.getElementById('vw-where');
+var docs={},looked=[],cur=null,mine=false,before='',last=location.hash,savedY=0;
+var ORD={page:0,tile:1,zoom:2},CLS={page:'bw',tile:'bt',zoom:'bz'},B={};
+D.docs.forEach(function(d){docs[d.i]=d;
+ for(var p=0;p<d.n;p++){var e=d.pages[p];if(e&&e.l)looked.push([d.i,p]);}});
+['pl','prev','next','nl','close'].forEach(function(k){
+ B[k]=V.querySelector('[data-go="'+k+'"]');});
+function h(s){return String(s==null?'':s).replace(/&/g,'&amp;')
+ .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmt(x){return Number(x).toLocaleString('en');}
+function ent(d,p){var x=docs[d];return (x&&x.pages[p])||{};}
+function img(d,p,e){if(e.i)return 'data:image/jpeg;base64,'+e.i;
+ var f=document.querySelector('#p-'+d+'-'+p+' image');
+ return f?f.getAttribute('href'):null;}
+function who(n){var c=D.calls[n];if(!c)return '';
+ return c.who+(c.step?', step '+c.step:'')+
+  (D.multi&&c.turn!=null?', turn '+c.turn:'');}
+function kw(k,lab,b){if(k==='page')return 'whole page';
+ if(k==='tile')return 'tile '+lab;
+ return 'zoom'+(b?' on x '+Math.round(b[0])+'-'+Math.round(b[2])+', y '+
+  Math.round(b[1])+'-'+Math.round(b[3])+' pt':'');}
+function tip(l){var s=(l[0]?'#'+l[0]+' ':'')+kw(l[1],l[3],l[2]);
+ if(l[4])s+=', '+l[4];if(l[0]&&D.calls[l[0]])s+=', '+who(l[0]);
+ if(l[5])s+=', from '+l[5];return s;}
+function svg(e,r,src){var x=r[0],y=r[1],w=r[2],hh=r[3],fs=Math.max(w,hh)/55;
+ var s='<svg viewBox="'+[x,y,w,hh].join(' ')+'" role="img" '+
+  'aria-label="the page with a box for every look">'+
+  '<rect class="sheet" x="'+x+'" y="'+y+'" width="'+w+'" height="'+hh+
+  '" vector-effect="non-scaling-stroke"/>';
+ if(src)s+='<image href="'+src+'" x="'+x+'" y="'+y+'" width="'+w+
+  '" height="'+hh+'" preserveAspectRatio="none"/>';
+ var seen={},ls=(e.l||[]).slice().sort(function(a,b){
+  return ORD[a[1]]-ORD[b[1]]||a[0]-b[0];});
+ ls.forEach(function(l){var b=l[2];if(!b)return;var c=CLS[l[1]],
+  k=Math.round(b[0]/fs)+','+Math.round(b[1]/fs),i=seen[k]||0;seen[k]=i+1;
+  var lab=(l[0]?'#'+l[0]:'')+(l[1]==='tile'&&l[3]?' '+l[3]:'');
+  s+='<g class="vb"'+(l[0]?' data-n="'+l[0]+'" tabindex="0"':'')+
+   '><title>'+h(tip(l))+'</title><rect class="'+c+'" x="'+b[0]+'" y="'+b[1]+
+   '" width="'+(b[2]-b[0])+'" height="'+(b[3]-b[1])+
+   '" vector-effect="non-scaling-stroke"/>';
+  if(lab)s+='<text class="'+c+'" x="'+(b[0]+fs*0.3)+'" y="'+
+   (b[1]+fs*(1.1+1.2*i))+'" font-size="'+fs+'" stroke-width="'+fs*0.3+
+   '">'+h(lab)+'</text>';
+  s+='</g>';});
+ return s+'</svg>';}
+function ref(n){return '<button type="button" class="vw-ref" data-n="'+n+
+ '">#'+n+'</button>';}
+function sideHtml(e,src){var o=[],m=e.m||{},g=[],by={};
+ if(!src)o.push('<p class="note">'+h(D.why[e.x]||D.why.none)+'</p>');
+ if(e.rf)o.push('<p class="note">'+h(D.rf[e.rf])+'</p>');
+ var ks=D.marks.filter(function(k){return m.hasOwnProperty(k[0]);});
+ if(ks.length){o.push('<h4>How it was taken in</h4><ul>');
+  ks.forEach(function(k){var ns=m[k[0]];o.push('<li>'+h(k[1])+(ns.length?
+   ': '+ns.map(ref).join(', '):" (from the vision tools' own records)")+
+   '</li>');});
+  o.push('</ul>');}
+ else o.push('<p class="muted">'+h(D.empty)+'</p>');
+ (e.l||[]).forEach(function(l){var key=l[0]+'|'+l[5];
+  if(!by[key]){by[key]={n:l[0],tool:l[4],src:l[5],parts:[]};g.push(by[key]);}
+  by[key].parts.push(l);});
+ if(g.length){o.push('<h4>Looks on this page</h4><ol class="vw-looks">');
+  g.forEach(function(x){
+   var tiles=x.parts.filter(function(l){return l[1]==='tile';})
+    .map(function(l){return l[3];}),
+   main=x.parts.filter(function(l){return l[1]!=='tile';}).map(function(l){
+    return kw(l[1],l[3],l[2])+(l[2]?'':' (no view box in the record)');}),
+   w=main.join(', ')+(tiles.length?(main.length?', and ':'')+tiles.length+
+    ' tiles ('+tiles.join(', ')+')':'');
+   o.push('<li'+(x.n?' data-n="'+x.n+'" tabindex="0"':'')+'><b>'+
+    (x.n?'#'+x.n:'from '+h(x.src))+'</b> '+h(w)+(x.tool?', '+h(x.tool):'')+
+    (x.n&&D.calls[x.n]?', '+h(who(x.n)):'')+'</li>');});
+  o.push('</ol>');}
+ o.push('<div id="vw-call">'+(g.length||ks.length?'<p class="muted">Choose '+
+  'a box or a numbered call to see what was asked and what came back.</p>'
+  :'')+'</div>');
+ return o.join('');}
+function near(d,p,dir){var best=null;
+ for(var i=0;i<looked.length;i++){var q=looked[i],c=(q[0]-d)||(q[1]-p);
+  if(dir>0&&c>0)return q;if(dir<0&&c<0)best=q;}
+ return dir<0?best:null;}
+function show(d,p){var doc=docs[d];if(!doc)return;
+ p=Math.max(0,Math.min(p,doc.n-1));cur=[d,p];
+ var e=ent(d,p),r=e.r||doc.r||null,src=img(d,p,e);
+ title.textContent=doc.name+', PDF page '+(p+1)+' of '+doc.n;
+ var k=-1;for(var i=0;i<looked.length;i++){
+  if(looked[i][0]===d&&looked[i][1]===p){k=i;break;}}
+ where.textContent=k<0?'not looked at':'page looked at '+(k+1)+' of '+
+  looked.length;
+ pg.classList.remove('vw-on');
+ pg.innerHTML=r?svg(e,r,src):'<p class="note">No page size in the record: '+
+  'nothing to draw.</p>';
+ side.innerHTML=sideHtml(e,src);
+ B.prev.disabled=p<=0;B.next.disabled=p>=doc.n-1;
+ B.pl.disabled=!near(d,p,-1);B.nl.disabled=!near(d,p,1);}
+function select(n){var c=D.calls[n],box=document.getElementById('vw-call');
+ if(!box)return;var all=V.querySelectorAll('[data-n]');
+ for(var i=0;i<all.length;i++)all[i].classList.toggle('sel',
+  all[i].getAttribute('data-n')===String(n));
+ pg.classList.add('vw-on');
+ if(!c){box.innerHTML='<p class="note">Call #'+n+' is not in the record.</p>';
+  return;}
+ var o=['<h4>#'+n+' '+h(c.tool)+'</h4><p>'+h(who(n))+'</p>'];
+ if(c.status)o.push('<p class="warn">'+h(c.status)+'</p>');
+ o.push('<b>What was asked</b>'+(c.asked?(c.asked_n>c.asked.length?
+  ' <span class="muted">its first '+fmt(c.asked.length)+' characters of '+
+  fmt(c.asked_n)+'</span>':'')+'<pre>'+h(c.asked)+'</pre>':
+  '<p class="note">No arguments in the record.</p>'));
+ o.push('<b>What came back</b>'+(c.back?' <span class="muted">'+
+  (c.back_n>c.back.length?'its first '+fmt(c.back.length)+
+  ' characters of '+fmt(c.back_n):fmt(c.back_n)+' characters')+
+  '</span><pre>'+h(c.back)+'</pre>':'<p class="note">Nothing in the '+
+  'record.</p>'));
+ if(c.differs)o.push('<p class="note">The model received something else '+
+  'than this result: see part 2.</p>');
+ if(D.steps)o.push('<p><a href="#c'+n+'">This call in part 2</a></p>');
+ box.innerHTML=o.join('');}
+function parse(s){var m=String(s||'').split('-');
+ if(m.length!==3||m[0]!=='#view')return null;
+ var d=parseInt(m[1],10),p=parseInt(m[2],10);
+ return isNaN(d)||isNaN(p)?null:[d,p-1];}
+function route(){var t=parse(location.hash);
+ if(t&&docs[t[0]]){if(V.hidden){before=last;savedY=window.pageYOffset;
+   V.hidden=false;document.body.classList.add('vw-open');}
+  show(t[0],t[1]);V.focus();}
+ else if(!V.hidden){V.hidden=true;mine=false;
+  document.body.classList.remove('vw-open');
+  if(location.hash===before)window.scrollTo(0,savedY);
+  else{var a=document.getElementById(location.hash.slice(1));
+   if(a)a.scrollIntoView();}}
+ last=location.hash;}
+function go(q){if(q)location.replace('#view-'+q[0]+'-'+(q[1]+1));}
+function open(d,p){mine=true;location.hash='view-'+d+'-'+(p+1);}
+function close(){if(mine){history.back();return;}
+ location.replace(before&&!parse(before)?before:'#doc-'+(cur?cur[0]:''));}
+function act(k){if(k==='close'){close();return;}if(!cur)return;
+ var d=cur[0],p=cur[1];
+ if(k==='prev'&&p>0)go([d,p-1]);
+ if(k==='next'&&p<docs[d].n-1)go([d,p+1]);
+ if(k==='pl')go(near(d,p,-1));if(k==='nl')go(near(d,p,1));}
+V.addEventListener('click',function(ev){var t=ev.target;if(!t.closest)return;
+ var b=t.closest('[data-go]');if(b){act(b.getAttribute('data-go'));return;}
+ var n=t.closest('[data-n]');if(n)select(+n.getAttribute('data-n'));});
+document.addEventListener('keydown',function(ev){var t=ev.target;
+ if(V.hidden){if((ev.key==='Enter'||ev.key===' ')&&t.classList&&
+   t.classList.contains('pg')&&t.tagName!=='A'){ev.preventDefault();
+   t.click();}return;}
+ if(ev.altKey||ev.ctrlKey||ev.metaKey)return;
+ if(ev.key==='Escape'){ev.preventDefault();act('close');return;}
+ if((ev.key==='Enter'||ev.key===' ')&&t.getAttribute&&
+   t.getAttribute('data-n')&&t.tagName!=='BUTTON'){ev.preventDefault();
+  select(+t.getAttribute('data-n'));return;}
+ if((ev.key==='ArrowLeft'||ev.key==='ArrowRight')&&t.tagName!=='PRE'){
+  ev.preventDefault();var f=ev.key==='ArrowRight';
+  act(ev.shiftKey?(f?'nl':'pl'):(f?'next':'prev'));}});
+document.addEventListener('click',function(ev){
+ if(!V.hidden||!ev.target.closest)return;var t=ev.target,a=t.closest('.pg');
+ if(a){var g=a.closest('[data-i]');if(!g)return;ev.preventDefault();
+  open(+g.getAttribute('data-i'),+a.getAttribute('data-page')-1);return;}
+ var o=t.closest('a.vw-open');
+ if(o){ev.preventDefault();var q=parse(o.getAttribute('href'));
+  if(q)open(q[0],q[1]);}});
+var sp=document.querySelectorAll('span.pg');
+for(var i=0;i<sp.length;i++){sp[i].setAttribute('tabindex','0');
+ sp[i].setAttribute('role','button');}
+var vo=document.querySelectorAll('a.vw-open');
+for(i=0;i<vo.length;i++)vo[i].hidden=false;
+document.documentElement.className+=' has-viewer';
+window.addEventListener('hashchange',route);route();})();
+"""
+
+
+def _script_json(obj: Any) -> str:
+    """``obj`` as JSON that is safe inside a ``<script>`` element: ``<``,
+    ``>`` and ``&`` written as JSON escapes (a record's text can hold
+    ``</script>``)."""
+    esc = chr(92) + "u00"
+    return (json.dumps(obj, ensure_ascii=False, separators=(",", ":"),
+                       default=str)
+            .replace("<", esc + "3c").replace(">", esc + "3e")
+            .replace("&", esc + "26"))
 
 _SCRIPT = """
 (function(){var t=document.getElementById('tools');if(!t)return;
@@ -1336,10 +1685,285 @@ class Report:
                     doc.n_pages, doc.n_from = n, "the PDF"
             if doc.n_pages is None and doc.pages:
                 doc.n_pages, doc.n_from = max(doc.pages) + 1, N_FROM_LAST
+        self._drawn: Optional[Dict[Tuple[int, int], Dict[int, str]]] = None
+        self._failed: set = set()
+        self._rects: Dict[Tuple[int, int], Optional[tuple]] = {}
+        self.image_stats: Dict[str, int] = {}
+        self.viewer_problem = ""
+
+    # -- page images, drawn once within the caps --------------------------
+    @staticmethod
+    def _n_pages(doc: Document) -> int:
+        return max(doc.n_pages or 0, (max(doc.pages) + 1) if doc.pages
+                   else 0)
+
+    def _plan_images(self) -> Dict[Tuple[int, int], Dict[int, str]]:
+        """``(document index, page) -> {pixels: JPEG as base64}``: each page
+        looked at small and, while the large ones stay under their cap,
+        large; then the other pages small, those taken in some other way
+        first, under their cap (the constants above say why)."""
+        if self._drawn is not None:
+            return self._drawn
+        drawn: Dict[Tuple[int, int], Dict[int, str]] = {}
+        self._drawn = drawn
+        st = self.image_stats = dict.fromkeys(
+            ("looked", "looked_large", "looked_small_only", "looked_none",
+             "looked_over", "other", "other_drawn", "other_none",
+             "other_failed", "bytes"), 0)
+        if self.images.fitz is None:
+            return drawn
+        docs = [d for d in self._docs() if d.pdf]
+        large = other = 0
+
+        def keep(d: Document, p: int, got: Dict[int, bytes]) -> None:
+            drawn[(d.index, p)] = {
+                px: base64.b64encode(b).decode("ascii")
+                for px, b in got.items()}
+            # as the images sit in the file: base64
+            st["bytes"] += sum(len(s) for s in drawn[(d.index, p)].values())
+
+        for d in docs:
+            for p, use in sorted(d.pages.items()):
+                if not use.looks:
+                    continue
+                st["looked"] += 1
+                if st["looked"] > MAX_PAGE_IMAGES \
+                        or self.images.drawn >= MAX_PAGES_DRAWN:
+                    st["looked_none"] += 1
+                    st["looked_over"] += 1
+                    continue
+                sizes = (PAGE_IMAGE_PX, VIEW_IMAGE_PX) \
+                    if large < MAX_VIEW_IMAGE_BYTES else (PAGE_IMAGE_PX,)
+                got = self.images.draw(d.pdf, p, sizes)
+                if not got:
+                    st["looked_none"] += 1
+                    self._failed.add((d.index, p))
+                    continue
+                if VIEW_IMAGE_PX in got:
+                    large += len(got[VIEW_IMAGE_PX])
+                    st["looked_large"] += 1
+                else:
+                    st["looked_small_only"] += 1
+                keep(d, p, got)
+        rest = []
+        for d in docs:
+            for p in range(self._n_pages(d)):
+                use = d.pages.get(p)
+                if use is not None and use.looks:
+                    continue
+                rest.append((0 if use is not None and use.marks else 1,
+                             d.index, p, d))
+        rest.sort(key=lambda r: r[:3])
+        for _first, _i, p, d in rest:
+            st["other"] += 1
+            if other >= MAX_OTHER_IMAGE_BYTES \
+                    or self.images.drawn >= MAX_PAGES_DRAWN:
+                st["other_none"] += 1
+                continue
+            got = self.images.draw(d.pdf, p, (PAGE_IMAGE_PX,))
+            if not got:
+                st["other_none"] += 1
+                st["other_failed"] += 1
+                self._failed.add((d.index, p))
+                continue
+            other += len(got[PAGE_IMAGE_PX])
+            st["other_drawn"] += 1
+            keep(d, p, got)
+        return drawn
+
+    def _image_note(self) -> str:
+        """What the page images hold and what the caps left out."""
+        st = self.image_stats
+        if not st or not (st["looked"] or st["other"]):
+            return ""
+        bits = []
+        if st["looked"]:
+            s = (f"pages looked at: {_n(st['looked'])}; drawn at "
+                 f"{VIEW_IMAGE_PX} pixels on the long side for the page "
+                 f"viewer and at {PAGE_IMAGE_PX} in part 4: "
+                 f"{_n(st['looked_large'])}")
+            if st["looked_small_only"]:
+                s += (f"; only at {PAGE_IMAGE_PX}: "
+                      f"{_n(st['looked_small_only'])} (the large images stop "
+                      f"at about {_size(_b64_len(MAX_VIEW_IMAGE_BYTES))} in "
+                      "this file)")
+            if st["looked_over"]:
+                s += (f"; not drawn: {_n(st['looked_over'])} (at most "
+                      f"{_n(MAX_PAGE_IMAGES)} pages looked at are drawn, "
+                      f"and {_n(MAX_PAGES_DRAWN)} pages in all)")
+            bits.append(s)
+        if st["other"]:
+            s = (f"other pages: {_n(st['other'])}; drawn at {PAGE_IMAGE_PX} "
+                 f"pixels for the page viewer: {_n(st['other_drawn'])} "
+                 "(pages taken in some other way, such as read as text or "
+                 "shown on a contact sheet, are drawn first)")
+            capped = st["other_none"] - st["other_failed"]
+            if capped > 0:
+                s += (f"; not drawn: {_n(capped)} (their images stop at "
+                      f"about {_size(_b64_len(MAX_OTHER_IMAGE_BYTES))} in "
+                      f"this file, and {_n(MAX_PAGES_DRAWN)} pages are drawn "
+                      "in all)")
+            bits.append(s)
+        return ("Page images. " + ". ".join(b[0].upper() + b[1:]
+                                            for b in bits)
+                + f". Images in all, as they sit in this file: "
+                f"{_size(st['bytes'])}.")
+
+    def _page_rect(self, doc: Document, page: int, use: Optional[PageUse]
+                   ) -> Tuple[Optional[tuple], str]:
+        """``((x0, y0, width, height), from)``: the PDF page's own size
+        (``"pdf"``), else the whole-page view a look returned
+        (``"view"``), else a rect round the page's boxes (``"boxes"``)."""
+        key = (doc.index, page)
+        if doc.pdf:
+            if key not in self._rects:
+                self._rects[key] = self.images.rect(doc.pdf, page)
+            if self._rects[key]:
+                return self._rects[key], "pdf"
+        looks = use.looks if use is not None else []
+        whole = [lk.box for lk in looks if lk.kind == "page" and lk.box]
+        boxes = [lk.box for lk in looks if lk.box]
+        if whole:
+            b = max(whole, key=lambda x: (x[2] - x[0]) * (x[3] - x[1]))
+            return (b[0], b[1], b[2] - b[0], b[3] - b[1]), "view"
+        if boxes:
+            return (0.0, 0.0, max(b[2] for b in boxes),
+                    max(b[3] for b in boxes)), "boxes"
+        return None, ""
+
+    # -- the page viewer's data -------------------------------------------
+    def _why_no_image(self, doc: Document, page: int) -> str:
+        if self.images.fitz is None:
+            return "nofitz"
+        if not doc.pdf:
+            return "nopdf"
+        if (doc.index, page) in self._failed:
+            return "fail"
+        return "cap"
+
+    def _view_calls(self, numbers: set) -> Dict[str, dict]:
+        """What the viewer shows of each call a page names: who made it and
+        in which step, what was asked and the start of what came back."""
+        places = _places(self.turns)
+        by_n = {c.number: c for c in _all_calls(self.turns)}
+        out: Dict[str, dict] = {}
+        for n in sorted(numbers):
+            call = by_n.get(n)
+            if call is None:
+                continue
+            place = places.get(n, {})
+            asked = "" if call.args in (None, "", {}) else (
+                call.args if isinstance(call.args, str) else json.dumps(
+                    call.args, ensure_ascii=False, default=str))
+            status = ""
+            if call.refused:
+                back = _whole_text(self.record, call.delivered[0], "text")[0]
+                status = "refused: no tool ran; this is what the model was told"
+            elif call.end is None:
+                back, status = "", "no result in the record"
+            elif call.failed:
+                back = _whole_text(self.record, call.end, "error")[0]
+                status = "the tool raised an error"
+            else:
+                back = _whole_text(self.record, call.end, "result")[0]
+            asked, back = _pretty(asked), _pretty(back)
+            out[str(n)] = {
+                "tool": call.name, "who": place.get("who", ""),
+                "step": place.get("step"), "turn": place.get("turn"),
+                "asked": asked[:VIEW_ASKED_CHARS], "asked_n": len(asked),
+                "back": back[:VIEW_BACK_CHARS], "back_n": len(back),
+                "status": status,
+                "differs": bool(call.delivered) and not call.refused}
+        return out
+
+    def _viewer_data(self) -> dict:
+        """Everything the page viewer shows, for its JSON block: per
+        document and page, the page's size, how it was taken in, its looks
+        and its image (a page looked at keeps its small image in part 4,
+        which the viewer takes when it has no large one)."""
+        drawn = self._plan_images()
+        docs, wanted = [], set()
+        for d in self._docs():
+            n = self._n_pages(d)
+            if not n:
+                continue
+            rects: Dict[tuple, int] = {}
+            pages: Dict[str, dict] = {}
+            for p in range(n):
+                use = d.pages.get(p)
+                e: Dict[str, Any] = {}
+                rect, how = self._page_rect(d, p, use)
+                if rect:
+                    e["r"] = [round(v, 2) for v in rect]
+                    if how == "pdf":
+                        rects[tuple(e["r"])] = rects.get(tuple(e["r"]), 0) + 1
+                    else:
+                        e["rf"] = how
+                if use is not None and use.marks:
+                    e["m"] = {k: list(v) for k, v in use.marks.items()}
+                    for v in use.marks.values():
+                        wanted.update(v)
+                if use is not None and use.looks:
+                    e["l"] = [[lk.number, lk.kind,
+                               [round(v, 2) for v in lk.box] if lk.box
+                               else None, lk.label, lk.tool, lk.source]
+                              for lk in use.looks]
+                    wanted.update(lk.number for lk in use.looks if lk.number)
+                imgs = drawn.get((d.index, p)) or {}
+                looked = use is not None and bool(use.looks)
+                img = imgs.get(VIEW_IMAGE_PX) if looked else \
+                    imgs.get(PAGE_IMAGE_PX)
+                if img:
+                    e["i"] = img
+                elif not imgs:
+                    e["x"] = self._why_no_image(d, p)
+                pages[str(p)] = e
+            common = max(rects, key=rects.get) if rects else None
+            if common:
+                for e in pages.values():
+                    if e.get("r") == list(common) and "rf" not in e:
+                        del e["r"]
+            docs.append({"i": d.index, "name": d.name, "n": n,
+                         "r": list(common) if common else None,
+                         "pages": pages})
+        where = ("the run folder" + (" or under --documents" if
+                                     self.documents else
+                                     "; name its folder with --documents"))
+        return {
+            "docs": docs, "calls": self._view_calls(wanted),
+            "marks": [[m, words] for m, _l, _c, words in MARKS],
+            "multi": len(self.turns) > 1,
+            "steps": self.record.has_activity,
+            "empty": ("Not taken in: no tool read or looked at this page."
+                      if self.record.has_activity else
+                      f"No look recorded (there is no {ACTIVITY_FILE})."),
+            "why": {
+                "nofitz": "No image: PyMuPDF is not installed where the "
+                          "report was made.",
+                "nopdf": f"No image: the document's PDF was not found in "
+                         f"{where}.",
+                "fail": "No image: this page could not be drawn from its "
+                        "PDF.",
+                "cap": "No image: the report's cap on page images was "
+                       "reached. " + self._image_note(),
+                "none": "No image of this page in the report."},
+            "rf": {"view": "The outline is the whole-page view a look "
+                           "returned; the page itself is not drawn.",
+                   "boxes": "The page size is not in the record: the "
+                            "outline is drawn round its boxes."},
+        }
 
     # -- the page ---------------------------------------------------------
     def html(self) -> str:
         try:
+            try:
+                viewer = (_VIEWER_HTML + '<script type="application/json" '
+                          'id="viewer-data">'
+                          + _script_json(self._viewer_data()) + "</script>")
+            except Exception as exc:  # noqa: BLE001 - the report without it
+                viewer = ""
+                self.viewer_problem = (f"{type(exc).__name__}: "
+                                       f"{self._plain(str(exc))}")
             sections = [
                 ("run", "1. The run", self._section(self._run)),
                 ("steps", "2. Step by step", self._section(self._steps)),
@@ -1386,8 +2010,9 @@ class Report:
             f"<p class='muted'>Made {_e(_when(time.time()))} from the record "
             f"in the folder {_e(name)}, {_e(self.record.kind())}. Pages "
             "are numbered as a PDF viewer shows them, from 1.</p>"
-            f"{banner}<div id='tools'></div>{''.join(toc)}{body}"
-            f"<script>{_SCRIPT}</script></body></html>")
+            f"{banner}<div id='tools'></div>{''.join(toc)}{body}{viewer}"
+            f"<script>{_SCRIPT}{_VIEWER_SCRIPT if viewer else ''}</script>"
+            "</body></html>")
 
     def _section(self, fn) -> str:
         try:
@@ -1558,10 +2183,37 @@ class Report:
                          _n(unended_agent + unended_vision),
                          f"agents {_n(unended_agent)}, vision "
                          f"{_n(unended_vision)}"))
+        images = self._image_total()
+        if images is not None:
+            rows.insert(3, images)
         return "<table>" + "".join(
             f'<tr data-total="{k}"><th>{_e(lab)}</th><td class="r">'
             f'{_e(v)}</td><td class="muted">{_e(more)}</td></tr>'
-            for k, lab, v, more in rows) + "</table>"
+            for k, lab, v, more in rows) + "</table>" + (
+            f"<p class='note'>{_e(IMAGE_COUNTS_NOTE)}</p>"
+            if images is not None else "")
+
+    def _image_total(self) -> Optional[tuple]:
+        """The totals row of the turns' own image calls, or ``None`` when no
+        turn's record keeps them (a record written before 1.2.0)."""
+        kept = [f for f in (_image_facts(t.end) for t in self.turns)
+                if f is not None]
+        if not kept:
+            return None
+        more = ["images sent to the vision model for a separate reading, as "
+                "the turns counted them"]
+        limits = sorted({f[1] for f in kept if f[1]})
+        if limits:
+            more.append("ceiling " + ", ".join(_n(x) for x in limits)
+                        + " a turn")
+        refused = sum(f[2] or 0 for f in kept)
+        if refused:
+            more.append(f"{_n(refused)} more refused at the ceiling")
+        if len(kept) < len(self.turns):
+            more.append(f"counted in {len(kept)} of {len(self.turns)} "
+                        "turns' records")
+        return ("image_calls", "Image calls", _n(sum(f[0] for f in kept)),
+                "; ".join(more))
 
     def _files(self) -> str:
         rows: List[dict] = []
@@ -1599,6 +2251,14 @@ class Report:
             if cap and steps is not None and steps >= cap:
                 lines.append(f"{pre}the main agent reached its step cap "
                              f"({steps} of {cap})")
+            images = _image_facts(end)
+            if images is not None:
+                calls, limit, refused = images
+                lines.append(f"{pre}image calls: {_n(calls)}" + (
+                    f" of a ceiling of {_n(limit)}" if limit
+                    else ", no ceiling set") + (
+                    f"; {_n(refused)} more refused at the ceiling"
+                    if refused else ""))
             if self.record.has_activity and t.end is None:
                 lines.append(f"{pre}no turn_end in the record: the turn did "
                              f"not finish, or its end was not written")
@@ -1642,8 +2302,7 @@ class Report:
     # -- 2. step by step --------------------------------------------------
     def _steps(self) -> str:
         if not self.record.has_activity:
-            return (f"<p class='warn'>No {ACTIVITY_FILE}: the steps cannot be "
-                    "shown.</p>")
+            return self._turns_without_log()
         if not self.turns:
             return "<p class='note'>The activity log holds no records.</p>"
         questions = self.record.questions()
@@ -1685,6 +2344,41 @@ class Report:
             else:
                 out.append("<p class='note'>The record holds no answer as "
                            "the user received it for this turn.</p>")
+            out.append("</section>")
+        return "".join(out)
+
+    def _turns_without_log(self) -> str:
+        """No activity log: each turn's question and answer as the record's
+        other files hold them (the transcript, or the suite's run.json)."""
+        rec = self.record
+        questions, answers = rec.questions(), rec.answers()
+        files = rec.answer_files()
+        numbers = sorted(set(questions) | set(answers) | set(files))
+        if not numbers:
+            return (f"<p class='warn'>No {ACTIVITY_FILE}: the steps cannot be "
+                    "shown, and no other file of the record holds a question "
+                    "or an answer.</p>")
+        out = [f"<p class='warn'>No {ACTIVITY_FILE}: the steps cannot be "
+               "shown. Each turn's question and answer as the record's other "
+               "files hold them:</p>"]
+        for i in numbers:
+            out.append(f'<section class="turn" id="turn-{i}">'
+                       f"<h3>Turn {i}</h3>")
+            q = questions.get(i)
+            out.append(f"<div><b>Asked:</b> {_short_or_fold(q)}</div>" if q
+                       else "<p class='note'>The record holds no question "
+                            "for this turn.</p>")
+            ans = answers.get(i)
+            if ans:
+                out.append(_fold(f"The answer as the user received it: "
+                                 f"{_n(len(ans))} characters",
+                                 f"<pre>{_e(ans)}</pre>", open_=True))
+            else:
+                out.append("<p class='note'>The record holds no answer as "
+                           "the user received it for this turn.</p>")
+            if files.get(i):
+                out.append("<div class='note'>Files shown with the answer: "
+                           f"{_e(', '.join(files[i]))}</div>")
             out.append("</section>")
         return "".join(out)
 
@@ -1878,9 +2572,15 @@ class Report:
         out = ["<p class='muted'>Each square is one page. The letters say "
                f"how it was taken in; {_e(none)}. "
                "Only what the record says counts: a page named in a search "
-               "hit is not counted as opened. A square links to its drawing "
-               "in part 4 when the page was looked at.</p>",
+               "hit is not counted as opened. Choose a square to open its "
+               "page in the page viewer: the page with a box for every look, "
+               "what each call asked and what came back, and the previous "
+               "and next pages (with scripts off, a square of a page looked "
+               "at links to its drawing in part 4).</p>",
                f"<ul class='legend'>{legend}</ul>"]
+        if self.viewer_problem:
+            out.append(f"<p class='warn'>The page viewer could not be made "
+                       f"from the record: {_e(self.viewer_problem)}</p>")
         if self.pages.unplaced:
             out.append(f"<p class='note'>{self.pages.unplaced} tool results "
                        "could not be read for pages.</p>")
@@ -1925,7 +2625,8 @@ class Report:
         about = f"{_n(n)} pages" if n else "page count unknown"
         if doc.n_from:
             about += f", from {doc.n_from}"
-        return (f'<div class="doc" id="doc-{doc.index}"><h3>{_e(doc.name)}'
+        return (f'<div class="doc" id="doc-{doc.index}" data-i="{doc.index}">'
+                f'<h3>{_e(doc.name)}'
                 f'</h3><p class="muted">{_e(about)}</p>'
                 f'<p class="counts" data-doc="{_e(doc.name)}">{count_spans}'
                 f'</p><div class="grid">{"".join(cells)}</div></div>')
@@ -1964,32 +2665,24 @@ class Report:
             figs.append(self._figure(doc, page, use))
         if figs:
             out.append(f'<div class="figs">{"".join(figs)}</div>')
-        if self.images.drawn >= MAX_PAGE_IMAGES:
-            out.append(f"<p class='note'>Only the first {MAX_PAGE_IMAGES} "
-                       "pages are drawn; the rest are outlines.</p>")
+        note = self._image_note()
+        if note:
+            out.append(f"<p class='note'>{_e(note)}</p>")
         for problem in self.images.problems:
             out.append(f"<p class='note'>{_e(problem)}</p>")
         return "".join(out)
 
     def _figure(self, doc: Document, page: int, use: PageUse) -> str:
-        rect = img = None
-        if doc.pdf:
-            rect, img = self.images.page(doc.pdf, page, draw=True)
-        note = "drawn from the PDF" if img else (
-            "outline at the PDF page's size" if rect else "")
-        if rect is None:
-            whole = [lk.box for lk in use.looks
-                     if lk.kind == "page" and lk.box]
-            boxes = [lk.box for lk in use.looks if lk.box]
-            if whole:
-                b = max(whole, key=lambda x: (x[2] - x[0]) * (x[3] - x[1]))
-                rect = (b[0], b[1], b[2] - b[0], b[3] - b[1])
-                note = "outline from the whole-page view"
-            elif boxes:
-                rect = (0.0, 0.0, max(b[2] for b in boxes),
-                        max(b[3] for b in boxes))
-                note = ("the page size is not in the record: the outline is "
-                        "drawn round its boxes")
+        img = (self._plan_images().get((doc.index, page)) or {}).get(
+            PAGE_IMAGE_PX)
+        rect, how = self._page_rect(doc, page, use)
+        note = {"pdf": "drawn from the PDF" if img
+                else "outline at the PDF page's size",
+                "view": "outline from the whole-page view",
+                "boxes": "the page size is not in the record: the outline is "
+                         "drawn round its boxes"}.get(how, "")
+        if how != "pdf":
+            img = None
         items = []
         tiles: Dict[Tuple[int, str], List[str]] = {}
         for lk in use.looks:
@@ -2018,7 +2711,9 @@ class Report:
             "<p class='note'>No view box in the record: nothing to draw.</p>"
         return (f'<figure class="fig" id="p-{doc.index}-{page}"><figcaption>'
                 f"<b>PDF page {page + 1}</b> <span class='muted'>"
-                f"{_e(note)}</span></figcaption>{svg}<ol>{''.join(items)}"
+                f"{_e(note)}</span> <a class='vw-open' hidden "
+                f"href='#view-{doc.index}-{page + 1}'>Open in the page "
+                f"viewer</a></figcaption>{svg}<ol>{''.join(items)}"
                 f"</ol></figure>")
 
     @staticmethod
@@ -2112,6 +2807,22 @@ class Report:
         if any(t.loose_side for t in self.turns) and not out:
             out.append("Some vision calls are not tied to a tool call.")
         return out
+
+
+def _image_facts(end: Optional[dict]
+                 ) -> Optional[Tuple[int, Optional[int], Optional[int]]]:
+    """A turn's own count of its image calls, its ceiling and the calls the
+    ceiling refused (``turn_end``'s ``image_calls``, ``image_limit`` and
+    ``image_calls_refused``, written by
+    :func:`aec_agent_core.deep.keep_work.image_call_facts`); ``None`` when
+    the record keeps no count."""
+    if not isinstance(end, dict):
+        return None
+    calls = _int(end.get("image_calls"))
+    if calls is None:
+        return None
+    return calls, _int(end.get("image_limit")), \
+        _int(end.get("image_calls_refused"))
 
 
 def _start_prompt(t: Turn) -> str:

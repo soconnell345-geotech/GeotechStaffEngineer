@@ -176,7 +176,8 @@ arguments and its result (long ones folded, with their size), and each
 helper's steps under the brief it was given; then, per document, a grid of
 its pages saying which were read as text, looked at whole, in tiles,
 zoomed, shown on a contact sheet or never opened; and each page looked at,
-with a box for every look, tile and zoom, numbered as the steps.
+with a box for every look, tile and zoom, numbered as the steps. A page
+viewer inside the same file opens any page of the grid (below).
 
 `<run folder>` is a page conversation's folder or one task folder of the
 review suite (`runs/<arm>/<task>/`). The pages are drawn behind the boxes
@@ -195,8 +196,45 @@ record the report cannot be built from ends in one plain line and exit code
 1, never a traceback; and the page names the run folder by its own name,
 never its absolute path. Size, measured on a made-up run of 300 large
 sheets and 600 tiled looks: the page is about 1.5 times the size of the
-activity log (a 12 MB log gave a 17.7 MB page in about 12 s), with at most
-150 page images.
+activity log (a 12 MB log gave a 17.7 MB page in about 12 s); the page
+images are bounded as the next paragraph says.
+
+The page viewer: choosing a square of the page grid (or "Open in the page
+viewer" under a drawing) opens that page over the report, with its image
+and a box for every look, tile and zoom. Each box says which call made it
+(its number, tool, the main agent or which helper, and the step); choosing
+a box or a numbered call shows what was asked and the first 1,500
+characters of what came back, with a link to the call in the step list.
+Previous / next page and previous / next page looked at (also the arrow
+keys, with Shift for the pages looked at); Esc or the browser's Back closes
+it. It is the file's own script reading a JSON block of the same file, so
+it works opened from disk with no network. Page images are bounded so that
+a long document still gives a file a browser opens: each page looked at is
+drawn at 420 pixels on the long side behind its boxes (at most 300 pages;
+a count of pages, not of bytes) and at 900 for the viewer while those stay
+under about 8 MB of JPEG; the other pages at 420 for the viewer, the pages
+taken in some other way first, under about 4 MB of JPEG; at most 800 pages
+drawn in all (a page looked at, drawn at both sizes, counts once). The file
+holds each image as base64, a third more than its JPEG. The report says how
+many pages each cap left out and the images' size as they sit in the file,
+and a page with no image still shows its outline where the record gives one
+and lists its looks. Measured on made-up 200-page PDFs (drawing sheets,
+report pages, scans) with every page looked at: a page of about 17.5 MB,
+built in 11 to 17 s; with one page in five looked at, about 10.5 MB. A
+noisier made-up raster with every page looked at gave a 33 MB page that
+still opened. A record with a transcript and no `activity.jsonl` now lists each
+turn's question and its answer (and the files shown with it).
+
+Image calls: where a turn's record keeps its own count (`image_calls` on
+its `turn_end`, from 1.2.0; with `image_limit` when a ceiling was set and
+`image_calls_refused` when the ceiling refused any), the totals add an
+"Image calls" row under "Vision calls" with one sentence saying what each
+counts, and the notes list each turn's image calls against its ceiling,
+beside a step cap reached. The two can differ: vision calls are the vision
+model's answers in the activity log, the vision probe's included; image
+calls are the images the turn counted as sent, each once with its retries
+(a page looked at twice counts twice), refused ones not included. A record
+without the count gives the page it gave before.
 
 ## Licence
 
