@@ -17,7 +17,8 @@ WHAT. The model LOOKS and nothing else:
 * ``analyze_image`` — an uploaded picture, shown;
 * ``page_count`` — how many pages a PDF has and their sizes, nothing more;
 * ``task`` — a helper with the same looking tools and the same short rules,
-  for splitting a long set;
+  for splitting a long set; its answer comes back with the open items its
+  tools flagged, by the default build's reader's own code (BACKLOG DR-50);
 * ``write_docx`` and ``mark_up`` — the page's purpose includes handing back
   files, so the two output tools stay (``mark_up`` takes a location as the
   zoom it came from: view + image_box).
@@ -234,10 +235,31 @@ def _helper_tool(model, engine, helper_tools: list,
             return (f"The helper failed: {type(exc).__name__}: "
                     f"{str(exc)[:300]}. Look yourself, or hand it a smaller "
                     f"job.")
-        return _final_text(result)
+        return _with_open_items(_final_text(result), result, description)
 
     return StructuredTool.from_function(task, name="task",
                                         description=TASK_DESCRIPTION)
+
+
+def _with_open_items(answer: str, result, description: str) -> str:
+    """The helper's answer with the open items its own tools flagged added
+    after it, whether or not the answer names them (BACKLOG DR-50): the
+    same rules and the same words as the default build's reading helper
+    gets (``keep_work.open_items`` and ``open_items_note``), read from a
+    record made of the helper's own messages. No file is kept, as this
+    build has no tool to read one, so the note names none. A helper with
+    no open item hands back its answer as before."""
+    from aec_agent_core.deep import keep_work
+    try:
+        rec = keep_work.record_of_messages(
+            (result or {}).get("messages"), subagent="page_looker",
+            brief=description)
+        items = keep_work.open_items(rec)
+    except Exception:  # noqa: BLE001 - the answer goes back unchanged
+        return answer
+    if not items:
+        return answer
+    return answer.rstrip() + "\n\n" + keep_work.open_items_note(items, None)
 
 
 def build_minimal_agent(model, *, engine=None,

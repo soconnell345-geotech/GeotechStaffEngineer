@@ -41,7 +41,9 @@ helper did:
   answer named them. Only a helper that stopped or gave up is noted on the
   turn (:attr:`TurnScope.kept_files`).
   Document Review names its reader; the geotech page names none, so its
-  helpers get what they always got.
+  helpers get what they always got. The minimal build's helper is not a
+  ``task`` call this wraps: it adds the same open items to its own answer,
+  from a record made of its messages (:func:`record_of_messages`; DR-50).
 
 Nothing here changes a tool's result except a ``task`` result that kept a
 file, whose helper saved files (their names are added, BACKLOG RI-31) or
@@ -682,6 +684,30 @@ class HelperRecorder(AgentMiddleware):
         result = await handler(request)
         self._record(request, result)
         return result
+
+
+def record_of_messages(messages, subagent: str = "",
+                       brief: str = "") -> HelperRecord:
+    """A :class:`HelperRecord` made after the fact from a finished helper's
+    own conversation: its model replies with their tool calls and its tool
+    results, in order (the brief and any other message are skipped).
+
+    For a helper that does not run as a ``task`` call :class:`KeepWork`
+    wraps, so nothing recorded it as it went: the minimal build's helper
+    (BACKLOG DR-50). Its final state holds each result as the helper
+    received it (the inline images are added to a request, never to the
+    state), so :func:`open_items` reads this record as it reads one
+    :class:`HelperRecorder` kept. Setting no running helper leaves
+    everything that reads :func:`current_helper` as it was."""
+    rec = HelperRecord("", subagent, brief)
+    for m in messages or ():
+        if isinstance(m, ToolMessage):
+            rec.add_result(getattr(m, "name", None),
+                           getattr(m, "tool_call_id", None) or "",
+                           _text(m.content), getattr(m, "status", None))
+        elif getattr(m, "type", "") == "ai":
+            rec.add_model(m)
+    return rec
 
 
 # ---------------------------------------------------------------------------
@@ -1954,7 +1980,8 @@ __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
            "TurnStopped", "stop_requested", "check_stop", "note_budget",
            "note_primary_model_call", "turn_model_calls",
            "extra_model_calls", "take_extra_model_call",
-           "current_helper", "HelperRecorder", "KeepWork",
+           "current_helper", "HelperRecorder", "record_of_messages",
+           "KeepWork",
            "note_budget_reached", "gave_up", "summary_paragraph",
            "saved_files", "saved_note", "SAVED_FILES_HINT_HOOK",
            "DEFAULT_SAVED_FILES_HINT", "save_held_records",
