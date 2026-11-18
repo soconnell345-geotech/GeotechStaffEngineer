@@ -54,6 +54,38 @@ name of a published code, manual or work (a designation such as an agency
 manual's, or an author and year) is another document's page and is not
 checked here. Pages are 0-based inside this module, as in every tool.
 
+WHAT DOES NOT COUNT AS A PAGE NO TOOL OPENED (repairs of 2026-11-18, from
+an offline pass over saved runs; none of them adds a firing). Only
+``never_opened`` makes the note; each of these is recorded under its own
+list instead:
+
+* ``page_map``, also for a page whose statement (the sentence part, list
+  item or table row that cites it) says only what a structure result
+  (``open_document``, ``document_page_map``, ``document_structure``...)
+  said of that page: :func:`_described` gives the rule ("PDF p. 4 is
+  blank", "PDF pp. 7-11: Appendix A, boring logs", "PDF page 8 duplicates
+  page 3"). The row keeps the words that matched (``matched``).
+* ``named_unread``: a page the answer itself names as not opened, not
+  needed, or offered for a look ("PDF pages 10 and 14 were not viewed",
+  "Not read: PDF page 6", "I can look at the scan (PDF p. 5)").
+* ``unverified``, also for a citation said to be printed ("printed page
+  49", "chapter page 12-16"), or written as a chapter-page number under a
+  one-page lead ("p. 1-3", a column headed "Page"), that no page of the
+  documents read is known to print: in a document whose page map knows no
+  printed numbers, "1-3" is one printed page, not PDF pages 1 to 3.
+* nothing at all for a printed number given beside the PDF page of the
+  same place ("printed page 1-3; PDF page 13", a row with a "Page" and a
+  "PDF page" column): the PDF page decides.
+
+A page whose review markups ``document_markups`` listed counts as opened
+for a citation (the markup was read whole), and so does a page a reference
+reader (:data:`REFERENCE_TOOLS`, the geotech page's) rendered and read,
+where the conversation has no document of its own or the citation's line
+names that reference (its figure or table number, its example id). A run
+of printed labels ("pp. 4-1 to 4-3") is one citation of three pages. These
+are read only by the answer check: what ``write_diggs`` is told
+(:func:`record_entries`) and the photograph-page check are as before.
+
 PHOTOGRAPH PAGES NOTHING LOOKED AT (BACKLOG DR-48). At turn end the same
 record answers a second question: which photograph pages of the attached
 documents did no tool or helper look at (``analyze_pdf_page``,
@@ -80,6 +112,7 @@ by itself, with no switch.
 
 from __future__ import annotations
 
+import bisect
 import contextlib
 import contextvars
 import json
@@ -114,6 +147,14 @@ OPENING_TOOLS = TEXT_TOOLS + LOOK_TOOLS + SWEEP_TOOLS + GRID_TOOLS
 #: page was not opened.
 HIT_TOOLS = ("search_document", "find_quantities", "digest_search",
              "document_markups", "find_like")
+#: The tool that lists a document's review markups, each with its page:
+#: an answer citing a markup's page cites what the markup says, read whole.
+MARKUP_TOOLS = ("document_markups",)
+#: The geotech page's readers of a reference library page: each renders a
+#: page of a reference PDF (a figure, a table, a worked example's printed
+#: source) and reads it with vision (BACKLOG EV-18, 2026-10-20 note).
+REFERENCE_TOOLS = ("read_reference_figure", "read_reference_table",
+                   "view_worked_example_source")
 
 #: How a page was reached (``hows``): read as text, looked at, asked about by
 #: a sweep, reached by a text tool and found to have no text layer, named in
@@ -280,6 +321,20 @@ class PagesOpened:
     #: document key -> 0-based photograph pages the model was already told
     #: nothing looked at (``GEOTECH_PHOTO_PAGES``), earlier in the record.
     photos_told: Dict[str, Set[int]] = field(default_factory=dict)
+    #: document key -> 0-based page -> what a structure tool's result said
+    #: of the page (its kind, its title or heading, its duplicate flag...),
+    #: as text. Only the answer check reads it (:func:`check_answer`).
+    facts: Dict[str, Dict[int, List[str]]] = field(default_factory=dict)
+    #: document key -> 0-based pages whose review markups a markup listing
+    #: returned. Only the answer check reads it.
+    markups: Dict[str, Set[int]] = field(default_factory=dict)
+    #: reference PDF key -> 0-based page a reference reader rendered and
+    #: read -> the printed page labels its result gave. Kept apart from
+    #: ``pages``: a reference is not one of the conversation's documents.
+    references: Dict[str, Dict[int, Set[str]]] = field(default_factory=dict)
+    #: reference PDF key -> what the answer may name it by (its figure or
+    #: table number, its example id, its reference, its file name).
+    reference_names: Dict[str, Set[str]] = field(default_factory=dict)
 
     def looked(self, key: str) -> Set[int]:
         """The pages of one document something looked at: a look, or a
@@ -365,6 +420,13 @@ class _ActivityState:
         self.sheet_seen: List[Tuple[str, str, int]] = []
         #: document key -> 0-based photograph pages already told.
         self.photos_told: Dict[str, Set[int]] = {}
+        #: (ref kind, ref value) -> 0-based page -> structure facts.
+        self.facts: Dict[Tuple[str, str], Dict[int, List[str]]] = {}
+        #: (ref kind, ref value, page) of every page a markup listing named.
+        self.markups: List[Tuple[str, str, int]] = []
+        #: reference key -> page -> printed labels, and its names.
+        self.references: Dict[str, Dict[int, Set[str]]] = {}
+        self.reference_names: Dict[str, Set[str]] = {}
 
 
 _ACTIVITY:"OrderedDict[str, _ActivityState]" = OrderedDict()
@@ -601,6 +663,249 @@ def _note_told(st: _ActivityState, photos: Any) -> None:
             st.photos_told.setdefault(doc_key(name), set()).update(got)
 
 
+# -- what structure results say of each page (the answer check) --------------
+
+#: A page kind (planlens' page map) in the words an answer uses for it.
+_KIND_WORDS = {"blank": "blank empty", "scanned": "scanned scan image",
+               "mixed": "mixed text graphics figure",
+               "drawing_sheet": "drawing sheet", "photos": "photos photograph"}
+#: Numbers a structure row gives that a page prints or is counted by (a
+#: printed page number, a sheet number, a word count); other numbers in a
+#: row (a segment id, a rotation) are not facts about the page.
+_FACT_NUMBERS = ("printed_page", "printed_of", "label", "sheet", "words",
+                 "n_pages", "sheet_count", "printed_pages")
+#: What a page flagged as a duplicate (and the page it repeats) is said to
+#: be, in the words an answer uses for it.
+_DUPLICATE_WORDS = "duplicate duplicates copy repeat repeats same identical " \
+                   "matches exactly"
+#: Row keys that are bookkeeping, not facts about the page.
+_FACT_SKIP = ("handle", "source", "look", "evidence", "duplicate_rule",
+              "rule", "bbox", "confidence", "text_source")
+#: Most facts kept for one page, and the length of each.
+MAX_FACTS = 16
+MAX_FACT_CHARS = 300
+
+
+def _kind_words(kind: Any) -> str:
+    k = str(kind or "").strip().lower()
+    return _KIND_WORDS.get(k, k.replace("_", " "))
+
+
+def _key_words(key: Any) -> str:
+    """A page list's key as words: ``duplicate_pages`` -> "duplicate",
+    ``pages_without_text_layer`` -> "without text layer"."""
+    return " ".join(w for w in str(key).lower().split("_")
+                    if w and w not in ("pages", "page", "by", "with"))
+
+
+def _add_fact(out: Dict[int, List[str]], page: Any, text: Any) -> None:
+    if not isinstance(page, int) or isinstance(page, bool) or page < 0:
+        return
+    text = str(text or "").strip()[:MAX_FACT_CHARS]
+    if not text:
+        return
+    got = out.setdefault(page, [])
+    if len(got) < MAX_FACTS and text not in got:
+        got.append(text)
+
+
+def _row_pages(obj: dict) -> List[int]:
+    """The 0-based pages one structure row is about: its ``page``, or its
+    ``pages`` when that is a page list (not a list of rows)."""
+    page = obj.get("page")
+    if isinstance(page, int) and not isinstance(page, bool):
+        return [page]
+    pages = obj.get("pages")
+    if isinstance(pages, list) and not all(
+            isinstance(p, int) and not isinstance(p, bool) for p in pages):
+        return []
+    if isinstance(pages, (str, list)) and pages:
+        got = _pages(pages)
+        return got if len(got) <= MAX_RANGE else []
+    return []
+
+
+#: Keys of an outline (bookmark) list: entries of ``level``, ``title`` and
+#: the 0-based ``page`` each starts on.
+_OUTLINE_KEYS = ("toc", "outline", "bookmarks")
+
+
+def _outline_spans(entries: List[Any], n_pages: Optional[int],
+                   out: Dict[int, List[str]]) -> None:
+    """An outline entry names the page its part starts on; the pages after
+    it, up to the next entry of the same or a higher level, are in that
+    part too (the last entry's run to the document's end, when the page
+    count is known and the list was not cut short)."""
+    rows = []
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        p, title = e.get("page"), e.get("title")
+        if not isinstance(p, int) or isinstance(p, bool) or p < 0 \
+                or not title:
+            continue
+        lvl = e.get("level")
+        rows.append((p, lvl if isinstance(lvl, int) else 1, str(title)))
+    for i, (p, lvl, title) in enumerate(rows):
+        end = next((q - 1 for q, l2, _t in rows[i + 1:] if l2 <= lvl), None)
+        if end is None:
+            end = n_pages - 1 if isinstance(n_pages, int) else p
+        for x in range(p + 1, min(end, p + MAX_RANGE) + 1):
+            _add_fact(out, x, title)
+
+
+def _structure_facts(obj: Any, out: Dict[int, List[str]], depth: int = 0,
+                     under: str = "", n_pages: Optional[int] = None) -> None:
+    """What a structure result says of each 0-based page it names: a row's
+    own words (title, heading, kind, label...) for the pages the row is
+    about, a page list's key for the pages on it ("duplicate_pages",
+    ``pages_by_kind``), an outline entry's title for the pages of its part,
+    never the viewer's ``pdf_*`` twins."""
+    if depth > 7:
+        return
+    if isinstance(obj, dict):
+        n = obj.get("n_pages")
+        if isinstance(n, int) and not isinstance(n, bool) and n > 0:
+            n_pages = n
+        for key in _OUTLINE_KEYS:
+            if isinstance(obj.get(key), list):
+                _outline_spans(obj[key], None if obj.get(key + "_truncated")
+                               else n_pages, out)
+        rows = _row_pages(obj)
+        if rows:
+            bits = [_key_words(under)] if under else []
+            for k, v in obj.items():
+                key = str(k)
+                if key in ("page", "pages") or key in _FACT_SKIP \
+                        or key.startswith(("pdf_", "next")) \
+                        or isinstance(v, (dict, list)) \
+                        or v is None or v == "" or v is False:
+                    continue
+                if key in ("kind", "role"):
+                    bits.append(_kind_words(v))
+                elif key == "duplicate_of":
+                    bits.append(_DUPLICATE_WORDS + " second")
+                    _add_fact(out, v, _DUPLICATE_WORDS + " original first")
+                elif key == "needs_ocr":
+                    bits.append("no text layer scan")
+                elif key == "n_markups":
+                    if isinstance(v, int) and v > 0:
+                        bits.append("markups")
+                elif v is True:
+                    bits.append(_key_words(key))
+                elif isinstance(v, (int, float)):
+                    if key in _FACT_NUMBERS:
+                        bits.append(f"{_key_words(key)} {v}")
+                else:
+                    bits.append(str(v))
+            text = " ".join(b for b in bits if b)
+            for p in rows:
+                _add_fact(out, p, text)
+        for k, v in obj.items():
+            key = str(k)
+            if key.startswith(("pdf_", "next")) or key in ("hint", "note",
+                                                           "look"):
+                continue
+            if key == "pages_by_kind" and isinstance(v, dict):
+                for kind, runs in v.items():
+                    got = _pages(runs)
+                    for p in got[:MAX_RANGE]:
+                        _add_fact(out, p, _kind_words(kind))
+            elif isinstance(v, str) and key != "pages" and (
+                    key.endswith("_pages") or key.startswith("pages_")):
+                for p in _pages(v)[:MAX_RANGE]:
+                    _add_fact(out, p, _key_words(key))
+            elif isinstance(v, (dict, list)):
+                _structure_facts(v, out, depth + 1, key, n_pages)
+    elif isinstance(obj, list):
+        for v in obj[:5000]:
+            _structure_facts(v, out, depth + 1, under, n_pages)
+
+
+def _note_facts(st: _ActivityState, ref: Tuple[str, str], data: dict
+                ) -> None:
+    if not ref[1]:
+        return
+    got: Dict[int, List[str]] = {}
+    _structure_facts(data, got)
+    if not got:
+        return
+    mine = st.facts.setdefault(ref, {})
+    for page, texts in got.items():
+        for text in texts:
+            _add_fact(mine, page, text)
+
+
+#: A markup listing's compact row: "p3 (A-2) callout: ..." (0-based page).
+_MARKUP_ROW = re.compile(r"^\s*p(\d{1,5})\b")
+
+
+def _note_markups(st: _ActivityState, args: dict, result: Any) -> None:
+    """The pages of the review markups a markup listing returned (a row is
+    a compact string "p3 ..." or a dict with its ``page``)."""
+    data = _json(result)
+    if data is None or data.get("error"):
+        return
+    rows = data.get("markups")
+    if not isinstance(rows, list):
+        return
+    ref = _ref_of(args, data)
+    if not ref[1]:
+        return
+    for row in rows:
+        page = None
+        if isinstance(row, str):
+            m = _MARKUP_ROW.match(row)
+            page = int(m.group(1)) if m else None
+        elif isinstance(row, dict):
+            page = row.get("page")
+        if isinstance(page, int) and not isinstance(page, bool) \
+                and page >= 0:
+            st.markups.append((ref[0], ref[1], page))
+
+
+def _note_reference(st: _ActivityState, args: dict, result: Any) -> None:
+    """The reference page(s) a reference reader rendered and read: its
+    ``pdf_page_index`` (a figure, a worked example's source page) or each
+    row of ``pages_read`` that has no error (a table), with the printed
+    page its result gives, under the reference PDF's file name."""
+    data = _json(result)
+    if data is None or data.get("error"):
+        return
+    key = doc_key(data.get("source") or data.get("source_doc")
+                  or args.get("reference") or args.get("example_id") or "")
+    if not key:
+        return
+    pages: List[int] = []
+    rows = data.get("pages_read")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and not row.get("error"):
+                idx = row.get("pdf_page_index")
+                if isinstance(idx, int) and not isinstance(idx, bool):
+                    pages.append(idx)
+    else:
+        idx = data.get("pdf_page_index")
+        if not isinstance(idx, int) or isinstance(idx, bool):
+            pdf = data.get("pdf_page")
+            idx = pdf - 1 if isinstance(pdf, int) \
+                and not isinstance(pdf, bool) else None
+        if isinstance(idx, int):
+            pages.append(idx)
+    printed = data.get("printed_page")
+    mine = st.references.setdefault(key, {})
+    for i, page in enumerate(p for p in pages if p >= 0):
+        labels = mine.setdefault(page, set())
+        if i == 0 and printed not in (None, ""):
+            labels.add(_norm_label(printed))
+    names = st.reference_names.setdefault(key, set())
+    names.add(_norm_label(os.path.splitext(key)[0]))
+    for k in ("figure_number", "table_number", "example_id", "reference"):
+        v = data.get(k) or args.get(k)
+        if v not in (None, ""):
+            names.add(_norm_label(v))
+
+
 def _feed_activity(st: _ActivityState, path: str) -> None:
     """Read what was added to ``path`` since the last call."""
     try:
@@ -666,7 +971,22 @@ def _feed_activity(st: _ActivityState, path: str) -> None:
             data = _json(result)
             if data is not None and not data.get("error"):
                 _named_runs(data, st.runs)
+                try:
+                    _note_facts(st, _ref_of(args, data), data)
+                except Exception:  # noqa: BLE001 - a fact the check lacks
+                    pass
             continue
+        if name in REFERENCE_TOOLS:
+            try:
+                _note_reference(st, args, result)
+            except Exception:  # noqa: BLE001
+                pass
+            continue
+        if name in MARKUP_TOOLS:
+            try:
+                _note_markups(st, args, result)
+            except Exception:  # noqa: BLE001
+                pass
         ref, pages = _reached_by_call(name, args, result)
         if not ref or not ref[1]:
             continue
@@ -691,12 +1011,35 @@ def _from_activity(path: str, out: PagesOpened) -> bool:
         sheet_seen = list(st.sheet_seen)
         for key, told in st.photos_told.items():
             out.photos_told.setdefault(key, set()).update(told)
-    for kind, value, page in sheet_seen:
+        facts = {ref: {p: list(v) for p, v in rows.items()}
+                 for ref, rows in st.facts.items()}
+        markups = list(st.markups)
+        for key, rows in st.references.items():
+            mine = out.references.setdefault(key, {})
+            for page, labels in rows.items():
+                mine.setdefault(page, set()).update(labels)
+        for key, names in st.reference_names.items():
+            out.reference_names.setdefault(key, set()).update(names)
+
+    def key_of(kind: str, value: str) -> str:
         if kind == "handle":
             shown = handle_names.get(value) or _handle_name(value)
-            key = doc_key(shown) if shown else value
-        else:
-            key = doc_key(value)
+            return doc_key(shown) if shown else value
+        return doc_key(value)
+
+    for (kind, value), rows in facts.items():
+        key = key_of(kind, value)
+        if key:
+            mine = out.facts.setdefault(key, {})
+            for page, texts in rows.items():
+                for text in texts:
+                    _add_fact(mine, page, text)
+    for kind, value, page in markups:
+        key = key_of(kind, value)
+        if key:
+            out.markups.setdefault(key, set()).add(page)
+    for kind, value, page in sheet_seen:
+        key = key_of(kind, value)
         if key:
             out.sheet_seen.setdefault(key, set()).add(page)
     for kind, value, page, how in reached:
@@ -926,6 +1269,11 @@ _SEP = re.compile(r"(?i)[ \t]*(?:,[ \t]*(?:and\b|&|or\b)?|\band\b|&|\bor\b"
                   r"|\bto\b|\bthrough\b|\bthru\b)[ \t]*")
 #: "page 3 of 10": a page of a count, not two pages.
 _OF_COUNT = re.compile(r"(?i)[ \t]*(?:of|/)[ \t]*\d")
+#: "pages 27 of 213 read", "12 of 40 pages viewed": how many, not which.
+_COUNT_READ = re.compile(
+    r"(?i)[ \t]*(?:of|/)[ \t]*\d[\d,]*[ \t]+(?:pages[ \t]+)?"
+    r"(?:(?:were|are|have[ \t]+been|been)[ \t]+)?"
+    r"(?:read|viewed|opened|skipped|looked|rendered|checked|seen|done)\b")
 #: "page 24 of the PDF", "page 24 in the PDF viewer".
 _OF_PDF = re.compile(r"(?i)\s*(?:of|in)\s+(?:the\s+)?pdf\b")
 #: Where a clause starts, looking back from a citation.
@@ -969,6 +1317,26 @@ class Cited:
     #: Set when the citation sits beside another document's name (a code, a
     #: manual, an author and year): not one of this conversation's pages.
     elsewhere: str = ""
+    #: A run of printed labels ("pp. 4-1 to 4-3": 4-1, 4-2, 4-3), kind
+    #: ``label``; each is one page.
+    labels: List[str] = field(default_factory=list)
+    #: Where the citation's item ends (a table cell: the cell's end).
+    end: int = 0
+    #: In a Markdown table row (the row is the citation's statement).
+    table: bool = False
+    #: Its lead names one page ("page", "p.", a column headed "Page"), not
+    #: several ("pages", "pp.").
+    singular: bool = False
+    #: Said to be a printed number ("printed page 12", "chapter page 3-4",
+    #: "manual page 5-2", a column headed "Printed page").
+    printed: bool = False
+    #: Where the lead it is under starts: the citation's own (``lead``), or
+    #: a lead repeated in the same phrase ("PDF page 10, and PDF page 14":
+    #: the second "PDF page"). Pages under one group are one subject.
+    group: int = -1
+
+    def all_labels(self) -> List[str]:
+        return list(self.labels) or ([self.label] if self.label else [])
 
 
 def _norm_label(text: Any) -> str:
@@ -1009,8 +1377,13 @@ def _item_cited(m: "re.Match", pdf: bool, start: int) -> Optional[Cited]:
 def _scan_items(text: str, pos: int, pdf: bool) -> Tuple[List[Cited], int]:
     """The items of one citation starting at ``pos`` (after its lead): each
     with whether it counts as a PDF page (a lead repeated after a separator,
-    "PDF pages 3 and page 7", sets that for the items after it)."""
+    "PDF pages 3 and page 7", sets that for the items after it), and where
+    that repeated lead starts (``group``; -1 under the citation's own)."""
     found: List[Tuple["re.Match", bool]] = []
+    #: the separator before each item after the first ("to", ",", ...)
+    seps: List[str] = [""]
+    groups: List[int] = [-1]
+    group = -1
     while True:
         m = _ITEM.match(text, pos)
         if not m:
@@ -1031,12 +1404,56 @@ def _scan_items(text: str, pos: int, pdf: bool) -> Tuple[List[Cited], int]:
             break
         if lead:
             pdf = bool(pdf_lead)
+            group = lead.start()
+        seps.append(s.group(0).strip().lower())
+        groups.append(group)
         pos = nxt
     if found and _OF_PDF.match(text, found[-1][0].end()):
         found = [(m, True) for m, _p in found]
-    out = [c for c in (_item_cited(m, p, m.start()) for m, p in found)
-           if c is not None]
+    if len(found) == 1 and _COUNT_READ.match(text, found[0][0].end()):
+        return [], pos        # "pages 27 of 213 read": a count, no page
+    out: List[Cited] = []
+    for (m, p), sep, grp in zip(found, seps, groups):
+        c = _item_cited(m, p, m.start())
+        if c is None:
+            continue
+        c.end = m.end()
+        c.group = grp
+        if out and sep in _RANGE_SEPS and _merge_labels(out[-1], c):
+            out[-1].end = c.end
+            continue
+        out.append(c)
     return out, pos
+
+
+#: Separators that make two printed labels one run ("4-1 to 4-3").
+_RANGE_SEPS = ("to", "through", "thru")
+#: A printed label of a numbered part: "4-1", "12-15", "A-3".
+_PART_LABEL = re.compile(r"(?i)([a-z]{1,2}|\d{1,4})-(\d{1,4})")
+
+
+def _merge_labels(first: Cited, second: Cited) -> bool:
+    """``first`` becomes the run of printed labels "P-a" to "P-b" when the
+    two name pages of one part P, the second after the first ("4-1 to 4-2",
+    "12-15 through 12-17"); False, and nothing changed, otherwise."""
+    if first.kind == "pdf" or second.kind == "pdf" or first.labels \
+            or second.labels:
+        return False
+    a = _PART_LABEL.fullmatch(first.label or "")
+    b = _PART_LABEL.fullmatch(second.label or "")
+    if not a or not b or a.group(1).lower() != b.group(1).lower():
+        return False
+    lo, hi = int(a.group(2)), int(b.group(2))
+    if hi <= lo or hi - lo > MAX_RANGE:
+        return False
+    part = a.group(1).lower()
+    first.labels = [f"{part}-{n}" for n in range(lo, hi + 1)]
+    first.shown = (f"pages {first.shown.split(' ', 1)[-1]} to "
+                   f"{second.shown.split(' ', 1)[-1]}")
+    first.kind = "label"
+    first.numbers = []
+    first.label = ""
+    return True
 
 
 def _table_citations(text: str) -> List[Cited]:
@@ -1060,6 +1477,7 @@ def _table_citations(text: str) -> List[Cited]:
         cells = [c.strip() for c in head.strip().strip("|").split("|")]
         cols = {j: "pdf" in c.lower() for j, c in enumerate(cells)
                 if head_re.search(c)}
+        heads = {j: cells[j] for j in cols}
         j = i + 2
         while j < len(lines) and lines[j].count("|") >= 1 \
                 and lines[j].strip():
@@ -1081,9 +1499,16 @@ def _table_citations(text: str) -> List[Cited]:
                         pdf = True
                     items, _ = _scan_items(sub, lead.end() if lead else 0,
                                            pdf)
+                    head = heads.get(k, "")
                     for c in items:
                         c.start += start
                         c.lead = start
+                        c.group = start + c.group if c.group >= 0 else start
+                        c.end = start + len(sub)
+                        c.table = True
+                        c.singular = not _PLURAL_HEAD.search(
+                            lead.group(0) if lead else head)
+                        c.printed = bool(_PRINTED_WORD.search(head))
                         out.append(c)
                 pos_in_row += len(cell) + 1
             j += 1
@@ -1125,6 +1550,14 @@ def _elsewhere(text: str, start: int, doc_names: Sequence[str]) -> str:
     return ""
 
 
+#: A lead or a column head that names several pages.
+_PLURAL_HEAD = re.compile(r"(?i)\b(?:pages|pp|pgs)\b")
+#: A word that makes a page number a printed one, as a column head or just
+#: before the lead: "printed page 12", "chapter page 3-4", "manual p. 5-2".
+_PRINTED_WORD = re.compile(r"(?i)\b(?:printed|chapter|manual)\b")
+_PRINTED_BEFORE = re.compile(r"(?i)\b(?:printed|chapter|manual)[ \t]+$")
+
+
 def find_citations(text: Any, doc_names: Sequence[str] = ()) -> List[Cited]:
     """Every page citation in ``text``, in order, one per page or range."""
     t = str(text or "").translate(_DASHES)
@@ -1135,8 +1568,15 @@ def find_citations(text: Any, doc_names: Sequence[str] = ()) -> List[Cited]:
             if any(a <= lead.start() < b for a, b in taken):
                 continue
             items, end = _scan_items(t, lead.end(), pdf)
+            singular = not _PLURAL_HEAD.search(lead.group(0))
+            printed = bool(_PRINTED_BEFORE.search(
+                t[max(0, lead.start() - 12):lead.start()]))
             for c in items:
                 c.lead = lead.start()
+                if c.group < 0:
+                    c.group = c.lead
+                c.singular = singular
+                c.printed = printed
             if items:
                 out.extend(items)
                 taken.append((lead.start(), end))
@@ -1147,7 +1587,8 @@ def find_citations(text: Any, doc_names: Sequence[str] = ()) -> List[Cited]:
     uniq: List[Cited] = []
     for c in sorted(out, key=lambda c: c.start):
         c.elsewhere = _elsewhere(t, c.lead, doc_names)
-        key = (c.kind, tuple(c.numbers), c.label, bool(c.elsewhere))
+        key = (c.kind, tuple(c.numbers), c.label, tuple(c.labels),
+               bool(c.elsewhere))
         if key in seen:
             continue
         seen.add(key)
@@ -1224,6 +1665,301 @@ def _range_text(pages: Iterable[int]) -> str:
             else f"PDF pages {compact(ps, 1)}")
 
 
+# -- what the answer says of a cited page -------------------------------------
+
+#: Where a statement ends: a sentence end, a semicolon, a line break, or a
+#: turn to another subject (", but", ", then").
+_STATEMENT_END = re.compile(
+    r"[.!?](?=[\s*_)\]]|$|[A-Z])|;|\n"
+    r"|(?i:,?[ \t]+(?:but|while|whereas|although|though|however)\b)"
+    r"|(?i:,[ \t]+then\b)")
+
+#: The answer says a page was not opened, or offers it for a look: it names
+#: the page, it does not cite it as where something came from. Anywhere in
+#: the citation's statement ("PDF pages 10 and 14 were not viewed", "Not
+#: read: PDF page 6", "if the stamp is on the scan (PDF p. 5), I can look
+#: there").
+_UNREAD = re.compile(
+    r"(?i)(?:"
+    r"\b(?:not|never)\s+(?:yet\s+|been\s+|be\s+)*"
+    r"(?:viewed|read|opened|looked\s+at|rendered)\b"
+    r"|\b(?:did|do|does|have|has|had|was|were|is|are|could|would|will)"
+    r"(?:n['’]t|\s+not)\s+(?:yet\s+)?(?:been\s+)?"
+    r"(?:view|read|open|look|render)\w*"
+    r"|\b(?:cannot|can['’]t)\s+(?:view|read|open|look|see|render)\w*"
+    r"|\bun(?:read|viewed|opened)\b"
+    r"|\bno\s+tool\s+(?:opened|read|looked)\b"
+    r"|\b(?:i|we)(?:\s+(?:can|could|will|would|may|might)|['’]ll)\s+"
+    r"(?:also\s+)?(?:look|view|open|check|read|render|zoom)\b"
+    r"|\b(?:want|like)\s+me\s+to\s+(?:look|view|open|check|read|render)\b"
+    r"|\bshall\s+i\s+(?:look|view|open|check|read|render)\b"
+    r"|\bneeds?\s+(?:to\s+be\s+)?(?:viewed|looked\s+at|opened|rendered"
+    r"|viewing|looking\s+at|a\s+look)\b"
+    r"|\b(?:should|must|could|can)\s+(?:also\s+)?(?:still\s+)?be\s+"
+    r"(?:viewed|looked\s+at|opened|rendered)\b"
+    r")")
+#: The same in words that also say other things ("not needed", "should be
+#: checked"): only right after the citation, of which it is said ("PDF page
+#: 6 (the site plan) was not needed", "the blank p. 4 should be checked").
+_UNREAD_AFTER = re.compile(
+    r"(?i)[\s)\]*,:]*(?:\([^)\n]{0,120}\)[\s,]*)?"
+    r"(?:(?:which|that|were|was|is|are|has|have|had|been|being|also|still"
+    r"|yet|i|we)\s+)*"
+    r"(?:(?:not|\w*n['’]t)\s+(?:yet\s+)?(?:been\s+)?"
+    r"(?:needed|checked|reviewed|used|consulted)"
+    r"|should\s+(?:also\s+)?(?:still\s+)?be\s+(?:checked|reviewed|confirmed)"
+    r"|needs?\s+(?:to\s+be\s+)?(?:checked|reviewed|confirmed|checking))\b")
+
+#: Words of a statement that say nothing of what is on a page.
+_PLAIN_WORDS = frozenset("""
+page pages printed print viewer this that these those there here with from
+into onto than then them they their have been were which what when where
+while each both also only just very more most some such other another about
+after before between under over same like does will would could should
+shows show shown holds hold contains contain carries carry gives give runs
+starts start begins begin ends follow follows following appears appear
+seems look looks numbered number numbers title titled heading headed
+headings labelled labeled label named called reads read says said lists
+listed flagged flags flag marks marked tools tool probably probable likely
+apparently document documents file continue continues continued""".split())
+_WORDS = re.compile(r"[A-Za-z][A-Za-z'’]*[A-Za-z]")
+#: A number or identifier in a statement: "B-3", "2026", "1:100", "4.0".
+_IDENT = re.compile(r"(?<![\w])(?:[A-Za-z]{1,3}[-.]?)?\d[\w.:/×-]*")
+_FACT_WORDS = re.compile(r"[a-z][a-z']+")
+#: Most pages one citation may name and still be read as "what the page map
+#: said".
+MAX_DESCRIBED = 200
+#: Words that may stand between a printed page number and the PDF page the
+#: answer gives for the same place ("printed page 12 (PDF page 14)", "PDF
+#: page 13, printed page 1-3").
+_PAIR_GAP = re.compile(
+    r"(?i)(?:[\s,;:=()\[\]/-]|\b(?:printed|pdf|viewer|manual|chapter|in|a"
+    r"|the|of|on|at|or|is)\b)*")
+
+
+def _grp(c: Cited) -> int:
+    """Where the lead a citation's page is under starts."""
+    return c.group if c.group >= 0 else c.lead
+
+
+def _masked(text: str, cites: Sequence[Cited]) -> str:
+    """``text`` with every citation's phrase blanked (same length): a
+    statement's words and numbers are then its own, not the page numbers."""
+    chars = list(text)
+    for c in cites:
+        for i in range(max(0, c.lead), min(len(chars), max(c.end, c.start))):
+            if chars[i] != "\n":
+                chars[i] = " "
+    return "".join(chars)
+
+
+def _statement_span(masked: str, c: Cited) -> Tuple[int, int]:
+    """Where the statement a citation sits in starts and ends: its table
+    row, else from the last statement end before it to the first after."""
+    if c.table:
+        lo = masked.rfind("\n", 0, c.lead) + 1
+        hi = masked.find("\n", c.lead)
+        return lo, hi if hi >= 0 else len(masked)
+    lo = max(0, c.lead - 400)
+    for m in _STATEMENT_END.finditer(masked, lo, c.lead):
+        lo = m.end()
+    end = max(c.end, c.lead)
+    m = _STATEMENT_END.search(masked, end, end + 400)
+    return lo, m.start() if m else min(len(masked), end + 400)
+
+
+def _statement(masked: str, c: Cited) -> str:
+    lo, hi = _statement_span(masked, c)
+    return masked[lo:hi]
+
+
+#: A number in a statement whose page citations are blanked: a value.
+_VALUE = re.compile(r"\d")
+#: A word that says something (four letters or more).
+_CONTENT = re.compile(r"[A-Za-z]{4}")
+
+
+def _group_starts(cites: Sequence[Cited]) -> List[int]:
+    """Where each lead group of the citations starts, in order."""
+    return sorted({_grp(d) for d in cites})
+
+
+def _other_group(starts: Sequence[int], lo: int, hi: int, mine: int) -> bool:
+    """Whether a lead group other than ``mine`` starts in ``[lo, hi)``."""
+    i = bisect.bisect_left(starts, lo)
+    while i < len(starts) and starts[i] < hi:
+        if starts[i] != mine:
+            return True
+        i += 1
+    return False
+
+
+def _unread_cue(masked: str, c: Cited, cites: Sequence[Cited],
+                starts: Optional[Sequence[int]] = None
+                ) -> Optional["re.Match"]:
+    """A cue in the citation's statement that the answer names its page as
+    unread, said of this page: after it with no other citation between
+    ("PDF page 4 is blank, and PDF page 14 was not viewed" names only page
+    14), or before it with no other citation before the cue ("Not read:
+    PDF page 6, PDF page 9"; not "PDF page 14 was not viewed, and the stamp
+    is on PDF page 10")."""
+    lo, hi = _statement_span(masked, c)
+    end = max(c.end, c.start)
+    if starts is None:
+        starts = _group_starts(cites)
+    for m in _UNREAD.finditer(masked, lo, hi):
+        if m.start() < _grp(c):
+            between = (lo, m.start())
+            # A value given after the page is what the page is cited for
+            # ("The contractor did not read the notes: page 34 gives a
+            # ratio of 0.6"); and with another page between the cue and
+            # this one, the cue is said of this one too only in a bare
+            # list ("Not read: PDF page 6, PDF page 9"; not "I did not
+            # open page 9, and page 34 shows the mix").
+            tail = masked[end:hi]
+            if _VALUE.search(tail) or (
+                    _CONTENT.search(tail) and _other_group(
+                        starts, m.end(), _grp(c), _grp(c))):
+                continue
+        else:
+            between = (end, m.start())
+            # a value between the page and the cue is what the page is
+            # cited for ("Page 34 says the test was not read at 28 days")
+            if _VALUE.search(masked[end:m.start()]):
+                continue
+        if not _other_group(starts, between[0], between[1], _grp(c)):
+            return m
+    m = _UNREAD_AFTER.match(masked, end)
+    return None if m and _VALUE.search(m.group(0)) else m
+
+
+#: Short words that turn a title into a finding ("has no drainage details"):
+#: counted with a statement's other words though under four letters.
+_NEGATIONS = frozenset({"no", "not", "nor"})
+
+
+def _word_in(word: str, facts: Set[str]) -> bool:
+    if word in facts or (word.endswith("s") and word[:-1] in facts):
+        return True
+    if len(word) < 4:
+        return False
+    return any(len(f) >= 4 and (word.startswith(f) or f.startswith(word))
+               for f in facts)
+
+
+def _ident_in(ident: str, text: str) -> bool:
+    return re.search(r"(?<![0-9a-z])" + re.escape(ident) + r"(?![0-9a-z])",
+                     text) is not None
+
+
+def _described(statement: str, units: Sequence[Set[Tuple[str, int]]],
+               facts_of: Callable[[str, int], str]) -> Optional[List[str]]:
+    """The words a statement shares with what structure results said of
+    every page it cites, or ``None`` when it says more than they did.
+
+    The statement must (a) say of EACH cited page something a structure
+    result said of it (a word of its kind, title, heading, label or flag,
+    or one of its numbers), (b) give no number or identifier those results
+    did not give for those pages, and (c) have every one of its other
+    words (page vocabulary left out) among their words: one word more is a
+    claim about the page ("the slope stability results on PDF page 20
+    fail"), and a claim about a page no tool opened must fire."""
+    if not units or len(units) > MAX_DESCRIBED:
+        return None
+    words = []
+    for w in _WORDS.findall(statement):
+        w = re.sub(r"['’]s$", "", w.lower())
+        if (len(w) >= 4 and w not in _PLAIN_WORDS) or w in _NEGATIONS:
+            words.append(w)
+    idents = []
+    for tok in _IDENT.findall(statement):
+        tok = tok.lower().replace("×", "x").rstrip(".:/-")
+        if any(ch.isdigit() for ch in tok):
+            idents.append(tok)
+    if not words and not idents:
+        return None
+    said: Set[str] = set()
+    every: List[str] = []
+    for unit in units:
+        ok = False
+        for k, p in unit:
+            text = facts_of(k, p)
+            if not text:
+                continue
+            every.append(text)
+            fw = set(_FACT_WORDS.findall(text))
+            hit = [w for w in words if _word_in(w, fw)]
+            hit += [i for i in idents if _ident_in(i, text)]
+            if hit:
+                ok = True
+                said.update(hit)
+        if not ok:
+            return None
+    union = " ".join(every)
+    if any(not _ident_in(i, union) for i in idents):
+        return None
+    if words:
+        fw = set(_FACT_WORDS.findall(union))
+        if any(not _word_in(w, fw) for w in words):
+            return None        # a word the page map did not give: a claim
+    return sorted(said)
+
+
+def _introduces(text: str, c: Cited) -> bool:
+    """The citation's line is a heading over what follows: a Markdown
+    heading, a line wholly in bold, or a line ending in a colon, with text
+    under it ("### PDF page 25: Foundation recommendations" over a list of
+    findings). What stands under it is said of the page, so the line is
+    more than the page map's words."""
+    if c.table:
+        return False
+    lo = text.rfind("\n", 0, c.lead) + 1
+    hi = text.find("\n", max(c.end, c.lead))
+    if hi < 0 or not text[hi:hi + 400].strip():
+        return False
+    line = text[lo:hi].strip()
+    return bool(line.startswith("#")
+                or (line.startswith("**") and line.endswith("**"))
+                or line.rstrip("*_ \t").endswith(":"))
+
+
+def _paired(text: str, cites: Sequence[Cited]) -> Dict[int, Cited]:
+    """The citations of a page number that sit beside a PDF page given for
+    the same place: in the same table row, or next to it with nothing
+    between but punctuation and words such as "printed" ("printed page
+    1-3; PDF page 13", "page 238 (PDF page 284)"). Each with the PDF-page
+    citation it sits beside."""
+    out: Dict[int, Cited] = {}
+    # A pair is never across a line break, so only the citations of one
+    # line are compared (an answer of thousands of citations is checked at
+    # every turn's end, also with the switch off).
+    lines: Dict[int, List[Cited]] = {}
+    for d in cites:
+        if d.kind == "pdf" and not d.elsewhere:
+            lines.setdefault(text.rfind("\n", 0, d.lead), []).append(d)
+    for i, c in enumerate(cites):
+        if c.kind == "pdf" or c.elsewhere:
+            continue
+        for d in lines.get(text.rfind("\n", 0, c.lead), ()):
+            if _grp(d) == _grp(c):
+                continue
+            if not c.table and abs(_grp(d) - _grp(c)) > 400:
+                continue          # further apart than any pair's gap
+            if c.table and d.table:
+                if text.rfind("\n", 0, c.lead) == text.rfind("\n", 0,
+                                                              d.lead):
+                    out[i] = d
+                    break
+                continue
+            a, b = (c, d) if _grp(c) < _grp(d) else (d, c)
+            gap = text[max(a.end, a.start):_grp(b)]
+            if len(gap) <= 40 and "\n" not in gap \
+                    and _PAIR_GAP.fullmatch(gap):
+                out[i] = d
+                break
+    return out
+
+
 def check_answer(text: Any, opened: Optional[PagesOpened] = None,
                  record_folder: Optional[str] = None, folder=None,
                  label_source: Optional[LabelSource] = None
@@ -1231,16 +1967,19 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
     """Every page the answer cites, against the pages opened.
 
     Returns ``{"checked", "n_cited", "cited", "never_opened",
-    "partly_opened", "hit_only", "page_map", "unverified",
-    "other_documents", "against"}`` (``checked`` False, with ``why``, when there is no record
-    of the text reads here). Each listed citation is ``{"cited": as written,
-    "pages": the PDF pages it resolved to, ...}``."""
+    "partly_opened", "hit_only", "page_map", "named_unread", "unverified",
+    "other_documents", "against"}`` (``checked`` False, with ``why``, when
+    there is no record of the text reads here). Each listed citation is
+    ``{"cited": as written, "pages": the PDF pages it resolved to, ...}``.
+    Only ``never_opened`` is a page cited that no tool opened; the module's
+    docstring says what goes in each other list."""
     if opened is None and not _CHEAP_HINT.search(str(text or "")):
         return {"checked": True, "n_cited": 0}
     if opened is None:
         opened = pages_opened(record_folder, folder)
     names = [opened.names.get(k, k) for k in opened.documents()]
-    cites = find_citations(text, names)
+    t = str(text or "").translate(_DASHES)
+    cites = find_citations(t, names)
     if not cites:
         return {"checked": True, "n_cited": 0}
     result: Dict[str, Any] = {
@@ -1254,8 +1993,24 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
     result["checked"] = True
     result["against"] = ", ".join(opened.records) or "no record"
     docs = opened.documents()
+    #: every document the record knows, read or only mapped (open_document)
+    known = sorted(set(docs) | set(opened.n_pages))
     source = label_source or planlens_labels
     label_state: Dict[str, Any] = {"loaded": False, "value": None}
+    masked = _masked(t, cites)
+    paired = _paired(t, cites)
+    starts = _group_starts(cites)
+    #: the citations under each lead ("PDF pages 6 and 7": one group)
+    by_group: Dict[int, List[Cited]] = {}
+    for d in cites:
+        by_group.setdefault(_grp(d), []).append(d)
+    all_markups: Set[int] = set().union(*opened.markups.values()) \
+        if opened.markups else set()
+    ref_keys = sorted(opened.references)
+    #: the references a reference reader rendered that count for the
+    #: citation being checked (set for each citation)
+    cur_refs: List[str] = []
+    REF = "ref:"
 
     def labels() -> Optional[Dict[str, Dict[int, Set[str]]]]:
         """Each document's printed page numbers; ``None`` unless every
@@ -1277,17 +2032,69 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
             label_state.update(loaded=True, value=got if ok else None)
         return label_state["value"]
 
+    def numbering() -> str:
+        """How the documents read are numbered in print, as far as their
+        page maps say: ``chapter`` (a page prints "4-2" or "A-3"),
+        ``plain`` (at least half the pages of a document print a plain
+        number), ``none`` (the printed numbers of most pages are not
+        known)."""
+        got = "none"
+        for rows in (labels() or {}).values():
+            plain = 0
+            for ls in rows.values():
+                if any(_PART_LABEL.fullmatch(x) for x in ls):
+                    return "chapter"
+                plain += any(x.isdigit() for x in ls)
+            if rows and 2 * plain >= len(rows):
+                got = "plain"
+        return got
+
     def exists(idx: int) -> bool:
         ns = [opened.n_pages.get(k) for k in docs]
         return bool(docs) and any(n is None or idx < n for n in ns)
 
+    def exists_known(idx: int) -> bool:
+        ns = [opened.n_pages.get(k) for k in known]
+        return bool(known) and any(n is None or idx < n for n in ns)
+
+    def refs_for(c: Cited) -> List[str]:
+        """The rendered references a citation may mean: every one where the
+        conversation has no document of its own, else those its line names
+        (a figure or table number, an example id, the reference)."""
+        if not ref_keys or not docs:
+            return list(ref_keys)
+        lo = t.rfind("\n", 0, c.lead) + 1
+        hi = t.find("\n", max(c.end, c.lead))
+        line = _norm_label(t[lo:hi if hi >= 0 else len(t)])
+        # a name that is a number is not part of a longer one ("5-2" is
+        # not named by "Table 15-2")
+        return [r for r in ref_keys
+                if any(len(n) >= 3 and re.search(
+                    r"(?<![0-9])" + re.escape(n) + r"(?![0-9])", line)
+                       for n in opened.reference_names.get(r, ()))]
+
     # A reading is a list of UNITS, one per page (or printed number) the
     # citation names; a unit is the (document, page) pairs it could be, and
-    # is opened when any of them was. ("", page) = that page of any document.
+    # is opened when any of them was. ("", page) = that page of any document;
+    # ("ref:<file>", page) = a page a reference reader rendered.
     Unit = Set[Tuple[str, int]]
 
+    def status(k: str, p: int) -> str:
+        if k.startswith(REF):
+            return ("opened" if p in opened.references.get(k[len(REF):], {})
+                    else "never")
+        st = opened.status(p, [k] if k else None)
+        if st == "opened":
+            return st
+        if p in (opened.markups.get(k, ()) if k else all_markups):
+            return "opened"            # its review markups were listed
+        if not k and any(p in opened.references.get(r, {})
+                         for r in cur_refs):
+            return "opened"            # a reference reader rendered it
+        return st
+
     def is_open(k: str, p: int, how: str = "opened") -> bool:
-        return opened.status(p, [k] if k else None) == how
+        return status(k, p) == how
 
     def score(units: List[Unit]) -> Tuple[float, int]:
         n = sum(1 for u in units if any(is_open(k, p) for k, p in u))
@@ -1299,18 +2106,67 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
         for w in wanted:
             u = {(k, p) for k, rows in lab.items() for p, ls in rows.items()
                  if w in ls}
+            u |= {(REF + r, p) for r in cur_refs
+                  for p, ls in opened.references.get(r, {}).items()
+                  if w in ls}
             if u:
                 units.append(u)
         return units
 
+    def apart(c: Cited, d: Cited) -> bool:
+        """The PDF page given beside a page number is known to print
+        another number ("the ratio is on page 34; PDF page 1 is the
+        cover"): two places, so the page number is checked by itself.
+        False where the page map knows no printed number for that page."""
+        lab = labels()
+        if not lab:
+            return False
+        wanted = {str(n) for n in c.numbers} | set(c.all_labels())
+        for n in d.numbers:
+            known = [ls for ls in (rows.get(n - 1) for rows in lab.values())
+                     if ls]
+            if not known or any(ls & wanted for ls in known):
+                return False
+        return bool(d.numbers)
+
+    fact_cache: Dict[Tuple[str, int], str] = {}
+
+    def facts_of(k: str, p: int) -> str:
+        """What structure results said of page ``p`` (of document ``k``,
+        or of any document), with its document's page count and the
+        printed numbers its page map gives it, lower case."""
+        if (k, p) not in fact_cache:
+            bits: List[str] = []
+            if not k.startswith(REF):
+                for d in ([k] if k else sorted(set(opened.facts)
+                                                | set(opened.n_pages))):
+                    said = list(opened.facts.get(d, {}).get(p, ()))
+                    if not said:
+                        continue      # no structure result named the page
+                    bits.extend(said)
+                    bits.extend(sorted((labels() or {}).get(d, {})
+                                       .get(p, ())))
+                    n = opened.n_pages.get(d)
+                    if isinstance(n, int) and 0 <= p < n:
+                        bits.append(f"of {n} pages")
+                        if p == n - 1:
+                            bits.append("last final end through until")
+            fact_cache[(k, p)] = " ".join(bits).lower().translate(
+                _DASHES).replace("×", "x")
+        return fact_cache[(k, p)]
+
     lists: Dict[str, List[Dict[str, Any]]] = {
         "never_opened": [], "partly_opened": [], "hit_only": [],
-        "page_map": [], "unverified": [], "other_documents": []}
-    for c in cites:
+        "page_map": [], "named_unread": [], "unverified": [],
+        "other_documents": []}
+    for i, c in enumerate(cites):
         if c.elsewhere:
             lists["other_documents"].append({"cited": c.shown,
                                              "beside": c.elsewhere})
             continue
+        if i in paired and not apart(c, paired[i]):
+            continue          # the PDF page given beside it decides
+        cur_refs[:] = refs_for(c)
         readings: List[Tuple[str, List[Unit]]] = []
         if c.kind in ("pdf", "page") and c.numbers:
             readings.append(("pdf", [{("", n - 1)} for n in c.numbers]))
@@ -1332,14 +2188,91 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
                               "is, not what a page says")
                 name = "page_map"
             lists[name].append(row)
-        if c.kind in ("page", "label") and labels() is not None:
-            if c.kind == "page":
-                readings.append(("printed", printed_units(
-                    [str(n) for n in c.numbers])))
-            if c.label:
-                readings.append(("printed", printed_units([c.label])))
+
+        def fire(row: Dict[str, Any], c: Cited = c,
+                 readings: List[Tuple[str, List[Unit]]] = readings) -> None:
+            """File a citation nothing it could mean was opened: not a
+            citation where the answer names the page as unread, "what the
+            page map said" where that is all it says of the page, else
+            never opened."""
+            if not (mapped and how == "pdf"):
+                stmt = _statement(masked, c)
+                cue = _unread_cue(masked, c, cites, starts)
+                if cue:
+                    row["said"] = re.sub(r"\s+", " ", cue.group(0)).strip(
+                        " )],:*")
+                    row["why"] = ("the answer names this page as not opened, "
+                                  "not needed or still to be looked at: not "
+                                  "a citation of where something came from")
+                    lists["named_unread"].append(row)
+                    return
+                for _how, units in readings:
+                    if _introduces(t, c):
+                        break         # a heading over what is said of it
+                    if _how == "pdf":
+                        # the other pages of the same phrase ("PDF pages 6
+                        # and 7 are the logs of B-1 and B-2"): the statement
+                        # is of all of them
+                        units = units + [
+                            {("", n - 1)} for d in by_group[_grp(c)]
+                            if d is not c
+                            and not d.elsewhere and d.kind in ("pdf", "page")
+                            for n in d.numbers]
+                    # what the statement says of ANOTHER page being unread
+                    # ("..., and PDF page 14 was not viewed") is not said of
+                    # this one
+                    said = _described(_UNREAD.sub(" ", stmt), units,
+                                      facts_of)
+                    if said:
+                        row["matched"] = said
+                        row["why"] = ("what the answer says of the page is "
+                                      "what the page map or the document's "
+                                      "structure said of it: where something "
+                                      "is, not what the page says")
+                        lists["page_map"].append(row)
+                        return
+            file("never_opened", row)
+
+        chapter = (c.kind == "page" and (c.singular or c.printed)
+                   and re.match(r"\d{1,4}-\d", t[c.start:c.start + 10])
+                   is not None)
+        # "p. 12-16" is one printed chapter page where the documents are
+        # not plainly numbered - unless no page prints "12-16" and pages
+        # print "12" and "16": then it is the run it reads as (one stray
+        # "A-1" in a footer does not make a report chapter-numbered).
+        chapter_only = bool(
+            chapter and numbering() != "plain"
+            and (printed_units([c.label]) or len(printed_units(
+                [str(c.numbers[0]), str(c.numbers[-1])])) < 2))
+        if c.kind in ("page", "label") and (labels() is not None
+                                            or cur_refs):
+            if chapter_only:
+                # "p. 1-3" in documents numbered by chapter, or whose
+                # printed numbers are not known: one printed page, never
+                # a run of pages.
+                readings = [("printed", printed_units([c.label]))]
+            else:
+                if c.kind == "page":
+                    readings.append(("printed", printed_units(
+                        [str(n) for n in c.numbers])))
+                if c.labels:
+                    readings.append(("printed", printed_units(c.labels)))
+                elif c.label:
+                    readings.append(("printed", printed_units([c.label])))
         readings = [(how, units) for how, units in readings if units]
         row: Dict[str, Any] = {"cited": c.shown}
+        printed_found = any(how == "printed" for how, _u in readings)
+        if c.kind != "pdf" and labels() is not None and not printed_found \
+                and (c.printed or chapter_only):
+            # Said to be a printed number, or "p. 1-3" in documents numbered
+            # by chapter or whose printed numbers are not known, and no page
+            # of the documents read is known to print it: it cannot be
+            # checked here, and its reading as PDF pages is not what it
+            # says.
+            row["why"] = ("reads as a printed page number that no page of "
+                          "the documents read is known to print")
+            lists["unverified"].append(row)
+            continue
         if readings:
             # The reading with the most opened; on a tie a printed number
             # (what the prompt asks a citation to give first).
@@ -1365,22 +2298,21 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
                 continue
         # Nothing the citation could mean was opened.
         if c.kind == "pdf":
-            if not any(exists(n - 1) for n in c.numbers):
+            if not any(exists_known(n - 1) for n in c.numbers):
                 row["note"] = "no document read here has that page"
-            file("never_opened", row)
+            fire(row, c, readings)
             continue
         if labels() is None:
             row["why"] = ("the printed page numbers of the documents read "
                           "could not be had here")
             lists["unverified"].append(row)
             continue
-        printed_found = any(how == "printed" for how, _u in readings)
         if not printed_found and not any(exists(n - 1) for n in c.numbers):
             row.pop("pages", None)
             row["why"] = "no page of the documents read has that number"
             lists["unverified"].append(row)
             continue
-        file("never_opened", row)
+        fire(row, c, readings)
     for k, v in lists.items():
         if v:
             result[k] = v[:MAX_LISTED]
