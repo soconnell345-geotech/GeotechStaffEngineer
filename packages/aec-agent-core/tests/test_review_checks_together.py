@@ -275,6 +275,46 @@ def test_scope_item_wants_the_terms_in_one_line_or_list_item():
         assert got["passed"], (found, got["detail"])
 
 
+def test_scope_finding_reads_a_table_row_with_its_column_heads():
+    terms = ["q-201", {"re": r"\bmatches[^:|]*:\s*no\b"}]
+    table = ("| Sheet | Title | Index matches? |\n|---|---|---|\n"
+             "| Q-101 | First Floor Plan | Yes |\n"
+             "| Q-201 | Second Floor Framing Plan | No |\n")
+    # a row alone does not say which question its "No" answers
+    assert not _together(table, terms, scope="item")["passed"]
+    got = _together(table, terms, scope="finding")
+    assert got["passed"] and "one finding" in got["detail"], got
+    # a row says only what its own cells say; an empty cell says nothing
+    for other in ("| Yes |\n", "|  |\n"):
+        said = table.replace("| No |\n", other)
+        assert not _together(said, terms, scope="finding")["passed"], said
+
+
+def test_scope_finding_reads_a_heading_with_one_item_at_a_time():
+    terms = ["q-201", "roof", "second floor framing"]
+    apart = ("### Q-201\n\n- Index: Roof Framing Plan\n"
+             "- Sheet: Second Floor Framing Plan\n")
+    # the heading joins the two items under scope "item", not here
+    assert _together(apart, terms, scope="item")["passed"]
+    got = _together(apart, terms, scope="finding")
+    assert not got["passed"] and "one finding" in got["detail"], got
+    for found in (
+            "### Q-201\n\n- The index says Roof Framing Plan; the sheet says "
+            "Second Floor Framing Plan.\n",
+            "1. Q-201 has the wrong title in the index.\n"
+            "   - Index: Q-201 Roof Framing Plan\n"
+            "   - Sheet: Q-201 Second Floor Framing Plan\n",
+            "Q-201 is ROOF FRAMING PLAN in the index; its title block says "
+            "SECOND FLOOR FRAMING PLAN."):
+        got = _together(found, terms, scope="finding")
+        assert got["passed"], (found, got["detail"])
+    listing = ("Sheets in the set:\n- Q-101 First Floor Plan\n"
+               "- Q-201 Second Floor Framing Plan\n- Q-202 Roof Framing Plan\n")
+    assert not _together(listing, terms, scope="finding")["passed"]
+    assert _together("Q-201 only.", terms, scope="finding")["detail"] == \
+        "missing: ['roof', 'second floor framing']"
+
+
 SOUND = {f"door {n}": {"re": rf"(?<![\w-]){n}(?!\d)"} for n in (31, 32, 34)}
 FAULTY = {"re": r"\b(?:not|missing|absent)\b"}
 

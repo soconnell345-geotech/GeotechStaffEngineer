@@ -102,6 +102,18 @@ DOCUMENTS: Dict[str, Dict[str, Any]] = {
     "fixture_coord_submittal": {
         "fixture": "coord_submittal",
         "name": "submittal_03_30_00-02_concrete_mix.pdf"},
+    # The same building's 15-sheet set at issue 2, a specification section
+    # in the three-part form (08 51 13, aluminum windows) and a window
+    # submittal answering it (BACKLOG DR-25, 2026-11-18).
+    "fixture_coord_set_2": {
+        "fixture": "coord_set_2",
+        "name": "north_yard_annex_drawings_issue_2.pdf"},
+    "fixture_coord_window_section": {
+        "fixture": "coord_window_section",
+        "name": "section_08_51_13_aluminum_windows.pdf"},
+    "fixture_coord_window_submittal": {
+        "fixture": "coord_window_submittal",
+        "name": "submittal_08_51_13-01_aluminum_windows.pdf"},
 }
 
 #: The long tag set's rare tag and the 0-based pages that carry it.

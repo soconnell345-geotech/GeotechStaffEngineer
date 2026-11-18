@@ -208,7 +208,7 @@ def test_a_build_is_the_same_bytes_every_time():
 # ---------------------------------------------------------------------------
 
 def test_the_tasks_cover_every_planted_problem():
-    assert len(COORDINATION_TASKS) == 14
+    assert len(COORDINATION_TASKS) == 16
     assert all(t in OPEN_TASKS for t in COORDINATION_TASKS)
     labels = {t.id: [c["label"] for c in t.checks if not c.get("info")]
               for t in COORDINATION_TASKS}
@@ -216,7 +216,8 @@ def test_the_tasks_cover_every_planted_problem():
     assert labels["coord-long-review"] == [p.key for p in F.LONG_PLANTED]
     assert labels["coord-submittal"] == [p.key for p in F.SUBMITTAL_PLANTED]
     assert set(_PLANTED_CHECKS) == {
-        p.key for p in F.LONG_PLANTED + F.SUBMITTAL_PLANTED}
+        p.key for p in F.LONG_PLANTED + F.SUBMITTAL_PLANTED +
+        F.SPEC_PLANTED + F.REISSUE_PLANTED}
     # a comment log may come as a file: the review tasks read those too
     for task_id in ("coord-full-review", "coord-long-review"):
         assert all(c.get("with_files") for c in BY_ID[task_id].checks)
@@ -352,7 +353,7 @@ def test_the_dry_run_resolves_the_coordination_documents(tmp_path):
     out = score_review_suite(out_dir=str(tmp_path), dry_run=True,
                              ids=["coord-"])
     text = out["results_md"]
-    assert "14 tasks" in text
+    assert "16 tasks" in text
     assert ("fixture_coord_set_long -> "
             "north_yard_annex_full_set_issue_1.pdf") in text
     assert "MISSING" not in text.upper().replace("CALLOUT-MISSING", "")

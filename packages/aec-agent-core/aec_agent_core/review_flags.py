@@ -427,6 +427,16 @@ SETTINGS_ENVS = ("GEOTECH_VISION_INLINE_KEEP",
                  "GEOTECH_PLOT_CODE_SECONDS", "GEOTECH_PLOT_CODE_MAX_SECONDS",
                  "GEOTECH_PLOT_CODE_MEMORY_MB", "GEOTECH_PLOT_CODE_AT_ONCE")
 
+#: Settings added after the geotech app's copy went quiet (5.36.0): the
+#: turn's image-call ceiling (TA-43,
+#: ``aec_agent_core.deep.limits.TURN_MAX_IMAGE_CALLS_ENV``). A look it
+#: refuses changes what a run returns, so :func:`switches` clears it unless
+#: the arm names it, as it does :data:`SETTINGS_ENVS`, and :func:`describe`
+#: names it when set (BACKLOG EV-49). Kept apart from ``SETTINGS_ENVS``,
+#: which the app's tests pin whole; fold it in with :data:`LATER_ENVS`
+#: (BACKLOG DR-51).
+LATER_SETTINGS_ENVS = ("GEOTECH_TURN_MAX_IMAGE_CALLS",)
+
 _ON = ("1", "true", "yes", "on")
 _OFF = ("0", "false", "no", "off")
 
@@ -674,13 +684,15 @@ ARMS: Dict[str, Dict[str, str]] = {
 @contextmanager
 def switches(values: Optional[Mapping[str, str]]) -> Iterator[None]:
     """Set exactly ``values`` for the block: every switch (:data:`ALL_ENVS`,
-    :data:`LATER_ENVS`) and every switch setting (:data:`SETTINGS_ENVS`) NOT named is unset (a
+    :data:`LATER_ENVS`) and every switch setting (:data:`SETTINGS_ENVS`,
+    :data:`LATER_SETTINGS_ENVS`) NOT named is unset (a
     switch of :data:`DEFAULT_ON_ENVS` unset is on), so an arm is what it
     says and nothing leaks in from the notebook's own
     environment. Any other variable the arm names (a budget, a vision
     policy) is set too. The previous environment is restored afterwards."""
     values = dict(values or {})
-    keys = set(ALL_ENVS) | set(LATER_ENVS) | set(SETTINGS_ENVS) | set(values)
+    keys = (set(ALL_ENVS) | set(LATER_ENVS) | set(SETTINGS_ENVS) |
+            set(LATER_SETTINGS_ENVS) | set(values))
     saved = {k: os.environ.get(k) for k in keys}
     try:
         for k in keys:
@@ -699,7 +711,9 @@ def switches(values: Optional[Mapping[str, str]]) -> Iterator[None]:
 
 def describe() -> str:
     """One line naming the switches that are set, and each switch on by
-    default as ``=1 (default)`` while unset (for diagnostics and logs)."""
+    default as ``=1 (default)`` while unset, then each setting of
+    :data:`LATER_SETTINGS_ENVS` that is set (for diagnostics and logs, and
+    the turn's ``build.switches``)."""
     out = []
     for k in ALL_ENVS + LATER_ENVS:
         value = str(os.environ.get(k, "")).strip()
@@ -707,6 +721,10 @@ def describe() -> str:
             out.append(f"{k}={value}")
         elif k in DEFAULT_ON_ENVS:
             out.append(f"{k}=1 (default)")
+    for k in LATER_SETTINGS_ENVS:
+        value = str(os.environ.get(k, "")).strip()
+        if value:
+            out.append(f"{k}={value}")
     return ", ".join(out)
 
 
@@ -725,6 +743,7 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "LEAN_PROMPT_ENV", "lean_prompt",
            "SHOW_UPLOADS_ENV", "show_uploads",
            "PIXEL_REQUESTS_ENV", "pixel_requests", "LATER_ENVS",
+           "LATER_SETTINGS_ENVS",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",
