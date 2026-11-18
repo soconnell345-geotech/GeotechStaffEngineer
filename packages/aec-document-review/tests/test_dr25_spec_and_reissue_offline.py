@@ -402,25 +402,267 @@ def test_no_older_check_takes_a_new_truth():
 
 
 def test_a_clouded_change_is_not_an_unclouded_one():
+    """CHECK.md's claim, on a reply of several items whose neighbours are
+    clouded and listed: a cloud said absent, in any of the ways a reply
+    says so, is not a cloud, and a listed change is not an unlisted one."""
     check = _PLANTED_CHECKS["cloud-not-listed"]
-    said = ("S-501: F3 reinforcing changed from 10-20M to 12-20M; it is "
-            "clouded, but the revision block has no revision 2 entry.")
+    reply = ("Issue 2 against issue 1:\n\n"
+             "- A-201: parapet raised from 109.30 to 109.60, clouded and\n"
+             "  listed as revision 2.\n"
+             "- S-501: F3 reinforcing changed from 10-20M to 12-20M,\n"
+             "  {cloud}, but the revision block {block}.\n"
+             "- A-601: door 106 renumbered 110, clouded and listed.\n")
+    said = reply.format(cloud="inside a revision 2 cloud",
+                        block="has no revision 2 entry")
     assert C.run_check(check, said)["passed"]
-    for wrong in (said.replace("it is clouded", "it is not clouded"),
-                  said.replace("it is clouded", "there is no cloud"),
-                  said.replace("has no revision 2 entry",
-                               "lists revision 2")):
+    for cloud in ("not clouded", "with no cloud", "with no revision cloud",
+                  "without a revision cloud", "though it should have been "
+                  "clouded"):
+        wrong = reply.format(cloud=cloud, block="has no revision 2 entry")
         assert not C.run_check(check, wrong)["passed"], wrong
+    listed = reply.format(cloud="inside a revision 2 cloud",
+                          block="lists it as revision 2")
+    assert not C.run_check(check, listed)["passed"]
 
 
 def test_the_twin_wants_the_other_sheet_left_behind():
+    """CHECK.md's claim, on a reply of several items: "A-301: unchanged"
+    in a list of changes is not the finding, though the item beside it says
+    "still" of another sheet."""
     check = _PLANTED_CHECKS["parapet-twin"]
-    told = ("A-201 raised the parapet from 109.30 to 109.60; A-301 should "
-            "also have been revised and still shows 109.30.")
+    reply = ("Issue 2 against issue 1:\n\n"
+             "- A-201: parapet raised from 109.30 to 109.60, clouded and\n"
+             "  listed as revision 2.\n"
+             "- A-301: {twin}.\n"
+             "- A-601: door 106 renumbered 110; A-101 still tags 106.\n")
+    told = reply.format(twin="the sections should also have been revised;\n"
+                             "  they still show the parapet at 109.30")
     assert C.run_check(check, told)["passed"]
-    listed = ("A-201 raised the parapet from 109.30 to 109.60. A-301 is "
-              "unchanged.")
-    assert not C.run_check(check, listed)["passed"]
+    for twin in ("unchanged", "no change at the parapet",
+                 "parapet unchanged at 109.30",
+                 "checked, no conflict at the parapet",
+                 "the parapet is still consistent with A-201"):
+        wrong = reply.format(twin=twin)
+        assert not C.run_check(check, wrong)["passed"], wrong
+
+
+def _table(heads, *rows):
+    """A markdown table, as a reply writes one."""
+    def line(cells):
+        return "| " + " | ".join(cells) + " |"
+    return "\n".join([line(heads), line(["---"] * len(heads))] +
+                     [line(r) for r in rows])
+
+
+_REISSUE_HEADS = ["Change", "Sheet", "Clouded?", "Listed?",
+                  "Carried to the other sheets?"]
+_REV_HEADS = ["Sheet", "Change", "Clouded?", "In rev block?"]
+
+#: For each new check, made-up replies that must pass it (a sentence, a
+#: list item and a table row at least) and replies that must fail it: the
+#: careless reading, the opposite, the all-clear, and a neighbouring item
+#: that says the right word of something else.
+REPLIES = {
+    "window-u-value": ([
+        "The data sheet's whole-window U-value of 1.90 W/(m2.K) exceeds "
+        "the 1.60 maximum the section sets.",
+        "1. Thermal: whole window 1.90 against 1.60 allowed; the 1.10 is "
+        "the glass alone.",
+        _table(["Requirement", "Specified", "Submitted", "Complies?"],
+               ["Whole-window U-value", "1.60 max", "1.90", "No"]),
+    ], [
+        "The U-value of 1.10 W/m2K is within the 1.60 limit.",
+        "- Centre-of-glass U-value 1.10 meets the 1.60 maximum.\n"
+        "- The data sheet also lists 1.90 for the frame and glass together.",
+        "The data sheet gives a whole-window U-value of 1.90 W/(m2.K).",
+        _table(["Requirement", "Specified", "Submitted", "Complies?"],
+               ["U-value, centre of glass", "1.60 max", "1.10", "Yes"]),
+    ]),
+    "window-anchorage": ([
+        "No anchorage calculations were submitted, though 1.3 asks for "
+        "them under SD-05 Design Data.",
+        "- SD-05 Design Data (anchorage calculations): missing.",
+        _table(["Submittal item (1.3)", "Submitted?"],
+               ["SD-05 Design Data, anchorage calculations", "No"]),
+        "- Anchorage: none submitted.",
+        "- The submittal omits the anchorage calculations.",
+        "SD-05 design data left out.",
+    ], [
+        "- SD-05 Design Data: included and signed.\n"
+        "- Water penetration test: missing.",
+        "The anchorage calculations are attached and sealed; no exceptions "
+        "taken.",
+        "- Anchorage: calculations provided for the 2.1 A wind pressure, "
+        "no comments.",
+        _table(["Submittal item (1.3)", "Submitted?"],
+               ["SD-05 Design Data, anchorage calculations", "Yes"]),
+    ]),
+    "window-section-missing": ([
+        "The schedule of values prices the glazing under Section 08 80 00, "
+        "which does not exist in the project manual.",
+        "- 08 80 00 (sealed glazing units): no such section in the manual; "
+        "glazing is in 08 51 13.",
+        _table(["Line", "Section", "In the manual?"],
+               ["Sealed glazing units", "08 80 00", "No"]),
+        "Section 08 80 00 is not in the manual's table of contents.",
+    ], [
+        "The lines of the schedule of values (08 51 13, 08 80 00, 07 92 00) "
+        "add up to 174,500, not the 178,500 shown.",
+        "- Glazing is priced under 08 80 00, which is fine.",
+        "Section 08 80 00 covers the sealed units; nothing is missing.",
+        _table(["Line", "Section", "In the manual?"],
+               ["Sealed glazing units", "08 80 00", "Yes"]),
+    ]),
+    "window-water-test": ([
+        "The test report has no water penetration result, which 2.1 D and "
+        "SD-06 require.",
+        "- Water penetration test (2.1 D): not reported.",
+        _table(["Test (2.1)", "In report ET-25-0412?"],
+               ["Water penetration at 450 Pa", "No"]),
+        "- Water penetration: none submitted.",
+        "The report omits water penetration.",
+        "Water penetration test results: none in report.",
+    ], [
+        "Water penetration at 450 Pa with no leakage. All comply.",
+        "Field testing for water penetration is not reviewable until "
+        "installation.",
+        "The water penetration field test of 3.3 is not due yet.",
+        "Site water testing cannot be judged from the submittal.",
+        "Water penetration test reported at 450 Pa: no leakage; field test "
+        "not yet performed.",
+        _table(["Test (2.1)", "In report ET-25-0412?"],
+               ["Water penetration at 450 Pa", "Yes"]),
+    ]),
+    "window-sov-total": ([
+        "The five lines of the schedule of values add up to 174,500, but "
+        "the total says 178,500.",
+        "- Schedule of values: printed total 178,500; the lines sum to "
+        "174,500.",
+        _table(["Check", "Printed", "Sum of lines"],
+               ["Schedule of values total", "178,500", "174,500"]),
+    ], [
+        "Schedule of values total: 178,500.",
+        "- Frames 96,000; glazing 38,400; sealant 6,200; installation "
+        "31,500; water tests 2,400.\n- Total 178,500.",
+        "- The five lines add up to 174,500.\n\n## Commercial\n\n"
+        "- The total price of 178,500 is within the budget.",
+    ]),
+    "parapet-twin": ([
+        "A-301 was not updated: the building sections still show the "
+        "parapet at EL. 109.30 while A-201 shows 109.60.",
+        "- A-301 (sections): parapet still at 109.30; needs updating to "
+        "match A-201.",
+        _table(_REISSUE_HEADS, ["T.O. parapet 109.30 to 109.60", "A-201",
+                                "Yes", "Yes", "No: A-301 shows 109.30"]),
+        "- A-201 and A-301 now differ at the parapet: 109.60 on the "
+        "elevations, 109.30 on the sections.",
+        "- A-301 needs updating: its parapet is 109.30.",
+        "### Parapet\n\n- A-301 still reads EL. 109.30 (A-201 raised it to "
+        "109.60).",
+    ], [
+        "- A-201: parapet raised from 109.30 to 109.60, clouded and "
+        "listed.\n- A-301: no change.\n"
+        "- A-101 still tags door 106 while the schedule calls it 110.",
+        "Checked against A-301: no conflict; the parapet reads 109.30 on "
+        "both sheets.",
+        "A-301 is still consistent with the parapet of A-201 (109.30).",
+        "No inconsistencies: A-301 and A-201 agree at the parapet.",
+        "A-201 raised the parapet from 109.30 to 109.60.\nA-301 is "
+        "unchanged.",
+        "A-301 still shows the parapet correctly at the new level.",
+        "A-301 still shows 109.30, which is correct: the sections were not "
+        "part of revision 2.",
+        _table(_REISSUE_HEADS, ["T.O. parapet 109.30 to 109.60", "A-201",
+                                "Yes", "Yes", "Yes, A-301 matches"]),
+    ]),
+    "cloud-not-listed": ([
+        "S-501: F3 reinforcing changed from 10-20M to 12-20M inside a "
+        "revision cloud, but the revision block has no entry for "
+        "revision 2.",
+        "- S-501: F3 now 12-20M EACH WAY; clouded (delta 2) but not "
+        "listed, as the revision block shows revision 0 only.",
+        _table(_REV_HEADS, ["S-501", "F3 10-20M to 12-20M", "Yes",
+                            "No: block shows rev 0 only"]),
+        "- S-501, footing F3: 10-20M to 12-20M\n  - clouded: yes, delta 2\n"
+        "  - revision block: revision 0 only",
+    ], [
+        "- S-501: F3 to 12-20M, clouded and listed as revision 2.\n"
+        "- A-102: door 205 not updated in revision 2.",
+        "S-501: F3 changed to 12-20M with no revision cloud, and it is not "
+        "in the revision block.",
+        "S-501: F3 changed to 12-20M without a revision cloud; the revision "
+        "block lists revision 2.",
+        "S-501: F3 to 12-20M, clouded; nothing missing from the revision "
+        "block.",
+        _table(_REV_HEADS, ["S-501", "F3 10-20M to 12-20M", "No", "No"]),
+        _table(_REV_HEADS, ["S-501", "F3 10-20M to 12-20M", "Yes", "Yes"]),
+    ]),
+    "entry-no-change": ([
+        "A-102's revision block lists revision 2, DOOR 205 RELOCATED, but "
+        "door 205 has not moved: nothing on the sheet changed.",
+        "- A-102: the rev 2 entry 'door 205 relocated' has no corresponding "
+        "change; the door is where it was in issue 1.",
+        _table(["Sheet", "Revision entry", "Change on the sheet?"],
+               ["A-102", "2: door 205 relocated", "No"]),
+        "- A-102 is identical to issue 1, though its revision block lists "
+        "door 205 as relocated.",
+    ], [
+        "A-102: door 205 relocated, listed as revision 2; nothing else "
+        "changed.",
+        "- A-102: door 205 relocated (revision 2), otherwise unchanged.",
+        "- A-102: door 205 moved per revision 2; the rest of the sheet "
+        "identical.",
+        "- A-102: door 205 relocated, clouded and listed; no other changes.",
+        _table(["Sheet", "Change", "Change clouded?"],
+               ["A-102", "Door 205 relocated", "No"]),
+    ]),
+    "door-renumbered": ([
+        "The first floor plan (A-101) still tags the door 106, which the "
+        "schedule now calls 110.",
+        "- A-101: door tag 106 was not renumbered to 110; the plan and the "
+        "schedule now differ.",
+        _table(["Change", "Sheet", "Clouded?", "Listed?",
+                "Carried to the plan?"],
+               ["Door 106 renumbered 110", "A-601", "Yes", "Yes",
+                "No: A-101 still tags 106"]),
+        "- Door 106 on A-101 needs renumbering to 110.",
+    ], [
+        "- A-601: door 106 renumbered 110, clouded and listed.\n"
+        "- A-102 (second floor plan): no change.\n"
+        "- A-301 still shows 109.30.",
+        "A-101 tags door 106; the plan still agrees with the schedule.",
+        "Door 106 on A-101: no mismatch with the schedule.",
+        "- A-601: door 106 renumbered 110; checked against A-101: no "
+        "conflict.",
+        _table(["Change", "Sheet", "Clouded?", "Listed?",
+                "Carried to the plan?"],
+               ["Door 106 renumbered 110", "A-601", "Yes", "Yes",
+                "Yes: A-101 tags 110"]),
+    ]),
+}
+
+
+def test_every_new_check_has_its_table_of_replies():
+    assert set(REPLIES) == {p.key for p in F.SPEC_PLANTED +
+                            F.REISSUE_PLANTED}
+    for key, (right, wrong) in REPLIES.items():
+        assert len(right) >= 3 and len(wrong) >= 3, key
+        # a sentence, a list item and a table row among the right ones
+        assert any(r.startswith("|") for r in right), key
+        assert any(re.match(r"(?:[-*]|\d+\.)\s", r) for r in right), key
+        assert any(not r.startswith(("|", "-", "#")) and
+                   not re.match(r"\d+\.\s", r) for r in right), key
+
+
+@pytest.mark.parametrize("key", sorted(REPLIES))
+def test_each_check_takes_the_right_replies_and_no_wrong_one(key):
+    check = _PLANTED_CHECKS[key]
+    right, wrong = REPLIES[key]
+    missed = [(r, C.run_check(check, r)["detail"]) for r in right
+              if not C.run_check(check, r)["passed"]]
+    taken = [(w, C.run_check(check, w)["detail"]) for w in wrong
+             if C.run_check(check, w)["passed"]]
+    assert not missed and not taken, {"missed": missed, "taken": taken}
 
 
 def test_the_dry_run_resolves_the_new_documents(tmp_path):

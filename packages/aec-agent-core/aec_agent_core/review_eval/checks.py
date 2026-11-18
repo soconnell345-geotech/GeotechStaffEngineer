@@ -229,6 +229,91 @@ def _items(answer: str) -> List[str]:
     return out
 
 
+def _cells(line: str) -> List[str]:
+    """A markdown table row's cells, its outer pipes dropped."""
+    s = line.strip()
+    s = s[1:] if s.startswith("|") else s
+    s = s[:-1] if s.endswith("|") else s
+    return [c.strip() for c in s.split("|")]
+
+
+def _findings(answer: str) -> List[Tuple[str, str]]:
+    """The answer cut as :func:`_items` cuts it, each piece with the heading
+    line over it, as ``(heading, piece)``; a table row is read with its
+    column heads, each cell as "head: cell" ("Carried to A-301?: No"), so
+    a yes/no table says what each cell answers. An empty cell says nothing.
+    A delivered file's text (:data:`FILE_BREAK`) ends a piece and its
+    heading."""
+    out: List[Tuple[str, List[str]]] = []
+    section = ""
+    heads: List[str] = []
+    item: Optional[List[str]] = None
+    indent = 0
+    lines = str(answer or "").splitlines()
+    for i, line in enumerate(lines):
+        after = lines[i + 1] if i + 1 < len(lines) else ""
+        if line == _FILE_MARK:
+            section, heads, item = "", [], None
+            continue
+        if not line.strip():
+            heads = []
+            continue
+        lead = len(line) - len(line.lstrip())
+        if item is not None and lead > indent:
+            item.append(line)
+            continue
+        item = None
+        if "|" in line and _TABLE_RULE.match(after):
+            heads = _cells(line)
+            continue
+        if heads and _TABLE_RULE.match(line):
+            continue
+        if heads and "|" in line:
+            cells = _cells(line)
+            named = heads + [""] * max(0, len(cells) - len(heads))
+            out.append((section, [" | ".join(
+                f"{h}: {c}" if h else c
+                for h, c in zip(named, cells) if c)]))
+            continue
+        heads = []
+        head = section
+        if _HEADING.match(line):
+            section = line
+        if _LIST_ITEM.match(line):
+            item, indent = [line], lead
+            out.append((head, item))
+        else:
+            out.append((head, [line]))
+    return [(h, "\n".join(u)) for h, u in out]
+
+
+def _together_in_findings(answer: str, terms: Sequence[Any],
+                          window: int) -> Tuple[bool, str]:
+    """:func:`check_stated_together` with ``scope="finding"``."""
+    pieces = [(normalize(h), normalize(u)) for h, u in _findings(answer)]
+    seen = " ".join(h + " " + u for h, u in pieces)
+    missing = [_label(t) for t in terms if not _term_spans(t, seen)]
+    if missing:
+        return False, f"missing: {missing}"
+    best = None
+    for _head, said in pieces:
+        reach = _closest(terms, said)
+        if reach is not None and (best is None or reach < best):
+            best = reach
+    if best is not None and best <= window:
+        return True, f"together within {best} characters in one finding"
+    for head, said in pieces:
+        there = [bool(_term_spans(t, head)) for t in terms]
+        if not any(there) or all(there):
+            continue
+        reach = _closest([t for t, h in zip(terms, there) if not h], said)
+        if reach is not None and reach <= window:
+            return True, (f"together within {reach} characters in one "
+                          f"finding, under the heading that holds the rest")
+    return False, (f"all present, never within {window} characters of each "
+                   f"other in one finding (closest: {best})")
+
+
 def check_stated_together(answer: str, terms: Sequence[Any],
                           window: int = 300, scope: str = "",
                           **_) -> Tuple[bool, str]:
@@ -252,8 +337,19 @@ def check_stated_together(answer: str, terms: Sequence[Any],
     sheets; Foundry brief 7, BACKLOG EV-44), the window alone passes the
     list. The heading rule is unchanged.
 
+    ``scope="finding"`` cuts the answer as ``"item"`` does, with two
+    differences (:func:`_findings`): a table row is read with its column
+    heads, so a yes/no table ("Carried? | No") can state what a sentence
+    would; and the heading rule reads one piece at a time, so the heading
+    over a list does not join two of its items. For a finding whose terms
+    include a word that says what is wrong (a change left behind, an entry
+    with no change), which a neighbouring item may say of something else
+    (BACKLOG DR-25).
+
     It cannot tell whether the sentence is right, only that the answer put
     the pieces side by side, which a full read of the run confirms."""
+    if scope == "finding":
+        return _together_in_findings(answer, terms, int(window))
     text = normalize(answer)
     spans = [_term_spans(t, text) for t in terms]
     missing = [_label(t) for t, s in zip(terms, spans) if not s]

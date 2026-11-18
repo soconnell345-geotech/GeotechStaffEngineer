@@ -1059,52 +1059,203 @@ _FCU_3_4 = {"re": r"fcu[\s-]?3[\s-]?4(?!\d)"}
 _LP_4B = {"re": r"lp[\s-]?4b\b"}
 
 
-#: Issue 2's reissue (BACKLOG DR-25, 2026-11-18). A word that says the
-#: other sheet was left behind: still showing the old value, not updated,
-#: disagreeing. Not "unchanged" or "no changes" alone: a list of what did
-#: not change says that of every sheet it names, and is no finding.
-_LEFT_BEHIND = {"re": r"\b(?:still|not\s+(?:been\s+)?(?:updated|revised|"
-                      r"renumbered|carried|coordinated|followed)|"
-                      r"(?:was|were|is|are|has|have)\s?n[o']t\s+(?:been\s+)?"
-                      r"(?:updated|revised|renumbered|carried|coordinated)|"
-                      r"should\s+(?:also\s+)?(?:have\s+been|be)\s+(?:updated|"
-                      r"revised|changed|renumbered)|missed|overlooked|"
-                      r"left\s+(?:at|behind)|disagree\w*|conflict\w*|"
-                      r"inconsisten\w*|mismatch\w*|discrepan\w*|"
-                      r"(?:does|do|did)\s?n[o']t\s+(?:match|agree))\b"}
+#: Issue 2's reissue and the window submittal (BACKLOG DR-25, 2026-11-18).
+#: Their checks read one finding at a time (``scope="finding"``: a line, a
+#: list item with what is nested under it, or a table row read with its
+#: column heads), so a neighbouring item that says something of another
+#: sheet does not join; and each word below is narrow enough that an
+#: all-clear or a careless reading does not say it.
+#:
+#: A cell that answers its column head with no, as a table row is read
+#: ("Carried to A-301?: No: A-301 shows 109.30", "In rev block: None").
+_SAYS_NO = r"[^:|]{0,40}?:\s*(?:no|none)(?=\s*(?:[:.,;()\-]|\||$))"
+#: The same answer after a word, which takes the word back ("Conflict?:
+#: No", "Clouded and listed: no").
+_NOT_NO = r"(?![^:|.;]{0,40}:\s*(?:no|none)(?=\s*(?:[:.,;()\-]|\||$)))"
+#: A head about the cloud or the revision block: its "No" says nothing of
+#: whether the change was made or carried ("Change clouded?: No").
+_FLAG_HEAD = (r"(?![^:|]{0,40}?\b(?:cloud\w*|delta|listed|logged|recorded|"
+              r"block|table)\b)")
+#: What a sheet left behind still does with the old value.
+_STILL_SAYS = (r"(?:shows?|showing|shown|reads?|reading|tags?|tagged|"
+               r"tagging|has|have|carries|carry|gives?|lists?|labels?|"
+               r"labell?ed|marks?|marked|calls?|called|uses?|using|numbered|"
+               r"notes?|indicates?|references?|refers|says?|depicts?|"
+               r"displays?|states?|dimensions?)\b(?!\s+(?:no|not|nothing|"
+               r"none)\b)(?!\s+(?:\w+\s+){0,3}?(?:correct(?:ly)?|"
+               r"consistent(?:ly)?|fine|the\s+new)\b)"
+               r"(?!(?:[^.;:|]|(?<=\d)\.(?=\d)){0,50}?(?<!not )(?<!in)"
+               r"\b(?:correct(?:ly)?|as\s+(?:expected|intended)|fine|"
+               r"acceptable)\b)")
+#: What before "conflict", "differs" and the like says there is none.
+_NONE_OF = ("no", "not", "n't", "any", "without", "never", "nor", "neither",
+            "or", "free of", "not a", "no new", "no other", "no remaining",
+            "no apparent", "no further", "no visible", "no real",
+            "no sign of", "no sign of a", "no evidence of",
+            "no evidence of a")
+#: A word that says the other sheet was left behind: still showing the old
+#: value, not updated, needing an update, differing. Not "unchanged" alone
+#: (a list of what did not change says it of every sheet it names), not
+#: "still" before anything but what a sheet shows ("still consistent", "the
+#: plan still agrees"), and not "no conflict", "no inconsistencies".
+_LEFT_BEHIND = {"re": (
+    r"(?:\b(?:still|remains?|remained)\s+(?:" + _STILL_SAYS + r"|"
+    r"(?:at\s+|as\s+|on\s+|in\s+)?(?:el\.?\s*)?\d|"
+    r"(?:at\s+|on\s+|in\s+)?(?:the\s+)?(?:old|previous|original|former|"
+    r"superseded|issue[\s-]?1)\b)"
+    r"|\bnot\s+(?:yet\s+|been\s+|also\s+)*(?:updated|revised|renumbered|"
+    r"carried|coordinated|followed|raised|corrected|amended|propagated|"
+    r"reflected|changed\s+to\s+match)\b"
+    r"|\b(?:was|were|is|are|has|have|had)\s?n[o']t\s+(?:yet\s+|been\s+|"
+    r"also\s+)*(?:updated|revised|renumbered|carried|coordinated|changed|"
+    r"raised|corrected|amended|propagated|reflected)\b"
+    r"|(?<!nothing )(?<!not )(?<!n't )(?<!no )(?<!never )"
+    r"\b(?:needs?|requires?|required|must|should|ought\s+to|has\s+to|"
+    r"have\s+to)\s+(?:also\s+)?(?:to\s+)?(?:be\s+|have\s+been\s+)?"
+    r"(?:an?\s+)?(?:updat|revis|chang|renumber|correct|amend|rais|"
+    r"coordinat)\w*"
+    r"|\bto\s+be\s+(?:updated|revised|changed|renumbered|corrected)\b"
+    r"|\b(?:missed|overlooked|outdated|out[\s-]of[\s-](?:date|step|sync)|"
+    r"stale|obsolete)\b"
+    r"|\bleft\s+(?:at|behind|unchanged|unrevised|as\s+(?:is|was))\b"
+    r"|\bno\s+longer\s+(?:match|agree|consistent|correspond|coordinat)\w*"
+    r"|\b(?:does|do|did)\s?n[o']t\s+(?:match|agree|correspond|reflect|"
+    r"follow)\w*"
+    r"|" + "".join(f"(?<!{w} )" for w in _NONE_OF) +
+    r"\b(?:disagree\w*|conflict\w*|inconsisten\w*|mismatch\w*|discrepan\w*|"
+    r"differ(?:s|ed|ing|ent|ence|ences)?)\b"
+    r"|\b(?:carried|propagated|coordinated|updated|match(?:es|ed|ing)?|"
+    r"consistent|agrees?|followed)\b" + _FLAG_HEAD + _SAYS_NO +
+    r")" + _NOT_NO)}
+#: What before a cloud says there is none: "not clouded", "no revision 2
+#: cloud", "without a revision cloud", "should have been clouded".
+_CLOUD_NONE = ("no", "not", "without", "without a", "without any",
+               "neither", "nor", "nor a", "or", "or a", "never", "n't",
+               "not in a", "not inside a", "not within a", "outside a",
+               "outside the", "lacks a", "lacking a", "missing a",
+               "should have been", "should be", "to be")
+_CLOUD_BETWEEN = ("", "revision ", "revision 2 ", "rev ", "rev. ", "rev 2 ",
+                  "rev. 2 ", "2 ", "a ", "any ", "visible ")
 #: A word that says a cloud is there ("clouded", "inside a revision 2
-#: cloud", "delta 2"), and not "not clouded", "no cloud", "unclouded".
-_CLOUDED = {"re": r"(?<!not )(?<!n't )(?<!no )(?<!without )(?<!without a )"
-                  r"(?<!neither )(?<!nor )\b(?:clouded|cloud|delta|"
-                  r"triangle)\b"}
-#: A word that says a change has no entry in the sheet's revision block.
-_UNLISTED = {"re": r"\b(?:no|not|without|missing|lacks?|absent|never)\b"
-                   r"[^.;\n]{0,40}?\b(?:entry|entries|listed|listing|"
-                   r"revision|recorded|logged)\b|"
-                   r"\brevision\s+(?:block|table|history|list|log)\b"
-                   r"[^.;\n]{0,60}?\b(?:no|not|without|lacks?|only|still)\b|"
-                   r"\b(?:unlisted|unrecorded|undocumented)\b"}
-#: A word that says nothing on the sheet changed.
-_NO_CHANGE = {"re": r"\bnothing\b[^.;\n]{0,30}?\b(?:changed|moved|"
-                    r"different|revised)\b|"
-                    r"\bno\s+(?:visible\s+|actual\s+|real\s+|corresponding\s+|"
-                    r"matching\s+|drawn\s+|graphic\s+|such\s+)?(?:change|"
-                    r"difference|relocation|move)s?\b|"
-                    r"\bnot\s+(?:been\s+)?(?:moved|relocated|changed|"
-                    r"revised)\b|"
-                    r"\b(?:did|has|was|is)\s?n[o']t\s+(?:been\s+)?(?:move|"
-                    r"moved|relocated|change|changed)\b|"
-                    r"\b(?:unchanged|identical)\b|"
-                    r"\bsame\s+(?:place|position|location|spot)\b"}
+#: cloud", "delta 2", "Clouded?: Yes").
+_CLOUDED = {"re": (
+    "".join(f"(?<!{re.escape(n)} {re.escape(m)})"
+            for n in _CLOUD_NONE for m in _CLOUD_BETWEEN) +
+    r"(?<!un-)\b(?:clouded|cloud|delta|triangle)\b"
+    r"(?!\s+(?:is\s+|was\s+)?(?:missing|absent|omitted)\b)" + _NOT_NO)}
+_REV_BLOCK = (r"rev(?:ision|\.)?\s*(?:block|table|history|list|log|"
+              r"schedule|box)")
+#: A word that says a change has no entry in its sheet's revision block.
+_UNLISTED = {"re": (
+    r"(?:(?<!nothing )(?<!nothing is )(?<!none )"
+    rf"\b(?:{_NO_WORD}|{_NOT_WORD}|isn't|wasn't|aren't|weren't|hasn't|"
+    r"doesn't|didn't|without|missing|lacks?|lacking|absent|never|nor)\b"
+    r"[^.;:|]{0,40}?\b(?:entry|entries|listed|listing|recorded|logged|"
+    r"noted|documented|mentioned|record|" + _REV_BLOCK +
+    r"|revision\s*2|rev\.?\s*2)\b(?!\s*(?:cloud|delta))"
+    r"|\b" + _REV_BLOCK + rf"\b[^.;|]{{0,60}}?\b(?:{_NO_WORD}|not|without|"
+    r"lacks?|only|still|never|none)\b"
+    r"|\b(?:unlisted|unrecorded|undocumented|unlogged)\b"
+    r"|\b(?:listed|logged|recorded|entry|entered|" + _REV_BLOCK + r")\b" +
+    _SAYS_NO + r")" + _NOT_NO)}
+#: After "nothing" or "no change": "else", "other", "the rest", which make
+#: it a word about the rest of the sheet.
+_NOT_ELSE = (r"(?![^.;:|]{0,30}?\b(?:else|other|others|elsewhere|rest|"
+             r"remaining|besides|apart|except)\b)")
+#: A word that says nothing on the sheet changed: "door 205 has not moved",
+#: "no corresponding change", "A-102 is identical to issue 1". Not "nothing
+#: else changed", "otherwise unchanged", "the rest of the sheet identical":
+#: the careless reading says those beside the relocation it takes as made.
+_NO_CHANGE = {"re": (
+    r"(?:\bnothing\b" + _NOT_ELSE + r"[^.;:|]{0,30}?\b(?:changed|changes|"
+    r"moved|different|revised|relocated)\b"
+    r"|\bno\s+(?:visible\s+|actual\s+|real\s+|corresponding\s+|matching\s+|"
+    r"drawn\s+|graphic(?:al)?\s+|such\s+|physical\s+)?(?:change|difference|"
+    r"relocation|move|movement)s?\b" + _NOT_ELSE +
+    r"|\b(?:not|never)\s+(?:actually\s+|been\s+|really\s+)*(?:moved|"
+    r"relocated|changed|revised|shown|drawn|reflected)\b"
+    r"|\b(?:did|does|has|have|was|is)\s?n[o']t\s+(?:actually\s+|been\s+|"
+    r"really\s+)*(?:move|moved|relocated|change|changed|reflected|shown)\b"
+    r"|(?:^|(?<=[.;:|(]))(?:(?!\b(?:else|other|others|otherwise|rest|"
+    r"remaining|everything|all)\b)[^.;:|(]){0,80}?\b(?:unchanged|identical|"
+    r"unmoved)\b(?!\s+(?:otherwise|elsewhere|apart|except|besides|"
+    r"other)\b)"
+    r"|\bsame\s+(?:place|position|location|spot)\b"
+    r"|\bwhere\s+it\s+(?:was|is)\b"
+    r"|\b(?:changed?|moved|relocat\w*|shown|drawn|reflected|match\w*|"
+    r"backed|supported)\b" + _FLAG_HEAD + _SAYS_NO +
+    r")" + _NOT_NO)}
 #: The window submittal's numbers.
 _U_WHOLE = [_num("1.90"), _num("1.9")]
 _U_SPECIFIED = [_num("1.60"), _num("1.6")]
 _SOV_TOTAL = [_num("178,500"), _num("178500"), _num("178 500")]
 _SOV_SUM = [_num("174,500"), _num("174500"), _num("174 500")]
-#: A laboratory water penetration test; not the field water test of Part 3
-#: (an answer may rightly say that one is not due yet).
-_WATER_TEST = {"re": r"(?<!field )water[\s-]?(?:penetration|test|"
-                     r"resistance|leakage|infiltration|tightness)"}
+#: Where the field water test of Part 3 is meant, not the laboratory one
+#: (an answer may rightly say the field test is not due yet).
+_ON_SITE = (r"(?:field|site|on[\s-]site|in[\s-]situ|installed|installation|"
+            r"3\.3|part\s+3|execution)")
+#: The laboratory water penetration test: not named with the field, the
+#: site or Part 3 just before or after it.
+_WATER_TEST = {"re": (
+    "".join(f"(?<!{w} )" for w in (
+        "field", "site", "on-site", "on site", "in-situ", "in situ",
+        "installed", "field testing for", "field test for",
+        "field tests for", "field testing of", "site testing for",
+        "site test for", "site tests for")) +
+    r"\bwater[\s-]?(?:penetration|test|resistance|leakage|infiltration|"
+    r"tightness)(?![^.;:|!?,]{0,40}\b" + _ON_SITE + r"\b)")}
+#: A word that says a required document or result was not handed in: "not
+#: submitted", "not reported", "not in the submittal", "missing", "omits",
+#: "none submitted", "left out", "no ... result". Not any "no" or "not"
+#: nearby: "with no leakage", "not due", "not reviewable", "no exceptions".
+_NOT_GIVEN = {"re": (
+    r"\b(?:not\s+(?:been\s+|yet\s+|also\s+)*(?:submitted|reported|included|"
+    r"provided|supplied|furnished|attached|enclosed|given|tested|shown|"
+    r"covered|performed|addressed|documented|in\s+(?:the\s+)?(?:\w+\s+)?"
+    r"(?:report|submittal|package|data))"
+    r"|(?:is|are|was|were|has|have|does|do|did)\s?n[o']t\s+(?:been\s+|"
+    r"yet\s+|also\s+)*(?:submitted|reported|included|provided|supplied|"
+    r"attached|given|tested|shown|covered|performed|report|include|submit|"
+    r"cover|show|provide|contain|address|document)\w*"
+    r"|fails?\s+to\s+(?:report|include|show|cover|provide|submit|address)"
+    r"|(?<!nothing is )(?<!nothing )(?<!none )missing|omit(?:s|ted|ting)?|"
+    r"omission|absent\s+from|lacks?|lacking|left\s+out|nowhere"
+    r"|none\s+(?:submitted|reported|provided|included|given|attached|"
+    r"in\s+(?:the\s+)?(?:\w+\s+)?(?:report|submittal|package))"
+    r"|none\s+of\s+the\s+(?:\w+\s+){0,2}?(?:tests?|reports?|results?|"
+    r"documents?)"
+    r"|(?:no|without)\s+(?!(?:comments?|concerns?|exceptions?|issues?|"
+    r"problems?|objections?|deviations?|changes?|errors?|further|other)\b)"
+    r"(?:[\w.]+[\s-]+){0,3}?(?:results?|reports?|data|records?|tests?|"
+    r"testing|evidence|calculations?|calcs?|submittals?|values?|figures?|"
+    r"rating|certificates?)"
+    r"|(?:submitted|reported|provided|included|attached|results?|"
+    r"in\s+(?:the\s+)?(?:\w+\s+)?report)" + _SAYS_NO + r")\b")}
+#: The same for the laboratory water test, said in a clause that does not
+#: name the field or the site: "water penetration test reported; field
+#: test not yet performed" says nothing is missing from the report.
+_NOT_REPORTED = {"re": (r"(?:^|(?<=[.;:|!?,(]))(?:(?!\b" + _ON_SITE +
+                        r"\b)[^.;:|!?,(])*?" + _NOT_GIVEN["re"])}
+#: A word that says a section is not in the project manual: "does not
+#: exist", "no such section", "not in the manual", "missing from the
+#: contents". Not a "not" about something else beside it ("add up to
+#: 174,500, not the 178,500").
+_NOT_A_SECTION = {"re": (
+    r"\b(?:(?:does|do|did)\s?n[o']t\s+(?:exist|appear|belong)"
+    r"|non[\s-]?existent|undefined|unknown\s+section"
+    r"|no\s+(?:such\s+)?(?:spec(?:ification)?\s+)?(?:section|division|spec)"
+    r"|not\s+a\s+(?:valid\s+|real\s+)?(?:spec(?:ification)?\s+)?section"
+    r"|(?:not|never)\s+(?:been\s+)?(?:issued|included|listed|found|"
+    r"specified|contained|present)"
+    r"|not\s+in\s+(?:the\s+|this\s+)?(?:project\s+)?(?:manual|specs?|"
+    r"specifications?|contents|table\s+of\s+contents|index|toc)"
+    r"|not\s+part\s+of\s+(?:the\s+|this\s+)?(?:project\s+)?(?:manual|"
+    r"spec\w*|contract|documents?)"
+    r"|(?:is|are|was|were)\s?n[o']t\s+(?:in\s+the\s+(?:project\s+)?manual|"
+    r"part\s+of|listed|included|issued|found|specified|a\s+section)"
+    r"|missing\s+from|absent\s+from|omitted\s+from|nowhere\s+in"
+    r"|(?:in\s+(?:the\s+)?(?:project\s+)?manual|exists?|listed|issued|"
+    r"in\s+(?:the\s+)?contents)" + _SAYS_NO + r")\b")}
 
 
 def _n_tests(n: str, word: str) -> Dict[str, str]:
@@ -1188,44 +1339,47 @@ _PLANTED_CHECKS: Dict[str, Dict[str, Any]] = {
     "strength-record": {
         "type": "stated_together",
         "terms": [_n_tests("12", "twelve"), _n_tests("30", "thirty")]},
-    # the window submittal's five (BACKLOG DR-25, 2026-11-18): the whole-
+    # the window submittal's five (BACKLOG DR-25, 2026-11-18), each in one
+    # finding (a line, a list item, a table row with its heads): the whole-
     # window value beside the limit (the centre-of-glass 1.10 complies and
     # is not the value the section governs)
     "window-u-value": {
-        "type": "stated_together", "terms": [_U_WHOLE, _U_SPECIFIED]},
+        "type": "stated_together", "terms": [_U_WHOLE, _U_SPECIFIED],
+        "scope": "finding"},
     "window-anchorage": {
         "type": "stated_together",
         "terms": [["anchorage", "anchor calc", "sd-05", "sd 05",
-                   "design data"], _ABSENT], "window": 200},
+                   "design data"], _NOT_GIVEN], "scope": "finding"},
     "window-section-missing": {
         "type": "stated_together",
-        "terms": [{"re": r"08[\s.-]?80[\s.-]?00"}, _ABSENT], "window": 200},
+        "terms": [{"re": r"08[\s.-]?80[\s.-]?00"}, _NOT_A_SECTION],
+        "scope": "finding"},
     "window-water-test": {
-        "type": "stated_together", "terms": [_WATER_TEST, _ABSENT],
-        "window": 200},
+        "type": "stated_together", "terms": [_WATER_TEST, _NOT_REPORTED],
+        "scope": "finding"},
     "window-sov-total": {
-        "type": "stated_together", "terms": [_SOV_TOTAL, _SOV_SUM]},
-    # issue 2's four: each wants the sheet or value and what is wrong with
-    # how it was issued, side by side
+        "type": "stated_together", "terms": [_SOV_TOTAL, _SOV_SUM],
+        "scope": "finding"},
+    # issue 2's four, each in one finding: the sheet and what is wrong with
+    # how it was issued. A list of changes says "A-301: no change" on the
+    # line beside the next sheet's finding.
     "parapet-twin": {
         "type": "stated_together",
-        "terms": [[_num("109.60"), _num("109.6")],
-                  [_num("109.30"), _num("109.3")], _sheet("A-301"),
-                  _LEFT_BEHIND]},
+        "terms": [_sheet("A-301"), [_num("109.30"), _num("109.3"),
+                                    "parapet"], _LEFT_BEHIND],
+        "scope": "finding"},
     "cloud-not-listed": {
         "type": "stated_together",
         "terms": [_sheet("S-501"), {"re": r"12[\s-]?20\s?m\b"}, _CLOUDED,
-                  _UNLISTED], "window": 400},
-    # in one line or list item: "the other sheets are unchanged" is what
-    # a list of changes says on its last line, next to any sheet above it
+                  _UNLISTED], "window": 400, "scope": "finding"},
     "entry-no-change": {
         "type": "stated_together",
         "terms": [_sheet("A-102"), [_mark("205"), "relocat"], _NO_CHANGE],
-        "window": 200, "scope": "item"},
+        "scope": "finding"},
     "door-renumbered": {
         "type": "stated_together",
-        "terms": [_mark("106"), _mark("110"), [_sheet("A-101"), "plan"],
-                  _LEFT_BEHIND]},
+        "terms": [[_sheet("A-101"), "first floor plan"], _mark("106"),
+                  _LEFT_BEHIND], "scope": "finding"},
 }
 
 #: Every planted problem a check is written for.
