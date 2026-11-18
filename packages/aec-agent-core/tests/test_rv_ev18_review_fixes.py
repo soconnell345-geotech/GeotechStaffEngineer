@@ -269,3 +269,24 @@ def test_a_long_answer_of_thousands_of_citations_is_checked_in_time(
     # about 2 s with each citation compared only with its neighbours; about
     # 20 s when every citation was compared with every other
     assert took < 10, f"{took:.1f} s"
+
+
+# ---------------------------------------------------------------------------
+# 7. A reference's figure number inside a longer number does not name it
+# ---------------------------------------------------------------------------
+
+FIGURE = {"name": "read_reference_figure",
+          "args": {"reference": "made_up_manual", "figure_number": "5-2"},
+          "result": {"source": "made_up_manual.pdf", "pdf_page_index": 87,
+                     "printed_page": "5-14", "figure_number": "5-2",
+                     "reading": "made up"}}
+
+
+def test_a_longer_number_does_not_name_the_rendered_reference(tmp_path):
+    calls = (OPEN, READ, FIGURE)
+    res = _check(tmp_path, "Table 15-2 is on PDF page 88 of the report, "
+                 "value 0.4.", calls=calls)
+    assert _cited(res, "never_opened") == ["PDF page 88"]
+    res = _check(tmp_path, "Figure 5-2 (PDF page 88) gives 0.4.",
+                 calls=calls)
+    assert "never_opened" not in res

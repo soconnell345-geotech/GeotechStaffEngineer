@@ -2066,8 +2066,11 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
         lo = t.rfind("\n", 0, c.lead) + 1
         hi = t.find("\n", max(c.end, c.lead))
         line = _norm_label(t[lo:hi if hi >= 0 else len(t)])
+        # a name that is a number is not part of a longer one ("5-2" is
+        # not named by "Table 15-2")
         return [r for r in ref_keys
-                if any(len(n) >= 3 and n in line
+                if any(len(n) >= 3 and re.search(
+                    r"(?<![0-9])" + re.escape(n) + r"(?![0-9])", line)
                        for n in opened.reference_names.get(r, ()))]
 
     # A reading is a list of UNITS, one per page (or printed number) the
