@@ -378,6 +378,16 @@ round is the owner's call):
   CAD sheet whose lettering is drawn in strokes and that reading the text
   and looking have not settled. It reads vector sheets only; a scan has no
   lines to read. Not measured on a model yet (BACKLOG DR-44).
+- `GEOTECH_PLOT_CODE_KERNEL_LAYER`: only where plotting code is on
+  (`GEOTECH_PLOT_CODE=1`), on Linux. `1`: the process the plotting box
+  runs code in also puts on what the host's kernel offers (no new
+  privileges, Landlock file and TCP rules, a seccomp filter), and the
+  result says which parts went up (`box.kernel_layer`). `require`: the
+  same, and where the file rules cannot go up the box runs no code and
+  says why. Unset or `0`: the box as it was; any other value: the box
+  runs no code. What this host's kernel offers is not known until
+  `python -m aec_agent_core.plot_box.kernel_probe` is run on it. Not
+  checked on the App Service yet (BACKLOG INF-16).
 - `GEOTECH_REVIEW_DXF_PLOTS`: with a planlens after 0.16.0, an uploaded
   DXF is also opened as a one-page PDF plot of its model space, so the
   page can look at it and write a marked copy of the plot; reading and
