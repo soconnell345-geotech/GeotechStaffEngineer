@@ -82,3 +82,120 @@ file-level one.
 
 TA-10 needs none: the tests show the names and the one card offline. For
 TA-06 and TA-24, the captures listed above.
+
+## TA-24's summarizer part, built: a summary that fails keeps the history
+
+**What the lead asked (after the triage above).** When the agent library's
+own summarizer call fails (a busy refusal, a timeout), the earlier part of
+the conversation must not be replaced by the library's error line: that
+model call goes ahead with the history as it was, nothing sticks in the
+state, the library tries again at its next call, and the record says a
+summary failed. No retry ladder and no new waits (those stay with TA-24's
+live check).
+
+**How each library generation summarizes** (read from the sources):
+
+- Both: the summarizer is deepagents' `SummarizationMiddleware`
+  (`_DeepAgentsSummarizationMiddleware`), built by
+  `create_summarization_middleware` inside `create_deep_agent` for the main
+  agent, the general-purpose helper and every helper spec. It works in
+  `wrap_model_call` (not a before-model hook): it decides with
+  `_should_summarize` (0.7 adds `_over_budget`), writes the older messages
+  to a history file, makes the summary with `_create_summary` BEFORE the
+  model call, hands the model `[summary message, *kept messages]`, and
+  returns the state update `_summarization_event` (cutoff, summary message,
+  file). Every later call rebuilds what the model sees from that stored
+  event, so a stored summary is reused for the rest of the conversation.
+- deepagents 0.6.8 with langchain 1.3 (this laptop): langchain's
+  `_create_summary` catches every error and returns
+  `"Error generating summary: <error>"` as the summary. That line goes to
+  the model and into `_summarization_event`, and sticks.
+- deepagents 0.7.24 with langchain 1.4.4 / 1.4.5 (GitHub, a fresh host):
+  langchain asks the summary call again on its own (`with_retry`) and then
+  raises; deepagents does not catch it, so the model call and the turn end
+  on it. The error line never appears.
+
+**What was built.** `aec_agent_core/deep/summary_guard.py`, `install()`:
+it wraps five methods of deepagents' summarizer class in place, once:
+`wrap_model_call`, `awrap_model_call`, `_create_summary`,
+`_acreate_summary`, `_should_summarize`, plus `_over_budget` where it
+exists. While the class's own wrap runs, a summary that fails (the error
+line, or an exception) raises a private `SummaryFailed` before the model
+call and before any state update. The guarded wrap catches it, writes a
+`summary_failed` event, and asks the library's own wrap again with its two
+triggers saying "no" for that one call. The library then hands the model
+what it hands it when nothing needs summarizing (the history as it was,
+with an earlier good summary if there is one), and it returns no state
+update. `compile_agent` calls `install()` before it builds (both pages and
+the Document Review page build through it). `activity_log.APP_EVENTS`
+gains `summary_failed`.
+
+**Judgement calls.**
+- Where it stands: on the library's class, not in the middleware list. The
+  summarizer is built inside `create_deep_agent`, and our middleware runs
+  inside its wrap, after the summary is made and before its state write,
+  so no middleware of ours can stop the write or hand the model the history
+  as it was. Replacing the library's middleware was the other way; it would
+  move it in the stack and depend on each version's profile machinery.
+  Wrapping its methods keeps the library's own code for every step.
+- How a failure is read: langchain before 1.4 has no constant or code for
+  it, so the exact prefix of its `except` branch
+  (`summary_guard.ERROR_PREFIX`, `"Error generating summary:"`); langchain
+  1.4 by its code path, the exception from `_create_summary`.
+- Both generations get the same outcome. On the 1.4 generation a failed
+  summary used to end the turn; now the turn goes on with the history kept.
+  The turn is not cut short by a summary.
+- If, asked again, the call is too long for the model, the library
+  summarizes regardless of the threshold; if that summary fails too, the
+  call ends on the provider's error (langchain 1.4) or on `SummaryFailed`
+  (before 1.4). The history is still kept, and nothing is stored.
+- The record: `{"history": "kept", "what": ..., "error_type": <class
+  name>}`. The provider's error text is left out: `mask_error_secrets` is
+  not on this branch's base.
+
+**Settings.** None: the repair of a defect. With no failing summary the
+library's code runs unchanged. The middleware list is not touched, and
+both fingerprint files are unmoved.
+
+**Where the code changed.** `compile_agent` (`deep/assembly.py`): three
+lines (a comment, an import, `install()`) just after the
+`instructions` import, before `_instructions.apply` and before `create`.
+They are nowhere near the to-do middleware rule that another branch adds
+after `create`. `activity_log.py`: one name added to `APP_EVENTS`, and three
+comment lines under it. The middleware list itself is not changed.
+
+**Tests** (`packages/aec-agent-core/tests/test_ta24_summary_guard.py`;
+a fake model whose summary call is refused as busy; made-up messages):
+- the installed library, end to end (a langchain agent with deepagents'
+  summarizer, trigger 4 messages, keep 2): the model is handed the five
+  messages as they were, nothing is stored, the record has one
+  `summary_failed` with no provider text; the next call summarizes and
+  stores the summary; the same holds asynchronously;
+- the defect itself on whichever generation is installed (the library's
+  own wrap, `__wrapped__`): the error line is handed and stored (before
+  1.4), or the call ends on the refusal (1.4);
+- a successful summary: the guarded wrap hands the model exactly what the
+  library's own wrap hands it, and stores the same event;
+- every summarizer `create_deep_agent` builds (main, general-purpose and a
+  helper spec) is of the guarded class; `compile_agent` installs the guard;
+- the shape both generations share, with each generation's way of failing
+  (raises / error line), sync and async: the history is kept, nothing is
+  returned to store, and the record is written; a successful summary and a
+  short history come out untouched; too long and failing again ends on the
+  error; an unknown class is left alone; `install` wraps once.
+  The installed generation runs for real here (0.6.8) and on GitHub
+  (0.7.24); the shape tests cover the other one on each machine.
+
+**Noted, not fixed.**
+- When a summary fails, the older messages were already written to the
+  history file. The next summary writes them again, so that file can hold
+  a part twice.
+- The compact-conversation tool (`SummarizationToolMiddleware`, not in
+  our stacks) calls `_create_summary` outside the guarded wrap and is
+  unchanged.
+
+**For the lead: what a measurement on the hosted platform should compare.**
+A long Document Review conversation on a busy deployment: a
+`summary_failed` record and the model's next answer still using the
+earliest pages, against no "Error generating summary" text anywhere in
+`activity.jsonl`.

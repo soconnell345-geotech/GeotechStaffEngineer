@@ -488,6 +488,10 @@ def compile_agent(create: Callable, *, model, tools, system_prompt,
     changes. What was appended rides on the agent as ``geotech_appended``
     for :func:`record_build`."""
     from aec_agent_core.deep import instructions as _instructions
+    # A summary that fails keeps the history (TA-24): deepagents builds its
+    # summarizer inside ``create``, so the guard stands on its class.
+    from aec_agent_core.deep import summary_guard as _summary_guard
+    _summary_guard.install()
     system_prompt, subagents, appended = _instructions.apply(
         system_prompt, subagents)
     agent = create(

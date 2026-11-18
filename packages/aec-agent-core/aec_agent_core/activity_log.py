@@ -243,7 +243,11 @@ APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
                         "pacer_wait", "cited_pages", "cited_documents",
                         "judgment_check", "side_call_timeout",
                         "side_call_late_end", "engine_retry",
-                        "vision_slot_timeout", "image_read"})
+                        "vision_slot_timeout", "image_read",
+                        "summary_failed"})
+#: (``summary_failed``: a summary of the earlier conversation failed and the
+#: model was handed the history as it was; ``error_type`` where known;
+#: ``aec_agent_core.deep.summary_guard``, BACKLOG TA-24.)
 
 #: App events written from inside one model call, under that call's run id.
 MODEL_CALL_EVENTS = frozenset({"engine_retry"})
