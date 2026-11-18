@@ -55,6 +55,13 @@ MONO_FONT = "Consolas"
 #: Indent applied to a block quote, in inches.
 QUOTE_INDENT_IN = 0.4
 
+#: A photograph is stored in the .docx as JPEG at this quality (DR-47) ...
+PHOTO_JPEG_QUALITY = 85
+#: ... with no more pixels than this many per inch of the size it is
+#: printed at (it is never printed wider than the text): a 600 x 400 px
+#: photograph printed 2 in wide is stored at 400 x 267 px.
+PHOTO_MAX_DPI = 200
+
 # DEFAULT_AUTHOR: the author written into File > Info when the caller names
 # nobody (python-docx's template otherwise says "python-docx"): the name of
 # the application the page handed in (aec_agent_core.app_details; INF-33
@@ -508,7 +515,11 @@ def _mark(run, strike, script):
 
 
 def _picture(par, token, ctx, block=False):
-    """Place an image, scaled down to the text width, or say why it is not there."""
+    """Place an image, scaled down to the text width, or say why it is not there.
+
+    A photograph goes in as JPEG at print size (:func:`_photo_as_jpeg`,
+    DR-47); every other picture goes in as its file, as before.
+    """
     attrs = dict(token.attrs or {})
     src = attrs.get("src", "")
     alt = (token.content or attrs.get("alt") or "").strip()
@@ -519,8 +530,16 @@ def _picture(par, token, ctx, block=False):
         return
     if not os.path.isabs(path) and ctx.base_dir:
         path = os.path.join(ctx.base_dir, path)
+    photo = _photo_as_jpeg(path, ctx)
     try:
-        shape = par.add_run().add_picture(path)
+        if photo is None:
+            shape = par.add_run().add_picture(path)
+        else:
+            import io
+            data, (cx, cy) = photo
+            # Printed at the size the file itself would have been.
+            shape = par.add_run().add_picture(io.BytesIO(data), width=cx,
+                                              height=cy)
     except Exception as exc:
         ctx.warnings.append(
             f"image not found or unreadable, left as a note: {src} "
@@ -542,6 +561,146 @@ def _picture(par, token, ctx, block=False):
         ctx.style(caption, "Caption")
         run = caption.add_run(alt)
         run.italic = True
+
+
+#: The photograph test (DR-47) looks at a sample of at most this many pixels
+#: along the longer side.
+_PHOTO_SAMPLE = 256
+
+
+def _is_photograph(rgb) -> bool:
+    """Whether an RGB picture is a photograph, judged by its pixels alone.
+
+    Measured on a sample of at most ``_PHOTO_SAMPLE`` pixels a side, taken
+    nearest-pixel so that no colour is made up by the sampling. Both must
+    hold, and every doubt answers "no", which leaves the picture as it is:
+
+    - Continuous tone: the sample holds at least one distinct colour for
+      every five pixels. Line work, lettering, charts and drawings are a
+      few flat colours and their anti-aliased edges (about one in ten or
+      fewer even for a dense scatter chart); a photograph's colours vary
+      from pixel to pixel.
+    - No paper: fewer than half of the sampled pixels lie within 32 levels,
+      in every channel, of the picture's most common tone. A drawing, a
+      chart, a scan or a page of text is mostly its background; a
+      photograph has no one tone that covers half of it. (A photograph
+      that is half sky fails this and stays as it is.)
+
+    The most common tone is the centre of the fullest cell on eight grids
+    of cells 32 levels wide, each channel's cells either as they are or
+    shifted by 16 levels, and the largest share within 32 levels of such a
+    centre is the one judged. On one of the eight grids any paper tone
+    lies at least 8 levels inside its cell in every channel, so scanner
+    noise of a few levels (checked up to a standard deviation of 5) keeps
+    the paper in one cell; on a single grid a paper tone at a cell edge
+    (about 224) split into up to eight fragments, and a flat coloured zone
+    over a sixth of a scan outnumbered each and was taken for the paper.
+
+    Some charts and drawing crops are photograph-like in their pixels and
+    pass both: a smoothly shaded heat map, a shaded-relief map, line work
+    drawn over a photograph, a scan under strongly uneven light. No rule
+    on pixels tells them from photographs; they are stored as JPEG at full
+    colour resolution (:func:`_photo_as_jpeg`), so their coloured lettering
+    and symbols do not bleed.
+    """
+    import itertools
+
+    import numpy as np
+    from PIL import Image
+    w, h = rgb.size
+    k = min(1.0, _PHOTO_SAMPLE / max(w, h))
+    sample = rgb if k >= 1.0 else rgb.resize(
+        (max(1, round(w * k)), max(1, round(h * k))), Image.NEAREST)
+    n = sample.size[0] * sample.size[1]
+    if len(sample.getcolors(maxcolors=n)) * 5 < n:
+        return False
+    px = np.asarray(sample, dtype=np.int16).reshape(-1, 3)
+    weights = np.array([81, 9, 1], dtype=np.int16)     # cells 0..8 a channel
+    for shift in itertools.product((0, 16), repeat=3):
+        cells = ((px + np.array(shift, dtype=np.int16)) >> 5) @ weights
+        centre = px[cells == np.bincount(cells).argmax()].mean(axis=0)
+        if float((np.abs(px - centre).max(axis=1) <= 32).mean()) >= 0.5:
+            return False
+    return True
+
+
+def _photo_as_jpeg(path, ctx):
+    """A photograph's bytes for the .docx, or ``None`` to place the file as
+    it is (DR-47).
+
+    Photo crops arrived as PNG at 200 to 300 dpi and were embedded
+    unchanged, about 1 MB each: a 20-photo report passed a common 20 MB
+    mail limit, and the agent dropped evidence photos to get under it. A
+    photograph (:func:`_is_photograph`) is now stored as JPEG at
+    ``PHOTO_JPEG_QUALITY`` and full colour resolution (4:4:4), with no
+    more than ``PHOTO_MAX_DPI`` pixels per
+    inch of the size it is printed at; it prints at the same size as
+    before. Line work, lettering, charts and drawing crops are not
+    photographs and stay as they are: JPEG blurs edges and lettering, and
+    PNG already stores them small.
+
+    Left as it is, always: a picture that is not RGB (a grey one: scans of
+    drawings and text are grey; a palette, CMYK), one with any transparent
+    pixel or an EXIF rotation, a JPEG already within the size, and any
+    picture whose JPEG would not be smaller than its file. The source file
+    is only read. Any failure returns ``None``, so a picture Pillow cannot
+    open is placed exactly as before.
+
+    Returns ``(jpeg bytes, (width, height))``, the size in EMU at which the
+    file itself would have been placed (python-docx's own reading of it).
+    """
+    try:
+        import io
+        from PIL import Image
+        from docx.image.image import Image as DocxImage
+        with Image.open(path) as img:
+            if img.mode not in ("RGB", "RGBA") \
+                    or img.info.get("transparency") is not None \
+                    or img.getexif().get(0x0112, 1) != 1:
+                return None
+            img.load()
+            if img.mode == "RGBA":
+                if img.getchannel("A").getextrema()[0] < 255:
+                    return None
+                rgb = img.convert("RGB")
+            else:
+                rgb = img
+            if not _is_photograph(rgb):
+                return None
+            native = DocxImage.from_file(path)
+            cx, cy = int(native.width), int(native.height)
+            fit = min(1.0, ctx.text_width / cx)
+            if ctx.text_height:
+                fit = min(fit, ctx.text_height / cy)
+            wide_in, high_in = cx * fit / 914400, cy * fit / 914400
+            w, h = rgb.size
+            k = min(1.0, wide_in * PHOTO_MAX_DPI / w,
+                    high_in * PHOTO_MAX_DPI / h)
+            if k >= 1.0 and img.format in ("JPEG", "MPO"):
+                return None
+            if k < 1.0:
+                rgb = rgb.resize((max(1, round(w * k)), max(1, round(h * k))),
+                                 Image.LANCZOS)
+            # The JPEG's own dpi is its printed size, so reading the file
+            # back and writing it again prints it at the same size.
+            dpi = max(1, round(rgb.size[0] / wide_in))
+            extra = {}
+            if img.info.get("icc_profile"):
+                extra["icc_profile"] = img.info["icc_profile"]
+            buf = io.BytesIO()
+            # Full colour resolution (4:4:4, ``subsampling=0``), not the
+            # writer's default 4:2:0: a chart or drawing crop that is
+            # photograph-like in its pixels converts too, and its coloured
+            # lettering must not bleed. It costs about a fifth to a half
+            # more bytes.
+            rgb.save(buf, "JPEG", quality=PHOTO_JPEG_QUALITY, subsampling=0,
+                     dpi=(dpi, dpi), **extra)
+        data = buf.getvalue()
+        if len(data) >= os.path.getsize(path):
+            return None
+        return data, (cx, cy)
+    except Exception:  # noqa: BLE001 - never costs the picture its place
+        return None
 
 
 def _matching(tokens, start, open_type, close_type):
@@ -653,6 +812,89 @@ _BLOCK_START = re.compile(
     r"^(?:[-+*](?=\s|$)|\d{1,9}[.)](?=\s|$)|#{1,6}(?=\s|$)|>|```|~~~"
     r"|=+\s*$)")
 
+_MATH = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+
+#: Word's own equations (``m:oMath``), counted as not read (DR-45).
+_EQUATION = "equation (Word's own equation format)"
+
+#: Fonts whose letters stand for other characters and for which no
+#: published table is used here: text set in them is left as it is and the
+#: run is counted as not read (DR-45).
+_SYMBOL_FONTS_NO_TABLE = {"wingdings", "wingdings 2", "wingdings 3",
+                          "webdings", "zapf dingbats", "zapfdingbats",
+                          "itc zapf dingbats", "marlett", "mt extra"}
+
+#: How such a run, or a Symbol-font run with a character outside the
+#: table, is named in the not-read section.
+_SYMBOL_RUN = ("run set in a symbol font (the letters shown are not the "
+               "characters printed)")
+
+
+def _symbol_char(ch):
+    """A character of a Symbol-font run as the character printed, or
+    ``None`` when the table has none. White space (a space, a non-breaking
+    space) stays as it is; a character beyond Latin-1 and outside
+    0xF000-0xF0FF is already a real character (Unicode text with the font
+    applied) and stays as it is."""
+    code = ord(ch)
+    if ch.isspace():
+        return ch
+    if 0xF000 <= code <= 0xF0FF:
+        code -= 0xF000
+    elif code > 0xFF:
+        return ch
+    return _SYMBOL_FONT.get(code)
+
+
+def _symbol_text(text):
+    return "".join(_symbol_char(ch) for ch in text)
+
+
+#: The heading of the tracked-changes section :func:`docx_to_markdown`
+#: returns apart from the body, as ``tracked_changes`` (DR-45).
+TRACKED_CHANGES_HEADING = "Tracked changes in the Word file"
+
+#: A deleted passage longer than this is given in that section by its start
+#: and its end, with the number of characters left out said between them
+#: (DR-45; a whole deleted page went to the model) ...
+_DELETION_MAX_CHARS = 300
+#: ... and the section's deletion lines stop at this many characters; one
+#: line then says how many more deletions the file holds.
+_DELETIONS_MAX_CHARS = 4000
+
+#: The Symbol font's characters, code -> Unicode, for a ``w:sym`` (DR-45).
+#: From the Unicode Consortium's published table "Adobe Symbol Encoding to
+#: Unicode" (unicode.org/Public/MAPPINGS/VENDORS/ADOBE/symbol.txt, table
+#: version 1.0, 2011-07-12), whose code order the Symbol font follows; Word
+#: writes the code itself or 0xF000 plus it. Where that table gives a code
+#: two values, the Greek letter is taken (0x6D is mu, not the micro sign),
+#: else the first listed. Its 29 codes assigned only to private-use values
+#: (bracket pieces, arrow extenders, serif and sans-serif marks) and the
+#: codes it leaves unassigned have no character here: such a symbol is
+#: counted as not read, never guessed.
+_SYMBOL_FONT = {
+    int(code, 16): chr(int(uni, 16)) for code, uni in (
+        pair.split(":") for pair in """
+20:0020 21:0021 22:2200 23:0023 24:2203 25:0025 26:0026 27:220B 28:0028
+29:0029 2A:2217 2B:002B 2C:002C 2D:2212 2E:002E 2F:002F 30:0030 31:0031
+32:0032 33:0033 34:0034 35:0035 36:0036 37:0037 38:0038 39:0039 3A:003A
+3B:003B 3C:003C 3D:003D 3E:003E 3F:003F 40:2245 41:0391 42:0392 43:03A7
+44:0394 45:0395 46:03A6 47:0393 48:0397 49:0399 4A:03D1 4B:039A 4C:039B
+4D:039C 4E:039D 4F:039F 50:03A0 51:0398 52:03A1 53:03A3 54:03A4 55:03A5
+56:03C2 57:03A9 58:039E 59:03A8 5A:0396 5B:005B 5C:2234 5D:005D 5E:22A5
+5F:005F 61:03B1 62:03B2 63:03C7 64:03B4 65:03B5 66:03C6 67:03B3 68:03B7
+69:03B9 6A:03D5 6B:03BA 6C:03BB 6D:03BC 6E:03BD 6F:03BF 70:03C0 71:03B8
+72:03C1 73:03C3 74:03C4 75:03C5 76:03D6 77:03C9 78:03BE 79:03C8 7A:03B6
+7B:007B 7C:007C 7D:007D 7E:223C A0:20AC A1:03D2 A2:2032 A3:2264 A4:2044
+A5:221E A6:0192 A7:2663 A8:2666 A9:2665 AA:2660 AB:2194 AC:2190 AD:2191
+AE:2192 AF:2193 B0:00B0 B1:00B1 B2:2033 B3:2265 B4:00D7 B5:221D B6:2202
+B7:2022 B8:00F7 B9:2260 BA:2261 BB:2248 BC:2026 BF:21B5 C0:2135 C1:2111
+C2:211C C3:2118 C4:2297 C5:2295 C6:2205 C7:2229 C8:222A C9:2283 CA:2287
+CB:2284 CC:2282 CD:2286 CE:2208 CF:2209 D0:2220 D1:2207 D5:220F D6:221A
+D7:22C5 D8:00AC D9:2227 DA:2228 DB:21D4 DC:21D0 DD:21D1 DE:21D2 DF:21D3
+E0:25CA E1:2329 E5:2211 F1:232A F2:222B F3:2320 F5:2321
+""".split())}
+
 
 def docx_to_markdown(source, *, image_dir: str = None, image_ref: str = None,
                      image_prefix: str = "") -> dict:
@@ -680,7 +922,12 @@ def docx_to_markdown(source, *, image_dir: str = None, image_ref: str = None,
         ``picture N`` placeholder each); ``properties`` (title, author);
         ``extras`` (the headings of what was read besides the body and
         written after it: comments, footnotes, endnotes, headers and
-        footers, text boxes, and what was there but not read).
+        footers, text boxes, and what was there but not read, such as
+        charts and equations); ``tracked_changes`` (DR-45: a Markdown
+        section, headed :data:`TRACKED_CHANGES_HEADING`, that says the file
+        holds tracked changes and gives the deleted text; ``""`` when it
+        holds none). ``markdown`` stays the writer's inverse: the body reads
+        tracked changes as accepted, and the section is not in it.
     """
     import docx
 
@@ -692,6 +939,7 @@ def docx_to_markdown(source, *, image_dir: str = None, image_ref: str = None,
     return {
         "markdown": _assemble(reader.blocks),
         "extras": extras,
+        "tracked_changes": reader.tracked_changes_text(),
         "title": reader.title,
         "images": reader.images,
         "properties": {"title": cp.title or "", "author": cp.author or ""},
@@ -800,6 +1048,8 @@ class _DocxReader:
         self._comment_text = {}            # comment id -> text it is on
         self.textboxes = []                # text boxes' text, in order
         self.unread = {}                   # kind -> count, there, not read
+        self.tracked = set()               # kinds of tracked change met
+        self.deletions = []                # tracked deletions, in order
         self._comment_seen = set()         # comment ranges met in the text
         # The part being read (a header, footer, comments or notes part):
         # its pictures' and links' r:ids are its own, not the body's.
@@ -940,6 +1190,166 @@ class _DocxReader:
     def _not_read(self, what):
         self.unread[what] = self.unread.get(what, 0) + 1
 
+    def _sym(self, el, run=None) -> str:
+        """A ``w:sym``'s character where its font's table is known (the
+        Symbol font's, ``_SYMBOL_FONT``); otherwise ``""``, counted as not
+        read (DR-45)."""
+        font = (el.get(_qn("w:font")) or "").strip()
+        if not font and run is not None:
+            try:
+                font = (run.font.name or "").strip()
+            except Exception:  # noqa: BLE001 - formatting is best effort
+                font = ""
+        try:
+            code = int(el.get(_qn("w:char")) or "", 16)
+        except ValueError:
+            code = -1
+        if 0xF000 <= code <= 0xF0FF:
+            code -= 0xF000
+        if font.lower() == "symbol" and code in _SYMBOL_FONT:
+            return _SYMBOL_FONT[code]
+        self._not_read(f"symbol character in the {font} font" if font
+                       else "symbol character in an unnamed font")
+        return ""
+
+    def _run_font(self, r_el, run) -> str:
+        """The font a run's text is set in: the run's own ``w:rFonts``,
+        else its character style's (``w:ascii``, else ``w:hAnsi``;
+        ``w:cs`` for a complex-script run). Paragraph styles, the
+        document defaults and theme fonts are not followed."""
+        rpr = r_el.find(_qn("w:rPr"))
+        if rpr is None:
+            return ""
+        attrs = ["w:ascii", "w:hAnsi"]
+        if rpr.find(_qn("w:cs")) is not None \
+                or rpr.find(_qn("w:rtl")) is not None:
+            attrs.insert(0, "w:cs")
+        holders = [rpr]
+        if rpr.find(_qn("w:rStyle")) is not None:
+            try:
+                srpr = run.style.element.find(_qn("w:rPr"))
+                if srpr is not None:
+                    holders.append(srpr)
+            except Exception:  # noqa: BLE001 - formatting is best effort
+                pass
+        for holder in holders:
+            fonts = holder.find(_qn("w:rFonts"))
+            if fonts is None:
+                continue
+            for a in attrs:
+                name = (fonts.get(_qn(a)) or "").strip()
+                if name:
+                    return name
+        return ""
+
+    def _symbol_run(self, r_el, run):
+        """For a run set in a symbol font: the function that turns its
+        text into the characters printed (the Symbol font, when every
+        character of the run is in ``_SYMBOL_FONT``), else ``None``. A run
+        in a symbol font that cannot be turned so keeps its text and is
+        counted once as not read (DR-45)."""
+        font = self._run_font(r_el, run).lower()
+        if font != "symbol" and font not in _SYMBOL_FONTS_NO_TABLE:
+            return None
+        text = "".join(t.text or "" for t in r_el.iterchildren(_qn("w:t")))
+        if not text.strip():
+            return None
+        if font == "symbol" and all(_symbol_char(ch) is not None
+                                    for ch in text):
+            return _symbol_text
+        self._not_read(_SYMBOL_RUN)
+        return None
+
+    def _deleted(self, el, segs, found):
+        """A tracked deletion (``w:del``): left out of the text, as Word's
+        "accept all" view has it, and kept with where it was for the
+        "Tracked changes" section (DR-45). Word splits one deletion into a
+        ``w:del`` per run: neighbours by one author are joined."""
+        self.tracked.add("deletion")
+        texts = (_qn("w:delText"), _qn("w:t"))
+        parts = []
+        for x in el.iter(*texts, _qn("w:sym"), _qn("w:tab"), _qn("w:br"),
+                         _qn("w:cr")):
+            if x.tag in texts:
+                parts.append(x.text or "")
+            elif x.tag == _qn("w:sym"):
+                parts.append(self._sym(x))
+            else:
+                parts.append(" ")
+        text = "".join(parts)
+        if not text.strip():
+            return
+        who = el.get(_qn("w:author")) or "unknown author"
+        when = (el.get(_qn("w:date")) or "")[:10]
+        pos = sum(len(s["s"]) for s in segs if s["t"] == "text")
+        if found and found[-1]["pos"] == pos and found[-1]["who"] == who:
+            found[-1]["text"] += text
+            return
+        found.append({"who": who, "when": when, "text": text, "pos": pos})
+        self.deletions.append(found[-1])
+
+    def tracked_changes_text(self) -> str:
+        """The "Tracked changes in the Word file" section, or ``""`` when
+        the file holds none (DR-45). Kept out of the Markdown body, which
+        stays the writer's inverse (Word's "accept all" reading): it says
+        the file holds tracked changes and gives the deleted text."""
+        if not self.tracked:
+            return ""
+        intro = ("The file holds tracked changes. The text above reads "
+                 "them as accepted: insertions in, deletions out")
+        if "move" in self.tracked:
+            intro += ", moved text at its new place"
+        intro += (". The deleted text, which is not part of the document's "
+                  "current text:" if self.deletions else ".")
+        parts = [f"## {TRACKED_CHANGES_HEADING}", intro]
+        if self.deletions:
+            # Bounded (_DELETIONS_MAX_CHARS); the count stays exact.
+            lines, used = [], 0
+            for d in self.deletions:
+                line = self._deletion_line(d)
+                if lines and used + len(line) + 1 > _DELETIONS_MAX_CHARS:
+                    break
+                lines.append(line)
+                used += len(line) + 1
+            left = len(self.deletions) - len(lines)
+            if left:
+                lines.append(
+                    f"({left} more deletion"
+                    f"{'s are' if left > 1 else ' is'} not shown here: this "
+                    f"list stops at about {_DELETIONS_MAX_CHARS:,} "
+                    f"characters.)")
+            parts.append("\n".join(lines))
+        return "\n\n".join(parts) + "\n"
+
+    @staticmethod
+    def _deletion_line(d) -> str:
+        """One line of the "Tracked changes" section."""
+        def clip(s, tail):
+            if len(s) <= 40:
+                return s
+            if tail:
+                return "..." + s[-40:].split(" ", 1)[-1]
+            return s[:40].rsplit(" ", 1)[0] + "..."
+        before = " ".join(d.get("before", "").split())
+        after = " ".join(d.get("after", "").split())
+        if before:
+            where = f' after "{clip(before, True)}"'
+        elif after:
+            where = f' before "{clip(after, False)}"'
+        else:
+            where = " (its paragraph has no other text)"
+        head = d["who"] + (f", {d['when']}" if d["when"] else "")
+        text = " ".join(d["text"].split())
+        if len(text) > _DELETION_MAX_CHARS:
+            # Its start and its end, at word breaks; the count of the
+            # characters between them is exact.
+            keep = _DELETION_MAX_CHARS // 2
+            start = text[:keep].rsplit(" ", 1)[0]
+            end = text[-keep:].split(" ", 1)[-1]
+            text = (f"{start} [... {len(text) - len(start) - len(end):,} "
+                    f"characters not shown ...] {end}")
+        return f'- {head}: deleted "{text}"{where}'
+
     def _paragraphs_text(self, container, sep=" / "):
         """The text of every paragraph under ``container``, joined."""
         parts = []
@@ -952,13 +1362,20 @@ class _DocxReader:
     def segments(self, p_el):
         """The pieces of one paragraph: text runs with their formatting,
         line and page breaks, pictures — tracked insertions in, deletions
-        out, field codes out."""
+        out (kept for the "Tracked changes" section), field codes out; a
+        ``w:sym``, and a run set in the Symbol font, as the characters
+        printed where the font's table is known, an equation in Word's own
+        format counted as not read (DR-45)."""
         from docx.text.paragraph import Paragraph
         from docx.text.run import Run
         par = Paragraph(p_el, self.body)
         segs = []
+        found = []                       # this paragraph's deletions
         r_tag, link_tag = _qn("w:r"), _qn("w:hyperlink")
-        skip = (_qn("w:del"), _qn("w:moveFrom"))
+        del_tag, move_from = _qn("w:del"), _qn("w:moveFrom")
+        ins_tag, move_to = _qn("w:ins"), _qn("w:moveTo")
+        math_para, math = _MATH + "oMathPara", _MATH + "oMath"
+        sym_tag = _qn("w:sym")
         into = (_qn("w:ins"), _qn("w:moveTo"), _qn("w:smartTag"),
                 _qn("w:customXml"), _qn("w:fldSimple"), _qn("w:sdt"),
                 _qn("w:sdtContent"))
@@ -979,13 +1396,16 @@ class _DocxReader:
             except Exception:  # noqa: BLE001
                 b = i = False
             c = self._is_mono(r)
+            as_printed = self._symbol_run(r_el, r)
             for ch in r_el.iterchildren():
                 if ch.tag == t_tag:
-                    segs.append({"t": "text", "s": ch.text or "", "b": b,
+                    s = ch.text or ""
+                    if as_printed is not None:
+                        s = as_printed(s)
+                    segs.append({"t": "text", "s": s, "b": b,
                                  "i": i, "c": c, "link": link})
                     for cid in self._open_comments:
-                        self._comment_text.setdefault(cid, []).append(
-                            ch.text or "")
+                        self._comment_text.setdefault(cid, []).append(s)
                 elif ch.tag == tab_tag:
                     segs.append({"t": "text", "s": " ", "b": b, "i": i,
                                  "c": c, "link": link})
@@ -997,6 +1417,13 @@ class _DocxReader:
                                 "page" else {"t": "br"})
                 elif ch.tag == cr_tag:
                     segs.append({"t": "br"})
+                elif ch.tag == sym_tag:
+                    s = self._sym(ch, r)
+                    if s:
+                        segs.append({"t": "text", "s": s, "b": b, "i": i,
+                                     "c": c, "link": link})
+                        for cid in self._open_comments:
+                            self._comment_text.setdefault(cid, []).append(s)
                 elif ch.tag in pics:
                     self._picture_or_box(ch, segs)
                 elif ch.tag == alt_tag:
@@ -1018,12 +1445,28 @@ class _DocxReader:
                     run(ch, link)
                 elif ch.tag == link_tag:
                     walk(ch, self._link_url(ch) or link)
-                elif ch.tag in skip:
-                    continue
+                elif ch.tag == del_tag:
+                    self._deleted(ch, segs, found)
+                elif ch.tag == move_from:
+                    # Moved away: read at the place it moved to.
+                    self.tracked.add("move")
                 elif ch.tag in into:
+                    if ch.tag == ins_tag:
+                        self.tracked.add("insertion")
+                    elif ch.tag == move_to:
+                        self.tracked.add("move")
                     walk(ch, link)
+                elif ch.tag == math_para:
+                    for _eq in ch.iterchildren(math):
+                        self._not_read(_EQUATION)
+                elif ch.tag == math:
+                    self._not_read(_EQUATION)
 
         walk(p_el, None)
+        if found:
+            full = "".join(s["s"] for s in segs if s["t"] == "text")
+            for d in found:
+                d["before"], d["after"] = full[:d["pos"]], full[d["pos"]:]
         return segs, par
 
     def inline(self, p_el, drop_bold=False) -> str:
