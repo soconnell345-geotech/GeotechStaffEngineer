@@ -48,7 +48,7 @@ Nothing else settles it: not a failed read, other pages, another file, or a look
 
 A failed zoom that named no box (a whole page or an image) is settled only by the same zoom again (DR-46's rule). Only the error is dropped; the redo's own flags still stand, such as lettering past its box's edges.
 
-**(3) Not built.** See "Noted, not fixed".
+**(3) Built afterwards, on its own branch.** See "Part 3: the minimal build's helper" at the end of this file.
 
 ## Calls made
 
@@ -108,10 +108,63 @@ Neither moves: no prompt, tool description, schema, helper text or middleware ch
   - it caps the arm's helpers at once (`GEOTECH_MAX_HELPERS`, 2 by default), a cap the arm has never had;
   - it marks the helper's calls as a helper's. That moves its budget-reached note from the turn to the helper (`note_budget_reached`; today a minimal helper that uses up its budget marks the turn's budget as reached), and it adds task fields to the activity log.
 
-  Open items alone would take a recording path of the helper's own (a `HelperRecord` set around its `invoke`, the recorder in its middleware, `open_items_note` added to its answer) and a decision on that budget note.
+  Open items alone would take a recording path of the helper's own (a `HelperRecord` set around its `invoke`, the recorder in its middleware, `open_items_note` added to its answer) and a decision on that budget note. Part 3, below, reads the record from the helper's messages after it returns instead, so none of the three changes happens.
 - **Two zooms with bad box arguments sent together, then one good redo, settle both.** The rule for a failure in the box's arguments has no box to match a redo to. Such a pair should be rare (a helper that sends two malformed zooms at once usually fixes both); it changes no saved report, so it is noted, not built.
 - **A `read_pdf_text` result cut by the result cap is not parsed.** If a result runs past the page's result cap, the tool kit cuts the JSON as a string, and `open_items` cannot read it. The text budget (12,000 characters) sits under the cap (16,000), so this should not happen.
 
 ## For the lead: what a measurement on the hosted platform should compare
 
 In a whole-set review's saved runs, count the reader results whose kept record holds a `read_document` result with `next` (or a `read_pdf_text` result with `truncated`) that the helper did not read on from. Before this branch the main agent was never told about these cuts; after it, each one is a line in the open items. Then check that the main agent then reads on, or hands the rest to another helper, instead of reporting "not found" on pages it never read. The failed-and-redone zoom was 1 in 1,802 helper results in DR-46's runs, so no measurable change is expected from it.
+
+## Part 3: the minimal build's helper
+
+### What was asked
+
+The minimal build's helper (`GEOTECH_REVIEW_AGENT=minimal`, a suite arm; `minimal_agent.py`) kept the old compact-findings contract and got none of the open items DR-46 gives a reading helper. The lead's ruling: the arm measures; testers do not run it, so no switch. Its helper's hand-back gets the same open items as the default build's reader, by the same code, not a second copy of the rules. The default build and its fingerprints must not move. The arm's own fingerprint entry may move only if a text its model is handed changes.
+
+### What was built
+
+- `packages/aec-agent-core/aec_agent_core/deep/keep_work.py`, `record_of_messages(messages, subagent, brief)` (new): a `HelperRecord` made after the fact from a finished helper's own messages. Each AI message with its tool calls becomes a model step, each tool message a result (name, call id, text, status), in order; the brief and any other message are skipped. The helper's state holds each result as the helper received it (inline images are added to a request, never to the state), so `open_items` reads this record as it reads one `HelperRecorder` kept.
+- `packages/aec-document-review/aec_document_review/minimal_agent.py`, `_with_open_items` (new), called by `_helper_tool`'s `task`. After the helper returns, its record is made from `result["messages"]`, `keep_work.open_items` lists what its tools flagged, and `keep_work.open_items_note(items, None)` goes after the answer. It is joined as `KeepWork` joins a note: the answer's end trimmed, a blank line, the note. With no open item, or if reading the record fails, the answer goes back exactly as before.
+
+No rule is copied. What counts as open, what settles it, the order, the 300-word cap and the words all come from the functions the default build's reader uses.
+
+### Calls made
+
+- **The record is read from the helper's messages after it returns, not recorded as it runs.** Recording as it runs means setting the running helper (`keep_work._HELPER`) around the helper's `invoke`. More than the recorder reads that: the budget-reached note (`note_budget_reached` would mark the helper instead of the turn), the activity log's task fields, the scratch guard, the plot box and the figure helper. Reading the messages afterwards changes none of them. The helper has no summarizer, so its final state keeps its whole conversation and both ways give the same steps.
+- **No kept file, and the note names none.** The arm has no `read_text_file`, so a note telling it to open a file would point at a tool it does not have. With no file name, `open_items_note` past its cap says only how many items are not shown.
+- **No helper cap.** `KeepWork` is not put on the arm, so `GEOTECH_MAX_HELPERS` does not reach it.
+- **The helper's prompt (`READER_PROMPT`, "ONLY a compact list") is unchanged.** The item's done line asks for the open items. The arm's short, generic prompt is part of what it measures, and changing it would move the `review_minimal` fingerprint entry. If the lead wants DR-46's three-list contract in the arm too, that is a prompt change of its own.
+- **A helper that raised gets nothing added.** Its exception carries no state to read, so the arm's "The helper failed: ..." line goes back as before. The default build's reader that stops on an error gets no open items either; it gets its kept file.
+
+### What the arm's helper can flag
+
+Its tools are `analyze_pdf_page` and `render_region` (both shown to the model itself, no vision call), `analyze_image` (an upload: a vision call) and `page_count`. So in a real run its open items are a call that failed (a look, a zoom not redone, a page count) and, from `analyze_image`, a vision answer cut off at its output limit or a whole-image view or tiles not read. It has no text tool, so a cut text read cannot arise in the arm. The test adds the core's `read_pdf_text` to its helper only, to show the same code carries one.
+
+### Settings
+
+None (the lead's ruling). With `GEOTECH_REVIEW_AGENT` unset nothing changes: the default build never imports `minimal_agent`, and only `minimal_agent` calls `record_of_messages`.
+
+### Tests
+
+- `packages/aec-document-review/tests/test_dr50_minimal_helper_open_items_offline.py` (new). The page's minimal build (`review_flags.ARMS["minimal"]`) runs one turn on a scripted model and a fake vision engine; the main agent hands two jobs to `task`.
+  - Helper T reads six made-up pages with one `read_pdf_text` call that stops at its size limit. It zooms on page 1 (the render fails), then zooms again with the same question in an overlapping box. It zooms on page 2 (the render fails) and never redoes it. It looks at an uploaded made-up picture whose vision answer is cut off, and answers that nothing is open.
+  - Helper L looks at one page.
+  - The test checks what T's tools returned, then that the main agent receives T's answer followed by exactly `open_items_note([...], None)` with three lines: the page-2 zoom failure, the cut-off picture read, and the cut text read with the tool's own note. There is no line for page 1 (the zoom redone in an overlapping box) and no kept file. L's result is its answer, byte for byte.
+  - A failed render is made by a `vision_view.render_view` that raises `ValueError` for the two failing boxes, the path a real failed render takes (`_render_error`).
+  - Without the change to `minimal_agent.py`, the tool results are the same and the last check fails: T's result is its answer alone.
+- `packages/aec-agent-core/tests/test_dr50_record_of_messages.py` (new). The record holds the steps in order with their ids, texts and statuses, and sets no running helper. Its open items are the default reader's: a zoom redone in an overlapping box after its failure came back is settled, and a failed look is listed. No messages make an empty record. It fails on the base, where the function does not exist.
+
+Also run, all green: `test_dr50_open_items.py`, `test_dr46_open_items.py`, `test_core_imports.py`, `funhouse_agent/deep/tests/test_keep_work_offline.py`; Document Review's `test_review_fingerprints.py`, `test_review_minimal_offline.py`, `test_dr50_reader_open_items_offline.py`, `test_dr46_reader_boundary_offline.py`, `test_ta38_turn_ceilings.py`, `test_review_harness_offline.py`; `webapp/tests/test_public_text.py`.
+
+### Fingerprints
+
+Nothing the model is handed changed: no prompt, tool description, schema, helper or middleware. Only what a minimal helper's `task` result carries changed. `test_review_fingerprints.py` passes for the default and the minimal build with no re-record.
+
+### Noted, not fixed
+
+- A minimal helper that used up its model-call budget is not kept as a file the way the default build's reader that gave up is. The arm cannot read a kept file, and nothing in a saved report changes.
+
+### For the lead: what a measurement should compare
+
+In the minimal arm's saved runs, count the helper results that carry the open-items block. Check that the main agent then looks again or hands the item on, instead of reporting "not found" on what a helper could not read. Expect it rarely: the arm's looks make no vision call, so its flags are mostly failed calls and cut-off picture reads. On open items the two arms are now alike. What still differs in what a helper hands back is the helper's prompt contract.
