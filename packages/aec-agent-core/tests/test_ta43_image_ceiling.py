@@ -167,7 +167,8 @@ def test_a_refused_page_read_is_a_plain_tool_error(monkeypatch):
     assert list(first)[0] == "image_calls"
     assert first["image_calls"].startswith(
         "this look made 1 image call; this turn has made 1 of its ceiling "
-        "of 1. The ceiling is near")
+        "of 1. The ceiling is met: any further look this turn is refused, "
+        "whatever a note in this result suggests")
     assert first["analysis"].startswith("Door 508")
     assert second == {"error": kw.IMAGE_CEILING_ERROR.format(limit=1)}
     assert state["calls"] == 1
@@ -196,6 +197,73 @@ def test_a_look_cut_by_the_ceiling_says_what_was_not_read(monkeypatch):
 
 
 CAPPED = "this turn's image ceiling was met"
+
+
+def test_at_the_ceiling_a_look_says_no_further_look_will_be_made(
+        monkeypatch):
+    """Release review: a result's own notes may still suggest a zoom or
+    tiles; once the ceiling is met the count's line says any further look
+    is refused, in place of the "near" warning."""
+    monkeypatch.setenv(ENV, "10")
+    raw = json.dumps({"analysis": "made up",
+                      "found_note": "zoom on each before relying on it"})
+    with kw.turn_scope(kw.TurnScope()) as scope:
+        assert kw.image_ceiling_met() is False
+        scope.image_calls = 10
+        met = json.loads(kw.with_image_calls(raw, {"calls": 1}))
+        assert kw.image_ceiling_met() is True
+    assert met["image_calls"] == (
+        "this look made 1 image call; this turn has made 10 of its ceiling "
+        "of 10" + kw.IMAGE_MET_NOTE)
+    assert "ceiling is near" not in met["image_calls"]
+    assert kw.image_ceiling_met() is False          # outside a turn
+
+
+def test_no_ceiling_is_never_met():
+    with kw.turn_scope(kw.TurnScope()) as scope:
+        scope.image_calls = 500
+        assert kw.image_ceiling_met() is False
+
+
+PAGE_VIEW = [0.0, 0.0, 999.0, 999.0]
+TILE_VIEW = [0.0, 0.0, 499.5, 499.5]
+FOUND_HEAD = ("'found' lists every located thing with its page box and "
+              "where it was seen (")
+
+
+def _merged(tiles):
+    out = {"page": 0, "view": list(PAGE_VIEW),
+           "analysis": "Door D-508 [400, 400, 420, 415]", "tiles": tiles}
+    vision_tools._merge_found(out)
+    return out["found_note"]
+
+
+def test_tiles_that_were_not_read_are_not_said_to_agree():
+    """Release review: when the whole-page look takes the turn's last image
+    call every tile is refused, and the merged list is the page answer's
+    alone. Its note must not say the tiles agree. The same holds for a
+    tile that failed for any other reason."""
+    ceiling = kw.IMAGE_CEILING_ERROR.format(limit=1)
+    read = {"tile": "r1c1", "view": list(TILE_VIEW),
+            "analysis": "Door D-508 [800, 800, 840, 830]"}
+    none_read = _merged([{"tile": "r1c1", "error": ceiling},
+                         {"tile": "r1c2", "error": ceiling}])
+    assert none_read == (
+        FOUND_HEAD + "from the page answer alone: no tile was read, so "
+        "nothing here was checked against a closer look).")
+    assert "agree" not in none_read
+    one_failed = _merged([read, {"tile": "r1c2",
+                                 "error": "the vision model timed out"}])
+    assert one_failed == (
+        FOUND_HEAD + "the page answer and the tiles that were read agree "
+        "on what is there; 1 tile was not read).")
+    two_refused = _merged([read, {"tile": "r1c2", "error": ceiling},
+                           {"tile": "r2c1", "error": ceiling}])
+    assert two_refused.endswith("; 2 tiles were not read).")
+    # every tile read: the text it has always had, byte for byte
+    assert _merged([read]) == (
+        FOUND_HEAD + "the page answer and the tiles agree on what is "
+        "there).")
 
 
 def test_tiles_not_read_at_the_ceiling_invite_no_look():
@@ -271,6 +339,7 @@ def test_from_80_percent_each_look_warns(monkeypatch):
     assert quiet["image_calls"] == ("this look made 2 image calls; this "
                                     "turn has made 7 of its ceiling of 10")
     assert "ceiling is near" in near["image_calls"]
+    assert "ceiling is met" not in near["image_calls"]
     assert near["analysis"] == "made up"
     assert text.startswith("[image calls] this look made 1 image call;")
     assert text.endswith("\n\nplain text")

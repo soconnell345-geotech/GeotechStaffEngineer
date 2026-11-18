@@ -3381,10 +3381,24 @@ def _merge_found(out, what: str = "page") -> None:
                              f"{box_words} and where it was seen. "
                              + _disagreement_line(pairs, whole))
     else:
+        # A tile that failed, or was refused at the turn's image ceiling
+        # (TA-43), agreed with nothing: it is named in ``tiles_not_read``,
+        # and the note must not speak for it.
+        tiles = [t for t in out["tiles"] if isinstance(t, dict)]
+        unread = sum(1 for t in tiles if "error" in t)
+        if not unread:
+            agree = (f"the {whole} answer and the tiles agree on what is "
+                     f"there")
+        elif unread >= len(tiles):
+            agree = (f"from the {whole} answer alone: no tile was read, so "
+                     f"nothing here was checked against a closer look")
+        else:
+            agree = (f"the {whole} answer and the tiles that were read "
+                     f"agree on what is there; {unread} "
+                     f"tile{'' if unread == 1 else 's'} "
+                     f"{'was' if unread == 1 else 'were'} not read")
         out["found_note"] = (f"'found' lists every located thing with its "
-                             f"{box_words} and where it was seen (the "
-                             f"{whole} answer and the tiles agree on what is "
-                             f"there).")
+                             f"{box_words} and where it was seen ({agree}).")
 
 
 def _sent_size(info):

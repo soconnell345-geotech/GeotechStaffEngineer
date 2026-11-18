@@ -1642,6 +1642,18 @@ def photo_note_for_model(result: Optional[Dict[str, Any]]
 # One turn's check (webapp.core.stream_turn)
 # ---------------------------------------------------------------------------
 
+def _no_look_left() -> bool:
+    """The running turn has met its ceiling on image calls (BACKLOG TA-43),
+    so a note asking for a look at a page would only have that look
+    refused. ``False`` with no ceiling set, outside a turn, and wherever
+    the turn's scope cannot be read."""
+    try:
+        from aec_agent_core.deep.keep_work import image_ceiling_met
+        return bool(image_ceiling_met())
+    except Exception:  # noqa: BLE001 - never the turn
+        return False
+
+
 class TurnPageCheck:
     """The answer check of one turn: ``feedback`` before the answer goes out
     (``retry`` mode, once), ``finish`` when it does (records the check and,
@@ -1752,7 +1764,8 @@ class TurnPageCheck:
                 self.fed_back = True
                 notes.append(note)
                 told.append("pages")
-        if self.photo_mode == "retry" and not self.photos_told:
+        if (self.photo_mode == "retry" and not self.photos_told
+                and not _no_look_left()):
             photos = self._photos()
             try:
                 note, named = photo_note_for_model(photos)

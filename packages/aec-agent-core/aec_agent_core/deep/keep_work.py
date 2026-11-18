@@ -145,6 +145,11 @@ IMAGE_REFUSED_NOTE = "; {refused} more were refused at the ceiling"
 IMAGE_NEAR_NOTE = (". The ceiling is near: past it a look is refused, so "
                    "look only where it matters and finish with what you "
                    "have")
+#: The same, once the ceiling is met: a note further down the same result
+#: may still suggest a zoom or tiles, and that look would be refused.
+IMAGE_MET_NOTE = (". The ceiling is met: any further look this turn is "
+                  "refused, whatever a note in this result suggests, so "
+                  "finish with what you have and say what was left unread")
 
 #: The running turn's status line while a ceiling is set (TA-43).
 IMAGE_STATUS = "image calls this turn: {used} of {limit}"
@@ -380,7 +385,9 @@ def with_image_calls(raw: str, look: Optional[dict]) -> str:
                                        used=used, limit=limit)
         if look.get("refused"):
             note += IMAGE_REFUSED_NOTE.format(refused=look["refused"])
-        if used >= IMAGE_WARN_SHARE * limit:
+        if used >= limit:
+            note += IMAGE_MET_NOTE
+        elif used >= IMAGE_WARN_SHARE * limit:
             note += IMAGE_NEAR_NOTE
         try:
             data = json.loads(raw)
@@ -403,6 +410,14 @@ def image_calls_status(shown: list) -> Optional[str]:
     shown[0] = scope.image_calls
     return IMAGE_STATUS.format(used=scope.image_calls,
                                limit=scope.image_limit)
+
+
+def image_ceiling_met() -> bool:
+    """Whether the running turn has a ceiling on its image calls and has
+    reached it, so that any further look this turn would be refused.
+    ``False`` with no ceiling set and outside a turn."""
+    scope = _ceiling()
+    return scope is not None and scope.image_calls >= scope.image_limit
 
 
 def image_ceiling_told(scope) -> Optional[str]:
@@ -1969,4 +1984,5 @@ __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
            "BUSY_TURN_MAX_ENV", "DEFAULT_BUSY_TURN_MAX_S",
            "ImageBudgetSpent", "IMAGE_CEILING_ERROR", "take_image_call",
            "counting_look", "with_image_calls", "image_calls_status",
+           "image_ceiling_met",
            "image_ceiling_told", "image_call_facts"]

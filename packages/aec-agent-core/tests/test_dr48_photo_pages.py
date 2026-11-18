@@ -417,3 +417,34 @@ def test_pages_count_as_told_only_once_the_note_is_handed(
     later = cp.TurnPageCheck(record_folder=str(conv), confirms_notes=True,
                              log=logger_for(conv, logged))
     assert later.feedback("A third answer.") is None
+
+
+def test_at_a_met_image_ceiling_nothing_is_told_and_nothing_marked_told(
+        tmp_path, monkeypatch):
+    """Release review: with the turn's image ceiling met (BACKLOG TA-43) a
+    note asking for a look at the photograph pages would only have the
+    looks refused, and the pages would count as told for the rest of the
+    conversation. So the note waits: nothing is said, nothing is recorded
+    as told, and the next turn (its ceiling new) is told."""
+    from aec_agent_core.deep import keep_work as kw
+    from aec_agent_core.deep import limits
+    monkeypatch.setenv(review_flags.PHOTO_PAGES_ENV, "retry")
+    monkeypatch.setenv(limits.TURN_MAX_IMAGE_CALLS_ENV, "4")
+    conv = conversation(tmp_path, calls=A_LOOKED_B_READ)
+    logged = []
+    check = cp.TurnPageCheck(record_folder=str(conv),
+                             log=logger_for(conv, logged))
+    with kw.turn_scope(kw.TurnScope()) as scope:
+        scope.image_calls = 4
+        assert check.feedback("The site is on a gentle slope.") is None
+        check.finish("The site is on a gentle slope.")
+    assert not any(e.get("action") == "photos_fed_back" for e in logged)
+    assert logged[-1][cp.PHOTO_KEY]["unseen"] == {"b.pdf": "2-3"}
+    assert "told_before" not in logged[-1][cp.PHOTO_KEY]
+    later = cp.TurnPageCheck(record_folder=str(conv),
+                             log=logger_for(conv, logged))
+    with kw.turn_scope(kw.TurnScope()) as scope:
+        scope.image_calls = 3                      # one look left
+        said = later.feedback("Another answer.")
+    assert said.startswith(cp.PHOTO_NOTE_PREFIX)
+    assert "- b.pdf: PDF pages 2-3" in said
