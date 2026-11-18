@@ -316,12 +316,19 @@ def build_review_page_agent(
         from aec_agent_core.deep.figure_helper import (FIGURE_PRIMARY_NOTE,
                                                        FigureTasks,
                                                        build_figure_subagent)
+        # This page's own worked examples (drawings, schedules,
+        # quantities) in place of the core's geotechnical ones, behind
+        # GEOTECH_REVIEW_FIGURE_EXAMPLES (DR-35); unset, the core's own.
+        _examples = None
+        if _flags.review_figure_examples():
+            from aec_document_review import figure_examples as _examples
         _fig = build_figure_subagent(
             engine=engine, attachments=attachments, save_fn=save_fn,
             max_result_chars=max_result_chars,
             reference_result_chars=reference_result_chars,
             extra_tools=subagent_extra_tools,
-            extra_system_prompt=subagent_extra_system_prompt)
+            extra_system_prompt=subagent_extra_system_prompt,
+            examples=_examples)
         if _fig is not None:
             # RI-34: the task tool names no kind of geotechnical report here
             from aec_document_review.review_agent import (
@@ -334,7 +341,7 @@ def build_review_page_agent(
             system_prompt = system_prompt + "\n\n" + FIGURE_PRIMARY_NOTE
             figure_tasks = FigureTasks(with_code=any(
                 getattr(t, "name", None) == "plot_code"
-                for t in _fig["tools"]))
+                for t in _fig["tools"]), examples=_examples)
     subagents += list(parts.get("subagents_after_figure") or [])
     # The page's reading helper replaces deepagents' stock one, so it
     # carries the reading rules (DR-02); appended here so the guards reach
