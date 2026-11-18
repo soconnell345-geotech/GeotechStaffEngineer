@@ -2326,10 +2326,36 @@ ZOOM_ANSWER_SHAPE = (
     "lettering in this view, quoted exactly as printed. " + _SHAPE_TAIL)
 
 
+#: Appended to the prompt of a tile, with ``GEOTECH_VISION_TILE_ANSWERS`` on
+#: (BACKLOG VIS-34): a tile holding nothing on the ask answered at length,
+#: often listing each thing asked about as not present. It asks for nothing
+#: less from a tile that does hold something.
+TILE_NOTHING_LINE = "Nothing on the request in this tile."
+#: A tile's edge can cut a table, a dimension string or a note in two: one
+#: tile holds the values, the next their row labels, and neither part shows
+#: what it bears on. Each part is quoted, so the read keeps the whole.
+TILE_CUT_SENTENCE = (
+    "Where this tile's edge cuts a table, a dimension string or a note that "
+    "may bear on the request, quote the part of it this tile holds, even if "
+    "its labels or what it refers to lie outside the tile.")
+TILE_ANSWER_SHAPE = (
+    "How to answer: briefly, for the agent that asked rather than for a "
+    "person. Answer the request above from what is in this tile, quoting "
+    "the lettering that bears on it exactly as printed, and leave out none "
+    f"of it. {TILE_CUT_SENTENCE} If nothing in this tile bears on the "
+    f"request, reply with the one line \"{TILE_NOTHING_LINE}\" and do not "
+    "list what is not there. " + _SHAPE_TAIL)
+
+
 def _answer_shape(kind: str) -> Optional[str]:
     """The answer-shape paragraph for a vision call of ``kind`` (``page``:
-    a page read whole, ``region``: a zoom), or ``None`` (tiles, the layout
-    overview, checks and images keep their own prompts)."""
+    a page read whole, ``region``: a zoom, ``tile``: a tile of a tiled read
+    while ``GEOTECH_VISION_TILE_ANSWERS`` is on), or ``None`` (tiles with
+    the switch off, the layout overview, checks and images keep their own
+    prompts)."""
+    if kind == "tile":
+        from aec_agent_core import review_flags
+        return TILE_ANSWER_SHAPE if review_flags.tile_answers() else None
     return {"page": PAGE_ANSWER_SHAPE, "region": ZOOM_ANSWER_SHAPE}.get(kind)
 
 
@@ -2680,6 +2706,7 @@ def _image_tile_jobs(picture, n, prompt, engine, turn_arg=None):
     from aec_agent_core import image_view
     boxes = image_view.tile_boxes(picture, n)
     allow_jpeg = getattr(engine, "accepts_jpeg", False)
+    shape = _answer_shape("tile")        # None unless the switch is on
 
     def one(k):
         r, c = divmod(k, n)
@@ -2693,7 +2720,7 @@ def _image_tile_jobs(picture, n, prompt, engine, turn_arg=None):
                      f"Report only what is IN this tile, briefly.")
 
             text = ask_vision(engine, img, _vision_prompt(
-                f"{prompt}\n\n{where}", _sent_size(tinfo),
+                f"{prompt}\n\n{where}", _sent_size(tinfo), shape=shape,
                 turn=_sent_turn(tinfo)), "tile",
                 where={"tile": f"r{r + 1}c{c + 1}"})
             scale = float(tinfo.get("scale") or 1.0)
@@ -3699,6 +3726,12 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
         tiles_note = "; ".join(filter(None, [
             tiles_note, "the page has no ink (it is blank), so it was not "
                         "read in tiles"]))
+    elif (n > 1 and tiles == "auto" and _photo_page_one_look()
+          and _photo_page(pdf_bytes, page)):
+        # A page of photographs takes one look; tiles only when asked
+        # (BACKLOG VIS-33, behind GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK).
+        n = 1
+        tiles_note = "; ".join(filter(None, [tiles_note, PHOTO_PAGE_NOTE]))
     # With tiles, the whole-page call is asked for the layout only: the
     # tiles read the lettering (E1: asked to transcribe a sheet too small to
     # read whole, it was the read's long pole -- 55-72 s against 11-15 s).
@@ -3881,6 +3914,245 @@ def _has_ink(image_bytes) -> bool:
         return True
 
 
+# -- A page of photographs takes one look (BACKLOG VIS-33) ---------------------
+#
+# On ``tiles='auto'`` a page is also read in tiles when its small lettering
+# would be too small in the whole-page image, and a page with almost no text
+# layer is assumed to carry drawing lettering (``vision_view.tile_grid``). A
+# page of photographs is often such a page: its tiles cost four to sixteen
+# more vision calls, and their readings ran five to seven times longer than
+# one look that answered the same questions. With
+# ``GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK`` on (``review_flags``; off by
+# default, and off the read is what it was), a page of photographs takes one
+# look under ``auto`` and the result says tiles or a zoom can be asked for.
+# An explicit ``tiles`` is always honoured.
+#
+# What counts as a page of photographs is set by one rule, the robust side
+# first: a drawing that loses its tiles is the serious failure, a page of
+# photographs that is still tiled only costs calls. So BOTH of these must
+# hold, and any doubt or failure tiles the page:
+#
+# 1. planlens names the page a page of photographs (its page role
+#    ``photos``, ``planlens.document.roles``). That cue alone is weak: one
+#    phrase such as "photo", "plate no", "looking north" or "stockpile" in
+#    the page's title or its top or bottom band, one picture (a logo will
+#    do) and under 220 words; the page is read alone, so a running header
+#    ("... AND SITE PHOTOGRAPHS") is never set aside. A plan titled "PLATE
+#    NO. 1" over an aerial photograph, a section "LOOKING NORTH" with a logo
+#    and a scanned drawing with an OCR layer all pass it.
+# 2. The page shows by itself, read with PyMuPDF (that one page: no OCR, no
+#    model, no pass over the document, a bounded amount of pixel sampling),
+#    everything a page of photographs looks like (:func:`_not_photographs`):
+#    a. few words: under :data:`PHOTO_PAGE_MAX_WORDS` in the text layer, an
+#       OCR layer included (planlens' own bar for a photograph plate, a
+#       picture with a caption; a drawing's title block alone runs to more);
+#    b. at most :data:`PHOTO_PAGE_MAX_PICTURES` pictures, which together
+#       cover under :data:`PHOTO_PAGE_MAX_PICTURE_SHARE` of the page (a
+#       scanned drawing is one page-sized picture or strips of one; a plan
+#       drawn over an aerial photograph has its base filling the sheet);
+#    c. little line work: under :data:`PHOTO_PAGE_MAX_PATHS` vector paths
+#       (a frame, a caption box, a small sketch beside a photograph; a
+#       drawing has hundreds, and one whose lettering is drawn as paths has
+#       no text layer to count);
+#    d. nothing drawn or lettered over a picture (a path or a word inside
+#       its box, a frame round it aside): marks on a picture make it the
+#       base of a plan or an annotated figure, which is read closer;
+#    e. photographs by their pixels (:func:`_photographic`: many tones of
+#       colour, none holding most of the picture, few flat runs; not a
+#       bilevel or paper-toned scan, a logo or a chart) covering at least
+#       :data:`PHOTO_PAGE_MIN_PHOTO_SHARE` of the page (a logo, a stamp or a
+#       photograph inset on a plan is not a page of photographs).
+#    The checks run cheapest first and stop at the first that fails.
+# Where planlens' role cannot be told (a planlens without page roles,
+# anything that fails) the page is tiled as before.
+
+#: planlens' page role for a page of photographs.
+PHOTO_ROLE = "photos"
+
+#: Said (``tiles_note``) when a page of photographs took one look on
+#: ``tiles='auto'``.
+PHOTO_PAGE_NOTE = ("this is a page of photographs, so it was read in one "
+                   "look; for a closer look ask for tiles (tiles='2' to "
+                   "'4') or zoom with render_region")
+
+#: Rule 2a: fewer words than this in the page's text layer.
+PHOTO_PAGE_MAX_WORDS = 60
+#: Rule 2b: at most this many pictures on the page, together covering less
+#: than this share of it.
+PHOTO_PAGE_MAX_PICTURES = 12
+PHOTO_PAGE_MAX_PICTURE_SHARE = 0.75
+#: Rule 2c: fewer vector paths than this on the page.
+PHOTO_PAGE_MAX_PATHS = 200
+#: Rule 2d: a picture's box, less this share of its width and height on
+#: each side (a frame drawn round a picture, or just inside it, is not a
+#: mark over it).
+PHOTO_BOX_INSET = 0.03
+#: Rule 2e: photographs cover at least this share of the page. Pictures
+#: smaller than :data:`PHOTO_MIN_PICTURE_SHARE` of the page are not sampled
+#: (a logo, a stamp, an icon).
+PHOTO_PAGE_MIN_PHOTO_SHARE = 0.2
+PHOTO_MIN_PICTURE_SHARE = 0.01
+#: How a picture is told a photograph by its pixels (:func:`_photographic`),
+#: from a thumbnail of at most :data:`PHOTO_THUMB_PX` pixels on its long
+#: side: at least :data:`PHOTO_MIN_TONES` colours (at 4 bits a channel) that
+#: each hold :data:`PHOTO_TONE_SHARE` of it or more, its commonest colour
+#: holding at most :data:`PHOTO_MAX_TOP_SHARE` of it, and at most
+#: :data:`PHOTO_MAX_FLAT_SHARE` of its pixels the same colour as the one to
+#: their right. A bilevel or paper-toned scan is mostly paper with a ramp of
+#: a few tones to its ink; a logo or a chart is a few flat colours. A
+#: greyscale photograph has 16 tones at this depth and does not pass: it is
+#: tiled, at the cost of calls.
+PHOTO_THUMB_PX = 96
+PHOTO_MIN_TONES = 48
+PHOTO_TONE_SHARE = 0.001
+PHOTO_MAX_TOP_SHARE = 0.5
+PHOTO_MAX_FLAT_SHARE = 0.5
+
+
+def _photo_page_one_look() -> bool:
+    """Whether ``GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK`` is on (read as the
+    page is read, like the other vision switches)."""
+    from aec_agent_core import review_flags
+    return review_flags.photo_page_one_look()
+
+
+def _photo_page(pdf_bytes, page) -> bool:
+    """Whether ``page`` is a page of photographs by the rule above: the page
+    shows it by itself (:func:`_not_photographs` finds nothing against it)
+    and planlens names it so (:func:`_planlens_says_photos`). ``False``
+    whenever either cannot tell."""
+    return (_not_photographs(pdf_bytes, page) is None
+            and _planlens_says_photos(pdf_bytes, page))
+
+
+def _planlens_says_photos(pdf_bytes, page) -> bool:
+    """Whether planlens names ``page`` a page of photographs (role
+    :data:`PHOTO_ROLE`), reading that page alone. ``False`` whenever it
+    cannot tell: a planlens without page roles (the core asks for 0.15 or
+    later and detects them), or any failure. Without OCR."""
+    try:
+        import dataclasses
+        from planlens.document import Document
+        from planlens.document.roles import assign, facts_for
+        with Document(content=bytes(pdf_bytes)) as doc:
+            facts = facts_for(doc.summary(page),
+                              doc.page(page, tables=False).lines)
+        # The rules read a list of pages from 0: this page alone is page 0.
+        roles = assign([dataclasses.replace(facts, page=0)])
+        return bool(roles) and getattr(roles[0], "role", None) == PHOTO_ROLE
+    except Exception:  # noqa: BLE001 - unknown kind: tiled as before
+        return False
+
+
+def _not_photographs(pdf_bytes, page) -> Optional[str]:
+    """Why ``page`` does not show by itself that it is a page of
+    photographs (rule 2 above: the first check that fails, in a few words),
+    or ``None`` when it does. Any failure is a reason."""
+    try:
+        import numpy as np
+        import pymupdf
+        with pymupdf.open(stream=bytes(pdf_bytes), filetype="pdf") as d:
+            p = d[page]
+            # One coordinate space for boxes, words and paths (this copy
+            # only; the page's turn says nothing about what is on it).
+            p.set_rotation(0)
+            return _page_evidence(p, np, pymupdf)
+    except Exception as e:  # noqa: BLE001 - unknown kind: tiled
+        return f"could not tell ({type(e).__name__})"
+
+
+def _overlaps(a, b) -> bool:
+    """Whether boxes ``a`` and ``b`` share area; a line (a box of no width
+    or height) inside ``b`` counts."""
+    return a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
+
+
+def _encloses(a, b) -> bool:
+    """Whether box ``a`` holds all of box ``b``."""
+    return a[0] <= b[0] and a[1] <= b[1] and a[2] >= b[2] and a[3] >= b[3]
+
+
+def _share_covered(boxes, rect, np, cells=100) -> float:
+    """The share of ``rect`` that ``boxes`` cover together, on a grid of
+    ``cells`` x ``cells`` (an overlap counts once)."""
+    grid = np.zeros((cells, cells), dtype=bool)
+    for b in boxes:
+        x0, x1 = (round((v - rect.x0) / rect.width * cells)
+                  for v in (b[0], b[2]))
+        y0, y1 = (round((v - rect.y0) / rect.height * cells)
+                  for v in (b[1], b[3]))
+        grid[max(0, y0):max(0, y1), max(0, x0):max(0, x1)] = True
+    return float(grid.mean())
+
+
+def _page_evidence(p, np, pymupdf) -> Optional[str]:
+    """Rule 2 on an open, unturned PyMuPDF page (see
+    :func:`_not_photographs`)."""
+    page_rect = p.rect
+    area = abs(page_rect)
+    if area <= 0:
+        return "the page has no area"
+    words = p.get_text("words")
+    if len(words) >= PHOTO_PAGE_MAX_WORDS:                          # 2a
+        return f"{len(words)} words in its text layer"
+    boxes = []
+    for info in p.get_image_info():
+        r = pymupdf.Rect(info["bbox"]) & page_rect
+        if not r.is_empty:
+            boxes.append(r)
+    if not boxes:
+        return "no picture on the page"
+    if len(boxes) > PHOTO_PAGE_MAX_PICTURES:                        # 2b
+        return f"{len(boxes)} pictures on the page"
+    covered = _share_covered(boxes, page_rect, np)
+    if covered >= PHOTO_PAGE_MAX_PICTURE_SHARE:
+        return (f"pictures cover {covered:.0%} of the page (a scan or the "
+                f"base of a plan)")
+    paths = p.get_cdrawings()
+    if len(paths) >= PHOTO_PAGE_MAX_PATHS:                          # 2c
+        return f"{len(paths)} vector paths on the page"
+    large = [r for r in boxes if abs(r) >= PHOTO_MIN_PICTURE_SHARE * area]
+    inner = [(r.x0 + PHOTO_BOX_INSET * r.width,
+              r.y0 + PHOTO_BOX_INSET * r.height,
+              r.x1 - PHOTO_BOX_INSET * r.width,
+              r.y1 - PHOTO_BOX_INSET * r.height) for r in large]
+    for path in paths:                                              # 2d
+        pr = tuple(pymupdf.Rect(path["rect"]))
+        if any(_overlaps(pr, b) and not _encloses(pr, b) for b in inner):
+            return "line work drawn over a picture"
+    for w in words:
+        cx, cy = (w[0] + w[2]) / 2.0, (w[1] + w[3]) / 2.0
+        if any(b[0] < cx < b[2] and b[1] < cy < b[3] for b in inner):
+            return "lettering over a picture"
+    photos = [r for r in large if _photographic(p, r, np, pymupdf)]  # 2e
+    share = _share_covered(photos, page_rect, np) if photos else 0.0
+    if share < PHOTO_PAGE_MIN_PHOTO_SHARE:
+        return f"photographs cover {share:.0%} of the page"
+    return None
+
+
+def _photographic(p, rect, np, pymupdf) -> bool:
+    """Whether the picture in ``rect`` of page ``p`` is a photograph by its
+    pixels (the thresholds above), from one small thumbnail of it."""
+    zoom = PHOTO_THUMB_PX / max(rect.width, rect.height, 1e-6)
+    pix = p.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), clip=rect,
+                       colorspace=pymupdf.csRGB, alpha=False)
+    if pix.width < 8 or pix.height < 8:
+        return False
+    a = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+        pix.height, pix.width, pix.n)[:, :, :3]
+    n = a.shape[0] * a.shape[1]
+    q = a >> 4
+    tones = np.bincount(
+        (q[:, :, 0].astype(np.int32) * 256 + q[:, :, 1].astype(np.int32)
+         * 16 + q[:, :, 2]).ravel(), minlength=4096)
+    busy = int((tones >= max(2.0, PHOTO_TONE_SHARE * n)).sum())
+    flat = float((a[:, 1:] == a[:, :-1]).all(axis=2).mean())
+    return (busy >= PHOTO_MIN_TONES
+            and tones.max() <= PHOTO_MAX_TOP_SHARE * n
+            and flat <= PHOTO_MAX_FLAT_SHARE)
+
+
 def _tiles_not_read_note(rows) -> Optional[str]:
     """``"tile r2c3 failed: <why>; the rest were read …"`` for the tiles
     that came back with an error, or ``None`` (B7: a failed tile used to be
@@ -3972,6 +4244,7 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
     which lines the tile's edges cut."""
     from aec_agent_core import vision_view
     boxes = vision_view.tile_boxes(info["clip"], n)
+    shape = _answer_shape("tile")        # None unless the switch is on
 
     def one(k):
         r, c = divmod(k, n)
@@ -3985,7 +4258,7 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
                      f"only what is IN this tile, briefly.")
 
             text = ask_vision(engine, img, _vision_prompt(
-                f"{prompt}\n\n{where}", _sent_size(tinfo),
+                f"{prompt}\n\n{where}", _sent_size(tinfo), shape=shape,
                 turn=_sent_turn(tinfo), cut=_cut_note(tinfo, layer)),
                 "tile", where={"page": page, "tile": f"r{r + 1}c{c + 1}"})
             row = {"tile": f"r{r + 1}c{c + 1}",

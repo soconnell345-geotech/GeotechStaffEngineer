@@ -168,6 +168,46 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     Code does the looking-up that is the same on every set; the agent
     views what the check flags and judges it. BACKLOG PL-37, DR-07. Not
     measured; the ``sheet_tools`` arm does (EV-40).
+
+``GEOTECH_VISION_TILE_ANSWERS`` (default off)
+    ``1`` gives each tile of a tiled read (``analyze_pdf_page`` and
+    ``analyze_image`` in tiles, on both pages) the answer shape a page read
+    whole and a zoom already have (:func:`aec_agent_core.vision_tools.
+    _answer_shape`): answer the request from what is in the tile, quoting
+    the lettering that bears on it, and, where nothing in the tile bears on
+    it, one line saying so instead of a list of what is absent. Nothing is
+    cut from what a tile does hold. Unset, every prompt and result is
+    byte-for-byte as before. BACKLOG VIS-34: on two large drawing sheets
+    most of about 89 thousand vision output tokens went on tiles that held
+    nothing on the ask. Not measured on a model yet: the suite takes it as
+    the arm ``("tile_answers", {"GEOTECH_VISION_TILE_ANSWERS": "1"})``
+    (``arms`` of :func:`aec_agent_core.review_eval.runner.
+    score_review_suite` takes such a pair). The vision tools read it as
+    they look, and it is kept in :data:`VISION_ENVS`, apart from
+    :data:`ALL_ENVS` and :data:`ARMS`, whose contents the geotech app's own
+    tests pin (the app is not changed in this repository); :func:`switches`
+    clears it and :func:`describe` names it as it does the others, so a
+    turn's record (``build.switches``) says when it is on.
+
+``GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK`` (default off)
+    ``1`` lets a page of photographs read with ``tiles='auto'``
+    (``analyze_pdf_page``, on both pages) take one look instead of a
+    whole-page look and four to sixteen tiles; its result says tiles or a
+    zoom can be asked for, and an explicit ``tiles`` is honoured as before.
+    A page counts as one only when planlens names it so (page role
+    ``photos``) AND the page shows it by itself: few words, photographs by
+    their pixels over a good share of it, no picture filling it, little line
+    work and nothing drawn over a picture (the rule and its reasons:
+    :func:`aec_agent_core.vision_tools._photo_page`). Any doubt tiles the
+    page: a drawing that lost its tiles would be the serious failure, a page
+    of photographs still tiled only costs calls. Unset, every read is
+    byte-for-byte as before, pages of photographs included. BACKLOG VIS-33:
+    five vision calls on a page of photographs, with readings five to seven
+    times longer than one look that answered the same questions. Not
+    measured on a model yet: the suite takes it as the arm
+    ``("photo_one_look", {"GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK": "1"})``.
+    Kept in :data:`VISION_ENVS` for the reasons given for
+    ``GEOTECH_VISION_TILE_ANSWERS``.
 """
 
 from __future__ import annotations
@@ -193,6 +233,15 @@ ALL_ENVS = (AGENT_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
             FIGURE_HELPER_ENV, PLOT_CODE_ENV, STEP_CAP_ANSWER_ENV,
             CITED_DOCUMENTS_ENV, JUDGMENT_CALLS_ENV, REPORT_INGEST_ENV,
             SHOW_ME_ENV, SHEET_TOOLS_ENV, TODOS_WITH_CALLS_ENV)
+
+TILE_ANSWERS_ENV = "GEOTECH_VISION_TILE_ANSWERS"
+PHOTO_PAGE_ONE_LOOK_ENV = "GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK"
+
+#: Switches the vision tools read as they look (the build is unchanged).
+#: Kept apart from :data:`ALL_ENVS`, whose contents the geotech app's own
+#: tests pin; :func:`switches` clears them and :func:`describe` names them
+#: as it does the switches of :data:`ALL_ENVS`.
+VISION_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -247,6 +296,18 @@ def sheet_tools() -> bool:
     """Whether the review page asks planlens for its sheet tools (a sheet
     index from the title blocks and a check of the callouts)."""
     return _on(SHEET_TOOLS_ENV)
+
+
+def tile_answers() -> bool:
+    """Whether a tile of a tiled read gets the answer shape page and zoom
+    reads have, with one line for a tile holding nothing on the ask."""
+    return _on(TILE_ANSWERS_ENV)
+
+
+def photo_page_one_look() -> bool:
+    """Whether a page of photographs read with ``tiles='auto'`` takes one
+    look instead of tiles."""
+    return _on(PHOTO_PAGE_ONE_LOOK_ENV)
 
 
 def checklist() -> bool:
@@ -384,7 +445,8 @@ def switches(values: Optional[Mapping[str, str]]) -> Iterator[None]:
     environment. Any other variable the arm names (a budget, a vision
     policy) is set too. The previous environment is restored afterwards."""
     values = dict(values or {})
-    keys = set(ALL_ENVS) | set(SETTINGS_ENVS) | set(values)
+    keys = set(ALL_ENVS) | set(VISION_ENVS) | set(SETTINGS_ENVS) | \
+        set(values)
     saved = {k: os.environ.get(k) for k in keys}
     try:
         for k in keys:
@@ -405,7 +467,7 @@ def describe() -> str:
     """One line naming the switches that are set, and each switch on by
     default as ``=1 (default)`` while unset (for diagnostics and logs)."""
     out = []
-    for k in ALL_ENVS:
+    for k in ALL_ENVS + VISION_ENVS:
         value = str(os.environ.get(k, "")).strip()
         if value:
             out.append(f"{k}={value}")
@@ -419,6 +481,8 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "CITED_DOCUMENTS_ENV", "JUDGMENT_CALLS_ENV", "REPORT_INGEST_ENV",
            "SHOW_ME_ENV", "show_me", "SHEET_TOOLS_ENV", "sheet_tools",
            "TODOS_WITH_CALLS_ENV", "todos_with_calls",
+           "TILE_ANSWERS_ENV", "tile_answers",
+           "PHOTO_PAGE_ONE_LOOK_ENV", "photo_page_one_look", "VISION_ENVS",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",
