@@ -473,8 +473,10 @@ _PEM_KEY = re.compile(
 #: quote is written ``\"``) is masked and the JSON stays whole; a full
 #: stop at a value's end ends the sentence, and is kept.
 #: A password in a URL (``scheme://user:password@host``): the user is kept.
+#: The password runs to the LAST ``@`` before the host (one written with an
+#: ``@`` in it, unencoded, was shown from that ``@`` on).
 _URL_PASSWORD = re.compile(
-    r"(?<=://)([^\s/:@'\"<>\\]+):[^\s/@'\"<>\\]+@")
+    r"(?<=://)([^\s/:@'\"<>\\]+):[^\s/'\"<>\\]+@")
 #: Between a name and its value: ``=``, ``: ``, ``": "``, ``\": \"``.
 _SEP = r"(\\?[\"']?\s*[:=]\s*\\?[\"']?)"
 #: An ``Authorization`` header's value, with its scheme.

@@ -157,3 +157,18 @@ def test_an_encoded_url_with_no_secret_is_kept():
             "files.example.test%2FShared%2520Documents%2Freport.pdf"
             "%3Fpage%3D3%26version%3D12")
     assert mask_error_secrets(text) == text
+
+
+# ---------------------------------------------------------------------------
+# a URL's password with an ``@`` in it
+# ---------------------------------------------------------------------------
+
+def test_a_url_password_with_an_at_sign_is_masked_whole():
+    text = (f"ProxyError: cannot connect to http://someone:made@up{VALUE}@"
+            "proxy.example.test:8080/path")
+    assert mask_error_secrets(text) == (
+        "ProxyError: cannot connect to http://someone:…@"
+        "proxy.example.test:8080/path")
+    for plain in ("cannot open https://host.example.test:8443/a/b@c.pdf",
+                  "see http://host.example.test:8080 or mail a@example.test"):
+        assert mask_error_secrets(plain) == plain
