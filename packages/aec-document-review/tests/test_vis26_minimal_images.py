@@ -1,8 +1,8 @@
 """BACKLOG VIS-26: the minimal arm on an uploaded picture.
 
 Its system prompt said an uploaded picture "is shown" with
-``analyze_image``, which answers by a vision call (only a zoom on it is
-shown); and ``page_count`` answered an image with a PDF reader's error, or
+``analyze_image``, which answers by a vision call (``analyze_pdf_page``
+shows it whole, and a zoom on it is shown); and ``page_count`` answered an image with a PDF reader's error, or
 (the PyMuPDF on this laptop) with a page in points at the dpi the file
 declares, never the picture's own pixels.
 A PDF's ``page_count`` is what it was. Pictures made here with Pillow, one
@@ -51,8 +51,10 @@ def _count(attachments, source):
 def test_the_prompt_no_longer_says_a_picture_is_shown():
     assert "An uploaded picture is shown with `analyze_image`" \
         not in MINIMAL_PROMPT
-    assert "An uploaded picture is not shown to you whole" in MINIMAL_PROMPT
+    assert "not shown to you whole" not in MINIMAL_PROMPT
+    assert "`analyze_pdf_page` shows it whole" in MINIMAL_PROMPT
     assert "`render_region` zooms on it" in MINIMAL_PROMPT
+    assert "`analyze_image` has a vision call\nanswer" in MINIMAL_PROMPT
     assert len(MINIMAL_PROMPT) < 3000
 
 

@@ -27,9 +27,10 @@ adds the two things only the app can do:
 * **An image file's pixels.** On an IMAGE file (a scan saved as PNG, a
   phone photo) the agent's positions are in its own pixels, as its looks
   and ``open_document`` give them, and planlens' page of it is in points at
-  the dpi the file declares: ``measure`` puts them on that page, and both
-  tools' results say how their own positions read (``frame``, BACKLOG
-  VIS-26). A PDF's results are planlens' own, as before.
+  the dpi the file declares: ``measure`` puts them on that page and gives
+  every box in its result back in the image's pixels, and both tools'
+  results say how their own positions read (``frame``, BACKLOG VIS-26). A
+  PDF's results are planlens' own, as before.
 
 The tools are optional (``document_tools.OPTIONAL_DOCUMENT_TOOL_NAMES``) and
 feature-detected on the installed planlens; they describe themselves and no
@@ -93,9 +94,59 @@ IMAGE_MEASURE_FRAME_SAME = (
     "page at one point a pixel, so the positions in this result are in its "
     "own pixels.")
 
-#: The ``given`` part on ``measure``: what was converted.
-IMAGE_GIVEN = ("bbox, to and a look's view + image_box were taken in its "
-               "own pixels and converted. ")
+#: ``measure``'s ``frame`` on an IMAGE file: every box in and out is in the
+#: image's pixels, so a box passes back as it is; planlens' keys named in
+#: points stay in its page's points, as their names say (BACKLOG VIS-26).
+IMAGE_MEASURE_PX = (
+    "this document is an image, {w} x {h} px. bbox, to and a look's view + "
+    "image_box were taken in its own pixels, and every box in this result "
+    "(where, each bbox, a scale's label boxes, located_from's view) is in "
+    "them too, so it can be passed back to measure, render_region or "
+    "annotate_document as it is. It is measured on a page at {k:.4g} pt a "
+    "pixel: a key that ends in _pt, per_point, and a number in a note or "
+    "warning are in that page's points (divide by {k:.4g} for pixels). A "
+    "value read through a scale is not affected.")
+
+#: ... when that page is the image at one point a pixel.
+IMAGE_MEASURE_PX_SAME = (
+    "this document is an image, {w} x {h} px, measured on a page at one "
+    "point a pixel: every position, box, length and pad in this result is "
+    "in its own pixels.")
+
+#: The result keys that hold a box on the page: on an image they are given
+#: back in its pixels (BACKLOG VIS-26).
+_BOX_KEYS = ("where", "bbox")
+
+
+def _is_box(v) -> bool:
+    return (isinstance(v, list) and len(v) == 4
+            and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                    for x in v))
+
+
+def _boxes_to_pixels(obj, kx: float, ky: float):
+    """``measure``'s result on an image with every box (``where``, each
+    ``bbox`` -- in ``snapped_to``, ``alternatives``, ``lines`` -- and a
+    pending scale's label boxes) turned from its page's points back to the
+    image's pixels; every other value as planlens gave it."""
+    def px(b):
+        return [round(b[0] / kx, 2), round(b[1] / ky, 2),
+                round(b[2] / kx, 2), round(b[3] / ky, 2)]
+
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if k in _BOX_KEYS and _is_box(v):
+                out[k] = px(v)
+            elif k == "labels" and isinstance(v, list) and v and \
+                    all(_is_box(b) for b in v):
+                out[k] = [px(b) for b in v]
+            else:
+                out[k] = _boxes_to_pixels(v, kx, ky)
+        return out
+    if isinstance(obj, list):
+        return [_boxes_to_pixels(v, kx, ky) for v in obj]
+    return obj
 
 
 def _image_frame(entry, attachments=None):
@@ -339,6 +390,8 @@ def run_measure(arguments: Dict[str, Any],
         return raw
     if not isinstance(out, dict) or "error" in out:
         return raw
+    if frame is not None:
+        out = _boxes_to_pixels(out, frame[2], frame[3])
     if located is not None:
         v, p = located
         # the pad planlens searched with (points) decides, as it did
@@ -355,7 +408,11 @@ def run_measure(arguments: Dict[str, Any],
     if labels is not None:
         out["labels_read"] = labels
     if frame is not None:
-        out["frame"] = _frame_note(frame, IMAGE_GIVEN)
+        fw, fh, fkx, _fky = frame
+        out["frame"] = (
+            IMAGE_MEASURE_PX_SAME.format(w=fw, h=fh)
+            if abs(fkx - 1.0) < 1e-6 else
+            IMAGE_MEASURE_PX.format(w=fw, h=fh, k=fkx))
     return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
 
 

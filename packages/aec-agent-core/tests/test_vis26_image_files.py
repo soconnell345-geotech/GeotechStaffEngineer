@@ -3,8 +3,9 @@ a phone photograph) -- the parts that are the core's.
 
 * ``measure`` takes positions on an image in its own pixels (a look's view
   + image_box, a bbox, ``to``) and puts them on planlens' page of the image,
-  which is in points at the dpi the file declares; its result, and
-  ``log_grid``'s, says how their positions read (``frame``).
+  which is in points at the dpi the file declares, and gives every box in
+  its result back in those pixels; its result, and ``log_grid``'s, says how
+  their positions read (``frame``).
 * A build's host tells planlens the scale its looks send an image view at
   (``ImageSupport.sent_scale``), where the installed planlens takes it.
 * ``kept_readings`` says a kept zoom on an image is in its pixels.
@@ -154,8 +155,56 @@ def test_measure_takes_a_bbox_in_the_image_s_pixels(_sheets, scan, png,
     assert f"an image, {w} x {h} px" in out["frame"]
     assert f"{K:.4g} pt a pixel" in out["frame"]
     assert "bbox, to and a look's view + image_box" in out["frame"]
-    # planlens' own positions stay in its page's points, as the note says
-    assert out["where"] == pytest.approx(list(rd.box_pt), abs=0.2)
+    assert "a key that ends in _pt" in out["frame"]
+    # every box comes back in the image's pixels, as the note says
+    assert out["where"] == pytest.approx(_px(rd.box_pt), abs=0.05)
+    sb = out["snapped_to"]["bbox"]
+    assert 0 <= sb[0] < sb[2] <= w and 0 <= sb[1] < sb[3] <= h, sb
+    cy = (out["where"][1] + out["where"][3]) / 2.0
+    assert abs((sb[1] + sb[3]) / 2.0 - cy) <= out["pad_pt"] / K, (sb, cy)
+
+
+@pytest.mark.parametrize("name", ["log.png", "photo.jpg"])
+def test_a_measure_result_s_where_passed_back_lands_on_the_same_spot(
+        _sheets, scan, png, turned_jpeg, name):
+    data = png if name == "log.png" else turned_jpeg
+    eng = LabelReader(scan)
+    _sheets.append(eng)
+    tools = _tools(eng, name, data)
+    rd = scan.readings[1]
+    first = _call(tools["measure"], source=name, page=0,
+                  bbox=_px(rd.box_pt), kind="line")
+    again = _call(tools["measure"], source=name, page=0,
+                  bbox=first["where"], kind="line")
+    assert again["where"] == first["where"]
+    assert again["snapped_to"] == first["snapped_to"]
+    assert again["value"] == first["value"]
+
+
+def test_every_box_and_only_boxes_turn_to_pixels():
+    out = {"where": [3.0, 6.0, 9.0, 12.0], "pad_pt": 4.5,
+           "snapped_to": {"kind": "edge", "bbox": [0.75, 1.5, 3.0, 6.0],
+                          "at_pt": [1.5, 3.0], "moved_pt": 1.2},
+           "alternatives": [{"bbox": [7.5, 15.0, 30.0, 60.0],
+                             "moved_pt": 2.0, "extent_pt": [1.0, 2.0]},
+                            {"at_pt": [3.0, 3.0]}],
+           "lines": [{"bbox": [1.5, 1.5, 3.0, 3.0]}],
+           "needs_values": {"scale": "y1", "labels": [[0.75, 0.75, 1.5, 1.5]],
+                            "note": "pass values"},
+           "scale": {"per_point": 0.25, "residual_pt": 0.5},
+           "value": {"depth": 2.5, "plus_minus": 0.1, "plus_minus_pt": 0.4},
+           "warnings": ["moved 3 pt"]}
+    got = measure_tool._boxes_to_pixels(out, 0.75, 1.5)
+    assert got["where"] == [4.0, 4.0, 12.0, 8.0]
+    assert got["snapped_to"]["bbox"] == [1.0, 1.0, 4.0, 4.0]
+    assert got["alternatives"][0]["bbox"] == [10.0, 10.0, 40.0, 40.0]
+    assert got["lines"][0]["bbox"] == [2.0, 1.0, 4.0, 2.0]
+    assert got["needs_values"]["labels"] == [[1.0, 0.5, 2.0, 1.0]]
+    for k in ("pad_pt", "scale", "value", "warnings"):
+        assert got[k] == out[k]
+    assert got["snapped_to"]["at_pt"] == [1.5, 3.0]
+    assert got["alternatives"][1] == out["alternatives"][1]
+    assert got["alternatives"][0]["extent_pt"] == [1.0, 2.0]
 
 
 def test_a_zoom_s_view_and_image_box_on_an_image(_sheets, scan, png):

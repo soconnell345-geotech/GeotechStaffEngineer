@@ -11,7 +11,8 @@ the harness's tools carry weight on a strong model, and which are habit?
 
 WHAT. The model LOOKS and nothing else:
 
-* ``analyze_pdf_page`` — a whole page rendered and shown to the model itself;
+* ``analyze_pdf_page`` — a whole page rendered and shown to the model itself
+  (an uploaded picture: shown whole, in its own pixels);
 * ``render_region`` (zoom) — a region re-drawn from the PDF to fill the image, shown too
   (the move the Opus 5.5 system card's Chartography result came from);
 * ``analyze_image`` — an uploaded picture, read by a vision call (a zoom on
@@ -58,9 +59,9 @@ at full size and shows it to you. To zoom on something you saw, pass the
 `view` of the image it was in and its `image_box` on a 0-999 grid over that
 image (0,0 top-left, 999,999 bottom-right); zoom again on a smaller box when
 it is still small. Never call anything unreadable before you have zoomed on
-it. An uploaded picture is not shown to you whole: `analyze_image` has a
-vision call answer what you ask about it, and `render_region` zooms on it
-and shows you the zoom.
+it. An uploaded picture is page 0: `analyze_pdf_page` shows it whole,
+`render_region` zooms on it, and `analyze_image` has a vision call
+answer what you ask about it.
 
 For a long document or a question about every page, split the pages among
 helpers with `task`: each has the same looking tools, sees nothing of this
@@ -156,8 +157,9 @@ def _looking_tools(engine, attachments, save_fn, markup_author,
 
 #: ``page_count``'s note for an image file (BACKLOG VIS-26).
 IMAGE_PAGE_NOTE = ("an image file, not a PDF: its one page is the picture "
-                   "(page 0); look at it with analyze_image, and a view or "
-                   "bbox on it is in its own pixels")
+                   "(page 0); analyze_pdf_page shows it whole, "
+                   "render_region zooms on it, and a view or bbox on it "
+                   "is in its own pixels")
 
 
 def _image_size(data):

@@ -24,10 +24,16 @@ pixel of planlens' page of it (from the page itself: 0.75 with no dpi
 declared, 72/dpi otherwise). `run_measure` puts `bbox`, `to` and a look's
 `view` + `image_box` (all in the image's pixels) on that page, scales the
 location-error pad, says the location note in pixels
-(`LOCATED_IMAGE_NOTE`) and adds `frame`: the result's own positions are
-that page's points and how to turn them into pixels. `run_log_grid` adds
-the same `frame` on an image (`_log_grid_result` is the old body). A PDF
-entry gives `_image_frame` = None and every line runs as before.
+(`LOCATED_IMAGE_NOTE`), turns every box in the result (`where`, each
+`bbox` in `snapped_to`, `alternatives` and `lines`, a pending scale's label
+boxes) back into the image's pixels (`_boxes_to_pixels`), and adds `frame`
+(`IMAGE_MEASURE_PX`): every box in and out is in the image's pixels, so a
+result's box passes back to measure, render_region or annotate_document as
+it is; a key that ends in `_pt`, `per_point` and a number in a note are
+that page's points, with the factor. `run_log_grid` adds a `frame` on an
+image saying its positions are that page's points (`_log_grid_result` is
+the old body). A PDF entry gives `_image_frame` = None and every line runs
+as before.
 
 **2. The view-anchor rule (planlens `planlens/review/marked_copy.py`,
 `host.py`; core `document_tools.host_for`).** planlens' `ImageSupport`
@@ -47,11 +53,12 @@ whose result carries `image_px` (only an image look's does) is listed with
 in its own pixels.
 
 **4. The minimal arm (`aec_document_review/minimal_agent.py`).** The
-prompt sentence now says the picture is not shown whole: `analyze_image`
-has a vision call answer, and `render_region` shows a zoom (both true of
-the code: `vision_kit` inlines an image FILE by path only, an upload keeps
-the vision call; a zoom on an upload is inlined). `page_count` on an image
-returns `{source, pages: 1, image_px, note}`; a PDF's result and a
+prompt sentence now says what each tool does with a picture: it is page 0,
+`analyze_pdf_page` shows it whole (the minimal build's page look is
+inline, so an upload is shown to the model with no vision call),
+`render_region` zooms on it, and `analyze_image` has a vision call answer
+about it. `page_count` on an image returns `{source, pages: 1, image_px,
+note}`, the note pointing at the same tools; a PDF's result and a
 non-image's error are as before.
 
 **5. A copy of another image (planlens `marked_copy._destination`,
@@ -77,14 +84,17 @@ note. `remove` with marks on such a copy writes nothing and says why.
 
 ## Calls made
 
-- **measure's output stays in planlens' page points, with a `frame` note,
-  instead of every position converted back to pixels.** A result carries
-  positions under many keys (`where`, `pad_pt`, `snapped_to`, `at_pt`,
-  `position_pt`, `length_pt`, scale extents, label boxes, `per_point`),
-  several named "pt"; converting them all is a redesign of how image units
-  are carried, past the repair. The measured VALUE was the defect (the
-  position was put at 0.75 or 0.24 of where the agent meant) and is right
-  now; the note says exactly how the positions read.
+- **measure gives every box back in the image's pixels; keys named in
+  points stay points.** The boxes (`where`, every `bbox`, label boxes) are
+  what an agent passes on to measure, render_region or annotate_document,
+  so they come back in the frame they went in (a result's `where` passed
+  back lands on the same spot: tested). planlens' keys that end in `_pt`
+  (`pad_pt`, `moved_pt`, `at_pt`, `position_pt`, `length_pt`, ...),
+  `per_point` and the numbers inside its notes stay in its page's points,
+  as their names say; the `frame` names them and gives the factor.
+  Renaming or converting those too would be a change to how image units
+  are carried, past the repair. The shaping is one function in
+  `measure_tool.py`, run only on an image.
 - **`bbox` on an image is taken in pixels**, as `open_document`'s
   coordinates line says for an image, not only a look's view + image_box.
   The note says so in every result, so an agent that passed points sees it.
@@ -113,9 +123,9 @@ None added. Every part is a repair, on.
 - The DEFAULT build: nothing (`test_review_fingerprints.py`: only
   `review_minimal` differs).
 - The minimal build: its system prompt (`/calls[0]/system_prompt`, 1,637 to
-  1,753 characters). Not re-recorded here, for the lead.
+  1,749 characters). Not re-recorded here, for the lead.
 - Results on an image only: `measure` (`frame`, the location note in px,
-  the converted positions), `log_grid` (`frame`), `kept_readings` (`frame`
+  the converted positions, its boxes in px), `log_grid` (`frame`), `kept_readings` (`frame`
   on an image's row), the minimal arm's `page_count`, and with the new
   planlens `annotate_document`'s decisions and reasons on image views and
   a copy of another image.
@@ -155,7 +165,8 @@ with this branch's planlens:
 
 - Other planlens tools' boxes on an image (`search_document`,
   `read_document`, the page map) are still in its page points while
-  `open_document` says pixels: the same redesign as measure's output.
+  `open_document` says pixels; so are measure's keys named in points and
+  log_grid's positions (each result's `frame` says so).
 - A different image of the SAME size under the same name is still added to
   its copy (only the size can be told from the copy).
 - The app's own copy of the minimal arm (`funhouse_agent/deep/minimal_agent.py`)
