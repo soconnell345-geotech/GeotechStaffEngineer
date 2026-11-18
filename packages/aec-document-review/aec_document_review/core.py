@@ -1106,8 +1106,10 @@ def _turn_page_check(callbacks):
         if logger is not None:
             def log(data, _logger=logger):
                 _logger.on_custom_event("cited_pages", data, run_id=None)
+        # (confirms_notes: a note this page drops at the budget's end is
+        # not recorded as told, DR-48)
         return TurnPageCheck(record_folder=getattr(logger, "conv_dir", None),
-                             log=log)
+                             log=log, confirms_notes=True)
     except Exception:  # noqa: BLE001 - the turn runs without it
         return None
 
@@ -1508,6 +1510,12 @@ def stream_turn(agent, messages: list, thread_id: str,
                     "content": "\n\n".join(said for _c, said in told)}]
                 from aec_agent_core.cited_pages import RETRY_STATUS
                 for check, _said in told:
+                    handed = getattr(check, "note_handed", None)
+                    if handed is not None:
+                        try:
+                            handed()
+                        except Exception:  # noqa: BLE001 - never the turn
+                            pass
                     yield {"kind": "tool_call",
                            "text": getattr(check, "retry_status", None)
                            or RETRY_STATUS}

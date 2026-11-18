@@ -65,13 +65,17 @@ image page), never a file name; a document whose page kinds cannot be told
 here (not a PDF, not in the conversation's folder, a planlens without page
 roles) is left out and the record says why. The attached documents are the
 page's upload list (``attachments.json`` beside the activity log), else the
-documents the call log opened. The answer is ALWAYS recorded, at no model
-call, under :data:`PHOTO_KEY` in the turn's :data:`RECORD_EVENT` event; any
-error in it is swallowed and recorded. Behind ``GEOTECH_PHOTO_PAGES``
-(:func:`aec_agent_core.review_flags.photo_pages`, OFF by default) ``retry``
-tells the model once, before the answer goes out, through the same
-:class:`TurnPageCheck` ``feedback`` the cited-pages retry uses; pages it was
-told about are not told again later in the conversation.
+documents the call log opened. It costs no model call, but one planlens pass
+over each attached PDF (cached per file while the process lives), so at turn
+end it runs only behind ``GEOTECH_PHOTO_PAGES``
+(:func:`aec_agent_core.review_flags.photo_pages`, OFF by default: nothing of
+it runs and the turn's record is as before). ``record`` keeps the answer
+under :data:`PHOTO_KEY` in the turn's :data:`RECORD_EVENT` event (any error
+in it swallowed and recorded); ``retry`` also tells the model once, before
+the answer goes out, through the same :class:`TurnPageCheck` ``feedback``
+the cited-pages retry uses; pages it was told about are not told again later
+in the conversation. :func:`photo_coverage` also reads a saved run's folder
+by itself, with no switch.
 """
 
 from __future__ import annotations
@@ -132,6 +136,9 @@ ATTACHMENTS_FILE = "attachments.json"
 #: Tools that write contact sheets of a document's pages (PNG files that a
 #: later call looks at).
 CONTACT_SHEET_TOOLS = ("render_page_thumbnails",)
+#: The tools that look at an image file: only a call of one of these that
+#: names a contact sheet counts as seeing the pages on it.
+SHEET_LOOK_TOOLS = ("analyze_image",) + LOOK_TOOLS
 
 #: Most citations / entries kept in one result.
 MAX_LISTED = 40
@@ -565,8 +572,9 @@ def _note_sheets(st: _ActivityState, args: dict, result: Any) -> None:
 
 
 def _note_sheet_looks(st: _ActivityState, args: dict, result: Any) -> None:
-    """A finished call whose arguments name a contact sheet written earlier
-    (``analyze_image`` on its PNG) saw the pages on that sheet."""
+    """A finished call of a looking tool (:data:`SHEET_LOOK_TOOLS`) whose
+    arguments name a contact sheet written earlier (``analyze_image`` on
+    its PNG) saw the pages on that sheet."""
     data = _json(result)
     if data is not None and data.get("error"):
         return
@@ -638,7 +646,7 @@ def _feed_activity(st: _ActivityState, path: str) -> None:
         result = _whole_result(rec, base)
         if name in CONTACT_SHEET_TOOLS:
             _note_sheets(st, args, result)
-        elif st.sheets:
+        elif st.sheets and name in SHEET_LOOK_TOOLS:
             _note_sheet_looks(st, args, result)
         if name == "open_document":
             data = _json(result) or {}
@@ -1639,17 +1647,24 @@ class TurnPageCheck:
     (``retry`` mode, once), ``finish`` when it does (records the check and,
     per the mode, notes the answer). Never raises.
 
-    It carries the photograph-page check too (BACKLOG DR-48): ``finish``
-    always records it (:data:`PHOTO_KEY` in the same event), and with
-    ``photo_mode`` ``retry`` (``GEOTECH_PHOTO_PAGES``) ``feedback`` tells
-    the model once, in the same note as the page check's when both speak."""
+    It carries the photograph-page check too (BACKLOG DR-48), by
+    ``photo_mode`` (``GEOTECH_PHOTO_PAGES``): ``off``, nothing of it runs;
+    ``record``, ``finish`` records it (:data:`PHOTO_KEY` in the same event);
+    ``retry``, that and ``feedback`` tells the model once, in the same note
+    as the page check's when both speak. The pages a note named are
+    recorded as told (a ``photos_fed_back`` event) once the note is handed
+    to the model: when ``feedback`` returns it, or, for a page built with
+    ``confirms_notes`` (one that may drop a note it was given, as Document
+    Review does when the turn's budget has ended), when the page calls
+    :meth:`note_handed`."""
 
     def __init__(self, record_folder: Optional[str] = None, folder=None,
                  log: Optional[Callable[[Dict[str, Any]], None]] = None,
                  mode: Optional[str] = None,
                  label_source: Optional[LabelSource] = None,
                  photo_mode: Optional[str] = None,
-                 photo_source: Optional[PhotoSource] = None):
+                 photo_source: Optional[PhotoSource] = None,
+                 confirms_notes: bool = False):
         self.record_folder = record_folder
         self.folder = folder
         self.log = log
@@ -1669,8 +1684,11 @@ class TurnPageCheck:
         self.photo_mode = photo_mode
         self.label_source = label_source
         self.photo_source = photo_source
+        self.confirms_notes = bool(confirms_notes)
         self.fed_back = False
         self.photos_told = False
+        #: The photograph-page record of a note not yet handed to the model.
+        self._photo_pending: Optional[Dict[str, Any]] = None
         #: What the last note was about: "pages", "photos" or both.
         self._told: Tuple[str, ...] = ()
 
@@ -1734,7 +1752,6 @@ class TurnPageCheck:
                 self.fed_back = True
                 notes.append(note)
                 told.append("pages")
-        photos = None
         if self.photo_mode == "retry" and not self.photos_told:
             photos = self._photos()
             try:
@@ -1743,28 +1760,38 @@ class TurnPageCheck:
                 note, named = None, {}
             if note:
                 self.photos_told = True
-                photos = {**photos, "told": named}
+                self._photo_pending = {**photos, "told": named}
                 notes.append(note)
                 told.append("photos")
         if not notes:
             return None
         self._told = tuple(told)
         if "pages" in told:
-            self._record(result, "fed_back",
-                         photos if "photos" in told else None)
-        else:
-            self._record({}, "photos_fed_back", photos)
+            self._record(result, "fed_back")
+        if "photos" in told and not self.confirms_notes:
+            self.note_handed()
         return "\n\n".join(notes)
+
+    def note_handed(self) -> None:
+        """The page handed this turn's note to the model: the photograph
+        pages it named are recorded as told, so a later turn of the
+        conversation does not tell them again. Nothing when no photograph
+        note is waiting."""
+        pending, self._photo_pending = self._photo_pending, None
+        if pending:
+            self._record({}, "photos_fed_back", pending)
 
     def finish(self, answer: str) -> str:
         """``answer`` as the user gets it: checked, recorded, and in
         ``note`` mode (or after a ``retry`` that still cites pages no tool
         opened) with the note appended. The photograph-page check is
-        recorded with it whatever the switches say."""
+        recorded with it when ``photo_mode`` is ``record`` or ``retry``."""
         try:
-            photos = self._photos()
+            photos = (self._photos()
+                      if self.photo_mode in ("record", "retry") else None)
             if not str(answer or "").strip():
-                self._record({}, "none", photos)
+                if photos:
+                    self._record({}, "none", photos)
                 return answer
             result = self._check(answer)
             note = (note_for_user(result)
@@ -1786,5 +1813,6 @@ __all__ = ["RECORD_EVENT", "ENTRY_KIND", "NOTE_PREFIX", "RETRY_STATUS",
            "clear_cache", "doc_key",
            "PHOTO_ROLE", "PHOTO_KEY", "PHOTO_NOTE_PREFIX",
            "PHOTO_RETRY_STATUS", "ATTACHMENTS_FILE", "CONTACT_SHEET_TOOLS",
+           "SHEET_LOOK_TOOLS",
            "photograph_pages", "attached_documents", "photo_coverage",
            "photo_note_for_model"]

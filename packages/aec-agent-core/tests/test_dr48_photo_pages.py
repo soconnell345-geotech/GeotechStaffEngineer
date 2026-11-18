@@ -2,9 +2,11 @@
 
 At turn end the core lists, per attached document, the photograph pages
 (planlens' own page role) that no tool or helper looked at and that were
-not on a contact sheet a later call looked at. The list is always kept on
-the turn's record at no model call; behind ``GEOTECH_PHOTO_PAGES=retry``
-the model is told once. Made-up PDFs built here with PyMuPDF.
+not on a contact sheet a later call looked at. Behind
+``GEOTECH_PHOTO_PAGES``: off (the default) nothing of it runs; ``record``
+keeps the list on the turn's record at no model call; ``retry`` also tells
+the model once. :func:`photo_coverage` reads a saved folder with no switch.
+Made-up PDFs built here with PyMuPDF.
 """
 
 from __future__ import annotations
@@ -134,7 +136,7 @@ def test_planlens_names_the_made_up_photograph_pages(tmp_path):
     assert cp.photograph_pages(str(tmp_path / "q.pdf")) == ([], "")
 
 
-# -- the record (always, no switch) ---------------------------------------------
+# -- the measure on a saved folder (no switch) ------------------------------------
 
 def test_the_record_names_each_documents_photo_pages_nothing_looked_at(
         tmp_path):
@@ -170,6 +172,26 @@ def test_a_contact_sheet_counts_once_a_later_call_looked_at_it(tmp_path):
     assert rec.sheet_seen == {"b.pdf": {0, 1, 2}}
 
 
+def test_only_a_looking_tool_naming_the_sheet_counts_as_seeing_it(tmp_path):
+    sheet = ("render_page_thumbnails", {"handle": "doc_bbb"},
+             {"handle": "doc_bbb", "sheets": [
+                 {"image_path": "/made/up/files/thumbs/doc_bbb_1.png",
+                  "pages": "0-2", "n_pages": 3}]})
+    conv = conversation(tmp_path, calls=A_LOOKED_B_READ + [sheet])
+    write_calls(conv, [
+        ("list_files", {"path": "thumbs/doc_bbb_1.png"},
+         {"files": ["thumbs/doc_bbb_1.png"]}),
+        ("task", {"description": "thumbs/doc_bbb_1.png"},
+         "A made-up helper reply.")])
+    assert cp.photo_coverage(str(conv))["unseen"] == {"b.pdf": "2-3"}
+    write_calls(conv, [("analyze_image",
+                        {"attachment_key": "/made/up/files/thumbs/"
+                                           "doc_bbb_1.png",
+                         "prompt": "Which pages are photographs?"},
+                        "Three made-up page thumbnails.")])
+    assert cp.photo_coverage(str(conv))["unseen"] == {}
+
+
 def test_a_document_whose_page_kinds_cannot_be_told_is_left_out(tmp_path):
     conv = conversation(tmp_path, attach=("a.pdf", "notes.docx", "gone.pdf"),
                         calls=A_LOOKED_B_READ)
@@ -203,21 +225,61 @@ def test_no_attached_document_means_no_record(tmp_path):
     assert cp.photo_coverage(str(conv2)) is None
 
 
-def test_finish_records_it_with_the_switch_off_and_hands_nothing(tmp_path):
+def _counted(monkeypatch):
+    """Count the calls of the measure and of planlens' page pass."""
+    calls = {"photo_coverage": 0, "photograph_pages": 0}
+    for name in calls:
+        real = getattr(cp, name)
+
+        def wrapper(*a, _real=real, _name=name, **k):
+            calls[_name] += 1
+            return _real(*a, **k)
+        monkeypatch.setattr(cp, name, wrapper)
+    return calls
+
+
+def test_switch_off_nothing_of_it_runs_and_the_record_is_todays(
+        tmp_path, monkeypatch):
     conv = conversation(tmp_path, calls=A_LOOKED_B_READ)
+    calls = _counted(monkeypatch)
     logged = []
     check = cp.TurnPageCheck(record_folder=str(conv),
                              log=logger_for(conv, logged))
     assert check.photo_mode == "off"
+    answer = "The site is on a gentle slope."
+    assert check.feedback(answer) is None
+    assert check.finish(answer) == answer
+    assert logged == []              # an answer citing no page: no event
+    # an answer citing pages: the event as it was, with no photo field
+    check = cp.TurnPageCheck(record_folder=str(conv),
+                             log=logger_for(conv, logged))
+    assert check.finish(BAD) == BAD
+    expected = {**cp.check_answer(BAD, record_folder=str(conv)),
+                "mode": "off", "action": "none"}
+    assert logged == [expected]
+    assert cp.PHOTO_KEY not in logged[0] and "photo_mode" not in logged[0]
+    assert calls == {"photo_coverage": 0, "photograph_pages": 0}
+
+
+def test_record_keeps_it_on_the_record_and_hands_nothing(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv(review_flags.PHOTO_PAGES_ENV, "record")
+    conv = conversation(tmp_path, calls=A_LOOKED_B_READ)
+    calls = _counted(monkeypatch)
+    logged = []
+    check = cp.TurnPageCheck(record_folder=str(conv),
+                             log=logger_for(conv, logged))
+    assert check.photo_mode == "record"
     assert check.feedback("The site is on a gentle slope.") is None
     assert logged == []                          # nothing told, no event
     answer = "The site is on a gentle slope."
     assert check.finish(answer) == answer
     assert len(logged) == 1
     ev = logged[0]
-    assert ev["action"] == "none" and ev["photo_mode"] == "off"
+    assert ev["action"] == "none" and ev["photo_mode"] == "record"
     assert ev[cp.PHOTO_KEY]["unseen"] == {"b.pdf": "2-3"}
     assert "told" not in ev[cp.PHOTO_KEY]
+    assert calls["photo_coverage"] == 1 and calls["photograph_pages"] == 2
 
 
 def test_an_error_in_the_check_is_recorded_and_never_fails_the_turn(
@@ -254,6 +316,8 @@ def test_an_error_in_the_check_is_recorded_and_never_fails_the_turn(
 
 def test_the_switch_is_off_unless_set(monkeypatch):
     assert review_flags.photo_pages() == "off"
+    monkeypatch.setenv(review_flags.PHOTO_PAGES_ENV, "Record")
+    assert review_flags.photo_pages() == "record"
     for value in ("retry", "1", "on"):
         monkeypatch.setenv(review_flags.PHOTO_PAGES_ENV, value)
         assert review_flags.photo_pages() == "retry"
@@ -311,7 +375,7 @@ def test_switch_on_nothing_is_told_when_every_photo_page_was_seen(
     assert check.feedback("The site is on a gentle slope.") is None
 
 
-def test_both_checks_speak_in_one_note_and_one_event(tmp_path, monkeypatch):
+def test_both_checks_speak_in_one_note(tmp_path, monkeypatch):
     monkeypatch.setenv(review_flags.PHOTO_PAGES_ENV, "retry")
     conv = conversation(tmp_path, calls=A_LOOKED_B_READ)
     logged = []
@@ -321,5 +385,35 @@ def test_both_checks_speak_in_one_note_and_one_event(tmp_path, monkeypatch):
     assert said.startswith(cp.NOTE_PREFIX) and cp.PHOTO_NOTE_PREFIX in said
     assert check.retry_status == (f"{cp.RETRY_STATUS}; "
                                   f"{cp.PHOTO_RETRY_STATUS}")
-    assert [e["action"] for e in logged] == ["fed_back"]
-    assert logged[0][cp.PHOTO_KEY]["told"] == {"b.pdf": "2-3"}
+    # the page check's event as it was, then the photograph pages told
+    assert [e["action"] for e in logged] == ["fed_back", "photos_fed_back"]
+    assert cp.PHOTO_KEY not in logged[0]
+    assert logged[1][cp.PHOTO_KEY]["told"] == {"b.pdf": "2-3"}
+
+
+def test_pages_count_as_told_only_once_the_note_is_handed(
+        tmp_path, monkeypatch):
+    """A page that may drop a note (``confirms_notes``) records the pages
+    as told only when it says the note went to the model."""
+    monkeypatch.setenv(review_flags.PHOTO_PAGES_ENV, "retry")
+    conv = conversation(tmp_path, calls=A_LOOKED_B_READ)
+    logged = []
+    dropped = cp.TurnPageCheck(record_folder=str(conv), confirms_notes=True,
+                               log=logger_for(conv, logged))
+    assert dropped.feedback("An answer.").startswith(cp.PHOTO_NOTE_PREFIX)
+    dropped.finish("An answer.")                 # the note never went out
+    assert [e["action"] for e in logged] == ["none"]
+    assert "told" not in logged[0][cp.PHOTO_KEY]
+    # so the next turn tells them...
+    handed = cp.TurnPageCheck(record_folder=str(conv), confirms_notes=True,
+                              log=logger_for(conv, logged))
+    said = handed.feedback("Another answer.")
+    assert "- b.pdf: PDF pages 2-3" in said
+    assert [e["action"] for e in logged] == ["none"]
+    handed.note_handed()                         # ...and this one went out
+    handed.note_handed()                         # (once is enough)
+    assert [e["action"] for e in logged] == ["none", "photos_fed_back"]
+    assert logged[1][cp.PHOTO_KEY]["told"] == {"b.pdf": "2-3"}
+    later = cp.TurnPageCheck(record_folder=str(conv), confirms_notes=True,
+                             log=logger_for(conv, logged))
+    assert later.feedback("A third answer.") is None

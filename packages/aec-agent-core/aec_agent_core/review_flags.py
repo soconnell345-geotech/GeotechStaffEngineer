@@ -91,18 +91,24 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     (with the note appended if it still cites such pages). Off: the answer is
     left as the model wrote it. Both pages (BACKLOG EV-18).
 ``GEOTECH_PHOTO_PAGES`` (default off)
-    What the app does when the attached documents have photograph pages
-    that no tool or helper looked at, and that were not on a contact sheet
-    that was then looked at, in the conversation (photograph pages by
-    planlens' own page roles; :func:`aec_agent_core.cited_pages.
-    photo_coverage`). The check itself always runs at turn end, costs no
-    model call, and is kept in ``activity.jsonl`` under ``photo_pages`` in
-    the turn's ``cited_pages`` event. ``retry`` (or ``1``) tells the model
-    once, before the answer goes out, which documents' photograph pages
-    nothing looked at, and the answer it writes after that note is the one
-    delivered; pages it was told about are not told again in a later turn
-    of the conversation. Off: the model is handed exactly what it was
-    before. Both pages (BACKLOG DR-48).
+    Whether the app checks, at turn end, the attached documents'
+    photograph pages that no tool or helper looked at, and that were not on
+    a contact sheet that was then looked at, in the conversation
+    (photograph pages by planlens' own page roles; :func:`aec_agent_core.
+    cited_pages.photo_coverage`). Off (unset): nothing of it runs at turn
+    end; the turn's record and what the model is handed are as before.
+    ``record``: the check runs and is kept in ``activity.jsonl`` under
+    ``photo_pages`` in the turn's ``cited_pages`` event; the model is
+    handed exactly what it was before. ``retry`` (or ``1``): the record,
+    and the model told once, before the answer goes out, which documents'
+    photograph pages nothing looked at; the answer it writes after that
+    note is the one delivered, and pages it was told about are not told
+    again in a later turn of the conversation. What ``record`` and
+    ``retry`` cost: no model call, but one planlens pass over every page of
+    each attached PDF at the first turn end after it is attached (again
+    after each restart of the app), before the answer is shown: a few
+    seconds for a document of a few hundred pages, more with several.
+    Both pages (BACKLOG DR-48).
 ``GEOTECH_CITED_DOCUMENTS``
     What the app does when an answer or a deliverable cites a published
     document (a GEC, AASHTO LRFD, a UFC, an ASTM standard...) or an author
@@ -324,10 +330,13 @@ def cited_pages() -> str:
 
 
 def photo_pages() -> str:
-    """What a turn whose attached documents have photograph pages nothing
-    looked at gets: ``"off"`` (the default: recorded only) or ``"retry"``
-    (the model told once, before the answer goes out); both pages."""
+    """What the turn end does about attached documents' photograph pages
+    nothing looked at: ``"off"`` (the default: nothing runs), ``"record"``
+    (checked and recorded) or ``"retry"`` (recorded, and the model told
+    once before the answer goes out); both pages."""
     value = str(os.environ.get(PHOTO_PAGES_ENV, "")).strip().lower()
+    if value == "record":
+        return "record"
     if value == "retry" or value in _ON:
         return "retry"
     return "off"
@@ -370,7 +379,8 @@ ARMS: Dict[str, Dict[str, str]] = {
     "cited_pages_note": {CITED_PAGES_ENV: "note"},
     "cited_pages_retry": {CITED_PAGES_ENV: "retry"},
     # (GEOTECH_PHOTO_PAGES, DR-48, has no named arm yet: the geotech app's
-    # own test pins this table whole. A run passes it as the pair
+    # own test pins this table whole. A run passes it as the pairs
+    # ("photo_pages_record", {PHOTO_PAGES_ENV: "record"}) and
     # ("photo_pages_retry", {PHOTO_PAGES_ENV: "retry"}).)
     # The figure helper (GM-92, 2026-10-15). On the DEFAULT agent. On by
     # default since GM-227, so this arm is `baseline`.

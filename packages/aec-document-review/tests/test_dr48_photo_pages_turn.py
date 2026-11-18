@@ -1,12 +1,13 @@
 """A turn over two attached documents, one with photograph pages nothing
 looked at (BACKLOG DR-48).
 
-``core.stream_turn`` keeps, on the turn's ``cited_pages`` event, each
-attached document's photograph pages that no tool looked at; with
-``GEOTECH_PHOTO_PAGES=retry`` the model gets one note naming that document
-and those pages before the answer goes out, and the reply after it is the
-answer. With the switch off the model is handed exactly what it was before.
-Driven with a scripted stream; the documents are made-up PDFs.
+With ``GEOTECH_PHOTO_PAGES=record`` ``core.stream_turn`` keeps, on the
+turn's ``cited_pages`` event, each attached document's photograph pages
+that no tool looked at; with ``retry`` the model also gets one note naming
+that document and those pages before the answer goes out, and the reply
+after it is the answer. With the switch off nothing of it runs: the record
+and what the model is handed are as before. Driven with a scripted stream;
+the documents are made-up PDFs.
 """
 
 from __future__ import annotations
@@ -179,34 +180,84 @@ def _without_the_photo_check(monkeypatch):
     monkeypatch.setattr(cp, "photo_coverage", lambda *a, **k: None)
 
 
-def test_switch_off_the_model_is_handed_exactly_what_it_was(
+def _counted(monkeypatch):
+    """Count the calls of the measure and of planlens' page pass."""
+    calls = {"photo_coverage": 0, "photograph_pages": 0}
+    for name in calls:
+        real = getattr(cp, name)
+
+        def wrapper(*a, _real=real, _name=name, **k):
+            calls[_name] += 1
+            return _real(*a, **k)
+        monkeypatch.setattr(cp, name, wrapper)
+    return calls
+
+
+def test_switch_off_nothing_of_it_runs_and_the_record_is_as_before(
         tmp_path, monkeypatch):
+    calls = _counted(monkeypatch)
+    conv = _conversation(tmp_path)
+    agent = _ScriptedAgent(_reply(FIRST), _reply(SECOND))
+    answer, _items, events = _run(agent, conv)
+    assert answer == FIRST and len(agent.inputs) == 1
+    assert events == []              # an answer citing no page: no event
+    # an answer citing pages: the event as it was, with no photo field
+    conv2 = _conversation(tmp_path / "cites")
+    answer, _items, events = _run(_ScriptedAgent(_reply(BAD)), conv2)
+    assert answer == BAD and len(events) == 1
+    expected = json.loads(json.dumps({
+        **cp.check_answer(BAD, record_folder=str(conv2)),
+        "mode": "off", "action": "none"}))
+    assert {k: events[0].get(k) for k in expected} == expected
+    assert cp.PHOTO_KEY not in events[0] and "photo_mode" not in events[0]
+    assert calls == {"photo_coverage": 0, "photograph_pages": 0}
+
+
+def test_record_keeps_the_gap_and_hands_the_model_what_it_was(
+        tmp_path, monkeypatch):
+    off = _ScriptedAgent(_reply(FIRST), _reply(SECOND))
+    answer_off, items_off, _ = _run(off, _conversation(tmp_path / "off"))
+    cp.clear_cache()
+    monkeypatch.setenv(review_flags.PHOTO_PAGES_ENV, "record")
     conv = _conversation(tmp_path)
     agent = _ScriptedAgent(_reply(FIRST), _reply(SECOND))
     answer, items, events = _run(agent, conv)
-    assert answer == FIRST and len(agent.inputs) == 1
-    # ...and the gap is on the record all the same, at no model call
+    assert agent.inputs == off.inputs and answer == answer_off == FIRST
+    assert [i for i in items if i["kind"] != "turn_done"] == \
+        [i for i in items_off if i["kind"] != "turn_done"]
     assert [e["action"] for e in events] == ["none"]
-    assert events[0]["photo_mode"] == "off"
+    assert events[0]["photo_mode"] == "record"
     assert events[0][cp.PHOTO_KEY]["unseen"] == {"b.pdf": "2-3"}
+    assert "told" not in events[0][cp.PHOTO_KEY]
 
+
+def test_a_note_dropped_at_the_budgets_end_is_not_counted_as_told(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv(review_flags.PHOTO_PAGES_ENV, "retry")
+    conv = _conversation(tmp_path)
     with monkeypatch.context() as m:
-        _without_the_photo_check(m)
-        cp.clear_cache()
-        before = _ScriptedAgent(_reply(FIRST), _reply(SECOND))
-        answer_before, items_before, _ = _run(before, _conversation(
-            tmp_path / "before"))
-    assert before.inputs == agent.inputs
-    assert answer_before == answer
-    assert [i for i in items_before if i["kind"] != "turn_done"] == \
-        [i for i in items if i["kind"] != "turn_done"]
+        m.setattr(core, "_budget_ended_turn", lambda: True)
+        agent = _ScriptedAgent(_reply(FIRST), _reply(SECOND))
+        answer, _items, events = _run(agent, conv)
+    assert answer == FIRST and len(agent.inputs) == 1   # no call left
+    assert [e["action"] for e in events] == ["none"]
+    assert "told" not in events[0][cp.PHOTO_KEY]
+    # the next turn, with calls left, is told those pages
+    agent = _ScriptedAgent(_reply(FIRST), _reply(SECOND))
+    answer, _items, events = _run(agent, conv)
+    assert answer == SECOND and len(agent.inputs) == 2
+    assert "- b.pdf: PDF pages 2-3" in agent.inputs[1]["messages"][-1][
+        "content"]
+    assert [e["action"] for e in events] == ["none", "photos_fed_back",
+                                             "none"]
+    assert events[1][cp.PHOTO_KEY]["told"] == {"b.pdf": "2-3"}
 
 
 def test_a_suite_run_keeps_the_upload_list_and_the_record(tmp_path,
                                                           monkeypatch):
     """The review suite stages uploads as the page does and keeps the
     upload list beside the run's record, so a document the run never
-    opened is in the photograph-page check too."""
+    opened is in the photograph-page check too (the ``record`` arm)."""
     from langchain_core.language_models.fake_chat_models import (
         FakeMessagesListChatModel)
     from langchain_core.outputs import ChatGeneration, ChatResult
@@ -228,8 +279,9 @@ def test_a_suite_run_keeps_the_upload_list_and_the_record(tmp_path,
                 doc_type="report", auto_checks=False, checks=[])
     run = tmp_path / "run"
     res = run_task(task, _Answers(responses=[AIMessage(content="x")]),
-                   arm="baseline", arm_env={}, docs_dir=None,
-                   run_dir=str(run))
+                   arm="photo_pages_record",
+                   arm_env={review_flags.PHOTO_PAGES_ENV: "record"},
+                   docs_dir=None, run_dir=str(run))
     assert res["error"] is None, res.get("traceback")
     keys = json.loads((run / "attachments.json").read_text(encoding="utf-8"))
     assert len(keys) == len(task.documents) and all(keys)
