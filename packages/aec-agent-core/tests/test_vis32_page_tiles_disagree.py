@@ -6,7 +6,12 @@ nothing in the result named the pair, so the agent dropped the item between
 the two readings. ``_merge_found`` now names such a pair once, in
 ``found_note``, and says the tiles are the closer look. A read with no such
 pair returns exactly what it returned before (the cases below were written
-against the code before this change and pass on it unchanged).
+against the code before this change and pass on it unchanged). Review
+fixes: a pair is tested on the readings within the merge's reach of its
+place, so a tag read at another place no longer hides it (one former
+as-before case, the tile reading the page's tag elsewhere, now names its
+pair); and a row that holds both readings of a named pair no longer lists
+``page`` in ``seen_in``.
 
 Made-up answers on a made-up 999 x 999 pt page: one point per grid step on
 the page, half a point per step on the one tile, so every box is exact. No
@@ -77,14 +82,6 @@ AS_BEFORE = {
         [{"what": "Door 508", "page_bbox": HERE,
           "seen_in": ["page", "r1c1"]}],
         AGREE),
-    "the tile reads the page's tag elsewhere": (
-        f"Door 509 {HERE_PAGE}",
-        f"Door 508 {HERE_TILE}\nDoor 509 [100, 900, 140, 930]",
-        [{"what": "Door 508", "page_bbox": HERE,
-          "seen_in": ["page", "r1c1"]},
-         {"what": "Door 509", "page_bbox": [50.0, 450.0, 70.0, 465.0],
-          "seen_in": ["r1c1"], "tiles_only": True}],
-        _only_note("Door 509 at [50.0, 450.0, 70.0, 465.0] (r1c1)")),
     "two tags of one series far apart": (
         "Door 509 [100, 100, 120, 115]", f"Door 508 {HERE_TILE}",
         [{"what": "Door 509", "page_bbox": [100.0, 100.0, 120.0, 115.0],
@@ -135,10 +132,16 @@ def test_the_tag_placed_where_the_tile_reads_another_is_named(monkeypatch):
     assert "tile r1c1 read 'Door 508' at " + str(HERE) in note
     assert "closer look" in note and "zoom" in note
     assert note.count("509") == 1 and note.count("508") == 1
-    # only the note moved: the rows and every other key are as before
+    # the note moved, and the row no longer says the page saw 508 (review
+    # fix 2); every other key is as before
     before = _without_the_line(page, tile, monkeypatch)
-    assert {k: v for k, v in out.items() if k != "found_note"} == \
-        {k: v for k, v in before.items() if k != "found_note"}
+    assert before["found"] == [{"what": "Door 508", "page_bbox": HERE,
+                                "seen_in": ["page", "r1c1"]}]
+    assert out["found"] == [{"what": "Door 508", "page_bbox": HERE,
+                             "seen_in": ["r1c1"]}]
+    drop = ("found_note", "found")
+    assert {k: v for k, v in out.items() if k not in drop} == \
+        {k: v for k, v in before.items() if k not in drop}
     assert before["found_note"] == AGREE
 
 
@@ -182,6 +185,70 @@ def test_the_same_pair_twice_in_the_page_answer_is_named_once():
     out = _merged(page, f"Door 508 {HERE_TILE}")
     assert out["found_note"].count("DISAGREE at 1 place") == 1
     assert out["found_note"].count("508") == 1
+
+
+# --------------------------------------------------------------------------
+# Added in review: a tag read at another place no longer hides a pair, and a
+# merged row no longer says the page saw the tile's tag.
+# --------------------------------------------------------------------------
+
+A_PAGE, A = "[300, 400, 320, 415]", [300.0, 400.0, 320.0, 415.0]
+A_TILE = "[600, 800, 640, 830]"
+
+
+def test_a_page_reading_shifted_by_one_door_is_named_at_each_place():
+    """The whole-page answer shifted each label by one door: the page reads
+    508 and 509 where the tile reads 507 and 508. Each tag is read
+    somewhere by the other side, which used to hide both pairs: two rows
+    said the page and the tile agree, and 509 was gone. Each place is
+    tested on the readings within the merge's reach of it."""
+    page = f"Door 508 {A_PAGE}\nDoor 509 {HERE_PAGE}"
+    tile = f"Door 507 {A_TILE}\nDoor 508 {HERE_TILE}"
+    out = _merged(page, tile)
+    note = out["found_note"]
+    assert "agree" not in note
+    assert "DISAGREE at 2 places" in note
+    assert (f"'Door 508' at {A} in the page answer, where tile r1c1 read "
+            f"'Door 507' at {A}") in note
+    assert (f"'Door 509' at {HERE} in the page answer, where tile r1c1 "
+            f"read 'Door 508' at {HERE}") in note
+    assert out["found"] == [
+        {"what": "Door 507", "page_bbox": A, "seen_in": ["r1c1"]},
+        {"what": "Door 508", "page_bbox": HERE, "seen_in": ["r1c1"]}]
+
+
+def test_the_tile_reading_the_pages_tag_elsewhere_hides_no_pair():
+    """Was an as-before case: the page put 509 where the tile reads 508,
+    and the tile reads 509 at another place. At the page's 509 no tile
+    reads 509 and the page reads no 508, so the pair is named (review fix
+    1); the tile's 509 stays a thing found only in the tiles."""
+    page = f"Door 509 {HERE_PAGE}"
+    tile = f"Door 508 {HERE_TILE}\nDoor 509 [100, 900, 140, 930]"
+    out = _merged(page, tile)
+    assert out["found"] == [
+        {"what": "Door 508", "page_bbox": HERE, "seen_in": ["r1c1"]},
+        {"what": "Door 509", "page_bbox": [50.0, 450.0, 70.0, 465.0],
+         "seen_in": ["r1c1"], "tiles_only": True}]
+    only = _only_note("Door 509 at [50.0, 450.0, 70.0, 465.0] (r1c1)")
+    assert out["found_note"].startswith(only + " The whole-page answer and "
+                                        "the tiles DISAGREE at 1 place: "
+                                        f"'Door 509' at {HERE}")
+
+
+def test_only_a_row_holding_a_named_pair_loses_page():
+    """Review fix 2: where the page's tag and the tile's other tag merged
+    into one row under the tile's label, ``page`` leaves that row's
+    ``seen_in``; the row is not split and no row is added. Rows of tags
+    with letters stay two rows, each as it was."""
+    plain = _merged(f"Door 509 {HERE_PAGE}", f"Door 508 {HERE_TILE}")
+    assert plain["found"] == [{"what": "Door 508", "page_bbox": HERE,
+                               "seen_in": ["r1c1"]}]
+    assert "tiles_only" not in plain["found"][0]
+    coded = _merged(f"Door D-509 {HERE_PAGE}", f"Door D-508 {HERE_TILE}")
+    assert coded["found"] == [
+        {"what": "Door D-508", "page_bbox": HERE, "seen_in": ["r1c1"],
+         "tiles_only": True},
+        {"what": "Door D-509", "page_bbox": HERE, "seen_in": ["page"]}]
 
 
 def test_no_tiles_no_line():

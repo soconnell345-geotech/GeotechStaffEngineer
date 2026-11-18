@@ -3187,18 +3187,19 @@ MAX_DISAGREEMENTS_NAMED = 6
 def _place_disagreements(entries, whole: str, near) -> list:
     """The places where the whole-page answer and the tiles read different
     tags (BACKLOG VIS-32): a tag the page answer placed that no tile reads
-    anywhere, where a tile reads, within the merge's reach, a tag of the
-    same series that the page answer never names. Each as ``(page label,
-    page box, tile label, tile box, tiles)``, the nearest tile reading for
-    each page tag, each pair once. ``entries`` are :func:`_merge_found`'s
-    ``(source, label, box, view area)``; a pair this does not find plainly
-    is left out."""
+    there, where a tile reads a tag of the same series that the page answer
+    does not read there. "There" is the merge's own reach of the page
+    answer's box, not the whole page: a tag read at another place does not
+    hide the pair, so a whole-page reading that shifted each label by one
+    door is named at each place. Each as ``(page label, page box, tile
+    label, tile box, tiles)``, the nearest tile reading for each page tag,
+    each pair once. ``entries`` are :func:`_merge_found`'s ``(source,
+    label, box, view area)``; a pair this does not find plainly is left
+    out."""
     page = [(lab, box, _tags(lab)) for src, lab, box, _a in entries
             if src == whole]
     tiles = [(src, lab, box, area, _tags(lab))
              for src, lab, box, area in entries if src != whole]
-    page_tags = set().union(*(t for _l, _b, t in page))
-    tile_tags = set().union(*(t[-1] for t in tiles))
 
     def unseen(tags, others):
         return {a for a in tags
@@ -3210,14 +3211,14 @@ def _place_disagreements(entries, whole: str, near) -> list:
 
     pairs, named = [], set()
     for p_label, p_box, p_tags in page:
-        mine = unseen(p_tags, tile_tags)
+        here = [t for t in tiles if near(p_box, t[2])]
+        mine = unseen(p_tags, set().union(*(t[-1] for t in here)))
         if not mine:
             continue
+        page_here = set().union(*(t for _l, b, t in page if near(p_box, b)))
         cands = []
-        for src, t_label, t_box, area, t_tags in tiles:
-            if not near(p_box, t_box):
-                continue
-            for b in sorted(unseen(t_tags, page_tags)):
+        for src, t_label, t_box, area, t_tags in here:
+            for b in sorted(unseen(t_tags, page_here)):
                 for a in sorted(mine):
                     if _one_series(a, b):
                         cands.append((centre_gap(p_box, t_box), a, b))
@@ -3234,6 +3235,20 @@ def _place_disagreements(entries, whole: str, near) -> list:
         seen = sorted({r[1] for r in reading})
         pairs.append((p_label, p_box, t_label, t_box, seen))
     return pairs
+
+
+def _holds_named_pair(members, pairs, whole: str) -> bool:
+    """Whether one merged row holds both readings of a pair that
+    ``found_note`` names (BACKLOG VIS-32): the page answer's tag and the
+    tile's other tag at that place, joined into one row under the tile's
+    label."""
+    for p_label, p_box, t_label, t_box, _seen \
+            in pairs[:MAX_DISAGREEMENTS_NAMED]:
+        if (whole, p_label, p_box) in members and any(
+                src != whole and lab == t_label and box == t_box
+                for src, lab, box in members):
+            return True
+    return False
 
 
 def _disagreement_line(pairs, whole: str) -> str:
@@ -3312,11 +3327,17 @@ def _merge_found(out, what: str = "page") -> None:
                 if area < g["area"]:       # a smaller view's box is better
                     g.update(box=box, area=area, what=label or g["what"])
                 g["codes"] |= codes
+                g["members"].append((src, label, box))
                 break
         else:
             groups.append({"what": label, "box": box, "area": area,
-                           "seen_in": [src], "codes": set(codes)})
+                           "seen_in": [src], "codes": set(codes),
+                           "members": [(src, label, box)]})
     groups.sort(key=lambda g: (g["box"][1], g["box"][0]))
+    # Where the page answer placed a tag the tiles read as another (VIS-32:
+    # one door's tag placed where the tiles read the next door's, and the
+    # item dropped between the two readings): named once, after the rest.
+    pairs = _place_disagreements(entries, whole, near)
     rows = []
     for g in groups:
         row = {"what": g["what"] or "?",
@@ -3324,6 +3345,10 @@ def _merge_found(out, what: str = "page") -> None:
                "seen_in": g["seen_in"]}
         if whole not in g["seen_in"]:
             row["tiles_only"] = True
+        elif _holds_named_pair(g["members"], pairs, whole):
+            # The row's label is the tile's reading; the page read another
+            # tag here (said in found_note), so the page did not see this.
+            row["seen_in"] = [s for s in g["seen_in"] if s != whole]
         rows.append(row)
     only = [r for r in rows if r.get("tiles_only")]
     # The things only the tiles saw come first, so a cut list keeps them.
@@ -3331,10 +3356,6 @@ def _merge_found(out, what: str = "page") -> None:
     out["found"] = sorted(kept, key=lambda r: (r[key][1], r[key][0]))
     if len(rows) > MAX_MERGED:
         out["found_cut"] = f"{len(rows) - MAX_MERGED} more not listed"
-    # Where the page answer placed a tag the tiles read as another (VIS-32:
-    # one door's tag placed where the tiles read the next door's, and the
-    # item dropped between the two readings): named once, after the rest.
-    pairs = _place_disagreements(entries, whole, near)
     if only:
         named = "; ".join(f"{r['what']} at {r[key]} "
                           f"({', '.join(r['seen_in'])})" for r in only[:12])
