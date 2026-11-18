@@ -210,15 +210,19 @@ keys, with Shift for the pages looked at); Esc or the browser's Back closes
 it. It is the file's own script reading a JSON block of the same file, so
 it works opened from disk with no network. Page images are bounded so that
 a long document still gives a file a browser opens: each page looked at is
-drawn at 420 pixels on the long side behind its boxes (at most 300 pages)
-and at 900 for the viewer while those stay under about 8 MB; the other
-pages at 420 for the viewer, the pages taken in some other way first, under
-about 4 MB; at most 800 images in all. The report says how many pages each
-cap left out, and a page with no image still shows its outline where the
-record gives one and lists its looks. Measured on made-up 200-page PDFs
-(drawing sheets, report pages, scans): every page looked at gives a page of
-about 17.5 MB, built in 11 to 17 s; one page in five looked at about
-10.5 MB. A record with a transcript and no `activity.jsonl` now lists each
+drawn at 420 pixels on the long side behind its boxes (at most 300 pages;
+a count of pages, not of bytes) and at 900 for the viewer while those stay
+under about 8 MB of JPEG; the other pages at 420 for the viewer, the pages
+taken in some other way first, under about 4 MB of JPEG; at most 800 pages
+drawn in all (a page looked at, drawn at both sizes, counts once). The file
+holds each image as base64, a third more than its JPEG. The report says how
+many pages each cap left out and the images' size as they sit in the file,
+and a page with no image still shows its outline where the record gives one
+and lists its looks. Measured on made-up 200-page PDFs (drawing sheets,
+report pages, scans) with every page looked at: a page of about 17.5 MB,
+built in 11 to 17 s; with one page in five looked at, about 10.5 MB. A
+noisier made-up raster with every page looked at gave a 33 MB page that
+still opened. A record with a transcript and no `activity.jsonl` now lists each
 turn's question and its answer (and the files shown with it).
 
 Image calls: where a turn's record keeps its own count (`image_calls` on
@@ -228,9 +232,9 @@ its `turn_end`, from 1.2.0; with `image_limit` when a ceiling was set and
 counts, and the notes list each turn's image calls against its ceiling,
 beside a step cap reached. The two can differ: vision calls are the vision
 model's answers in the activity log, the vision probe's included; image
-calls are the images the turn counted as sent, each once however often it
-was asked, refused ones not included. A record without the count gives the
-page it gave before.
+calls are the images the turn counted as sent, each once with its retries
+(a page looked at twice counts twice), refused ones not included. A record
+without the count gives the page it gave before.
 
 ## Licence
 

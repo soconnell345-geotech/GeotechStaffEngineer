@@ -117,15 +117,19 @@ MAX_SIDECAR_BYTES = 20 * 1024 * 1024
 #:   shows the small one);
 #: - the other pages of a document whose PDF is found are drawn small for
 #:   the viewer, the pages taken in some other way first, while they stay
-#:   under :data:`MAX_OTHER_IMAGE_BYTES` and the images drawn in all stay
-#:   under :data:`MAX_IMAGES_DRAWN`.
+#:   under :data:`MAX_OTHER_IMAGE_BYTES`;
+#: - and no more than :data:`MAX_PAGES_DRAWN` pages are drawn in all (a page
+#:   looked at, drawn at both sizes, counts once).
+#: The two byte caps count JPEG bytes; the file holds each image as base64,
+#: a third more. The small images of part 4 have no byte cap: at most
+#: :data:`MAX_PAGE_IMAGES` pages.
 MAX_PAGE_IMAGES = 300
 PAGE_IMAGE_PX = 420
 VIEW_IMAGE_PX = 900
 JPEG_QUALITY = 60
 MAX_VIEW_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_OTHER_IMAGE_BYTES = 4 * 1024 * 1024
-MAX_IMAGES_DRAWN = 800
+MAX_PAGES_DRAWN = 800
 #: In the page viewer, what a call was asked and what came back, each up to
 #: this many characters (the whole is in part 2).
 VIEW_ASKED_CHARS = 1500
@@ -198,10 +202,11 @@ _WAIT_KEYS = ("wait_s", "waited_s", "queued_s", "held_s")
 IMAGE_COUNTS_NOTE = (
     "Vision calls counts the vision model's answers that the activity log "
     "holds, the vision probe's included; image calls counts the images the "
-    "turn itself counted as sent for a separate reading, each image once "
-    "however often it was asked and not those its ceiling refused; so the "
-    "two can differ when a call failed or was given up, when one image was "
-    "asked more than once, or when the probe ran.")
+    "turn itself counted as sent for a separate reading (each image once "
+    "with its retries; a page looked at twice counts twice), not those its "
+    "ceiling refused; so the two can differ when a call failed or was given "
+    "up, when an ask given up at its time limit answered after all, or when "
+    "the probe ran.")
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +228,18 @@ def _int(value: Any) -> Optional[int]:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return int(value)
+
+
+def _b64_len(n_bytes: int) -> int:
+    """How many characters ``n_bytes`` of data take as base64."""
+    return 4 * ((int(n_bytes) + 2) // 3)
+
+
+def _size(n_bytes: int) -> str:
+    """``"1.2 MB"``, or ``"35 kB"`` below a megabyte."""
+    if n_bytes >= 1024 * 1024:
+        return f"{n_bytes / (1024 * 1024):.1f} MB"
+    return f"{max(1, round(n_bytes / 1024)) if n_bytes else 0} kB"
 
 
 def _secs(value: Any) -> str:
@@ -1702,7 +1719,8 @@ class Report:
             drawn[(d.index, p)] = {
                 px: base64.b64encode(b).decode("ascii")
                 for px, b in got.items()}
-            st["bytes"] += sum(len(b) for b in got.values())
+            # as the images sit in the file: base64
+            st["bytes"] += sum(len(s) for s in drawn[(d.index, p)].values())
 
         for d in docs:
             for p, use in sorted(d.pages.items()):
@@ -1710,7 +1728,7 @@ class Report:
                     continue
                 st["looked"] += 1
                 if st["looked"] > MAX_PAGE_IMAGES \
-                        or self.images.drawn >= MAX_IMAGES_DRAWN:
+                        or self.images.drawn >= MAX_PAGES_DRAWN:
                     st["looked_none"] += 1
                     st["looked_over"] += 1
                     continue
@@ -1739,7 +1757,7 @@ class Report:
         for _first, _i, p, d in rest:
             st["other"] += 1
             if other >= MAX_OTHER_IMAGE_BYTES \
-                    or self.images.drawn >= MAX_IMAGES_DRAWN:
+                    or self.images.drawn >= MAX_PAGES_DRAWN:
                 st["other_none"] += 1
                 continue
             got = self.images.draw(d.pdf, p, (PAGE_IMAGE_PX,))
@@ -1758,7 +1776,6 @@ class Report:
         st = self.image_stats
         if not st or not (st["looked"] or st["other"]):
             return ""
-        mb = (lambda b: f"{b / (1024 * 1024):.1f} MB")
         bits = []
         if st["looked"]:
             s = (f"pages looked at: {_n(st['looked'])}; drawn at "
@@ -1768,25 +1785,29 @@ class Report:
             if st["looked_small_only"]:
                 s += (f"; only at {PAGE_IMAGE_PX}: "
                       f"{_n(st['looked_small_only'])} (the large images stop "
-                      f"at about {mb(MAX_VIEW_IMAGE_BYTES)})")
+                      f"at about {_size(_b64_len(MAX_VIEW_IMAGE_BYTES))} in "
+                      "this file)")
             if st["looked_over"]:
                 s += (f"; not drawn: {_n(st['looked_over'])} (at most "
                       f"{_n(MAX_PAGE_IMAGES)} pages looked at are drawn, "
-                      f"and {_n(MAX_IMAGES_DRAWN)} images in all)")
+                      f"and {_n(MAX_PAGES_DRAWN)} pages in all)")
             bits.append(s)
         if st["other"]:
             s = (f"other pages: {_n(st['other'])}; drawn at {PAGE_IMAGE_PX} "
-                 "pixels for the page viewer, those taken in some other way "
-                 f"first: {_n(st['other_drawn'])}")
+                 f"pixels for the page viewer: {_n(st['other_drawn'])} "
+                 "(pages taken in some other way, such as read as text or "
+                 "shown on a contact sheet, are drawn first)")
             capped = st["other_none"] - st["other_failed"]
             if capped > 0:
                 s += (f"; not drawn: {_n(capped)} (their images stop at "
-                      f"about {mb(MAX_OTHER_IMAGE_BYTES)}, and "
-                      f"{_n(MAX_IMAGES_DRAWN)} images in all)")
+                      f"about {_size(_b64_len(MAX_OTHER_IMAGE_BYTES))} in "
+                      f"this file, and {_n(MAX_PAGES_DRAWN)} pages are drawn "
+                      "in all)")
             bits.append(s)
         return ("Page images. " + ". ".join(b[0].upper() + b[1:]
                                             for b in bits)
-                + f". Images in all: {mb(st['bytes'])}.")
+                + f". Images in all, as they sit in this file: "
+                f"{_size(st['bytes'])}.")
 
     def _page_rect(self, doc: Document, page: int, use: Optional[PageUse]
                    ) -> Tuple[Optional[tuple], str]:

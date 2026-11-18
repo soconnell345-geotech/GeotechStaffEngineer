@@ -173,7 +173,8 @@ def test_caps_bound_the_images_and_say_what_was_left_out(tmp_path,
     assert "i" in pages["0"]
     assert pages["1"]["x"] == "cap" and pages["5"]["x"] == "cap"
     assert "only at 420: 2 (the large images stop" in page
-    assert "first: 1; not drawn: 2 (their images stop" in page
+    assert "for the page viewer: 1 (pages taken in some other way" in page
+    assert "are drawn first); not drawn: 2 (their images stop" in page
     # a page with no image still lists its looks
     assert pages["4"]["l"][0][:2] == [6, "zoom"]
 
@@ -190,14 +191,45 @@ def test_caps_bound_the_images_and_say_what_was_left_out(tmp_path,
 
     monkeypatch.setattr(run_report, "MAX_PAGE_IMAGES", 300)
     monkeypatch.setattr(run_report, "MAX_OTHER_IMAGE_BYTES", 10 ** 9)
-    monkeypatch.setattr(run_report, "MAX_IMAGES_DRAWN", 2)
-    pages = _data(run_report.build_report(
-        str(run_dir), documents=str(docs)))["docs"][0]["pages"]
-    # two images in all: page 3 large and small, page 4 small (from part 4)
+    monkeypatch.setattr(run_report, "MAX_PAGES_DRAWN", 2)
+    page = run_report.build_report(str(run_dir), documents=str(docs))
+    pages = _data(page)["docs"][0]["pages"]
+    # two pages drawn in all, three images: page 3 large and small, page 4
+    # small (from part 4)
     assert sum("i" in e for e in pages.values()) == 1
     assert "i" in pages["2"] and "x" not in pages["3"]
+    assert page.count('<image href="data:image/jpeg;base64,') == 2
     assert [p for p, e in sorted(pages.items()) if e.get("x") == "cap"] \
         == ["0", "1", "4", "5"]
+    assert "not drawn: 1 (at most 300 pages looked at are drawn, and 2 " \
+           "pages in all)" in page
+    assert "not drawn: 3 (their images stop at about" in page
+    assert "this file, and 2 pages are drawn in all)" in page
+    assert "images in all)" not in page
+
+
+def test_the_images_size_is_as_they_sit_in_the_file(tmp_path):
+    """The size the report gives is the base64 the file holds, in kB below
+    a megabyte, never "0.0 MB"."""
+    run_dir, docs = tmp_path / "run", tmp_path / "docs"
+    run_dir.mkdir()
+    docs.mkdir()
+    made_up_run(run_dir)
+    _pdf(docs)
+    rep = run_report.Report(str(run_dir), str(docs))
+    page = rep.html()
+    held = sum(len(s) for got in rep._plan_images().values()
+               for s in got.values())
+    assert 0 < held < 1024 * 1024
+    assert (f"Images in all, as they sit in this file: "
+            f"{round(held / 1024)} kB.") in page
+    assert "0.0 MB" not in page
+    assert run_report._size(3 * 1024 * 1024 + 1) == "3.0 MB"
+    assert run_report._size(10) == "1 kB" and run_report._size(0) == "0 kB"
+    assert run_report._b64_len(3) == 4 and run_report._b64_len(4) == 8
+    assert "drawn at 420 pixels for the page viewer: 3 (pages taken in " \
+           "some other way, such as read as text or shown on a contact " \
+           "sheet, are drawn first)" in page
 
 
 def test_without_a_pdf_the_viewer_draws_outlines_and_says_why(tmp_path):
