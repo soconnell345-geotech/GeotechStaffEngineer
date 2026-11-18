@@ -1,6 +1,8 @@
 # The run record masks secrets in the text of an error: check notes
 
-A repair, on, no switch (the lead's ruling). Commit `fd7d3df` on
+A repair, on, no switch (the lead's ruling). Commits `fd7d3df` and
+`5e16c0c` (the record's own, narrower masker, on the lead's later rule that
+an unlabelled id or hash is kept and `mask_secrets` stays as it was) on
 `claude/record-masks-secrets`.
 
 ## What the item asked
@@ -17,12 +19,21 @@ place per writer, with the existing masker; extend the masker where it
 misses a kind an exception can plausibly carry, without eating ordinary
 text; keep every record's shape; an error with no secret written as before.
 
+Then, from the lead: `mask_secrets` also replaces any run of 32 or more
+letters, digits, `-` and `_`, which would hide the request ids, run ids
+and hashes someone needs to trace a failure. Rule for the record: mask a
+secret by its form or its place, keep an unlabelled id or hash; if that
+needs a second, narrower function, build it and keep `mask_secrets` byte
+for byte for the places that use it today, including `_side_prompt`.
+
 ## What was built, and where
 
-- `aec_agent_core/error_text.py`: `mask_secrets` extended (below);
-  `mask_error_result` (a tool's result masked only when it is the tool's
-  error: a JSON object with an `"error"` string). `html_gist` (the sign-in
-  refusal a user is shown, on both pages) keeps its old rule `_SECRETS`.
+- `aec_agent_core/error_text.py`: `mask_error_secrets`, the record's
+  masker (below): a secret masked where its name or its form says it is
+  one, a run of characters with no name beside it kept however long.
+  `mask_error_result` (a tool's result masked with it only when it is the
+  tool's error: a JSON object with an `"error"` string). `mask_secrets` and
+  `html_gist` keep their rule `_SECRETS`, byte for byte.
 - `aec_agent_core/activity_log.py`: `ERROR_FIELDS`, `mask_payload` (the one
   rule) and `masked_record`. Called where the logger takes in error text,
   before any cut: `_tool_finish` (`tool_error`, `tool_end`), `_delivered`
@@ -35,10 +46,24 @@ text; keep every record's shape; an error with no secret written as before.
   through `_masked_errors` (the body is now `_run_task`).
 - `aec_document_review/turn_jobs.py` (`_run_turn_job`): the failed turn's
   error masked once, after `friendly_turn_error`.
-- `aec_document_review/diagnostics.py` (`format_report`): `mask_secrets`
-  after the existing `sharepoint_log.scrub`.
+- `aec_document_review/diagnostics.py` (`format_report`):
+  `mask_error_secrets` after the existing `sharepoint_log.scrub`.
 - `aec_document_review/sharepoint_tools.py` (`_logged`, which every
   SharePoint tool failure passes): the returned message masked.
+
+## Which masker each writer uses, and why
+
+| Writer | Masker | Why |
+|---|---|---|
+| core `activity_log.mask_payload`: every error field, `tool_refused`, a tool's error result, app events; so `tool_error`, `model_error`, `turn_end`, `append_event` | `mask_error_secrets` | the record: a request id, a run id or a hash is what someone needs to trace the failure |
+| core `run_report` (`RunRecord`, `_whole_text`) | `mask_error_secrets`, through `mask_payload` | it prints the record |
+| core `review_eval/runner._masked_errors` | `mask_error_secrets` | the suite's records |
+| Document Review `turn_jobs._run_turn_job` (the failed turn's error) | `mask_error_secrets` | shown and kept; a tester quotes its request id |
+| Document Review `diagnostics.format_report` | `mask_error_secrets`, after `scrub` | sent to the app owner to trace a failure |
+| Document Review `sharepoint_tools._logged` | `mask_error_secrets` | the tool's result, kept in the record |
+| `page_errors._clean` (Document Review's, and the geotech page's `webapp/page_errors.py`) | `mask_secrets`, as before | used it before the branch; unchanged on the lead's rule. Its `page_error` record then passes `append_event`, which adds the narrower masker's named secrets |
+| core `error_text.html_gist` (the sign-in refusal shown on both pages) | `_SECRETS`, the rule of `mask_secrets`, as before | not the record |
+| core `activity_log._side_prompt` (a vision side call's prompt excerpt) | `mask_secrets`, as before | the lead's rule: left as it is |
 
 ## Every place an error's text is kept or shown
 
@@ -54,25 +79,27 @@ text; keep every record's shape; an error with no secret written as before.
 | `activity.jsonl` `tool_end.result` when it is the tool's error (`tool_error()`, the tools' own `{"error": ...}` results) | core `activity_log._tool_finish` | no | yes; ordinary results unchanged |
 | `activity.jsonl` `tool_delivered.text` when it is an error result | core `activity_log._delivered`, `_graph_delivered` | no | yes |
 | `activity.jsonl` app events' `error` / `why` / `traceback` (`helper_kept.why` "stopped on an error (...)", `cited_pages` / `cited_documents` "the check failed: ...", `engine_retry.error`, a class name) | core `activity_log.on_custom_event` | no | yes |
-| `activity.jsonl` `page_error.error` / `.traceback` | Document Review `page_errors.error_facts` (and the geotech page's `webapp/page_errors.py`, same masker), then `activity_log.append_event` | yes (URLs cut to their host, old rule) | yes (extended rule; `append_event` masks too) |
+| `activity.jsonl` `page_error.error` / `.traceback` | Document Review `page_errors.error_facts` (and the geotech page's `webapp/page_errors.py`, same masker), then `activity_log.append_event` | yes (URLs cut to their host, `mask_secrets`) | yes (`mask_secrets` as before, then `append_event` with `mask_error_secrets`) |
 | `activity.jsonl` `turn_stop_requested`, `turn_stopped`, `restored`, `process_start`, `turn_files` | various | no error text | n/a |
 | Document Review: the error shown under a failed turn, `transcript.jsonl` `error`, `trace.jsonl` `error`, the history note in `messages.json`, the job's result | `turn_jobs._run_turn_job` (`turn_error`) | paths only | yes |
 | `messages.json`: a stopped turn's kept tool results (TA-19) | `turn_record` | as the model got them | unchanged (noted below) |
 | Review suite `run.json`, `results.json`, `RESULTS.md`: `error`, `outcome_error`, `traceback`, each turn's `error`, `vision_profile.error` | core `review_eval/runner.run_task` | no | yes |
 | Review suite `turn_end` in the run's `activity.jsonl` | the logger | no | yes |
 | Run report (`run_report.html`): turn notes, a failed model call, a tool's error, the error message the model was given, a tool's error result, app events | core `run_report.RunRecord`, `_whole_text` | no | yes, for records written before this change too |
-| Connection diagnostics report (shown, sent to the app owner) | Document Review `diagnostics.format_report` | `sharepoint_log.scrub` | scrub, then `mask_secrets` |
+| Connection diagnostics report (shown, sent to the app owner) | Document Review `diagnostics.format_report` | `sharepoint_log.scrub` | scrub, then `mask_error_secrets` |
 | SharePoint report download | `diagnostics.sharepoint_download` | scrub | unchanged |
 | SharePoint tool failure messages (the tool's result: the record and the model) | `sharepoint_tools._logged` | no (the SharePoint log's copy scrubbed) | yes |
 | The SharePoint log | `sharepoint_log.record` | scrub | unchanged |
 | Feedback records (`feedback.jsonl`, `FEEDBACK.md`) | `feedback.py` | the packages write no exception text there (the note is the agent's own words; the tool's own failure goes back to the model) | n/a |
-| A vision side call's prompt excerpt (`model_end.vision.prompt`), not an error | core `activity_log._side_prompt` | old rule | extended rule (a call made, below) |
+| A vision side call's prompt excerpt (`model_end.vision.prompt`), not an error | core `activity_log._side_prompt` | `mask_secrets` | `mask_secrets`, unchanged |
 
-## The masker
+## The record's masker, `mask_error_secrets`
 
-Before: `sk-` / `pk-` / `rk-` keys, `Bearer <anything>`, and any run of 32
-or more letters, digits, `_` and `-` (which also masked hashes, UUIDs,
-request ids and long file names).
+`mask_secrets` (kept as it was): `sk-` / `pk-` / `rk-` keys, `Bearer
+<anything>`, and any run of 32 or more letters, digits, `_` and `-` (which
+also masks hashes, UUIDs, request ids and long file names). Before this
+branch the record's error fields went unmasked, the `page_error` record
+(through `page_errors`) excepted.
 
 The secrets this code can meet (the two READMEs and
 `tinyapps/wrapper_repo/.env.example`): the model endpoint's key and the
@@ -83,14 +110,15 @@ private key and password (`GRAPH_CLIENT_SECRET`, `GRAPH_CLIENT_KEY`,
 signed links (SharePoint download and upload links carry `tempauth` in the
 query; object stores sign theirs), and a provider's own `sk-` keys.
 
-Now masked:
+`mask_error_secrets` masks:
 - a private key in PEM form;
 - a URL's password (`scheme://user:…@host`; the user is kept);
 - an `Authorization` / `Proxy-Authorization` header's value with its scheme
   (`Bearer`, `Basic`, ...), in a header line, a dict or JSON;
 - a JSON web token;
 - the value after a name that says it is a secret, as `name=value`,
-  `name: value`, `"name": "value"` or JSON-escaped: `api_key`, `x-api-key`,
+  `name: value`, `"name": "value"` or JSON-escaped: `api_key` (also "API
+  key" and "API key provided", as a provider's refusal words it), `x-api-key`,
   `subscription-key`, `ocp-apim-subscription-key`, `access_token`,
   `refresh_token`, `id_token`, `auth_token`, `session_token`,
   `security_token`, `client_secret`, `client_assertion`, `password`,
@@ -99,41 +127,45 @@ Now masked:
   `account_key`, `shared_access_key`, `shared_access_signature`;
 - `sig`, `signature`, `token`, `secret`, `code`, `key` as a URL's query
   parameter only (in prose they are ordinary words);
-- `sk-` / `pk-` / `rk-` keys and `Bearer` tokens, as before;
-- a run of 32 or more of `[A-Za-z0-9_~-]` with upper case, lower case and
-  digits in it whose kind of character changes at four or more places in
-  ten (a random token: about six in ten; a name made of words such as
-  `SiteInvestigationReportRev2`: under four).
+- `sk-` / `pk-` / `rk-` keys and `Bearer` tokens, as `mask_secrets` does
+  (a bearer token's value here stops at a quote or a bracket; in
+  `mask_secrets` it runs to the next space).
 
-Kept: hashes (hex in one case), UUIDs, request ids, page numbers, file
-names, long words, `max_tokens=4096`, "token limit", `api_key=None`,
-`password: ***`, "Authorization failed", and a value under four characters.
-Every value stops at a quote, a backslash, a space or a closing bracket, so
-a secret inside JSON text is masked and the JSON stays whole. A masked text
-masks to itself.
+It has no rule for a run of characters with no name beside it.
+
+Kept: request ids and run ids of any length and mix (a 36-character
+`req_` id in upper and lower case and digits), hashes, UUIDs, page
+numbers, file names, long words, `max_tokens=4096`, "token limit",
+`api_key=None`, `password: ***`, "Authorization failed", and a value under
+four characters. Every value stops at a quote, a backslash, a space or a
+closing bracket, so a secret inside JSON text is masked and the JSON stays
+whole; a full stop at a value's end is kept as the sentence's. A masked
+text masks to itself.
 
 Still not caught:
-- a key standing alone with no name beside it that is all hex digits or in
-  one letter case (a 32-hex gateway key quoted bare): by shape it is a hash
-  or a request id. It is masked when named (`subscription-key=`,
-  `api-key: `, a query parameter, an `Authorization` header).
-- a random token under 32 characters with no name; a random token whose
-  characters change kind at fewer than four places in ten (rare at 32
-  characters, rarer as it grows);
+- a key standing alone with no name beside it and none of the forms above
+  (a bare gateway key, a random token quoted in prose: "refused the key
+  ..."), however random it looks: it cannot be told from a request id,
+  and the lead's rule keeps those. It is masked when named
+  (`subscription-key=`, `api-key: `, a query parameter, an `Authorization`
+  header).
 - a secret under a name the list does not hold (`my_value=...`), a cookie
   (`Set-Cookie: ...`), a sentence such as "the token is ..." (no `:` or
-  `=`), standard base64 with `+` and `/` split into runs under 32;
+  `=`);
 - a configured secret by its value (the SharePoint log masks the configured
   Graph secrets by value; this masker works by shape only).
 
 ## Calls made
 
-1. **The long-run rule narrowed.** Hashes, UUIDs, request ids, long file
-   names and long words are kept, as the brief asks and as an error with no
-   secret must be written as before; the price is that a bare all-hex key is
-   no longer masked by shape (it is when named). This also applies where
-   `mask_secrets` was already used: the page-error record (both pages) and
-   the vision prompt excerpt.
+1. **Two maskers.** `mask_secrets` keeps its rule byte for byte for the
+   places that used it before (the shown page error through `page_errors`
+   on both pages, the vision prompt excerpt in `_side_prompt`; `html_gist`
+   has the same rule). The writers this branch masks use
+   `mask_error_secrets`, which has no long-run rule: a request id, a run id,
+   a hash, a long file name and a long word are kept, so the failure can be
+   traced and an error with no secret is written as before (the lead's
+   rule). The price: a bare key with no name and no known form is not
+   masked (it is when named).
 2. **Masked in what is kept, not in what the model is handed.**
    `error_text.error_line` / `tool_error` (the tool guard's message, the
    document tools' errors) are unchanged: masking there would change what
@@ -143,6 +175,10 @@ Still not caught:
    text the record cannot recognise as an error.
 3. **`html_gist` keeps its rule**: it builds the sign-in refusal shown on
    both pages, which is not the record.
+   A Document Review failed turn's error therefore passes both rules when
+   the turn failed on a refused sign-in (`html_gist` inside
+   `friendly_turn_error`, then `mask_error_secrets`); any other failed
+   turn's error passes only the narrower one.
 4. **A tool's error result is recognised by shape**: a JSON object with a
    top-level `"error"` string, the shape `tool_error()` and the tools' own
    errors take. A plain-text error result is not recognised (the SharePoint
@@ -164,21 +200,38 @@ None. A repair, on for every page.
 
 ## Tests
 
-`packages/aec-agent-core/tests/test_record_masks_secrets.py` (27 tests):
+`packages/aec-agent-core/tests/test_record_masks_secrets.py` (31 tests).
+On master the file stops at its import (`mask_error_secrets` is new); "on
+master" below means with master's rule (copied into the file as
+`OLD_RULE`) or master's code in its place:
 - `test_each_shape_of_secret_is_masked` (16 cases): each shape, with the
-  exact masked text. On master 12 fail; 4 pass (an `sk-` key, a bearer
-  token, a random token and a 32-hex value, which the old rule caught).
+  exact masked text. Master's rule gives 3 of them exactly (an `sk-` key, a
+  bearer token, a 32-hex value); 13 fail.
 - `test_an_ordinary_error_comes_back_character_for_character`: hashes, a
-  UUID, a request id, page numbers, file names, a long word and secret-like
-  words survive. Fails on master (the old rule masked the hashes and names).
-- `test_a_masked_text_masks_to_itself_and_none_is_empty`: a guard; passes
-  on both.
+  UUID, two request ids (one of 36 characters in mixed case), page numbers,
+  file names, a long word and secret-like words survive. Fails with
+  master's rule (it masks the hashes, ids and names).
+- `test_a_key_is_masked_and_a_request_id_and_a_hash_beside_it_survive`:
+  the lead's case, `api-key: <made-up key>` beside a 36-character request
+  id and a 40-character hash: the key masked, both ids kept. Master's rule
+  does the reverse (the key kept, both ids masked); the test also states
+  that `mask_secrets` still hides both ids.
+- `test_a_run_with_no_name_beside_it_is_kept_however_random`: an unnamed
+  random token is kept (what the record's masker does not catch, by the
+  lead's rule). Fails with master's rule.
+- `test_mask_secrets_keeps_its_rule_byte_for_byte`: `mask_secrets` against
+  master's rule on every text in the file. A guard; passes on both.
+- `test_a_masked_text_masks_to_itself_and_none_is_empty`: a guard.
 - `test_a_tools_error_result_is_masked_and_its_ordinary_output_is_not`:
   fails on master (no `mask_error_result`).
 - `test_a_failed_tool_and_a_failed_model_call_are_kept_masked`:
   `tool_error`, `model_error`, `turn_end` error and detail. Fails on master.
 - `test_an_error_with_no_secret_is_written_as_before`: the record holds
   `f"{type}: {message}"` exactly, as before. A guard; passes on both.
+- `test_a_raised_errors_key_is_masked_and_its_ids_are_kept`: the lead's
+  case raised through a failed tool, a failed model call and `turn_end`:
+  the key masked, the request id and the hash kept in each record. Fails
+  on master (the key is written raw).
 - `test_the_records_keep_their_shape`: the same keys and types with and
   without a secret. A guard; passes on both.
 - `test_a_long_error_is_masked_before_its_cut_and_in_its_whole_copy`: the
@@ -198,20 +251,27 @@ None. A repair, on for every page.
 - `test_a_failed_turns_error_is_shown_and_kept_masked`: a model that raises,
   through the page's agent and the turn worker; the shown error, the
   transcript, `turn_end`, `messages.json`, `trace.jsonl` and
-  `activity.jsonl` hold no secret. Fails on master.
+  `activity.jsonl` hold no secret, and the shown error keeps its
+  36-character request id. Fails on master.
 - `test_a_failed_turns_error_with_no_secret_is_as_before`: a guard; passes
   on both.
 - `test_the_diagnostics_report_masks_what_the_record_masks`: masked, setting
-  names kept, an ordinary report identical with the masker switched off.
-  Fails on master.
+  names and the request id kept, an ordinary report identical with the
+  masker switched off. Fails on master.
 - `test_a_sharepoint_failure_message_is_masked`: a signed link's token
   masked; an ordinary failure identical to its unmasked text. Fails on
   master.
 
-Existing tests run, all green: Document Review 23 files (388 passed, 3
-skipped), the core's and the geotech page's 21 files (374 passed),
-`tests/test_review_fingerprints.py` (7), `webapp/tests/test_public_text.py`
-(5). No existing test was edited.
+Existing tests run after the second commit, every file that reaches the
+changed code (grep of the test folders for the changed modules):
+- the core's 11 files: 128 passed;
+- Document Review's 39 files, with `tests/test_review_fingerprints.py`:
+  538 passed; 3 failed, the `legacy`, `minimal` and `legacy+switches`
+  cases of `test_review_page_vocabulary_offline.py` (`NoPageHost`), the
+  laptop-only failures the app's CLAUDE.md lists as green on GitHub;
+- the geotech page's 18 files: 332 passed, 5 skipped;
+- `webapp/tests/test_public_text.py`: 5 passed.
+No existing test was edited.
 
 ## Noted, not fixed
 
@@ -224,6 +284,10 @@ skipped), the core's and the geotech page's 21 files (374 passed),
   request for the maintainer if wanted.
 - A stopped turn's kept tool results in `messages.json` (TA-19) are kept as
   the model got them.
+- The shown page error (`page_errors._clean`, both pages) and its
+  `page_error` record keep `mask_secrets`, which hides a request id or a
+  hash there as it did before: unchanged on the lead's rule. Moving it to
+  `mask_error_secrets` is the lead's call.
 - Lines shown only on the page and not kept (`app.py`'s `agent_error`,
   `save_error`; a restore's message; a helper model's note; SharePoint save
   errors in the sidebar) and server log lines are not masked.
