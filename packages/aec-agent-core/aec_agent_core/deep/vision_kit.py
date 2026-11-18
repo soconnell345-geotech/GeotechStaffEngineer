@@ -609,7 +609,7 @@ _PLOT_LOOKS = ("analyze_pdf_page", "render_region")
 
 
 def _dxf_plot_for_look(arguments: dict, attachments: dict,
-                       kept: Dict[str, bytes]):
+                       kept: Dict[str, Any]):
     """``(attachments, note, refusal)`` for a look at a page of
     ``arguments["attachment_key"]`` where a DXF is also a plot
     (``GEOTECH_REVIEW_DXF_PLOTS``, BACKLOG DR-19): for a DXF, a COPY of
@@ -618,8 +618,9 @@ def _dxf_plot_for_look(arguments: dict, attachments: dict,
     tools open, so a box from a look is a box on the same page), with what
     the plot is as the note; ``attachments`` itself and no note for any
     other file. A DXF that will not plot is refused in words. ``kept``
-    holds this build's plots by the file's digest. The dict handed in is
-    never written to."""
+    holds this build's plots by the file's digest (the PDF's bytes, or the
+    reason there is none, as text). The dict handed in is never written
+    to."""
     import hashlib
     from planlens.dxf.plot import PLOT_NOTE, dxf_to_pdf, is_dxf
     from aec_agent_core.vision_tools import _resolve_attachment_or_path
@@ -637,17 +638,23 @@ def _dxf_plot_for_look(arguments: dict, attachments: dict,
     except Exception:  # noqa: BLE001 - the look itself says what is missing
         return attachments, None, None
     shown = os.path.basename(str(name).replace("\\", "/")) or str(name)
-    try:
-        digest = hashlib.sha256(bytes(data)).hexdigest()
-        if digest not in kept:
+    digest = hashlib.sha256(bytes(data)).hexdigest()
+    if digest not in kept:
+        try:
             kept[digest] = dxf_to_pdf(content=bytes(data))
-    except Exception as exc:  # noqa: BLE001 - said, never raised
+        except Exception as exc:  # noqa: BLE001 - said, never raised
+            # why there is no plot is kept too (as text): a file past a
+            # bound of the plot is found so after up to planlens'
+            # MAX_SECONDS, once per build, not again at every look
+            kept[digest] = f"{type(exc).__name__}: {exc}"
+    plot = kept[digest]
+    if isinstance(plot, str):
         return attachments, None, json.dumps({
             "error": (f"could not plot '{shown}' to look at it: "
-                      f"{type(exc).__name__}: {exc}")[:300],
+                      f"{plot}")[:300],
             "hint": f"read_document(handle='{shown}') reads the DXF's own "
                     f"text and geometry"})
-    return {**attachments, key: kept[digest]}, PLOT_NOTE, None
+    return {**attachments, key: plot}, PLOT_NOTE, None
 
 
 def make_vision_tools(
@@ -832,7 +839,7 @@ def make_vision_tools(
     # plot_data draws per figure name, for the redraw note.
     draws: Dict[str, int] = {}
     # this build's DXF plots, by the file's digest (DR-19)
-    dxf_plots_kept: Dict[str, bytes] = {}
+    dxf_plots_kept: Dict[str, Any] = {}
 
     def _dispatch(tool_name: str, arguments: dict) -> str:
         # The image calls of this one tool call, for its result under a

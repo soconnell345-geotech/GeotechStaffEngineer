@@ -69,3 +69,36 @@ def test_without_pillow_a_dxf_is_not_offered_as_a_plot(dxf, monkeypatch):
         plain["open_document"].description
     opened = json.loads(asked["open_document"].invoke({"source": DXF}))
     assert "plot" not in opened
+
+
+@needs_dxf_plots
+def test_a_dxf_that_will_not_plot_is_plotted_once_per_build(
+        dxf, monkeypatch):
+    import planlens.dxf.plot as plot
+    made = []
+    real = plot.dxf_to_pdf
+
+    def counted(*args, **kwargs):
+        made.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(plot, "dxf_to_pdf", counted)
+    # past a bound of the plot: planlens refuses it (PlotTooLarge)
+    monkeypatch.setattr(plot, "MAX_ENTITIES", 1)
+    kit = _kit({DXF: dxf}, dxf_plots=True)
+    said = []
+    for name, args in (("analyze_pdf_page", {}), ("analyze_pdf_page", {}),
+                       ("render_region", {"bbox": [0, 0, 50, 50]})):
+        out = json.loads(kit[name].invoke(
+            {"attachment_key": DXF, "page": 0, "prompt": "x", **args}))
+        assert out["error"].startswith(f"could not plot '{DXF}'")
+        assert "PlotTooLarge" in out["error"]
+        assert "read_document" in out["hint"]
+        said.append(out["error"])
+    assert len(set(said)) == 1
+    assert len(made) == 1
+    # another build plots for itself
+    other = _kit({DXF: dxf}, dxf_plots=True)
+    other["analyze_pdf_page"].invoke(
+        {"attachment_key": DXF, "page": 0, "prompt": "x"})
+    assert len(made) == 2
