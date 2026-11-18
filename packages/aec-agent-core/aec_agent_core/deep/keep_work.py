@@ -920,6 +920,19 @@ _SOURCE_KEYS = ("attachment_key", "path", "file_path", "source", "document",
 _LOOK_TOOLS = frozenset({"analyze_pdf_page", "render_region"})
 _ZOOM_TOOLS = frozenset({"render_region"})
 
+#: The text reads of the pages a helper asked for, whose result says when
+#: it was cut at its size limit and where to go on from (BACKLOG DR-50):
+#: the core's ``read_pdf_text`` and planlens' ``read_document``.
+#: ``read_text_file`` is left out: it returns as many characters as were
+#: asked for from an offset, so a part of a file is what it was asked for
+#: (a reader opens a kept file at the offsets its index gives).
+_TEXT_READ_TOOLS = frozenset({"read_pdf_text", "read_document"})
+
+#: Where a cut text read says to go on from: its ``truncated_note`` names
+#: the next pages to ask for as ``pdf_pages='N-M'``
+#: (:func:`aec_agent_core.vision_tools._dispatch_read_pdf_text`).
+_NEXT_PDF_PAGE = re.compile(r"pdf_pages\s*=\s*['\"]?(\d+)")
+
 #: The stem of a reader's record kept every time (a helper that stopped or
 #: gave up keeps ``helper_``), so the page can tell them apart: the files
 #: note labels it, and it makes no card under the reply.
@@ -928,7 +941,7 @@ READER_STEM = "reader"
 #: The order open items are listed in, most serious first, so the cap of
 #: :data:`OPEN_ITEMS_MAX_WORDS` cuts the least serious.
 _FLAG_ORDER = ("error", "overview_not_read", "tiles_not_read", "cut_off",
-               "scanned", "edge_note")
+               "text_cut", "scanned", "edge_note")
 
 
 def _clause(text: Any, room: int = 140) -> str:
@@ -1014,26 +1027,289 @@ def _look_flags(data: dict) -> dict:
     return out
 
 
+def _ask_of(args: dict) -> str:
+    """A look's question as the helper sent it, on one line (``""`` when it
+    sent none and the tool's default was asked)."""
+    return " ".join(str(args.get("prompt") or "").split())
+
+
+def _int_or_none(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _page_spans(value: Any) -> List[tuple]:
+    """``[(first, last), ...]`` of a page list (``[0, 1, 5]``) or a range
+    string (``"0-2,5"``), as given; ``[]`` when it is neither."""
+    if isinstance(value, (list, tuple)):
+        return [(n, n) for n in map(_int_or_none, value) if n is not None]
+    spans = []
+    for a, b in re.findall(r"(\d+)(?:\s*-\s*(\d+))?", str(value or "")):
+        spans.append((int(a), int(b or a)))
+    return spans
+
+
+def _page_set(value: Any) -> set:
+    """The pages of :func:`_page_spans`, one by one."""
+    return {n for a, b in _page_spans(value) for n in range(a, b + 1)}
+
+
+def _ranges(pages: Any) -> str:
+    """``[3, 4, 5, 9]`` -> ``"3-5,9"``."""
+    out: List[str] = []
+    for n in sorted(pages):
+        if out and n == int(out[-1].rpartition("-")[2]) + 1:
+            out[-1] = out[-1].partition("-")[0] + f"-{n}"
+        else:
+            out.append(str(n))
+    return ",".join(out)
+
+
+def _pdf_text_asked(args: dict, data: dict) -> Optional[set]:
+    """The pages (as a viewer counts them) a ``read_pdf_text`` call asked
+    for, resolved by the tool's own reading of its arguments
+    (:func:`aec_agent_core.vision_tools._read_pdf_text_pages` and
+    ``_parse_pages``; no page argument is its first ``max_pages`` pages),
+    or ``None`` when that cannot be said."""
+    try:
+        from aec_agent_core import vision_tools as tools
+        pages, one_based, refused = tools._read_pdf_text_pages(args)
+        if refused is not None:
+            return None
+        default_n = (_int_or_none(args.get("max_pages"))
+                     or tools._PDF_TEXT_DEFAULT_PAGES)
+        n_total = _int_or_none(data.get("n_pages_total")) or 100_000
+        found, _note = tools._parse_pages(pages, n_total, default_n,
+                                          one_based=one_based)
+    except Exception:  # noqa: BLE001 - unsure: the cut stays listed
+        return None
+    return {n + 1 for n in found}
+
+
+def _text_cut(tool: str, args: dict, data: dict) -> Optional[dict]:
+    """What a text read whose result says it was cut at its size limit
+    left unread, else ``None`` (BACKLOG DR-50), in the tool's own page
+    numbers: ``owed`` maps each page not read yet to its first line not
+    read (``None`` for a file read by lines), ``where`` is the tool's own
+    words for where to go on from, and ``stuck`` is true when the result
+    names no place to go on from (then the cut stays listed).
+
+    * ``read_pdf_text``: ``truncated``; its ``truncated_note`` names the
+      page to ask for next (``pdf_pages='N-M'``, N the page cut short or
+      the one after the last read whole). Owed: the pages the call asked
+      for (:func:`_pdf_text_asked`) from N on, counted as a viewer does;
+      it reads a page from its top.
+    * ``read_document``: a ``next`` cursor (``pages`` from 0, and
+      ``start_line`` on the first of them). Owed: the cursor's pages, its
+      first from ``start_line``; a Word, Excel or DXF file's cursor has
+      ``start_line`` only."""
+    if tool == "read_pdf_text":
+        if not data.get("truncated"):
+            return None
+        note = str(data.get("truncated_note") or "")
+        where = (f"the tool's note: {_clause(note, 160)}" if note.strip()
+                 else "")
+        found = _NEXT_PDF_PAGE.search(note)
+        if not found:
+            return {"owed": {}, "where": where, "stuck": True}
+        nxt = int(found.group(1))
+        asked = _pdf_text_asked(args, data)
+        owed = {n: 0 for n in (asked or ()) if n >= nxt} or {nxt: 0}
+        return {"owed": owed, "where": where, "stuck": asked is None}
+    if tool == "read_document":
+        nxt = data.get("next")
+        if not isinstance(nxt, dict) or not nxt:
+            return None
+        where = f"the tool's cursor to go on from: next={_json(nxt)}"
+        pages = sorted(_page_set(nxt.get("pages")))
+        line = _int_or_none(nxt.get("start_line"))
+        if pages:
+            owed = {n: 0 for n in pages}
+            owed[pages[0]] = line or 0
+            return {"owed": owed, "where": where, "stuck": False}
+        if line is None:
+            return {"owed": {}, "where": where, "stuck": True}
+        return {"owed": {None: line}, "where": where, "stuck": False}
+    return None
+
+
+def _text_read_on(tool: str, args: dict, data: dict, owed: dict) -> None:
+    """Take from ``owed`` (:func:`_text_cut`) what a later read of the same
+    file by the same tool (``args``, ``data``) read: a page it returned
+    whole from at or before the first line owed there. The page it was
+    itself cut on counts read up to its own cut, which it carries as a new
+    cut. Unsure is unread: the rest stays owed."""
+    nxt = data.get("next") if isinstance(data.get("next"), dict) else {}
+    if tool == "read_pdf_text":
+        returned = {n for n in map(_int_or_none,
+                                   data.get("pdf_pages_returned") or ())
+                    if n is not None}
+        if data.get("truncated") and returned:
+            # the page cut short: the one its note names, else the last
+            found = _NEXT_PDF_PAGE.search(str(data.get("truncated_note")
+                                              or ""))
+            returned.discard(int(found.group(1)) if found
+                             else max(returned))
+        for n in [n for n in owed if n in returned]:
+            del owed[n]
+        return
+    start = _int_or_none(args.get("start_line")) or 0
+    cut_pages = sorted(_page_set(nxt.get("pages")))
+    cut_page = cut_pages[0] if cut_pages else None
+    cut_line = _int_or_none(nxt.get("start_line"))
+    returned = _page_set(data.get("pages_returned"))
+    for n, line in list(owed.items()):
+        if n is None:
+            # a file read by lines: from at or before the line, with text
+            if (start > line or cut_pages
+                    or not str(data.get("text") or "").strip()):
+                continue
+        elif n not in returned or (n == min(returned) and start > line):
+            continue
+        if n is None and nxt or n is not None and n == cut_page:
+            if cut_line is not None and cut_line > line:
+                owed[n] = cut_line
+        else:
+            del owed[n]
+
+
+def _text_cut_words(tool: str, state: dict) -> tuple:
+    """``(label page or None, where)`` of a cut text read's open item:
+    the tool's own words while nothing of it has been read since, else
+    what is still owed, as the tool's own arguments."""
+    owed, last = state["owed"], state["last"]
+    pages = sorted(n for n in owed if n is not None)
+    label = (pages[0] + (1 if tool == "read_document" else 0)
+             if pages else None)
+    if owed == last["owed"]:
+        return label, last["where"]
+    if tool == "read_pdf_text":
+        parts = [f"pdf_pages='{_ranges(pages)}'"] if pages else []
+    else:
+        runs: List[list] = []        # [first, last, line]
+        for n in pages:
+            if runs and n == runs[-1][1] + 1 and not owed[n]:
+                runs[-1][1] = n
+            else:
+                runs.append([n, n, owed[n]])
+        parts = [f"pages='{_ranges(range(a, b + 1))}'"
+                 + (f", start_line={line}" if line else "")
+                 for a, b, line in runs]
+        if None in owed:
+            parts.append(f"start_line={owed[None]}")
+    where = ("still to read, in the tool's own numbers: " + "; ".join(parts)
+             if parts else "")
+    if state["stuck"] and last["where"]:
+        where = "; ".join(x for x in (where, last["where"]) if x)
+    return label, where
+
+
+def _box4(value: Any) -> Optional[tuple]:
+    """``(x0, y0, x1, y1)``, ordered, of a box given as four numbers, else
+    ``None``."""
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return None
+    nums = []
+    for v in value:
+        if isinstance(v, bool):
+            return None
+        try:
+            nums.append(float(v))
+        except (TypeError, ValueError):
+            return None
+    x0, y0, x1, y1 = nums
+    return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
+
+
+def _boxes_overlap(a: tuple, b: tuple) -> bool:
+    return (max(a[0], b[0]) < min(a[2], b[2])
+            and max(a[1], b[1]) < min(a[3], b[3]))
+
+
+def _failed_zoom_box(args: dict) -> tuple:
+    """``(box, bad_box)`` of a zoom that failed (DR-50). ``box``: the box it
+    asked for in page points, its ``bbox`` of four numbers, or its
+    ``view`` + ``image_box`` turned into page points by the function the
+    tool uses. ``bad_box``: the failure was in the box's arguments, as
+    ``_dispatch_render_region`` checks them before it renders: a ``bbox``
+    with a ``view`` or ``image_box`` too, a ``view`` + ``image_box`` that
+    function refuses, or a ``bbox`` that is not four numbers. ``(None,
+    False)``: it named no box (a whole page or image), or that cannot be
+    said."""
+    bbox, view, image_box = (args.get(k) for k in ("bbox", "view",
+                                                   "image_box"))
+    if bbox is not None:
+        if view is not None or image_box is not None:
+            return None, True
+        box = _box4(bbox)
+        return box, box is None
+    if view is None and image_box is None:
+        return None, False
+    try:
+        from aec_agent_core import vision_view
+        box = _box4(vision_view.image_box_to_page(view or [],
+                                                  image_box or []))
+    except (TypeError, ValueError):
+        return None, True
+    except Exception:  # noqa: BLE001 - unsure: no redo settles it
+        return None, False
+    return box, False
+
+
 def open_items(rec: HelperRecord) -> List[str]:
     """The open items a helper's own tools flagged, one line per file and
     page, the most serious first: a call that failed; a look whose
-    whole-page view or tiles were not read, or whose answer was cut off;
-    pages a text read found with no text layer; lettering that ran past a
-    zoom's edges (:func:`_look_flags`). Made from the record's tool results
-    (the same results the page readings keep), never from the helper's
-    words: how well pages were read, not what a reading asked to check.
+    whole-page view or tiles were not read, or whose answer was cut off; a
+    text read cut at its size limit, with where the tool says to go on from
+    (:func:`_text_cut`; DR-50); pages a text read found with no text layer;
+    lettering that ran past a zoom's edges (:func:`_look_flags`). Made from
+    the record's tool results (the same results the page readings keep),
+    never from the helper's words: how well pages were read, not what a
+    reading asked to check.
 
     A flag is dropped when the helper read the thing again: a later result
     of the same tool on the same file and page (for a zoom, the same box)
-    without it; for a page with no text layer, a later look at it. The
-    helper may still have settled an item in its own words; its kept file
-    shows everything."""
+    without it; for a page with no text layer, a later look at it.
+
+    DR-50, where it is not clear that a later call replaced an earlier one,
+    the earlier one stays listed:
+
+    * a failed zoom is also settled by a redo: a zoom on the same file and
+      page that asked the same question (a failed zoom that gave no
+      question of its own stays), called in a model step after the
+      failure came back (never one sent with it), that did not fail. When
+      the failed zoom had a box (:func:`_failed_zoom_box`), the redo's box
+      (its ``bbox``, else its result's) must overlap it, and a redo
+      settles only the failures it overlaps; when the failure was in the
+      box's arguments, any such redo settles it.
+    * a cut text read (:func:`_text_cut`) stays until later reads of the
+      same file by the same tool have, between them, read every page it
+      left (:func:`_text_read_on`); a later read cut again carries its
+      own cut with what is left. Its item names what is still to read in
+      the tool's own numbers (:func:`_text_cut_words`).
+
+    The helper may still have settled an item in its own words; its kept
+    file shows everything."""
     calls = _calls_by_id(rec)
     flagged: dict = {}           # (key, flag) -> (label, words)
-    for s in rec.steps:
+    failed_zooms: dict = {}      # a failed zoom's key -> (ask, box, bad, at)
+    cuts: dict = {}              # (tool, file) -> a cut text read's state
+    issued: dict = {}            # call id -> the index of its model step
+    by_id: dict = {}             # call id -> the call, as last issued
+    for i, s in enumerate(rec.steps):
+        if s["kind"] == "model":
+            for c in s["calls"]:
+                if c.get("id"):
+                    issued[c["id"]], by_id[c["id"]] = i, c
+            continue
         if s["kind"] != "result":
             continue
-        call = calls.get(s.get("id")) or {}
+        call = by_id.get(s.get("id")) or calls.get(s.get("id")) or {}
+        called_at = issued.get(s.get("id"))
         tool = str(call.get("name") or s.get("name") or "tool")
         args = call.get("args") if isinstance(call.get("args"), dict) else {}
         data = _result_dict(s.get("text") or "")
@@ -1046,9 +1322,13 @@ def open_items(rec: HelperRecord) -> List[str]:
             source or tool, f"page {page}" if page is not None else "",
             "(a zoom)" if tool in _ZOOM_TOOLS else "") if x)
         error = (data or {}).get("error")
-        if s.get("status") == "error" or error:
+        failed = s.get("status") == "error" or bool(error)
+        if failed:
             flags = {"error": f"{tool} failed: "
                               + _clause(error or s.get("text"), 120)}
+            if tool in _ZOOM_TOOLS:
+                failed_zooms[key] = (_ask_of(args),
+                                     *_failed_zoom_box(args), i)
         else:
             flags = _look_flags(data) if data else {}
             if tool in _LOOK_TOOLS and page is not None:
@@ -1056,6 +1336,25 @@ def open_items(rec: HelperRecord) -> List[str]:
                     (k_tool, k_source, k_page, _b), _flag = k
                     if (k_tool == "(text layer)" and k_source == source
                             and k_page == page):
+                        flagged.pop(k)
+            ask = _ask_of(args)
+            if (tool in _ZOOM_TOOLS and page is not None and ask
+                    and called_at is not None):
+                # a failed zoom redone (DR-50)
+                redo_box = (_box4(args.get("bbox"))
+                            or _box4((data or {}).get("bbox")))
+                for k in list(flagged):
+                    (k_tool, k_source, k_page, _b), flag = k
+                    if (flag != "error" or k_tool != tool
+                            or k_source != source or k_page != page
+                            or k[0] not in failed_zooms):
+                        continue
+                    f_ask, f_box, bad_box, f_at = failed_zooms[k[0]]
+                    if f_ask != ask or called_at <= f_at:
+                        continue
+                    if (bad_box if f_box is None
+                            else (redo_box is not None
+                                  and _boxes_overlap(f_box, redo_box))):
                         flagged.pop(k)
         for k in [k for k in flagged if k[0] == key and k[1] not in flags]:
             flagged.pop(k)
@@ -1070,6 +1369,37 @@ def open_items(rec: HelperRecord) -> List[str]:
             flagged[k] = (" ".join(x for x in (source, f"page {n}") if x),
                           "no text layer, so a text read saw nothing there "
                           "(only a look reads it)")
+        if tool in _TEXT_READ_TOOLS and data and not failed:
+            # a text read cut at its size limit (DR-50): what it left is
+            # owed until later reads of the same file by the same tool
+            # have read it all
+            text_source = source or str(args.get("handle") or "")
+            state = cuts.get((tool, text_source))
+            if state is not None:
+                _text_read_on(tool, args, data, state["owed"])
+            cut = _text_cut(tool, args, data)
+            if cut is not None:
+                if state is None:
+                    state = cuts[(tool, text_source)] = {
+                        "owed": {}, "stuck": False}
+                for n, line in cut["owed"].items():
+                    state["owed"][n] = min(state["owed"].get(n, line), line)
+                state["stuck"] = state["stuck"] or cut["stuck"]
+                state["last"] = cut
+            fkey = ((("(text cut)", tool), text_source, None, None),
+                    "text_cut")
+            if state is not None and (state["owed"] or state["stuck"]):
+                n, where = _text_cut_words(tool, state)
+                flagged[fkey] = (
+                    " ".join(x for x in (
+                        text_source or tool,
+                        f"page {n}" if n is not None else "") if x),
+                    f"a text read ({tool}) was cut at its size limit, so "
+                    "the rest of the text it asked for was not read"
+                    + (f" ({where})" if where else ""))
+            elif state is not None:
+                cuts.pop((tool, text_source))
+                flagged.pop(fkey, None)
     rank = {f: i for i, f in enumerate(_FLAG_ORDER)}
     lines: dict = {}             # label -> [rank, [words]]
     for (_key, flag), (label, words) in flagged.items():
