@@ -6,9 +6,12 @@ bearer token or a signed URL, and the run record (``activity.jsonl``, the
 review suite's ``run.json`` / ``results.json``, the run report) is what a
 tester downloads and sends on. The failed-tool and failed-model handlers
 wrote the exception's text as it came. They now mask it with
-``error_text.mask_secrets``, which learnt the shapes such an exception can
-carry; an error with no secret in it is written as before, character for
+``error_text.mask_error_secrets``, which masks a secret where its name or
+its form says it is one and keeps a request id, a run id or a hash however
+long; an error with no secret in it is written as before, character for
 character, and a tool's ordinary output is never touched.
+``error_text.mask_secrets`` (the page's shown errors, the sign-in refusal,
+the side prompt) keeps its own wider rule, byte for byte.
 
 Every value here is a made-up shape (``fake``, ``example.test``), never a
 live key of any vendor.
@@ -19,12 +22,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import uuid
 
 import pytest
 
 from aec_agent_core import activity_log as al
-from aec_agent_core.error_text import mask_error_result, mask_secrets
+from aec_agent_core.error_text import (mask_error_result,
+                                       mask_error_secrets, mask_secrets)
 
 #: A random-looking token: upper and lower case and digits, mixed.
 FAKE_TOKEN = "Fake0aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0u"
@@ -32,6 +37,13 @@ FAKE_TOKEN = "Fake0aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0u"
 SHA256 = hashlib.sha256(b"made-up drawing set").hexdigest()
 SHA1 = hashlib.sha1(b"made-up drawing set").hexdigest()
 RUN_ID = str(uuid.UUID(int=0x1234_5678_9ABC_DEF0_1234_5678_9ABC_DEF0))
+#: A made-up request id of 36 characters, as mixed as a random token.
+REQUEST_ID = "req_Fk0aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT"
+
+#: ``mask_secrets``' rule before this change, copied here to prove it is
+#: kept byte for byte for the places that used it.
+OLD_RULE = re.compile(
+    r"\b(?:sk|pk|rk)-[A-Za-z0-9_*\-]{6,}|\bBearer\s+\S+|\b[A-Za-z0-9_\-]{32,}\b")
 
 #: An ordinary error: hashes, a UUID, a request id, page numbers, file
 #: names, a long word, and words that only sound like secrets.
@@ -85,8 +97,8 @@ SECRETS = [
      "eyJub3Qi", "token expired: …"),
     ("sent Bearer FakeBearerValue000 and was refused",
      "FakeBearerValue000", "sent … and was refused"),
-    (f"refused the key {FAKE_TOKEN} for this model",
-     FAKE_TOKEN, "refused the key … for this model"),
+    ("Invalid API Key = fake-unprefixed-key-000. Check the settings.",
+     "fake-unprefixed", "Invalid API Key = …. Check the settings."),
     ("bad key\n-----BEGIN PRIVATE KEY-----\nFAKEFAKEFAKE\n"
      "-----END PRIVATE KEY-----\nend",
      "FAKEFAKEFAKE", "bad key\n…\nend"),
@@ -107,24 +119,51 @@ SECRETS = [
 
 @pytest.mark.parametrize("text,secret,masked", SECRETS)
 def test_each_shape_of_secret_is_masked(text, secret, masked):
-    out = mask_secrets(text)
+    out = mask_error_secrets(text)
     assert secret not in out
     assert out == masked
 
 
 def test_an_ordinary_error_comes_back_character_for_character():
-    assert mask_secrets(ORDINARY) == ORDINARY
-    for word in (SHA256, SHA1, RUN_ID, "page 12 of 40",
+    assert mask_error_secrets(ORDINARY) == ORDINARY
+    for word in (SHA256, SHA1, RUN_ID, REQUEST_ID, "page 12 of 40",
                  "Site_Investigation_Report_Rev2_Final_20261118.pdf",
                  "ReviewSetMarkedPage12FinalVersion.pdf",
                  "pneumonoultramicroscopicsilicovolcanoconiosis"):
-        assert word in mask_secrets(f"failed: {word}")
+        assert word in mask_error_secrets(f"failed: {word}")
+
+
+def test_a_key_is_masked_and_a_request_id_and_a_hash_beside_it_survive():
+    assert len(REQUEST_ID) == 36 and len(SHA1) == 40
+    raised = (f"401 Unauthorized (request id {REQUEST_ID}, document sha1 "
+              f"{SHA1}): api-key: fake-key-value-000 was refused")
+    assert mask_error_secrets(raised) == raised.replace(
+        "fake-key-value-000", "…")
+    # the wider rule, kept for the places that used it, would hide both
+    assert REQUEST_ID not in mask_secrets(raised)
+    assert SHA1 not in mask_secrets(raised)
+
+
+def test_a_run_with_no_name_beside_it_is_kept_however_random():
+    # It cannot be told from a request id; only its name or its form
+    # (sk-, Bearer, a JSON web token) says a run of characters is a key.
+    text = f"refused the key {FAKE_TOKEN} for this model"
+    assert mask_error_secrets(text) == text
+
+
+def test_mask_secrets_keeps_its_rule_byte_for_byte():
+    texts = [t for t, _s, _m in SECRETS] + [
+        ORDINARY, FAKE_TOKEN, REQUEST_ID, SHA1, RUN_ID, "",
+        f"refused the key {FAKE_TOKEN} (request {REQUEST_ID})"]
+    for text in texts:
+        assert mask_secrets(text) == OLD_RULE.sub("…", text), text
+    assert mask_secrets(None) == ""
 
 
 def test_a_masked_text_masks_to_itself_and_none_is_empty():
     for text, _secret, masked in SECRETS:
-        assert mask_secrets(masked) == masked
-    assert mask_secrets(None) == ""
+        assert mask_error_secrets(masked) == masked
+    assert mask_error_secrets(None) == ""
 
 
 def test_a_tools_error_result_is_masked_and_its_ordinary_output_is_not():
@@ -179,10 +218,12 @@ def test_a_failed_tool_and_a_failed_model_call_are_kept_masked(tmp_path):
     (tool,) = _events(conv, "tool_error")
     (model,) = _events(conv, "model_error")
     (end,) = _events(conv, "turn_end")
-    assert tool["error"] == mask_secrets(f"RuntimeError: {SECRET_ERROR}")
-    assert model["error"] == mask_secrets(f"PermissionError: {SECRET_ERROR}")
-    assert end["error"] == mask_secrets(f"The turn stopped: {SECRET_ERROR}")
-    assert end["error_detail"] == mask_secrets(
+    assert tool["error"] == mask_error_secrets(f"RuntimeError: {SECRET_ERROR}")
+    assert model["error"] == mask_error_secrets(
+        f"PermissionError: {SECRET_ERROR}")
+    assert end["error"] == mask_error_secrets(
+        f"The turn stopped: {SECRET_ERROR}")
+    assert end["error_detail"] == mask_error_secrets(
         f"provider said: {SECRET_ERROR}")
     with open(al.activity_path(conv), encoding="utf-8") as fh:
         _clean(fh.read())
@@ -202,6 +243,22 @@ def test_an_error_with_no_secret_is_written_as_before(tmp_path):
     end = _events(conv, "turn_end")[0]
     assert end["error"] == ORDINARY and end["error_detail"] == ORDINARY
     assert _events(conv, "page_error")[0]["error"] == ORDINARY
+
+
+def test_a_raised_errors_key_is_masked_and_its_ids_are_kept(tmp_path):
+    conv = str(tmp_path)
+    log = al.ActivityLogger(conv, turn=1)
+    raised = (f"401 Unauthorized (request id {REQUEST_ID}, document sha1 "
+              f"{SHA1}): api-key: fake-key-value-000 was refused")
+    _tool(log, "open_document", error=PermissionError(raised))
+    log.on_chat_model_start({}, [[]], run_id="m1")
+    log.on_llm_error(PermissionError(raised), run_id="m1")
+    log.turn_end(error=raised)
+    for event in ("tool_error", "model_error", "turn_end"):
+        (rec,) = _events(conv, event)
+        assert "fake-key-value-000" not in rec["error"], event
+        assert "api-key: … was refused" in rec["error"], event
+        assert REQUEST_ID in rec["error"] and SHA1 in rec["error"], event
 
 
 def test_the_records_keep_their_shape(tmp_path):
@@ -229,7 +286,7 @@ def test_a_long_error_is_masked_before_its_cut_and_in_its_whole_copy(
     assert rec["truncated"] is True and rec["full"]
     with open(os.path.join(conv, rec["full"]), encoding="utf-8") as fh:
         whole = fh.read()
-    assert whole == mask_secrets(f"RuntimeError: {long}")
+    assert whole == mask_error_secrets(f"RuntimeError: {long}")
     _clean(whole)
     assert rec["chars"] == len(whole)
 
@@ -252,7 +309,7 @@ def test_a_tools_error_text_is_masked_and_its_ordinary_output_kept(
         "content": json.dumps({"error": f"cut: {SECRET_ERROR}"})},
         run_id=uuid.uuid4())
     ends = _events(conv, "tool_end")
-    assert ends[0]["result"] == mask_secrets(err)
+    assert ends[0]["result"] == mask_error_secrets(err)
     assert ends[1]["result"] == out                  # as the model got it
     (refused,) = _events(conv, "tool_refused")
     (delivered,) = _events(conv, "tool_delivered")

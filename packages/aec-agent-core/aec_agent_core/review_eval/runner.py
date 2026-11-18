@@ -413,16 +413,16 @@ def record_counts(records: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def _masked_errors(result: Dict[str, Any]) -> Dict[str, Any]:
     """``result`` with the text of each error masked as the run record
-    masks it (:func:`aec_agent_core.error_text.mask_secrets`): ``error``,
+    masks it (:func:`aec_agent_core.error_text.mask_error_secrets`): ``error``,
     ``outcome_error``, ``traceback``, each turn's ``error`` and the vision
     profile's ``error``. The same keys and types; an error with no secret
     in it is kept as it was. Never raises."""
     try:
-        from aec_agent_core.error_text import mask_secrets
+        from aec_agent_core.error_text import mask_error_secrets
 
         def masked(holder: Any, key: str) -> None:
             if isinstance(holder, dict) and isinstance(holder.get(key), str):
-                holder[key] = mask_secrets(holder[key])
+                holder[key] = mask_error_secrets(holder[key])
 
         for key in ("error", "outcome_error", "traceback"):
             masked(result, key)

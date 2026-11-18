@@ -143,13 +143,14 @@ records with no ``model_end`` and nothing to say why):
 
 Hashes and sizes, never file contents, images or keys.
 
-The text of an error is kept with anything shaped like a secret masked
-(:func:`mask_payload`, the rule of ``error_text.mask_secrets``): an
-exception from a model client or an HTTP library can carry a key, a bearer
-token or a signed URL, and the record is what a tester downloads and sends
-on. That is the :data:`ERROR_FIELDS` of every record, a ``tool_refused``'s
-text and a tool's error result; an error with no secret in it, and a
-tool's ordinary output, are kept as they came.
+The text of an error is kept with each secret masked where its name or
+its form says it is one (:func:`mask_payload`, the rule of
+``error_text.mask_error_secrets``): an exception from a model client or an
+HTTP library can carry a key, a bearer token or a signed URL, and the
+record is what a tester downloads and sends on. That is the
+:data:`ERROR_FIELDS` of every record, a ``tool_refused``'s text and a
+tool's error result; an error with no secret in it (a request id, a run id
+and a hash included), and a tool's ordinary output, are kept as they came.
 
 A logging failure must never fail a turn: every handler swallows its own
 exceptions and ``raise_error`` is left False.
@@ -546,8 +547,8 @@ ERROR_FIELDS = ("error", "error_detail", "traceback", "why")
 
 def mask_payload(event: Any, key: str, text: Any) -> Any:
     """``text`` as the record keeps it under ``key`` of an ``event``: the
-    text of an error with anything shaped like a secret masked
-    (:func:`aec_agent_core.error_text.mask_secrets`) -- the
+    text of an error with each named or plainly formed secret masked
+    (:func:`aec_agent_core.error_text.mask_error_secrets`) -- the
     :data:`ERROR_FIELDS` of any record, a ``tool_refused``'s ``text`` (the
     error or refusal the model was given), and a tool's error result (a
     JSON object with an ``"error"`` string) as ``tool_end``'s ``result`` or
@@ -558,9 +559,10 @@ def mask_payload(event: Any, key: str, text: Any) -> Any:
     if not isinstance(text, str) or not text:
         return text
     try:
-        from aec_agent_core.error_text import mask_error_result, mask_secrets
+        from aec_agent_core.error_text import (mask_error_result,
+                                               mask_error_secrets)
         if key in ERROR_FIELDS or (event == "tool_refused" and key == "text"):
-            return mask_secrets(text)
+            return mask_error_secrets(text)
         if (event, key) in (("tool_end", "result"),
                             ("tool_delivered", "text")):
             return mask_error_result(text)

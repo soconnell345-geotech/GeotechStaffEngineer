@@ -23,9 +23,11 @@ from aec_agent_core import error_text
 FAKE_TOKEN = "Fake0aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0u"
 SIGNED = ("https://files.example.test/sites/a/d.pdf?download=1"
           "&tempauth=v1.FakeTempauthValue000")
+#: A made-up request id of 36 characters: kept, so the failure can be traced.
+REQUEST_ID = "req_Fk0aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT"
 SECRET_TEXT = (f"upstream refused the call for url: {SIGNED}; sent Bearer "
-               f"FakeBearerValue000 with key {FAKE_TOKEN} and "
-               "sk-fake-00000000-not-real")
+               f"FakeBearerValue000 with x-api-key: {FAKE_TOKEN} and "
+               f"sk-fake-00000000-not-real (request id {REQUEST_ID})")
 GONE = ("FakeTempauthValue000", "FakeBearerValue000", FAKE_TOKEN, "sk-fake")
 ORDINARY = ("page 12 of 40 could not be read from "
             "'Site_Investigation_Report_Rev2_Final_20261118.pdf'; "
@@ -98,7 +100,7 @@ def test_a_failed_turns_error_is_shown_and_kept_masked():
     job = _failed_turn("MASK1", SECRET_TEXT)
     shown = job.result["error"]
     assert shown and "upstream refused the call" in shown
-    assert "tempauth=…" in shown
+    assert "tempauth=…" in shown and REQUEST_ID in shown
     for secret in GONE:
         assert secret not in shown, secret
     (entry,) = [e for e in core.load_transcript("MASK1")
@@ -133,6 +135,7 @@ def test_the_diagnostics_report_masks_what_the_record_masks(monkeypatch):
         "Set GEOTECH_PROMPTER_DISABLE_STREAMING=1 if it repeats.")])
     for secret in GONE:
         assert secret not in text, secret
+    assert REQUEST_ID in text
     assert "GEOTECH_PROMPTER_DISABLE_STREAMING=1" in text
     assert "plain request (invoke): FAIL" in text
     # with no secret in it, the report is what it was before the masking
@@ -140,7 +143,7 @@ def test_the_diagnostics_report_masks_what_the_record_masks(monkeypatch):
                           f"ValueError: {ORDINARY}"),
               diag._check("versions", diag.PASS, "core 1.2.0")]
     now = diag.format_report(checks)
-    monkeypatch.setattr(error_text, "mask_secrets", lambda t: t)
+    monkeypatch.setattr(error_text, "mask_error_secrets", lambda t: t)
     assert diag.format_report(checks) == now
 
 

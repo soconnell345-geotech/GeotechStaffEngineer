@@ -96,11 +96,12 @@ def format_report(checks: List[dict]) -> str:
         text = scrub(text)
     except Exception:                            # noqa: BLE001
         pass
-    # ...and the shapes the run record masks (a key, a signed link's
-    # signature or token, a URL's password, a random-looking token).
+    # ...and the secrets the run record masks (a named key or token, a
+    # signed link's signature, a URL's password, a bearer token); a request
+    # id the owner may need to trace a failure is kept.
     try:
-        from aec_agent_core.error_text import mask_secrets
-        return mask_secrets(text) or text
+        from aec_agent_core.error_text import mask_error_secrets
+        return mask_error_secrets(text) or text
     except Exception:                            # noqa: BLE001
         return text
 
