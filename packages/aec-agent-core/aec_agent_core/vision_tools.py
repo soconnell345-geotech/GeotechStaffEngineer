@@ -2326,10 +2326,29 @@ ZOOM_ANSWER_SHAPE = (
     "lettering in this view, quoted exactly as printed. " + _SHAPE_TAIL)
 
 
+#: Appended to the prompt of a tile, with ``GEOTECH_VISION_TILE_ANSWERS`` on
+#: (BACKLOG VIS-34): a tile holding nothing on the ask answered at length,
+#: often listing each thing asked about as not present. It asks for nothing
+#: less from a tile that does hold something.
+TILE_NOTHING_LINE = "Nothing on the request in this tile."
+TILE_ANSWER_SHAPE = (
+    "How to answer: briefly, for the agent that asked rather than for a "
+    "person. Answer the request above from what is in this tile, quoting "
+    "the lettering that bears on it exactly as printed, and leave out none "
+    "of it. If nothing in this tile bears on the request, reply with the "
+    f"one line \"{TILE_NOTHING_LINE}\" and do not list what is not there. "
+    + _SHAPE_TAIL)
+
+
 def _answer_shape(kind: str) -> Optional[str]:
     """The answer-shape paragraph for a vision call of ``kind`` (``page``:
-    a page read whole, ``region``: a zoom), or ``None`` (tiles, the layout
-    overview, checks and images keep their own prompts)."""
+    a page read whole, ``region``: a zoom, ``tile``: a tile of a tiled read
+    while ``GEOTECH_VISION_TILE_ANSWERS`` is on), or ``None`` (tiles with
+    the switch off, the layout overview, checks and images keep their own
+    prompts)."""
+    if kind == "tile":
+        from aec_agent_core import review_flags
+        return TILE_ANSWER_SHAPE if review_flags.tile_answers() else None
     return {"page": PAGE_ANSWER_SHAPE, "region": ZOOM_ANSWER_SHAPE}.get(kind)
 
 
@@ -2680,6 +2699,7 @@ def _image_tile_jobs(picture, n, prompt, engine, turn_arg=None):
     from aec_agent_core import image_view
     boxes = image_view.tile_boxes(picture, n)
     allow_jpeg = getattr(engine, "accepts_jpeg", False)
+    shape = _answer_shape("tile")        # None unless the switch is on
 
     def one(k):
         r, c = divmod(k, n)
@@ -2693,7 +2713,7 @@ def _image_tile_jobs(picture, n, prompt, engine, turn_arg=None):
                      f"Report only what is IN this tile, briefly.")
 
             text = ask_vision(engine, img, _vision_prompt(
-                f"{prompt}\n\n{where}", _sent_size(tinfo),
+                f"{prompt}\n\n{where}", _sent_size(tinfo), shape=shape,
                 turn=_sent_turn(tinfo)), "tile",
                 where={"tile": f"r{r + 1}c{c + 1}"})
             scale = float(tinfo.get("scale") or 1.0)
@@ -4028,6 +4048,7 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
     which lines the tile's edges cut."""
     from aec_agent_core import vision_view
     boxes = vision_view.tile_boxes(info["clip"], n)
+    shape = _answer_shape("tile")        # None unless the switch is on
 
     def one(k):
         r, c = divmod(k, n)
@@ -4041,7 +4062,7 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
                      f"only what is IN this tile, briefly.")
 
             text = ask_vision(engine, img, _vision_prompt(
-                f"{prompt}\n\n{where}", _sent_size(tinfo),
+                f"{prompt}\n\n{where}", _sent_size(tinfo), shape=shape,
                 turn=_sent_turn(tinfo), cut=_cut_note(tinfo, layer)),
                 "tile", where={"page": page, "tile": f"r{r + 1}c{c + 1}"})
             row = {"tile": f"r{r + 1}c{c + 1}",
