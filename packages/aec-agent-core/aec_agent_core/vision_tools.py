@@ -3699,6 +3699,11 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
         tiles_note = "; ".join(filter(None, [
             tiles_note, "the page has no ink (it is blank), so it was not "
                         "read in tiles"]))
+    elif n > 1 and tiles == "auto" and _photo_page(pdf_bytes, page):
+        # A page of photographs takes one look; tiles only when asked
+        # (BACKLOG VIS-33).
+        n = 1
+        tiles_note = "; ".join(filter(None, [tiles_note, PHOTO_PAGE_NOTE]))
     # With tiles, the whole-page call is asked for the layout only: the
     # tiles read the lettering (E1: asked to transcribe a sheet too small to
     # read whole, it was the read's long pole -- 55-72 s against 11-15 s).
@@ -3879,6 +3884,57 @@ def _has_ink(image_bytes) -> bool:
         return ink >= BLANK_INK_FRACTION * pix.width * pix.height
     except Exception:  # noqa: BLE001
         return True
+
+
+# -- A page of photographs takes one look (BACKLOG VIS-33) ---------------------
+#
+# On ``tiles='auto'`` a page is also read in tiles when its small lettering
+# would be too small in the whole-page image, and a page with almost no text
+# layer is assumed to carry drawing lettering (``vision_view.tile_grid``). A
+# page of photographs is often such a page: its tiles cost four to sixteen
+# more vision calls, and their readings ran five to seven times longer than
+# one look that answered the same questions. So under ``auto`` a page that
+# planlens names a page of photographs (its page role ``photos``, from the
+# page's own captions and pictures: ``planlens.document.roles``) takes one
+# look, and the result says tiles or a zoom can be asked for. A scanned
+# drawing is pictures with no text layer too, and still needs its tiles: the
+# test is the role, never "no text". Where the role cannot be told (no
+# picture drawn on the page, a planlens without page roles, anything that
+# fails) the page is tiled as before. An explicit ``tiles`` is honoured.
+
+#: planlens' page role for a page of photographs.
+PHOTO_ROLE = "photos"
+
+#: Said (``tiles_note``) when a page of photographs took one look on
+#: ``tiles='auto'``.
+PHOTO_PAGE_NOTE = ("this is a page of photographs, so it was read in one "
+                   "look; for a closer look ask for tiles (tiles='2' to "
+                   "'4') or zoom with render_region")
+
+
+def _photo_page(pdf_bytes, page) -> bool:
+    """Whether planlens names ``page`` a page of photographs (role
+    :data:`PHOTO_ROLE`), from that page's own evidence. ``False`` whenever
+    it cannot tell, so such a page is tiled as before: no picture drawn on
+    the page, a planlens without page roles (the core asks for 0.15 or
+    later and detects them), or any failure. Reads one page, without OCR."""
+    try:
+        import dataclasses
+        import pymupdf
+        from planlens.document import Document
+        from planlens.document.roles import assign, facts_for
+        data = bytes(pdf_bytes)
+        with pymupdf.open(stream=data, filetype="pdf") as d:
+            if not d[page].get_image_info():
+                return False          # nothing photographic on the page
+        with Document(content=data) as doc:
+            facts = facts_for(doc.summary(page),
+                              doc.page(page, tables=False).lines)
+        # The rules read a list of pages from 0: this page alone is page 0.
+        roles = assign([dataclasses.replace(facts, page=0)])
+        return bool(roles) and getattr(roles[0], "role", None) == PHOTO_ROLE
+    except Exception:  # noqa: BLE001 - unknown kind: tiled as before
+        return False
 
 
 def _tiles_not_read_note(rows) -> Optional[str]:
