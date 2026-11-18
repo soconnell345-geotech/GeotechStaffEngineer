@@ -264,7 +264,8 @@ def test_pages_drawn_behind_the_boxes_when_the_pdf_is_found(tmp_path):
     pdf.save(str(docs / DOC))
     pdf.close()
     page = run_report.build_report(str(run_dir), documents=str(docs))
-    assert page.count("data:image/jpeg;base64,") == 3  # pages 3, 4 and 5
+    # pages 3, 4 and 5 (the page viewer's script names the prefix once more)
+    assert page.count('<image href="data:image/jpeg;base64,') == 3
     assert "Drawn as outlines only" not in page
     assert "drawn from the PDF" in page
 
