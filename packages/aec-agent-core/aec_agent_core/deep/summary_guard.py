@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import threading
 from typing import Optional
 
 from aec_agent_core.deep.tool_guards import GraphBubbleUp
@@ -311,6 +312,12 @@ def _library_class():
         return None
 
 
+#: Held over the check and the patching, so that two first builds at the
+#: same moment (two testers' first turns after a restart) cannot both find
+#: the class unguarded and wrap it twice.
+_INSTALL_LOCK = threading.Lock()
+
+
 def install(cls=None) -> bool:
     """Guard the summarizer class ``cls`` (deepagents' by default) once, in
     place. True when it is guarded; False, and nothing changed, when the
@@ -318,16 +325,18 @@ def install(cls=None) -> bool:
     cls = cls if cls is not None else _library_class()
     if cls is None:
         return False
-    if cls.__dict__.get(_MARK):
+    with _INSTALL_LOCK:
+        if cls.__dict__.get(_MARK):
+            return True
+        if not all(callable(getattr(cls, name, None))
+                   for name, _ in _GUARDS):
+            return False
+        for name, guard in _GUARDS + _OPTIONAL:
+            method = getattr(cls, name, None)
+            if callable(method):
+                setattr(cls, name, guard(method))
+        setattr(cls, _MARK, True)
         return True
-    if not all(callable(getattr(cls, name, None)) for name, _ in _GUARDS):
-        return False
-    for name, guard in _GUARDS + _OPTIONAL:
-        method = getattr(cls, name, None)
-        if callable(method):
-            setattr(cls, name, guard(method))
-    setattr(cls, _MARK, True)
-    return True
 
 
 __all__ = ["ERROR_PREFIX", "EVENT", "SummaryFailed", "failed_summary",
