@@ -353,9 +353,12 @@ def dxf_plots_available() -> bool:
     """Whether the installed planlens can open a DXF as a PDF plot of its
     model space for a host that asks (BACKLOG DR-19; planlens after
     0.16.0): its toolkit takes ``dxf_plots`` and it has the plot itself
-    (``planlens.dxf.plot``, which needs ezdxf). planlens publishes no list
-    of the options a host may ask with, so the toolkit's own signature is
-    read; an older toolkit would refuse the option."""
+    (``planlens.dxf.plot``, which needs ezdxf, and Pillow for ezdxf's
+    drawing add-on: without Pillow planlens refuses every plot,
+    ``PlotUnavailable``, so the page must not say a DXF is a plot).
+    planlens publishes no list of the options a host may ask with, so the
+    toolkit's own signature is read; an older toolkit would refuse the
+    option."""
     if not _host_takes_options():
         return False
     import importlib.util
@@ -366,7 +369,8 @@ def dxf_plots_available() -> bool:
             ReviewToolkit.__init__).parameters
         return bool(takes
                     and importlib.util.find_spec("planlens.dxf.plot")
-                    and importlib.util.find_spec("ezdxf"))
+                    and importlib.util.find_spec("ezdxf")
+                    and importlib.util.find_spec("PIL"))
     except Exception:  # noqa: BLE001 - not there is not offered
         return False
 
