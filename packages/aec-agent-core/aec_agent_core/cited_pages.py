@@ -112,6 +112,7 @@ by itself, with no switch.
 
 from __future__ import annotations
 
+import bisect
 import contextlib
 import contextvars
 import json
@@ -1778,7 +1779,23 @@ _VALUE = re.compile(r"\d")
 _CONTENT = re.compile(r"[A-Za-z]{4}")
 
 
-def _unread_cue(masked: str, c: Cited, cites: Sequence[Cited]
+def _group_starts(cites: Sequence[Cited]) -> List[int]:
+    """Where each lead group of the citations starts, in order."""
+    return sorted({_grp(d) for d in cites})
+
+
+def _other_group(starts: Sequence[int], lo: int, hi: int, mine: int) -> bool:
+    """Whether a lead group other than ``mine`` starts in ``[lo, hi)``."""
+    i = bisect.bisect_left(starts, lo)
+    while i < len(starts) and starts[i] < hi:
+        if starts[i] != mine:
+            return True
+        i += 1
+    return False
+
+
+def _unread_cue(masked: str, c: Cited, cites: Sequence[Cited],
+                starts: Optional[Sequence[int]] = None
                 ) -> Optional["re.Match"]:
     """A cue in the citation's statement that the answer names its page as
     unread, said of this page: after it with no other citation between
@@ -1788,6 +1805,8 @@ def _unread_cue(masked: str, c: Cited, cites: Sequence[Cited]
     is on PDF page 10")."""
     lo, hi = _statement_span(masked, c)
     end = max(c.end, c.start)
+    if starts is None:
+        starts = _group_starts(cites)
     for m in _UNREAD.finditer(masked, lo, hi):
         if m.start() < _grp(c):
             between = (lo, m.start())
@@ -1798,9 +1817,9 @@ def _unread_cue(masked: str, c: Cited, cites: Sequence[Cited]
             # list ("Not read: PDF page 6, PDF page 9"; not "I did not
             # open page 9, and page 34 shows the mix").
             tail = masked[end:hi]
-            if _VALUE.search(tail) or (_CONTENT.search(tail) and any(
-                    _grp(d) != _grp(c) and m.end() <= _grp(d) < _grp(c)
-                    for d in cites)):
+            if _VALUE.search(tail) or (
+                    _CONTENT.search(tail) and _other_group(
+                        starts, m.end(), _grp(c), _grp(c))):
                 continue
         else:
             between = (end, m.start())
@@ -1808,8 +1827,7 @@ def _unread_cue(masked: str, c: Cited, cites: Sequence[Cited]
             # cited for ("Page 34 says the test was not read at 28 days")
             if _VALUE.search(masked[end:m.start()]):
                 continue
-        if not any(_grp(d) != _grp(c)
-                   and between[0] <= _grp(d) < between[1] for d in cites):
+        if not _other_group(starts, between[0], between[1], _grp(c)):
             return m
     m = _UNREAD_AFTER.match(masked, end)
     return None if m and _VALUE.search(m.group(0)) else m
@@ -1912,12 +1930,21 @@ def _paired(text: str, cites: Sequence[Cited]) -> Dict[int, Cited]:
     1-3; PDF page 13", "page 238 (PDF page 284)"). Each with the PDF-page
     citation it sits beside."""
     out: Dict[int, Cited] = {}
+    # A pair is never across a line break, so only the citations of one
+    # line are compared (an answer of thousands of citations is checked at
+    # every turn's end, also with the switch off).
+    lines: Dict[int, List[Cited]] = {}
+    for d in cites:
+        if d.kind == "pdf" and not d.elsewhere:
+            lines.setdefault(text.rfind("\n", 0, d.lead), []).append(d)
     for i, c in enumerate(cites):
         if c.kind == "pdf" or c.elsewhere:
             continue
-        for d in cites:
-            if d.kind != "pdf" or _grp(d) == _grp(c) or d.elsewhere:
+        for d in lines.get(text.rfind("\n", 0, c.lead), ()):
+            if _grp(d) == _grp(c):
                 continue
+            if not c.table and abs(_grp(d) - _grp(c)) > 400:
+                continue          # further apart than any pair's gap
             if c.table and d.table:
                 if text.rfind("\n", 0, c.lead) == text.rfind("\n", 0,
                                                               d.lead):
@@ -1972,6 +1999,11 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
     label_state: Dict[str, Any] = {"loaded": False, "value": None}
     masked = _masked(t, cites)
     paired = _paired(t, cites)
+    starts = _group_starts(cites)
+    #: the citations under each lead ("PDF pages 6 and 7": one group)
+    by_group: Dict[int, List[Cited]] = {}
+    for d in cites:
+        by_group.setdefault(_grp(d), []).append(d)
     all_markups: Set[int] = set().union(*opened.markups.values()) \
         if opened.markups else set()
     ref_keys = sorted(opened.references)
@@ -2162,7 +2194,7 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
             never opened."""
             if not (mapped and how == "pdf"):
                 stmt = _statement(masked, c)
-                cue = _unread_cue(masked, c, cites)
+                cue = _unread_cue(masked, c, cites, starts)
                 if cue:
                     row["said"] = re.sub(r"\s+", " ", cue.group(0)).strip(
                         " )],:*")
@@ -2179,8 +2211,8 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
                         # and 7 are the logs of B-1 and B-2"): the statement
                         # is of all of them
                         units = units + [
-                            {("", n - 1)} for d in cites
-                            if d is not c and _grp(d) == _grp(c)
+                            {("", n - 1)} for d in by_group[_grp(c)]
+                            if d is not c
                             and not d.elsewhere and d.kind in ("pdf", "page")
                             for n in d.numbers]
                     # what the statement says of ANOTHER page being unread

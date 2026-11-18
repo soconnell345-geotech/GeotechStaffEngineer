@@ -249,3 +249,23 @@ def test_a_chapter_page_no_page_prints_is_still_unverified(tmp_path):
     assert _cited(res, "unverified") == ["pages 9-3"] or \
         _cited(res, "unverified") == ["page 9-3"]
     assert "never_opened" not in res
+
+
+# ---------------------------------------------------------------------------
+# 6. A very long answer is checked at turn end, also with the switch off
+# ---------------------------------------------------------------------------
+
+def test_a_long_answer_of_thousands_of_citations_is_checked_in_time(
+        tmp_path):
+    import time
+    text = "".join(
+        f"Finding {i}: the wall on PDF page {1000 + i} was thinner than "
+        f"drawn, about {i} mm, as page {3000 + i} says, and page "
+        f"A-{i} too.\n" for i in range(2000))
+    began = time.monotonic()
+    res = _check(tmp_path, text)
+    took = time.monotonic() - began
+    assert res["n_cited"] == 6000
+    # about 2 s with each citation compared only with its neighbours; about
+    # 20 s when every citation was compared with every other
+    assert took < 10, f"{took:.1f} s"
