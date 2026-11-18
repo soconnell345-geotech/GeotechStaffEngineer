@@ -303,6 +303,28 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     the suite takes it as the arm ``("show_uploads",
     {"GEOTECH_VISION_SHOW_UPLOADS": "1"})``. Kept in :data:`LATER_ENVS` for
     the reasons given for ``GEOTECH_VISION_TILE_ANSWERS``.
+
+``GEOTECH_VISION_PIXEL_REQUESTS`` (default off)
+    ``1`` changes two things in the vision side calls on a PDF page
+    (``analyze_pdf_page``, whole or in tiles, and ``render_region``, on
+    both pages). A request that asks for positions in the page's own units
+    (PDF points, PDF or page coordinates; the rule:
+    :func:`aec_agent_core.vision_tools.asks_page_positions`) is put to the
+    vision model as a request for pixel boxes on the image it is shown, and
+    the tool converts what comes back to PDF points itself, by the
+    conversion the ``found`` boxes use (the size of the image sent, the
+    turn undone): ``page_points`` lists each with its centre. And where the
+    answer states page coordinates the tool did not convert
+    (:func:`aec_agent_core.vision_tools.states_page_coordinates`), the
+    result says once (``coordinates_note``) that they are the vision
+    model's own estimate, not measured. Image files and inline looks are
+    not changed. Unset, every prompt and result is byte-for-byte as
+    before. BACKLOG VIS-24: zooms asked for "symbol centre in PDF page
+    points" answered in four different frames, and their numbers were used
+    as if measured. Not measured on a model yet: the suite takes it as the
+    arm ``("pixel_requests", {"GEOTECH_VISION_PIXEL_REQUESTS": "1"})``.
+    Kept in :data:`LATER_ENVS` for the reasons given for
+    ``GEOTECH_VISION_TILE_ANSWERS``; the vision tools read it as they look.
 """
 
 from __future__ import annotations
@@ -336,18 +358,19 @@ PLAN_TOOLS_ENV = "GEOTECH_REVIEW_PLAN_TOOLS"
 FIGURE_EXAMPLES_ENV = "GEOTECH_REVIEW_FIGURE_EXAMPLES"
 LEAN_PROMPT_ENV = "GEOTECH_REVIEW_LEAN_PROMPT"
 SHOW_UPLOADS_ENV = "GEOTECH_VISION_SHOW_UPLOADS"
+PIXEL_REQUESTS_ENV = "GEOTECH_VISION_PIXEL_REQUESTS"
 
 #: Switches added after the geotech app's copy went quiet (5.36.0), whose
 #: tests pin :data:`ALL_ENVS` and :data:`ARMS` whole. They are switches like
 #: the rest: :func:`switches` clears them unless an arm names them and
-#: :func:`describe` names them when set. The first two are read by the
-#: vision tools as they look (the build is unchanged); the third at turn
-#: end; the others when the Document Review page is built. Fold them
-#: into ``ALL_ENVS`` (and give each its arm) when the app's tests are
-#: next renewed.
+#: :func:`describe` names them when set. The first two and
+#: ``PIXEL_REQUESTS_ENV`` are read by the vision tools as they look
+#: (the build is unchanged); the third at turn end; the others when
+#: the Document Review page is built. Fold them into ``ALL_ENVS``
+#: (and give each its arm) when the app's tests are next renewed.
 LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV,
               PLAN_TOOLS_ENV, FIGURE_EXAMPLES_ENV, LEAN_PROMPT_ENV,
-              SHOW_UPLOADS_ENV)
+              SHOW_UPLOADS_ENV, PIXEL_REQUESTS_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -439,6 +462,13 @@ def lean_prompt() -> bool:
     """Whether the review page's default build takes the agent library's
     base prompt out and swaps its to-do and helper texts for short ones."""
     return _on(LEAN_PROMPT_ENV)
+
+
+def pixel_requests() -> bool:
+    """Whether a vision side call on a PDF page asked for positions in page
+    units is asked for pixel boxes the tool converts, and page coordinates
+    its answer states unconverted are said to be its own estimate."""
+    return _on(PIXEL_REQUESTS_ENV)
 
 
 def checklist() -> bool:
@@ -634,7 +664,8 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "PLAN_TOOLS_ENV", "plan_tools",
            "FIGURE_EXAMPLES_ENV", "review_figure_examples",
            "LEAN_PROMPT_ENV", "lean_prompt",
-           "SHOW_UPLOADS_ENV", "show_uploads", "LATER_ENVS",
+           "SHOW_UPLOADS_ENV", "show_uploads",
+           "PIXEL_REQUESTS_ENV", "pixel_requests", "LATER_ENVS",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",

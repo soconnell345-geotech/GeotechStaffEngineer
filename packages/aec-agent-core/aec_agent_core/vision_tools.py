@@ -3055,10 +3055,14 @@ def _dispatch_render_region(arguments, engine, attachments):
                                 "shows it")
         return json.dumps(out)
 
+    # VIS-24, behind GEOTECH_VISION_PIXEL_REQUESTS: read as the tool looks.
+    units = _pixel_requests()
+    positions = units and asks_page_positions(prompt)
     try:
         result = ask_vision(engine, image_bytes, _vision_prompt(
             prompt, _sent_size(info), shape=_answer_shape("region"),
-            turn=_sent_turn(info), cut=_cut_note(info, layer)),
+            turn=_sent_turn(info), cut=_cut_note(info, layer),
+            positions=positions),
             "region", where={"page": page})
         out = {"page": page, **_pdf_page(page), "bbox": bbox,
                "analysis": result, **vision_view.view_payload(info, engine)}
@@ -3088,6 +3092,11 @@ def _dispatch_render_region(arguments, engine, attachments):
         _finish_answer(out, info)
         if padded is not None:
             _say_how_far_from_the_aim(out, view, bbox)
+        if units:
+            _note_page_units(
+                out, positions,
+                _px_page_boxes(result, info) if positions else [],
+                states_page_coordinates(result))
         # Under the tool cap as valid JSON: the notes on a turned or widened
         # window can carry a long answer past it.
         _fit_region(out)
@@ -3558,16 +3567,22 @@ def _parse_turn(value):
     return int(num) % 360, None
 
 
-def _vision_prompt(prompt, size=None, shape=None, turn=0, cut=None) -> str:
+def _vision_prompt(prompt, size=None, shape=None, turn=0, cut=None,
+                   positions=False) -> str:
     """The prompt one page/region vision call gets: the agent's own prompt,
     the answer shape for its kind (``shape``, :func:`_answer_shape`), which
     lines its edges cut (``cut``, :func:`_cut_note`) and the location
     instruction — boxes in pixels of an image of ``size`` (w, h), or with no
     size the old 0-999 grid. ``turn``: the image goes turned that many
     degrees clockwise, ``size`` as sent (the instruction does not depend on
-    it)."""
+    it). ``positions`` (only with ``GEOTECH_VISION_PIXEL_REQUESTS`` on and
+    a request that asks for positions in page units,
+    :func:`asks_page_positions`) puts :data:`POSITIONS_AS_PIXELS` right
+    after the agent's prompt, for an image whose size is known."""
     from aec_agent_core import vision_view
     parts = [prompt]
+    if positions and size:
+        parts.append(POSITIONS_AS_PIXELS)
     if shape:
         parts.append(shape)
     if cut:
@@ -3603,6 +3618,372 @@ def _finish_answer(out, info, note: bool = True,
         else None
     if hedge:
         out["reading_note"] = hedge
+
+
+# -- Page units in a side call (BACKLOG VIS-24) -------------------------------
+#
+# A side call sees one image, never the page. Asked for a "symbol centre in
+# PDF page points", fourteen zooms on one figure answered in at least four
+# frames (pixels of the crop, points from the crop's corner, page points, an
+# origin at the lower left), and the numbers were used as if measured. With
+# GEOTECH_VISION_PIXEL_REQUESTS on, a request for positions in page units is
+# put to the vision model as a request for pixel boxes, which the tool
+# converts to page points itself, and page coordinates an answer states that
+# the tool did not convert are said to be the vision model's own estimate.
+# Image files and inline looks have no page frame to speak of and are left
+# as they are. Off, nothing here runs.
+
+#: Words that ask where a thing is.
+_POSITION_WORDS = (
+    r"co-?ordinates?|coords?|positions?|locations?|cent(?:re|er)s?|"
+    r"centroids?|mid-?points?|(?:bounding\s+)?box(?:es)?|bbox(?:es)?|"
+    r"corners?|extents?|x\s*(?:,|/|and)\s*y|xy|where")
+_POSITION = re.compile(rf"\b(?:{_POSITION_WORDS})\b", re.IGNORECASE)
+
+#: The page's own units or frame, named: PDF points, PDF or page
+#: coordinates, units or space, coordinates on the page.
+_PAGE_FRAME = re.compile(
+    r"\bpdf[\s-]+(?:page[\s-]+)?(?:points?|pts?|co-?ordinates?|coords?|"
+    r"units?|space)\b"
+    r"|\bpage[\s-]+(?:points|pts|co-?ordinates?|coords?|units|space)\b"
+    r"|\b(?:co-?ordinates?|coords?)\s+(?:on|of|in)\s+the\s+(?:pdf\s+)?page\b",
+    re.IGNORECASE)
+
+#: A position word with points as its unit, in one clause: "the centre in
+#: points", "the bbox as pt".
+_POSITION_IN_POINTS = re.compile(
+    rf"\b(?:{_POSITION_WORDS})\b[^.;:?!\n]{{0,40}}?\b(?:in|as)\s+"
+    rf"(?:pdf\s+)?(?:points|pts|pt)\b", re.IGNORECASE)
+
+#: Words of a size or a distance, not a position: "the lettering height in
+#: points" asks for no position.
+_SIZE_WORDS = re.compile(
+    r"\b(?:heights?|sizes?|tall|high|widths?|wide|thick(?:ness)?|weights?|"
+    r"fonts?|lengths?|long|spacing|gaps?|distances?)\b", re.IGNORECASE)
+
+#: Where a sentence or a clause ends (a full stop before a space, not the
+#: point of a decimal or a file name).
+_SENTENCES = re.compile(r"[.;?!](?=\s|$)|\n")
+
+
+def asks_page_positions(prompt) -> bool:
+    """Whether a request asks for positions in the page's own units, which a
+    vision call that sees only an image cannot know (BACKLOG VIS-24). It
+    does when one sentence both names the page's units or frame (PDF
+    points, PDF or page coordinates, units or space, coordinates on the
+    page) and asks where something is (coordinates, position, location,
+    centre, box, corners, x and y, where), or when a position word takes
+    points as its unit in one clause ("the centre in points") with no word
+    of a size between. Anything else is left alone: "coordinates" alone may
+    be the survey coordinates printed on a plan, "points" alone may be a
+    size, and a request for a location with no unit already gets pixel
+    boxes."""
+    for sentence in _SENTENCES.split(str(prompt or "")):
+        if _PAGE_FRAME.search(sentence) and _POSITION.search(sentence):
+            return True
+        if any(not _SIZE_WORDS.search(m.group(0))
+               for m in _POSITION_IN_POINTS.finditer(sentence)):
+            return True
+    return False
+
+
+def _pixel_requests() -> bool:
+    """``GEOTECH_VISION_PIXEL_REQUESTS``, read as the tool looks."""
+    from aec_agent_core import review_flags
+    return review_flags.pixel_requests()
+
+
+#: Put right after the agent's request when it asks for positions in page
+#: units (:func:`asks_page_positions`); the location instruction that ends
+#: every prompt already asks for boxes in pixels.
+POSITIONS_AS_PIXELS = (
+    "The request above asks for positions in the page's own units (PDF "
+    "points, or PDF or page coordinates). You are shown only this image, "
+    "not the page, so give no page coordinates or point values for any "
+    "position: give each position asked for as a box in pixels of this "
+    "image, px=[x0, y0, x1, y1] (for a single point, such as a centre, a "
+    "small box round it). The tool converts every pixel box to page points "
+    "itself.")
+
+_N = r"-?\d+(?:\.\d+)?"
+
+#: A unit after one number of a pair or a box: "(612 pt, 396 pt)".
+_UNIT = r"(?:\s*(?:pt|pts|points)\b)?"
+
+#: Two or four numbers in brackets (a position, a box), optionally tagged
+#: as pixels; x and y given apart ("x = 612 pt, y = 396", '{"x": 612, "y":
+#: 396}'); or two bare numbers (``bare``: "612.4, 396.0"). A unit may
+#: follow each number.
+_COORDS = re.compile(
+    rf"(?P<pre>\bpx\s*[=:]?\s*)?[\[(]\s*{_N}{_UNIT}\s*,\s*{_N}{_UNIT}"
+    rf"(?:\s*,\s*{_N}{_UNIT}\s*,\s*{_N}{_UNIT})?\s*[\])]"
+    rf"|\bx[\"']?\s*[=:~≈]\s*{_N}{_UNIT}\s*[,;/]?\s*"
+    rf"(?:and\s+)?[\"']?y[\"']?\s*[=:~≈]\s*{_N}"
+    rf"|(?P<bare>(?<![\w.,+-]){_N}{_UNIT}\s*,\s*{_N})(?![\w.]|\s*,\s*\d)",
+    re.IGNORECASE)
+
+#: A page unit right after the numbers: "(612, 396) pt", "[..] in PDF
+#: points", "(..) page coordinates", "(..) PDF-view pt", "(x=.., y=..) pt"
+#: — not "(8, 10) pt lettering", two sizes. A bare "points" is the unit
+#: only before punctuation or the end of a line: "points right to the
+#: boring" is the verb.
+_PAGE_UNIT_AFTER = re.compile(
+    r"\s*[)\]}]?\s*\(?\s*"
+    r"(?:(?:in\s+)?(?:(?:pdf|page)(?:[\s-]+[a-z]+)?[\s-]+)?(?:pt|pts)\b"
+    r"|(?:in\s+)?(?:pdf|page)(?:[\s-]+[a-z]+)?[\s-]+points\b"
+    r"|in\s+points\b"
+    r"|points(?=[ \t]*(?:[^\w\s]|\r?\n|$))"
+    r"|(?:in\s+)?(?:pdf|page)[\s-]+(?:units|co-?ordinates|coords|space)\b)"
+    r"(?!\s*(?:font|type|text|letter|lettering|tall|high|size|thick|"
+    r"line)\b)", re.IGNORECASE)
+
+#: Pixels right after the numbers: a pixel box, which the tool converts.
+_PIXELS_AFTER = re.compile(r"\s*(?:px|pixels?)\b", re.IGNORECASE)
+
+#: How far before the numbers the page's frame may be named.
+_FRAME_REACH = 60
+
+#: A unit inside the numbers: "(612 pt, 396 pt)", "x = 612 pt, y = 396".
+_INNER_UNIT = re.compile(r"\d\s*(?:pt|pts|points)\b", re.IGNORECASE)
+
+#: Points named as the unit just before: "centre in points: {..}".
+_IN_POINTS = re.compile(
+    r"\b(?:in|as)\s+(?:pdf\s+)?(?:page\s+)?(?:points|pts|pt)\b",
+    re.IGNORECASE)
+
+#: What two bare numbers are a position after: "centre at 612, 396 pt",
+#: "centre≈612, 396 pt".
+_POSITION_CUE = re.compile(
+    rf"(?:\b(?:{_POSITION_WORDS}|at)\b|[=:~≈])[^.;?!\n]{{0,12}}$",
+    re.IGNORECASE)
+
+#: A size word right after the numbers: "(8 pt, 10 pt) lettering".
+_SIZE_AFTER = re.compile(
+    r"\s*[)\]}]?\s*(?:(?:pt|pts|points)\s*)?"
+    r"(?:font|type|text|letter|tall|high|size|thick|line)", re.IGNORECASE)
+
+#: How far before the numbers a size word makes them sizes.
+_SIZE_REACH = 30
+
+
+def _sized(text, m) -> bool:
+    """Whether a word of a size sits just before the numbers ``m`` in their
+    sentence ("text heights (8 pt, 10 pt)") or right after them."""
+    before = _SENTENCES.split(
+        text[max(0, m.start() - _SIZE_REACH):m.start()])[-1]
+    return bool(_SIZE_WORDS.search(before)
+                or _SIZE_AFTER.match(text, m.end()))
+
+
+def states_page_coordinates(text) -> bool:
+    """Whether a vision answer states positions in page units itself —
+    numbers the tool did not convert (BACKLOG VIS-24). A statement is two
+    or four numbers in brackets, or x and y given apart, with a page unit
+    right after them ("(612, 396) pt", "[..] in PDF points", "(x=612,
+    y=396) pt", "(..) PDF-view pt") or the page's frame named just before
+    them in the same sentence ("PDF points: (612, 396)", "page coordinates
+    [..]"); or with a unit after a number inside them ("(612 pt, 396 pt)")
+    or points named as the unit just before ("in points: {..}"), where no
+    word of a size is beside them; or two bare numbers after a position
+    word with a page unit ("centre at 612.4, 396.0 pt"), no size word
+    beside them. A pixel box (``px=[..]``, ``[..] px``) is not one, the
+    tool converts those — unless a page unit follows it, as no pixel box
+    of the tool's is taken then. Dimensions ("1224 x 792 pt"), sizes ("8
+    pt lettering", "text heights 8, 10 pt"), stations, elevations, sheet
+    numbers, printed survey coordinates and boxes with no unit are not
+    statements of page coordinates."""
+    text = str(text or "")
+    for m in _COORDS.finditer(text):
+        after = _PAGE_UNIT_AFTER.match(text, m.end())
+        if not after and (m.group("pre")
+                          or _PIXELS_AFTER.match(text, m.end())):
+            continue
+        before = _SENTENCES.split(
+            text[max(0, m.start() - _FRAME_REACH):m.start()])[-1]
+        framed = bool(_PAGE_FRAME.search(before))
+        inner = bool(_INNER_UNIT.search(m.group(0)))
+        if m.group("bare"):
+            if ((after or inner or framed)
+                    and _POSITION_CUE.search(before)
+                    and not _sized(text, m)):
+                return True
+            continue
+        if after or framed:
+            return True
+        if (inner or _IN_POINTS.search(before)) and not _sized(text, m):
+            return True
+    return False
+
+
+#: At most this many converted positions are listed (``page_points``).
+MAX_PAGE_POINTS = 24
+
+#: Said beside ``page_points``.
+PAGE_POINTS_NOTE = (
+    "the request asked for positions in page units, so the vision call was "
+    "asked for pixel boxes on its image instead, and the tool converted "
+    "each box itself, with the size of the image it sent, to PDF points on "
+    "the page (origin at the page's top-left corner, y down: the frame bbox "
+    "takes): 'page_points' lists each with its centre. A box read off an "
+    "image locates a thing within this view's precision (see 'precision'); "
+    "it is not a measurement.")
+
+#: Said when the request asked for positions in page units and the answer
+#: gave no pixel box to convert.
+NO_PAGE_POINTS_NOTE = (
+    "the request asked for positions in page units, so the vision call was "
+    "asked for pixel boxes on its image instead, but its answer gave none "
+    "the tool could convert: no page points are listed.")
+
+#: Said once when an answer states page coordinates the tool did not convert.
+#: True with every planlens the core takes: 0.16.0 rewrites a box with a
+#: page unit after it onto the grid as if it were pixels, a planlens with
+#: that repair leaves it as written.
+COORDINATES_NOTE = (
+    "the vision answer states positions in page units (points, or PDF or "
+    "page coordinates) of its own: they are the vision model's estimate "
+    "from the image, not measured, and may be in another frame than the "
+    "page's. A box with a page unit written after it is one of them, even "
+    "where its numbers were rewritten on the 0-999 grid with the pixel "
+    "boxes: do not use it as a place on the page. The places the tool "
+    "converted itself are the answer's other boxes (on the 0-999 grid of "
+    "their view) and 'page_points' when listed.")
+
+
+def _px_page_boxes(raw, info) -> list:
+    """``(label, page box, None)`` for every box an answer tagged as pixels
+    (``px=[..]``, ``[..] px``), converted to PDF points by the conversion
+    the ``found`` boxes use: the size of the image as SENT, the turn undone
+    (:func:`vision_view.px_box_to_page`, straight to points with no 0-999
+    rounding between). An untagged box is left out: it may be the model's
+    own page numbers; so is a tagged one with a page unit written after it
+    ("px=[..] pt", :data:`_PAGE_UNIT_AFTER`). The label is the words before
+    the box on its line, as :func:`vision_view.answer_boxes` takes it."""
+    from aec_agent_core import vision_view
+    size, turn = _sent_size(info), _sent_turn(info)
+    try:
+        view = [float(v) for v in info["clip"]]
+    except (KeyError, TypeError, ValueError):
+        return []
+    if not size or not isinstance(raw, str):
+        return []
+    out = []
+    for line in raw.splitlines():
+        prev = 0
+        for m in vision_view._BOX.finditer(line):
+            before, prev = line[prev:m.start()], m.end()
+            if not (m.group("pre") or m.group("post")):
+                continue
+            if _PAGE_UNIT_AFTER.match(line, m.end()):
+                continue
+            try:
+                box = vision_view.px_box_to_page(
+                    view, vision_view._box_values(m), size, turn)
+            except ValueError:
+                continue
+            label = vision_view._label_text(before) or vision_view._label_text(
+                vision_view._BOX.sub(" ", line))
+            out.append((label, box, None))
+    return out
+
+
+def _tiled_page_points(raw, info, tile_rows) -> list:
+    """``(label, page box, seen_in)`` for a page read in tiles (BACKLOG
+    VIS-24): only the boxes the vision calls tagged as pixels, each
+    converted in the frame of the look that gave it — the whole page's
+    from its answer before its boxes were rewritten (``raw``), each tile's
+    from its own answer (``_px_points``, made by :func:`_tile_jobs` and
+    taken off the tile's row here, so it never reaches the result). The
+    same thing seen in two looks is one row: boxes within the reach
+    ``found`` merges by (:data:`MERGE_FRAC` of the page, at least
+    :data:`vision_view.MIN_LOCATION_ERROR_PT`), whose names carry no
+    different codes, and never two boxes of one look (it named them
+    apart); a box joins the nearest such row (centre to centre), so two
+    like things seen in two tiles stay apart whatever order each tile
+    lists them in. A row's box is its tiles' boxes joined (a thing a seam
+    cuts is seen in part in each; the tiles are the closer look), or the
+    whole-page box where no tile gave one. Unlike ``found`` no box is left
+    out for its size: a title block asked for is listed. Rows go top to
+    bottom, then left to right; the list is whole (the caller caps it)."""
+    from aec_agent_core import vision_view
+    looks = [("page", _px_page_boxes(raw, info))]
+    for t in tile_rows or ():
+        if isinstance(t, dict):
+            looks.append((t.get("tile"), t.pop("_px_points", None) or []))
+    try:
+        vx0, vy0, vx1, vy1 = (float(v) for v in info["clip"])
+    except (KeyError, TypeError, ValueError):
+        return []
+    reach = max(vision_view.MIN_LOCATION_ERROR_PT,
+                MERGE_FRAC * max(vx1 - vx0, vy1 - vy0))
+
+    def near(a, b):
+        return (a[0] - reach <= b[2] and b[0] - reach <= a[2]
+                and a[1] - reach <= b[3] and b[1] - reach <= a[3])
+
+    def join(boxes):
+        return (min(b[0] for b in boxes), min(b[1] for b in boxes),
+                max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+    def gap(a, b):                      # between centres, doubled
+        return abs(a[0] + a[2] - b[0] - b[2]) + abs(a[1] + a[3] - b[1] - b[3])
+
+    groups: List[Dict[str, Any]] = []
+    for src, entries in looks:
+        for label, box, _seen in entries:
+            codes = _codes(label)
+            group = min((g for g in groups
+                         if src not in g["seen_in"] and near(g["box"], box)
+                         and (not codes or not g["codes"]
+                              or codes & g["codes"])),
+                        key=lambda g: gap(g["box"], box), default=None)
+            if group is None:
+                group = {"seen_in": [], "codes": set(), "page": [],
+                         "tiles": []}
+                groups.append(group)
+            group["seen_in"].append(src)
+            group["codes"] |= codes
+            group["page" if src == "page" else "tiles"].append((label, box))
+            group["box"] = join([b for _l, b in
+                                 group["page"] + group["tiles"]])
+    rows = []
+    for g in groups:
+        best = g["tiles"] or g["page"]
+        label = next((lab for lab, _b in best if lab), "") or next(
+            (lab for lab, _b in g["page"] + g["tiles"] if lab), "")
+        rows.append((label, join([b for _l, b in best]), g["seen_in"]))
+    return sorted(rows, key=lambda r: (r[1][1], r[1][0]))
+
+
+def _note_page_units(out, positions: bool, entries, stated: bool) -> None:
+    """What a look adds with ``GEOTECH_VISION_PIXEL_REQUESTS`` on (the
+    caller checks the switch): for a request for positions in page units
+    (``positions``), ``page_points`` from ``entries`` (``(label, page box,
+    seen_in)``), each with its centre, and the note saying how they were
+    made — or that none could be; and, where the answer states page
+    coordinates the tool did not convert (``stated``), one note saying they
+    are the vision model's own estimate."""
+    if positions:
+        rows = []
+        for label, box, seen in entries[:MAX_PAGE_POINTS]:
+            x0, y0, x1, y1 = (float(v) for v in box)
+            row = {"what": label or "?",
+                   "page_bbox": [round(v, 1) for v in (x0, y0, x1, y1)],
+                   "centre": [round((x0 + x1) / 2, 1),
+                              round((y0 + y1) / 2, 1)]}
+            if seen:
+                row["seen_in"] = list(seen)
+            rows.append(row)
+        if rows:
+            out["page_points"] = rows
+            if len(entries) > MAX_PAGE_POINTS:
+                out["page_points_cut"] = (
+                    f"{len(entries) - MAX_PAGE_POINTS} more not listed")
+            out["page_points_note"] = PAGE_POINTS_NOTE
+        else:
+            out["page_points_note"] = NO_PAGE_POINTS_NOTE
+    if stated:
+        out["coordinates_note"] = COORDINATES_NOTE
 
 
 #: A render_region result stays under this (the general tool cap is 8,000 —
@@ -3935,12 +4316,16 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     # tiles read the lettering (E1: asked to transcribe a sheet too small to
     # read whole, it was the read's long pole -- 55-72 s against 11-15 s).
     page_kind = "overview" if n > 1 else "page"
+    # VIS-24, behind GEOTECH_VISION_PIXEL_REQUESTS: read as the tool looks.
+    units = _pixel_requests()
+    positions = units and asks_page_positions(prompt)
 
     def page_look():
         text = ask_vision(engine, image_bytes, _vision_prompt(
             _overview_prompt(prompt, n) if n > 1 else prompt,
             _sent_size(info), shape=_answer_shape(page_kind),
-            turn=_sent_turn(info), cut=_cut_note(info, layer)),
+            turn=_sent_turn(info), cut=_cut_note(info, layer),
+            positions=positions),
             page_kind, where={"page": page})
         return text, info
 
@@ -3949,7 +4334,8 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     jobs = [page_look]
     if n > 1:
         jobs += _tile_jobs(pdf_bytes, page, info, n, prompt, engine,
-                           layer=layer, turn_arg=turn_arg)
+                           layer=layer, turn_arg=turn_arg,
+                           positions=positions, units=units)
     results = _run_together(jobs)
     result, tile_rows = results[0], (results[1:] if n > 1 else None)
     if not isinstance(result, _Failed):
@@ -3982,6 +4368,7 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
         out["overview_cut"] = (
             "the whole-page layout answer stopped at its output limit, so it "
             "may be incomplete; the tiles below read the lettering")
+    raw = out["analysis"]               # before its boxes are converted
     _finish_answer(out, info)
     if tiles_note:
         out["tiles_note"] = tiles_note
@@ -4022,6 +4409,18 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
                          None)
             if hedge:
                 out["reading_note"] = hedge
+    if units:
+        # Only boxes the vision calls tagged as pixels become page points,
+        # each converted in its own look's frame: a page read whole from
+        # its answer before its boxes were rewritten, a tiled read from
+        # the overview's and every tile's (_tiled_page_points), never from
+        # 'found'. Every tile's private keys are taken off its row.
+        flags = [t.pop("_page_units", False) for t in tile_rows or ()
+                 if isinstance(t, dict)]
+        entries = ((_tiled_page_points(raw, info, tile_rows) if n > 1
+                    else _px_page_boxes(raw, info)) if positions else [])
+        _note_page_units(out, positions, entries,
+                         states_page_coordinates(raw) or any(flags))
     if n > 1:
         _fit_tiles(out)
     return json.dumps(out)
@@ -4462,14 +4861,20 @@ def _tile_legibility(out, tile_rows) -> None:
 
 
 def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
-               turn_arg=None):
+               turn_arg=None, positions=False, units=False):
     """One job per tile of an ``n`` x ``n`` overlapping split, in tile
     order; each renders its tile and reads it, and returns its row (an
     ``error`` row, naming why in plain words, when it could not). A tile
     whose text-layer lettering runs sideways is sent turned upright
     (``layer``: the page's text layer, read once for all the tiles), as is
     every tile when the agent asked for a ``turn_arg``. The call is told
-    which lines the tile's edges cut."""
+    which lines the tile's edges cut. With ``GEOTECH_VISION_PIXEL_REQUESTS``
+    on (``units``; BACKLOG VIS-24), ``positions`` asks each tile for pixel
+    boxes where the request asks for page units and its row carries them
+    converted in its own frame (``_px_points``, from its answer before its
+    boxes are rewritten), and a tile whose answer states page coordinates
+    the tool did not convert carries ``_page_units``; the page read takes
+    both off its row."""
     from aec_agent_core import vision_view
     boxes = vision_view.tile_boxes(info["clip"], n)
     shape = _answer_shape("tile")        # None unless the switch is on
@@ -4487,7 +4892,8 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
 
             text = ask_vision(engine, img, _vision_prompt(
                 f"{prompt}\n\n{where}", _sent_size(tinfo), shape=shape,
-                turn=_sent_turn(tinfo), cut=_cut_note(tinfo, layer)),
+                turn=_sent_turn(tinfo), cut=_cut_note(tinfo, layer),
+                positions=positions),
                 "tile", where={"page": page, "tile": f"r{r + 1}c{c + 1}"})
             row = {"tile": f"r{r + 1}c{c + 1}",
                    "view": [round(v, 1) for v in tinfo["clip"]],
@@ -4505,6 +4911,10 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, layer=None,
                 row["_lettering_px"] = small
                 if not tinfo.get("text_px"):
                     row["_lettering_assumed"] = True
+            if units and states_page_coordinates(text):
+                row["_page_units"] = True       # before its boxes convert
+            if positions:
+                row["_px_points"] = _px_page_boxes(text, tinfo)
             _finish_answer(row, tinfo, note=False)
             return row
         except Exception as exc:                  # one tile, not the page
