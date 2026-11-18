@@ -24,6 +24,13 @@ adds the two things only the app can do:
   (:mod:`funhouse_agent.scale_labels`) and the call is made again with them
   — the agent never sees the round trip. The values are the labels AS
   PRINTED, so a reading is never written finer than the print.
+* **An image file's pixels.** On an IMAGE file (a scan saved as PNG, a
+  phone photo) the agent's positions are in its own pixels, as its looks
+  and ``open_document`` give them, and planlens' page of it is in points at
+  the dpi the file declares: ``measure`` puts them on that page and gives
+  every box in its result back in the image's pixels, and both tools'
+  results say how their own positions read (``frame``, BACKLOG VIS-26). A
+  PDF's results are planlens' own, as before.
 
 The tools are optional (``document_tools.OPTIONAL_DOCUMENT_TOOL_NAMES``) and
 feature-detected on the installed planlens; they describe themselves and no
@@ -60,6 +67,132 @@ MEASURE_DESCRIPTION = (
 LOCATED_NOTE = ("the box was read off a {w:.0f} x {h:.0f} pt view and "
                 "searched within {pad:.0f} pt of it (that view's location "
                 "error){more}")
+
+
+#: Said in the result when the box came from a look at an IMAGE file, whose
+#: views are in its own pixels (BACKLOG VIS-26).
+LOCATED_IMAGE_NOTE = ("the box was read off a {w:.0f} x {h:.0f} px view of "
+                      "the image and searched within {pad:.0f} px of it "
+                      "(that view's location error){more}")
+
+#: ``measure``'s and ``log_grid``'s ``frame`` on an IMAGE file (BACKLOG
+#: VIS-26). planlens opens an image as a page at the resolution the file
+#: declares (0.75 pt a pixel with none, 0.24 at 300 dpi), and the agent's
+#: positions on an image are in its pixels (``open_document`` says so, and
+#: every look gives them so): they are converted onto that page, and the
+#: result says how its own positions read.
+IMAGE_MEASURE_FRAME = (
+    "this document is an image, {w} x {h} px. {given}It is measured on a "
+    "page at {k:.4g} pt a pixel, so every position, box, length and pad "
+    "in this result is in that page's points: divide by {k:.4g} for the "
+    "image's own pixels. A value read through a scale is not affected.")
+
+#: ... when the page is the image at one point a pixel (a phone photo
+#: declares 72 dpi).
+IMAGE_MEASURE_FRAME_SAME = (
+    "this document is an image, {w} x {h} px. {given}It is measured on a "
+    "page at one point a pixel, so the positions in this result are in its "
+    "own pixels.")
+
+#: ``measure``'s ``frame`` on an IMAGE file: every box in and out is in the
+#: image's pixels, so a box passes back as it is; planlens' keys named in
+#: points stay in its page's points, as their names say (BACKLOG VIS-26).
+IMAGE_MEASURE_PX = (
+    "this document is an image, {w} x {h} px. bbox, to and a look's view + "
+    "image_box were taken in its own pixels, and every box in this result "
+    "(where, each bbox, a scale's label boxes, located_from's view) is in "
+    "them too, so it can be passed back to measure, render_region or "
+    "annotate_document as it is. It is measured on a page at {k:.4g} pt a "
+    "pixel: a key that ends in _pt, per_point, and a number in a note or "
+    "warning are in that page's points (divide by {k:.4g} for pixels). A "
+    "value read through a scale is not affected.")
+
+#: ... when that page is the image at one point a pixel.
+IMAGE_MEASURE_PX_SAME = (
+    "this document is an image, {w} x {h} px, measured on a page at one "
+    "point a pixel: every position, box, length and pad in this result is "
+    "in its own pixels.")
+
+#: The result keys that hold a box on the page: on an image they are given
+#: back in its pixels (BACKLOG VIS-26).
+_BOX_KEYS = ("where", "bbox")
+
+
+def _is_box(v) -> bool:
+    return (isinstance(v, list) and len(v) == 4
+            and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                    for x in v))
+
+
+def _boxes_to_pixels(obj, kx: float, ky: float):
+    """``measure``'s result on an image with every box (``where``, each
+    ``bbox`` -- in ``snapped_to``, ``alternatives``, ``lines`` -- and a
+    pending scale's label boxes) turned from its page's points back to the
+    image's pixels; every other value as planlens gave it."""
+    def px(b):
+        return [round(b[0] / kx, 2), round(b[1] / ky, 2),
+                round(b[2] / kx, 2), round(b[3] / ky, 2)]
+
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if k in _BOX_KEYS and _is_box(v):
+                out[k] = px(v)
+            elif k == "labels" and isinstance(v, list) and v and \
+                    all(_is_box(b) for b in v):
+                out[k] = [px(b) for b in v]
+            else:
+                out[k] = _boxes_to_pixels(v, kx, ky)
+        return out
+    if isinstance(obj, list):
+        return [_boxes_to_pixels(v, kx, ky) for v in obj]
+    return obj
+
+
+def _image_frame(entry, attachments=None):
+    """For an IMAGE file's open entry: ``(w, h, kx, ky)`` -- its size as a
+    viewer shows it (EXIF orientation applied) and the page points a pixel
+    planlens measures it at, across and down; ``None`` for a PDF or when
+    that cannot be said (no Pillow, the file gone); an error JSON string
+    when the page does not match the image's shape (a reader that did not
+    turn it as its EXIF orientation says)."""
+    doc = getattr(entry, "doc", None)
+    if getattr(doc, "source_kind", None) != "image":
+        return None
+    try:
+        from aec_agent_core import document_tools as dt
+        from aec_agent_core import image_view
+        got = dt.image_of(entry.handle, attachments)
+        size = image_view.shown_size(got[0]) if got else None
+        if not size:
+            return None
+        pdf = doc.pdf_bytes() if hasattr(doc, "pdf_bytes") else doc.tobytes()
+        import pymupdf
+        with pymupdf.open(stream=pdf, filetype="pdf") as d:
+            rect = d[0].rect
+            cw, ch = float(rect.width), float(rect.height)
+    except Exception:  # noqa: BLE001 - nothing to convert by: as before
+        return None
+    w, h = int(size[0]), int(size[1])
+    if w <= 0 or h <= 0 or cw <= 0 or ch <= 0:
+        return None
+    kx, ky = cw / w, ch / h
+    if abs(kx - ky) > 0.01 * max(kx, ky):
+        return _json_error(
+            f"this image is {w} x {h} px as a viewer shows it, but the "
+            f"document tools opened it as a {cw:.0f} x {ch:.0f} pt page of "
+            f"another shape, so a position in its pixels cannot be put on "
+            f"that page",
+            "measure it on a PDF of the image, or read the position off a "
+            "look (analyze_image, render_region)")
+    return w, h, kx, ky
+
+
+def _frame_note(frame, given: str = "") -> str:
+    w, h, kx, _ky = frame
+    if abs(kx - 1.0) < 1e-6:
+        return IMAGE_MEASURE_FRAME_SAME.format(w=w, h=h, given=given)
+    return IMAGE_MEASURE_FRAME.format(w=w, h=h, k=kx, given=given)
 
 
 def _json_error(msg: str, hint: str = "") -> str:
@@ -198,6 +331,25 @@ def run_measure(arguments: Dict[str, Any],
         entry = _entry_for(source, attachments)
     except ToolError as exc:
         return _json_error(str(exc), getattr(exc, "hint", "") or "")
+    # An IMAGE file's positions are in its own pixels (its looks' views,
+    # open_document's coordinates), planlens' page in points at the dpi the
+    # file declares: put them on that page (BACKLOG VIS-26).
+    frame = _image_frame(entry, attachments)
+    if isinstance(frame, str):
+        return frame
+    pad_px = pad
+    if frame is not None:
+        _w, _h, kx, ky = frame
+
+        def onto(b):
+            return [b[0] * kx, b[1] * ky, b[2] * kx, b[3] * ky]
+
+        if where is not None:
+            where = onto(where)
+        if to is not None:
+            to = onto(to)
+        if pad is not None:
+            pad = round(pad * max(kx, ky), 2)
 
     args: Dict[str, Any] = {"handle": entry.handle, "page": page,
                             "kind": kind}
@@ -238,17 +390,29 @@ def run_measure(arguments: Dict[str, Any],
         return raw
     if not isinstance(out, dict) or "error" in out:
         return raw
+    if frame is not None:
+        out = _boxes_to_pixels(out, frame[2], frame[3])
     if located is not None:
         v, p = located
+        # the pad planlens searched with (points) decides, as it did
         more = (" - a box off a view this wide lists candidates rather than "
                 "choosing one; zoom on the thing and measure from the zoom's "
-                "view for one answer" if p >= 25.0 else "")
+                "view for one answer" if (pad if pad is not None else p)
+                >= 25.0 else "")
+        note = LOCATED_NOTE if frame is None else LOCATED_IMAGE_NOTE
         out["located_from"] = {
             "view": [round(x, 1) for x in v],
-            "note": LOCATED_NOTE.format(w=v[2] - v[0], h=v[3] - v[1], pad=p,
-                                        more=more)}
+            "note": note.format(w=v[2] - v[0], h=v[3] - v[1],
+                                pad=p if frame is None else pad_px,
+                                more=more)}
     if labels is not None:
         out["labels_read"] = labels
+    if frame is not None:
+        fw, fh, fkx, _fky = frame
+        out["frame"] = (
+            IMAGE_MEASURE_PX_SAME.format(w=fw, h=fh)
+            if abs(fkx - 1.0) < 1e-6 else
+            IMAGE_MEASURE_PX.format(w=fw, h=fh, k=fkx))
     return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -282,7 +446,35 @@ def run_log_grid(arguments: Dict[str, Any],
                  attachments: Optional[Dict[str, bytes]] = None,
                  engine: Any = None, *, max_chars: Optional[int] = None,
                  cap: Optional[int] = None) -> str:
-    """One ``log_grid`` call; a scan's depth labels read when they must be."""
+    """One ``log_grid`` call; a scan's depth labels read when they must be.
+    On an IMAGE file the result also says how its positions read
+    (``frame``, BACKLOG VIS-26); a PDF's result is planlens' own."""
+    raw = _log_grid_result(arguments, attachments, engine,
+                           max_chars=max_chars, cap=cap)
+    if '"error"' in raw[:20]:
+        return raw
+    try:
+        entry = _entry_for(str(arguments.get("handle") or ""), attachments)
+        frame = _image_frame(entry, attachments)
+    except Exception:  # noqa: BLE001 - the result stands as it came
+        frame = None
+    if not isinstance(frame, tuple):
+        return raw
+    try:
+        out = json.loads(raw)
+    except ValueError:
+        return raw
+    if not isinstance(out, dict):
+        return raw
+    out["frame"] = _frame_note(frame)
+    return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
+
+
+def _log_grid_result(arguments: Dict[str, Any],
+                     attachments: Optional[Dict[str, bytes]] = None,
+                     engine: Any = None, *, max_chars: Optional[int] = None,
+                     cap: Optional[int] = None) -> str:
+    """:func:`run_log_grid`'s planlens call, and the labels' second call."""
     from aec_agent_core import document_tools as dt
     from aec_agent_core import scale_labels
 

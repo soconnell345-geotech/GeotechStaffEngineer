@@ -529,6 +529,29 @@ def _shown_size(data: bytes):
     return shown_size(data)
 
 
+def _takes_sent_scale(images) -> bool:
+    """Whether the installed planlens' ``ImageSupport`` takes ``sent_scale``
+    (planlens after 0.16.0)."""
+    try:
+        return images is not None and "sent_scale" in {
+            f.name for f in dataclasses.fields(images)}
+    except TypeError:                # not a dataclass: an older planlens
+        return False
+
+
+def _sent_scale_for(engine):
+    """``sent_scale(w, h)`` for planlens: the scale (pixels sent per pixel
+    of the image) at which this engine's looks send a ``w`` x ``h`` pixel
+    view of an image, 1 when it goes whole (``image_view.sent_size``)."""
+    def sent_scale(w: float, h: float) -> float:
+        from aec_agent_core import image_view
+        w, h = max(1, int(round(float(w)))), max(1, int(round(float(h))))
+        sw, sh = image_view.sent_size(w, h, engine)
+        return min(sw / float(w), sh / float(h))
+
+    return sent_scale
+
+
 def app_host() -> "_review.ReviewHost":
     """The host fields that are the same for every conversation (CHECK §3).
     The per-build ones (look, signer, crop render) are :func:`host_for`'s."""
@@ -603,6 +626,13 @@ def host_for(engine=None, markup_author: Optional[str] = None,
 
     host = dataclasses.replace(BASE_HOST, look=look, signer=signer,
                                render_crop=render_crop)
+    images = getattr(host, "images", None)
+    if engine is not None and _takes_sent_scale(images):
+        # A mark anchored on an image view is judged by the scale this
+        # engine's looks send that view at (BACKLOG VIS-26); a planlens
+        # without the field judges it by its width, as before.
+        host = dataclasses.replace(host, images=dataclasses.replace(
+            images, sent_scale=_sent_scale_for(engine)))
     if sheet_tools:
         host = dataclasses.replace(host, toolkit_options={
             **(host.toolkit_options or {}), "sheet_tools": True})

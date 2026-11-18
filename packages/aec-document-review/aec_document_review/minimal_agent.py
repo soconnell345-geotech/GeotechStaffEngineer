@@ -11,11 +11,14 @@ the harness's tools carry weight on a strong model, and which are habit?
 
 WHAT. The model LOOKS and nothing else:
 
-* ``analyze_pdf_page`` — a whole page rendered and shown to the model itself;
+* ``analyze_pdf_page`` — a whole page rendered and shown to the model itself
+  (an uploaded picture: shown whole, in its own pixels);
 * ``render_region`` (zoom) — a region re-drawn from the PDF to fill the image, shown too
   (the move the Opus 5.5 system card's Chartography result came from);
-* ``analyze_image`` — an uploaded picture, shown;
-* ``page_count`` — how many pages a PDF has and their sizes, nothing more;
+* ``analyze_image`` — an uploaded picture, read by a vision call (a zoom on
+  it with ``render_region`` is shown);
+* ``page_count`` — how many pages a PDF has and their sizes, nothing more
+  (an image file: one page, its size in pixels);
 * ``task`` — a helper with the same looking tools and the same short rules,
   for splitting a long set; its answer comes back with the open items its
   tools flagged, by the default build's reader's own code (BACKLOG DR-50);
@@ -57,7 +60,9 @@ at full size and shows it to you. To zoom on something you saw, pass the
 `view` of the image it was in and its `image_box` on a 0-999 grid over that
 image (0,0 top-left, 999,999 bottom-right); zoom again on a smaller box when
 it is still small. Never call anything unreadable before you have zoomed on
-it. An uploaded picture is shown with `analyze_image`.
+it. An uploaded picture is page 0: `analyze_pdf_page` shows it whole,
+`render_region` zooms on it, and `analyze_image` has a vision call
+answer what you ask about it.
 
 For a long document or a question about every page, split the pages among
 helpers with `task`: each has the same looking tools, sees nothing of this
@@ -151,6 +156,26 @@ def _looking_tools(engine, attachments, save_fn, markup_author,
     return out
 
 
+#: ``page_count``'s note for an image file (BACKLOG VIS-26).
+IMAGE_PAGE_NOTE = ("an image file, not a PDF: its one page is the picture "
+                   "(page 0); analyze_pdf_page shows it whole, "
+                   "render_region zooms on it, and a view or bbox on it "
+                   "is in its own pixels")
+
+
+def _image_size(data):
+    """``(w, h)`` of an image file as a viewer shows it, else ``None`` (a
+    PDF, or bytes that are not an image)."""
+    if not isinstance(data, (bytes, bytearray)) or \
+            bytes(data[:1024]).lstrip()[:5] == b"%PDF-":
+        return None
+    try:
+        from aec_agent_core.image_view import shown_size
+        return shown_size(bytes(data))
+    except Exception:  # noqa: BLE001 - not an image here
+        return None
+
+
 def _page_count_tool(attachments):
     from langchain_core.tools import StructuredTool
 
@@ -159,6 +184,14 @@ def _page_count_tool(attachments):
         from aec_agent_core.vision_tools import _resolve_attachment_or_path
         try:
             data, _src = _resolve_attachment_or_path(source, attachments)
+            picture = _image_size(data)
+            if picture is not None:
+                # An uploaded picture is not a PDF: PyMuPDF opened it as a
+                # page at the dpi the file declares, or refused it
+                # (BACKLOG VIS-26).
+                return json.dumps({
+                    "source": source, "pages": 1,
+                    "image_px": list(picture), "note": IMAGE_PAGE_NOTE})
             import pymupdf
             with pymupdf.open(stream=data, filetype="pdf") as doc:
                 sizes = [[round(p.rect.width), round(p.rect.height)]

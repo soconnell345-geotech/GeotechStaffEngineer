@@ -1966,6 +1966,26 @@ def _kept_kind_ok(entry, kind: str) -> bool:
     return view != ZOOM_VIEW                       # "page": any whole-page look
 
 
+#: Said beside a kept zoom on an IMAGE file (BACKLOG VIS-26): it is listed
+#: under pdf_page 1, the number the tools take for an image's one page, and
+#: its bbox is in the image's pixels, not a PDF page's points.
+KEPT_IMAGE_FRAME = ("an image file, not a PDF: pdf_page 1 is the whole image "
+                    "and a bbox is in its own pixels")
+
+
+def _kept_on_image(entry) -> bool:
+    """Whether a kept reading is a look at an IMAGE file (its result says
+    the image's size, ``image_view.view_payload``)."""
+    raw = entry.get("result")
+    if not isinstance(raw, str) or '"image_px"' not in raw:
+        return False
+    try:
+        out = json.loads(raw)
+    except ValueError:
+        return False
+    return isinstance(out, dict) and "image_px" in out
+
+
 def _kept_ref(entry, with_summary: bool = True) -> Dict[str, Any]:
     """One kept reading by reference (no result)."""
     ref: Dict[str, Any] = {"pdf_page": entry.get("pdf_page"),
@@ -1973,6 +1993,8 @@ def _kept_ref(entry, with_summary: bool = True) -> Dict[str, Any]:
     if entry.get("view") == ZOOM_VIEW and isinstance(entry.get("region"),
                                                       list):
         ref["bbox"] = entry["region"]
+    if _kept_on_image(entry):
+        ref["frame"] = KEPT_IMAGE_FRAME
     ref["asked"] = _gist(entry.get("prompt"), KEPT_ASKED_CHARS)
     if with_summary:
         words = _reading_words(entry)
