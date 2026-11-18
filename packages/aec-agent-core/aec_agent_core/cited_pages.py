@@ -415,6 +415,20 @@ def without_images(opened: PagesOpened) -> PagesOpened:
                    sheet_seen=keep(opened.sheet_seen))
 
 
+def _of_picture(text: str, c: "Cited", pictures: Dict[str, Set[int]],
+                lone: bool) -> bool:
+    """The citation is of a picture this conversation looked at: its clause
+    names the file ("site.png, page 1", "page 1 of scan.tif"), or pictures
+    are all the conversation has (``lone``), and the page was looked at."""
+    lo = max(text.rfind("\n", 0, c.lead) + 1, c.lead - 80)
+    before = re.split(r"[.!?;]\s", text[lo:c.lead])[-1]
+    after = re.split(r"[.!?;]\s|\n", text[c.lead:c.end + 40])[0]
+    near = (before + after).lower()
+    return bool(c.numbers) and any(
+        (lone or name in near) and all(n - 1 in seen for n in c.numbers)
+        for name, seen in pictures.items())
+
+
 # -- the activity log, read incrementally ------------------------------------
 
 class _ActivityState:
@@ -1999,6 +2013,8 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
         return {"checked": True, "n_cited": 0}
     if opened is None:
         opened = pages_opened(record_folder, folder)
+    pictures = {str(opened.names.get(k, k)).lower(): opened.looked(k)
+                for k in opened.documents() if _is_image(k)}
     opened = without_images(opened)
     names = [opened.names.get(k, k) for k in opened.documents()]
     t = str(text or "").translate(_DASHES)
@@ -2187,6 +2203,8 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
             lists["other_documents"].append({"cited": c.shown,
                                              "beside": c.elsewhere})
             continue
+        if _of_picture(t, c, pictures, lone=not known):
+            continue          # a page of a picture that was looked at
         if i in paired and not apart(c, paired[i]):
             continue          # the PDF page given beside it decides
         cur_refs[:] = refs_for(c)

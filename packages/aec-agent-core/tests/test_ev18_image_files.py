@@ -113,21 +113,25 @@ def test_a_picture_opened_by_handle_is_left_out_too(tmp_path):
     assert _cited(res, "never_opened") == ["PDF page 1", "page 12"]
 
 
-def test_only_a_picture_pdf_page_1_is_no_page_of_it(tmp_path):
-    """Neighbour 1: a conversation with only an image file. The picture is
-    not a document whose pages can be cited as "PDF page N"."""
+def test_only_a_picture_pdf_page_1_is_the_picture_looked_at(tmp_path):
+    """Neighbour 1, as the review left it: in a conversation with only an
+    image file, "PDF page 1" is the picture that was looked at, so nothing
+    is listed (as before the repair); a page the picture has not is."""
     res, _ = _check(tmp_path, "The fence is shown on PDF page 1.", [ZOOM])
-    assert _cited(res, "never_opened") == ["PDF page 1"]
+    assert not res.get("never_opened")
+    res, _ = _check(tmp_path, "The fence is shown on PDF page 2.", [ZOOM])
+    assert _cited(res, "never_opened") == ["PDF page 2"]
 
 
-def test_only_a_picture_page_1_is_as_with_no_document(tmp_path):
-    """Neighbour 1: "page 1" with only a picture is listed as it is when
-    the conversation read no document at all (not checkable)."""
+def test_only_a_picture_page_1_is_the_picture_looked_at(tmp_path):
+    """Neighbour 1, as the review left it: "page 1" with only a picture is
+    the picture that was looked at; with no document at all it stays not
+    checkable."""
     text = "The fence is shown on page 1."
     res, _ = _check(tmp_path, text, [ZOOM])
     none, _ = _check(tmp_path, text, [])
     assert _cited(none, "unverified") == ["page 1"]
-    assert _cited(res, "unverified") == ["page 1"]
+    assert not res.get("unverified")
     assert not res.get("never_opened")
 
 
