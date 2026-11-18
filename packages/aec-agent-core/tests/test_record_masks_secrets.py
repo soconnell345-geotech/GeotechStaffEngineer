@@ -385,3 +385,138 @@ def test_the_suites_result_keeps_its_errors_masked():
     clean = {"error": ORDINARY, "turns": [{"error": ORDINARY}],
              "vision_profile": {"error": ORDINARY}}
     assert runner._masked_errors(json.loads(json.dumps(clean))) == clean
+
+
+# ---------------------------------------------------------------------------
+# what the model is handed: a tool's error (error_line, tool_error)
+# ---------------------------------------------------------------------------
+
+class ReadTimeout(Exception):
+    pass
+
+
+class HTTPError(Exception):
+    pass
+
+
+class APIStatusError(Exception):
+    pass
+
+
+SIGNED = ("https://files.example.test/sites/a/d.pdf?download=1"
+          "&tempauth=v1.FakeTempauthValue000")
+LONG_NAME = "Site_Investigation_Report_Rev2_Final_20261118_with_appendices.pdf"
+JSON_BODY = json.dumps({
+    "error": {"message": "Invalid value for max_tokens: 200000",
+              "type": "invalid_request_error", "param": "max_tokens",
+              "code": "invalid_value"},
+    "request_id": REQUEST_ID, "trace": SHA1})
+
+#: Realistic errors with no secret in them (made-up names and hosts).
+PLAIN_ERRORS = {
+    "file not found, long path": FileNotFoundError(
+        2, "No such file or directory",
+        "C:\\data\\geotech_webapp\\users\\tester\\conv_0001\\files\\"
+        + LONG_NAME),
+    "timeout naming a host": ReadTimeout(
+        "HTTPSConnectionPool(host='files.example.test', port=443): Read "
+        "timed out. (read timeout=60)"),
+    "404 with a plain URL": HTTPError(
+        "404 Client Error: Not Found for url: https://files.example.test/"
+        "sites/a/Shared%20Documents/Site_Investigation_Report_Rev2_Final_"
+        "20261118.pdf?download=1&page=2"),
+    "JSON error body": APIStatusError(f"Error code: 400 - {JSON_BODY}"),
+    "traceback line": RuntimeError(
+        'Traceback (most recent call last):\n  File '
+        '"/home/data/geotech_webapp/app/tools.py", line 42, in run\n'
+        "    raise KeyError(key)\nKeyError: 'sheet_index'"),
+}
+
+
+def _error_line_before(exc, limit=300):
+    """``error_text.error_line`` as it was before the masking, copied."""
+    from aec_agent_core.error_text import (budget_exhausted,
+                                           budget_tool_note, scrub_paths)
+    stop = budget_exhausted(exc)
+    if stop is not None:
+        return budget_tool_note(stop)
+    msg = " ".join(scrub_paths(str(exc)).split())
+    if len(msg) > limit:
+        msg = msg[:limit] + " …"
+    name = type(exc).__name__
+    return f"{name}: {msg}" if msg else name
+
+
+def _guarded(*, exc=None, result=None):
+    from types import SimpleNamespace
+
+    from aec_agent_core.deep.tool_guards import ToolErrorGuard
+    request = SimpleNamespace(tool_call={"name": "download_file", "id": "c1",
+                                         "args": {}})
+
+    def handler(_request):
+        if exc is not None:
+            raise exc
+        return result
+
+    return ToolErrorGuard().wrap_tool_call(request, handler)
+
+
+@pytest.mark.parametrize("name", sorted(PLAIN_ERRORS))
+def test_an_error_with_no_secret_is_handed_to_the_model_as_before(name):
+    from aec_agent_core.document_tools import _error_json
+    from aec_agent_core.error_text import error_line, tool_error_json
+    exc = PLAIN_ERRORS[name]
+    for limit in (300, 60):
+        assert error_line(exc, limit) == _error_line_before(exc, limit)
+    before = f"open_document failed: {_error_line_before(exc)}"
+    assert json.loads(tool_error_json("open_document", exc))["error"] == \
+        before
+    assert json.loads(_error_json("open_document", exc))["error"] == before
+    said = json.loads(_guarded(exc=exc).content)["error"]
+    assert said == f"download_file failed: {_error_line_before(exc)}"
+
+
+def test_the_ids_and_names_in_a_plain_error_reach_the_model():
+    from aec_agent_core.error_text import error_line
+    assert LONG_NAME in error_line(PLAIN_ERRORS["file not found, long path"])
+    body = error_line(PLAIN_ERRORS["JSON error body"], 1000)
+    assert REQUEST_ID in body and SHA1 in body
+
+
+def test_a_tool_error_handed_to_the_model_masks_its_secrets():
+    from aec_agent_core.error_text import error_line, tool_error_json
+    exc = HTTPError(f"403 Client Error: Forbidden for url: {SIGNED} "
+                    f"(request id {REQUEST_ID})")
+    line = error_line(exc)
+    assert "FakeTempauthValue000" not in line
+    assert line == (f"HTTPError: 403 Client Error: Forbidden for url: "
+                    f"{SIGNED.replace('v1.FakeTempauthValue000', '…')} "
+                    f"(request id {REQUEST_ID})")
+    sent = RuntimeError("sent headers {'Authorization': 'Bearer "
+                        "FakeBearer.Token-000', 'x-api-key': 'fake-key-000'}")
+    out = tool_error_json("download_file", sent)
+    assert "FakeBearer" not in out and "fake-key-000" not in out
+    said = json.loads(_guarded(exc=exc).content)
+    assert "FakeTempauthValue000" not in said["error"]
+    assert REQUEST_ID in said["error"] and said["hint"]
+
+
+def test_a_secret_across_the_cut_is_masked_before_the_cut():
+    from aec_agent_core.error_text import error_line
+    exc = HTTPError("x" * 250 + " for url: https://f.example.test/d?"
+                    "sig=FakeSigValue0000000000000000000")
+    line = error_line(exc)
+    assert "FakeSig" not in line and line.endswith("?sig=…")
+
+
+def test_a_tools_result_reaches_the_model_untouched():
+    # A search result's download link must still work when the model
+    # passes it back: only an error is masked, never a result.
+    from langchain_core.messages import ToolMessage
+    result = ToolMessage(
+        content=json.dumps({"results": [{"name": "d.pdf",
+                                         "download_url": SIGNED}]}),
+        name="download_file", tool_call_id="c1")
+    got = _guarded(result=result)
+    assert got is result and SIGNED in got.content

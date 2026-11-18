@@ -13,6 +13,10 @@ the same text would show ``/home/data/geotech_webapp/users/<domain>__<user>/``.
   UNC or POSIX, quoted or not -- becomes its file name. URLs are left alone.
 * :func:`tool_error` is the JSON a tool returns instead of raising: what
   failed, said plainly, and that the turn goes on.
+* :func:`error_line` (the line :func:`tool_error` is built on) masks a
+  secret the exception's text names or plainly holds
+  (:func:`mask_error_secrets`): a failed download names its signed URL, and
+  the model can quote the error into an answer that is saved.
 * :func:`budget_exhausted` tells an AI budget or quota that is USED UP
   apart from a model that is merely busy (live smoke wave 2c, D2): asking
   again in a minute fixes a rate limit, never a spent budget, so the two
@@ -78,14 +82,17 @@ def scrub_paths(text: Any) -> str:
 
 
 def error_line(exc: BaseException, limit: int = 300) -> str:
-    """``"<Type>: <message>"`` on one line, paths scrubbed, at most
-    ``limit`` characters of message. An AI budget that is used up is said in
-    plain words instead (:func:`budget_exhausted`): its raw text is provider
-    JSON with a request id in it, which a tester should never be shown."""
+    """``"<Type>: <message>"`` on one line, paths scrubbed, secrets masked
+    (:func:`mask_error_secrets`, before the cut), at most ``limit``
+    characters of message. An AI budget that is used up is said in plain
+    words instead (:func:`budget_exhausted`): its raw text is provider JSON
+    with a request id in it, which a tester should never be shown. A message
+    with no secret in it comes back as it did before the masking, character
+    for character; if masking itself failed, only the type's name."""
     stop = budget_exhausted(exc)
     if stop is not None:
         return budget_tool_note(stop)
-    msg = " ".join(scrub_paths(str(exc)).split())
+    msg = mask_error_secrets(" ".join(scrub_paths(str(exc)).split()))
     if len(msg) > limit:
         msg = msg[:limit] + " …"
     name = type(exc).__name__

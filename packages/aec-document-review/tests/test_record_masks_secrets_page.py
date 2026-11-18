@@ -1,7 +1,8 @@
 """Document Review keeps and shows the text of an error with its secrets
 masked (a repair, no switch): a failed turn's error (shown, and kept in the
 transcript, the history note and the activity log), the connection
-diagnostics' report, and a SharePoint tool's failure message.
+diagnostics' report, a SharePoint tool's failure message, and a tool's
+error as the model is handed it (a tool's result is handed untouched).
 
 An error with no secret in it is kept and shown as before. Every value is
 a made-up shape (``fake``, ``example.test``), never a live key.
@@ -9,11 +10,15 @@ a made-up shape (``fake``, ``example.test``), never a live key.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 
 import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.tools import tool
 
 import aec_document_review.core as core
 import aec_document_review.turn_jobs as tj
@@ -59,10 +64,52 @@ class Refusing(BaseChatModel):
         raise ValueError(self.message)
 
 
+#: What the scripted model was handed on each call after its first.
+SEEN: list = []
+
+
+class Scripted(BaseChatModel):
+    """Calls ``find_link`` and ``fetch_link`` once, then answers."""
+
+    @property
+    def _llm_type(self):
+        return "scripted"
+
+    def bind_tools(self, tools, **kw):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        if not any(isinstance(m, ToolMessage) for m in messages):
+            msg = AIMessage(content="", tool_calls=[
+                {"name": "find_link", "args": {}, "id": "call_find"},
+                {"name": "fetch_link", "args": {}, "id": "call_fetch"}])
+        else:
+            SEEN.append(list(messages))
+            msg = AIMessage(content="The report could not be fetched.")
+        return ChatResult(generations=[ChatGeneration(message=msg)])
+
+
+@tool
+def find_link() -> str:
+    """Find the made-up report's download link."""
+    return json.dumps({"name": "d.pdf", "download_url": SIGNED})
+
+
+@tool
+def fetch_link() -> str:
+    """Download the made-up report."""
+    raise RuntimeError(f"403 Client Error: Forbidden for url: {SIGNED} "
+                       f"(request id {REQUEST_ID})")
+
+
 def _failed_turn(tid: str, message: str):
+    return _turn(tid, Refusing(message=message))
+
+
+def _turn(tid: str, model, tools=()):
     from aec_document_review.review_build import build_review_page_agent
-    agent = build_review_page_agent(model=Refusing(message=message),
-                                    extra_tools=[], reference_mode="off")
+    agent = build_review_page_agent(model=model, extra_tools=list(tools),
+                                    reference_mode="off")
     prompt = "What does the report say?"
     core.ensure_conversation(tid)
     files = core.conversation_files_dir(tid)
@@ -162,3 +209,23 @@ def test_a_sharepoint_failure_message_is_masked(monkeypatch):
                          "Site_Investigation_Report_Rev2_Final_20261118.pdf")
     assert sharepoint_tools._failure("list", plain) == \
         sharepoint_tools._failure_text("list", plain)
+
+
+def test_the_model_gets_a_tools_error_masked_and_its_result_untouched():
+    # Through the page's whole agent: a tool that raises reaches the model
+    # as a tool error with the signed link's token masked (its request id
+    # kept); a tool's result, a download link in it, reaches it whole.
+    SEEN.clear()
+    job = _turn("MASK3", Scripted(), tools=[find_link, fetch_link])
+    assert job.done and SEEN
+    handed = {m.tool_call_id: m for m in SEEN[0]
+              if isinstance(m, ToolMessage)}
+    assert SIGNED in str(handed["call_find"].content)
+    error = str(handed["call_fetch"].content)
+    assert "fetch_link failed: RuntimeError: 403 Client Error" in error
+    assert "FakeTempauthValue000" not in error and "tempauth=…" in error
+    assert REQUEST_ID in error
+    kept = _kept_texts("MASK3")
+    assert "tempauth=…" in kept                # the error, masked
+    # the result is kept as the model got it: only an error is masked
+    assert SIGNED in kept
