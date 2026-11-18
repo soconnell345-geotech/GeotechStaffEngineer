@@ -574,16 +574,41 @@ def saved_files(rec: HelperRecord) -> List[str]:
     return out
 
 
+#: The hook through which an app words what follows the file names in
+#: :func:`saved_note` (BACKLOG DR-42): ``hint(names) -> str``. Unfilled,
+#: failing or empty, the note keeps :data:`DEFAULT_SAVED_FILES_HINT`.
+SAVED_FILES_HINT_HOOK = "keep_work.saved_files_hint"
+
+#: What follows the file names when no app words it: the geotech page's
+#: wording since RI-31, unchanged.
+DEFAULT_SAVED_FILES_HINT = (
+    "Give a file to the next tool by its name (write_diggs reads "
+    "records from investigations_file / lab_tests_file) -- never "
+    "retype what it holds.")
+
+
+def _saved_files_hint(names: List[str]) -> str:
+    try:
+        from aec_agent_core.hooks import get_hook
+        hook = get_hook(SAVED_FILES_HINT_HOOK)
+        hint = hook(list(names)) if hook is not None else None
+    except Exception:  # noqa: BLE001 - a hook never breaks the note
+        hint = None
+    if isinstance(hint, str) and hint.strip():
+        return hint.strip()
+    return DEFAULT_SAVED_FILES_HINT
+
+
 def saved_note(names: List[str]) -> str:
     """What the primary is told about the files a helper saved (BACKLOG
-    RI-31: the primary retyped a helper's 29,000 characters of records)."""
+    RI-31: the primary retyped a helper's 29,000 characters of records).
+    The sentence after the names is the app's (:data:`SAVED_FILES_HINT_HOOK`;
+    BACKLOG DR-42: the default names a tool only the geotech page has)."""
     shown = ", ".join(f"'{n}'" for n in names[:10])
     more = len(names) - 10
     return (f"[Files this helper saved, in the working folder: {shown}"
             + (f" and {more} more" if more > 0 else "")
-            + ". Give a file to the next tool by its name (write_diggs reads "
-            "records from investigations_file / lab_tests_file) -- never "
-            "retype what it holds.]")
+            + ". " + _saved_files_hint(names) + "]")
 
 
 def summary_paragraph(rec: HelperRecord, why: str) -> str:
@@ -1421,7 +1446,8 @@ __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
            "extra_model_calls", "take_extra_model_call",
            "current_helper", "HelperRecorder", "KeepWork",
            "note_budget_reached", "gave_up", "summary_paragraph",
-           "saved_files", "saved_note", "save_held_records",
+           "saved_files", "saved_note", "SAVED_FILES_HINT_HOOK",
+           "DEFAULT_SAVED_FILES_HINT", "save_held_records",
            "helper_file_text", "write_helper_file", "kept_note",
            "kept_folder", "max_helpers", "open_items",
            "open_items_note", "reader_note", "READER_KEPT_WHY",
