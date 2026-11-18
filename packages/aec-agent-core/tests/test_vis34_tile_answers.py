@@ -167,6 +167,7 @@ def test_off_every_prompt_and_result_is_as_before(monkeypatch, read, unset):
     for who, prompt in now.prompts.items():
         assert "How to answer" not in prompt, who
         assert vision_tools.TILE_NOTHING_LINE not in prompt, who
+        assert vision_tools.TILE_CUT_SENTENCE not in prompt, who
 
 
 # -- on: the answer shape on every tile -----------------------------------------
@@ -189,6 +190,30 @@ def test_on_each_tile_gets_the_answer_shape(monkeypatch, read):
         assert at == sorted(at), who
     # the whole-page layout call keeps its own prompt
     assert "How to answer" not in engine.prompts["whole"]
+
+
+@pytest.mark.parametrize("read", [_page, _image])
+def test_on_a_tile_quotes_its_part_of_what_its_edge_cuts(monkeypatch, read):
+    """A schedule cut so its values sit in one tile and its row labels in
+    the next: the value tile shows nothing that visibly bears on the ask,
+    so the one-line exit would lose the values. Each tile is told to quote
+    its part of a table, a dimension string or a note its edge cuts, and
+    told so before it is offered the one line."""
+    sentence = vision_tools.TILE_CUT_SENTENCE
+    for words in ("edge cuts a table, a dimension string or a note",
+                  "quote the part of it this tile holds",
+                  "labels or what it refers to lie outside the tile"):
+        assert words in sentence
+    monkeypatch.setenv(review_flags.TILE_ANSWERS_ENV, "1")
+    engine = Reader()
+    read(engine)
+    tiles = {k: p for k, p in engine.prompts.items() if k != "whole"}
+    assert len(tiles) == 4
+    for who, prompt in tiles.items():
+        assert prompt.count(sentence) == 1, who
+        assert prompt.index(sentence) < prompt.index(
+            f'"{vision_tools.TILE_NOTHING_LINE}"'), who
+    assert sentence not in engine.prompts["whole"]
 
 
 def test_on_the_shape_asks_for_nothing_less_from_a_tile_that_holds_it():

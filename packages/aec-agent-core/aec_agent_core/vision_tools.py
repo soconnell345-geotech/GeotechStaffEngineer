@@ -2331,13 +2331,20 @@ ZOOM_ANSWER_SHAPE = (
 #: often listing each thing asked about as not present. It asks for nothing
 #: less from a tile that does hold something.
 TILE_NOTHING_LINE = "Nothing on the request in this tile."
+#: A tile's edge can cut a table, a dimension string or a note in two: one
+#: tile holds the values, the next their row labels, and neither part shows
+#: what it bears on. Each part is quoted, so the read keeps the whole.
+TILE_CUT_SENTENCE = (
+    "Where this tile's edge cuts a table, a dimension string or a note that "
+    "may bear on the request, quote the part of it this tile holds, even if "
+    "its labels or what it refers to lie outside the tile.")
 TILE_ANSWER_SHAPE = (
     "How to answer: briefly, for the agent that asked rather than for a "
     "person. Answer the request above from what is in this tile, quoting "
     "the lettering that bears on it exactly as printed, and leave out none "
-    "of it. If nothing in this tile bears on the request, reply with the "
-    f"one line \"{TILE_NOTHING_LINE}\" and do not list what is not there. "
-    + _SHAPE_TAIL)
+    f"of it. {TILE_CUT_SENTENCE} If nothing in this tile bears on the "
+    f"request, reply with the one line \"{TILE_NOTHING_LINE}\" and do not "
+    "list what is not there. " + _SHAPE_TAIL)
 
 
 def _answer_shape(kind: str) -> Optional[str]:
