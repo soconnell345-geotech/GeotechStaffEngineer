@@ -204,7 +204,9 @@ TASK_TOOL = "task"
 #: ``cited_pages`` (the pages the turn's answer cites, checked against the
 #: pages any tool or helper opened in the conversation: ``never_opened``,
 #: ``partly_opened``... and what was done, ``action``; ``funhouse_agent.
-#: cited_pages``, BACKLOG EV-18); ``cited_documents`` (the published
+#: cited_pages``, BACKLOG EV-18; and, whenever documents are attached,
+#: ``photo_pages``: each attached document's photograph pages nothing
+#: looked at, BACKLOG DR-48); ``cited_documents`` (the published
 #: documents the turn's answer, or a file a writer was given, cites,
 #: checked against what the conversation looked up: ``not_looked_up``,
 #: ``where`` (``answer`` or the writer), ``action``; ``funhouse_agent.

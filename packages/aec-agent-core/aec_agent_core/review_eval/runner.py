@@ -458,6 +458,16 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
             atts = [core.stage_upload(attachments, files_dir, name, data)
                     for name, data in docs]
             staged = [a.path for a in atts]
+            # The upload list beside the record, as the pages keep it, so
+            # the turn's photograph-page check sees every attached document
+            # (BACKLOG DR-48), opened or not.
+            try:
+                with open(os.path.join(run_dir, "attachments.json"), "w",
+                          encoding="utf-8") as fh:
+                    json.dump([str(getattr(a, "key", "") or "")
+                               for a in atts], fh, ensure_ascii=False)
+            except OSError:
+                pass
             agent = build_page_agent(model, attachments, files_dir, artifacts,
                                      page=page)
             note = core.attachment_note(atts)
