@@ -63,6 +63,18 @@ looked up when AASHTO LRFD is, and the article is shown, not checked (a
 references result seldom prints every article it rests on). A page cited in
 a published document is EV-18's to leave alone and this module's to check.
 
+WHAT IS A MENTION, NOT A CITATION (BACKLOG EV-23, :func:`mention_kind`). A
+document named as what the reader should check or use next ("verify the
+spacing with UFC 3-999-01", "the factor should be compared against GEC-15"),
+as what was NOT cited or used ("I have not relied on ASTM D9999"), or inside
+a condition ("if the specification calls for ASTM D9998, ...") is no
+citation, unless its clause states a value ("use 0.29 from UFC 3-999-01").
+"Per X, ...", "X gives ...", "(see X)" and every other mention are
+citations. A mention is kept in the record under :data:`MENTIONED`, never
+flagged. The check reads names a little more precisely than
+:func:`find_citations` does by default (``refined``: "O'Hara" whole;
+"Corner (1710, 1342)" is coordinates).
+
 WHAT "LOOKED UP" MEANS (:func:`looked_up`). The record is the app's own,
 never a model's account: the conversation's ``activity.jsonl``, its
 ``transcript.jsonl`` and the user's messages the turn binds
@@ -82,12 +94,20 @@ names it:
 * a DOCUMENT the conversation opened (``read_document``, ``read_pdf_text``,
   ``search_document``, ``analyze_pdf_page``, ``digest_references``...): a
   report that itself cites AASHTO makes AASHTO citable - unless the document
-  is one the conversation WROTE (a PDF it built and read back would launder
-  its own citation);
+  is one the conversation WROTE from the model's own words (a PDF it built
+  and read back would launder its own citation);
 * a CALCULATION's own result or a method's own documentation
   (``call_agent`` on an analysis module, ``describe_method``): the method
   the app ran names its basis (downdrag's UFC 3-220-20). The parts of a
-  result that only repeat the call's own arguments do not count.
+  result that only repeat the call's own arguments do not count. A
+  calculation package other than ``html_to_pdf`` is one too (it runs the
+  analysis and prints the basis from the app's template), and so is a file
+  a calculation wrote, read back; from those two, nothing the call's or
+  the reader's arguments cite counts (BACKLOG EV-23 M).
+
+A tool result that is JSON is read as the text it holds, its strings
+decoded (BACKLOG EV-23 J: read raw, an escaped newline hid the designation
+after it, in a document's lab sheet and in a references result alike).
 
 Not sources: the model's own words anywhere - briefs to helpers, a helper's
 hand-back (other than the references helper's), earlier answers, a scratch
@@ -267,16 +287,33 @@ def canonical(key: str) -> str:
     return ALIASES.get(key, key)
 
 
+#: A part of a standard published in parts ("iso-77777-1", "en-1997-2").
+_PART = re.compile(r"((?:iso|bs|en)-\d{3,5})-\d{1,2}")
+
+
+def _whole_standard(key: str) -> Optional[str]:
+    m = _PART.fullmatch(key)
+    return m.group(1) if m else None
+
+
 def covered(key: str, found: Iterable[str]) -> bool:
     """Whether the documents ``found`` include the one ``key`` names, or a
-    family it belongs to, or (for a family) one of its members."""
+    family it belongs to, or (for a family) one of its members. A standard
+    published in parts is the family of its parts, as EN 1997 is: "ISO
+    77777" is looked up by a read of "ISO 77777-1:2019", and a part by the
+    whole standard's name (BACKLOG EV-23)."""
     have = set(found)
     if key in have:
         return True
     if key in FAMILIES and FAMILIES[key] & have:
         return True
-    return any(key in members and fam in have
-               for fam, members in FAMILIES.items())
+    if any(key in members and fam in have
+           for fam, members in FAMILIES.items()):
+        return True
+    whole = _whole_standard(key)
+    if whole is not None and whole in have:
+        return True
+    return any(_whole_standard(k) == key for k in have)
 
 
 # ---------------------------------------------------------------------------
@@ -326,11 +363,11 @@ def _fold(word: str) -> str:
 
 
 def _name(word: str) -> str:
-    """A name as compared: folded, without edge quotes or a possessive."""
-    name = _fold(word).strip("'’-")
-    for tail in ("'s", "’s"):
-        if name.endswith(tail):
-            name = name[:-len(tail)]
+    """A name as compared: folded, without edge quotes or a possessive; a
+    curly apostrophe is a straight one ("O’Hara" is "O'Hara")."""
+    name = _fold(word).replace("’", "'").strip("'-")
+    if name.endswith("'s"):
+        name = name[:-2]
     return name
 
 
@@ -626,20 +663,59 @@ _SURNAME = (rf"[{_UP}]{_LO}+(?:[{_UP}]{_LO}+)?"
 _AGENCY = (r"(?:FHWA|USACE|NAVFAC|AASHTO|USBR|NRCS|ASCE|ACI|FEMA|NCHRP|TRB|"
            r"USDA|USGS|NAVDOCKS|ASTM|Caltrans|WSDOT|TxDOT|FDOT|NYSDOT|"
            r"PennDOT|MnDOT)")
-_AUTHORS = (rf"(?P<authors>(?P<who>{_SURNAME}|{_AGENCY})"
-            rf"(?:[ \t]*,[ \t]*{_SURNAME})*"
-            rf"(?:[ \t]*,?[ \t]+(?:and|&)[ \t]+{_SURNAME}"
+#: A one-letter particle and an apostrophe before a surname ("O'Hara",
+#: "D'Amato"): read with the name in the check's own reading (``refined``,
+#: BACKLOG EV-23), where the plain reading took "Hara".
+_PARTICLE = rf"[{_UP}]['’]"
+
+
+def _authors(surname: str) -> str:
+    return (rf"(?P<authors>(?P<who>{surname}|{_AGENCY})"
+            rf"(?:[ \t]*,[ \t]*{surname})*"
+            rf"(?:[ \t]*,?[ \t]+(?:and|&)[ \t]+{surname}"
             rf"|[ \t]+et[ \t]+al\.?)?)")
+
+
+_AUTHORS = _authors(_SURNAME)
+_AUTHORS_WHOLE = _authors(rf"(?:{_PARTICLE})?{_SURNAME}")
 _YEAR = r"(?P<year>(?:1[6-9]|20)\d{2})(?P<suffix>[a-z])?"
+
+
+def _narrative(authors: str):
+    return re.compile(
+        rf"(?<![\w-]){authors}(?:'s|’s)?[ \t]*\([ \t]*{_YEAR}[ \t]*[),;:]")
+
+
+def _paren_piece(authors: str):
+    return re.compile(
+        rf"[ \t]*(?:(?:e\.g\.|i\.e\.|see(?:[ \t]+also)?|cf\.|after|from|per|"
+        rf"following|adapted[ \t]+from)[,:]?[ \t]+)?{authors}[ \t]*,?[ \t]*"
+        rf"{_YEAR}(?!\d)")
+
+
 #: "Rankine (1857)", "Duncan and Wright (2014, p. 12)", "Rankine's (1857)".
-_NARRATIVE = re.compile(
-    rf"(?<![\w-]){_AUTHORS}(?:'s|’s)?[ \t]*\([ \t]*{_YEAR}[ \t]*[),;:]")
+_NARRATIVE = _narrative(_AUTHORS)
+_NARRATIVE_WHOLE = _narrative(_AUTHORS_WHOLE)
 #: One bracketed group: "(Rankine 1857; see GEC-11)", "(Bowles, 1996)".
 _PAREN = re.compile(r"\(([^()\n]{1,240})\)")
-_PAREN_PIECE = re.compile(
-    rf"[ \t]*(?:(?:e\.g\.|i\.e\.|see(?:[ \t]+also)?|cf\.|after|from|per|"
-    rf"following|adapted[ \t]+from)[,:]?[ \t]+)?{_AUTHORS}[ \t]*,?[ \t]*"
-    rf"{_YEAR}(?!\d)")
+_PAREN_PIECE = _paren_piece(_AUTHORS)
+_PAREN_PIECE_WHOLE = _paren_piece(_AUTHORS_WHOLE)
+#: What follows "(<year>," when the brackets hold a list of numbers.
+_NUMBER_LIST = re.compile(r"[ \t]*(\d{1,6}(?:[ \t]*,[ \t]*\d{1,6})*)[ \t]*\)")
+_YEAR_ONLY = re.compile(r"(?:1[6-9]|20)\d{2}")
+
+
+def _number_pair(t: str, m: "re.Match") -> bool:
+    """Whether a narrative match's brackets hold a list of plain numbers
+    that are not all years: "Corner (1710, 1342)" is a pair of coordinates,
+    "Hale (1979, 1985)" two works by one author (BACKLOG EV-23 L)."""
+    if not m.group(0).endswith(","):
+        return False
+    rest = _NUMBER_LIST.match(t, m.end())
+    if not rest:
+        return False
+    return any(not _YEAR_ONLY.fullmatch(n)
+               for n in re.findall(r"\d+", rest.group(1)))
 #: Capitalised words that are not authors before a bracketed year.
 _NOT_AUTHORS = frozenset(_fold(w) for w in (
     "January February March April May June July August September October "
@@ -663,10 +739,13 @@ _NOT_AUTHORS = frozenset(_fold(w) for w in (
     "Memo Letter Field Lab Laboratory").split())
 
 
-def _works(t: str) -> List[Tuple[int, int, str, str, str, str]]:
+def _works(t: str, refined: bool = False
+           ) -> List[Tuple[int, int, str, str, str, str]]:
     """``(start, end, key, shown, author, year)`` of every author-and-year
-    citation in ``t``."""
+    citation in ``t`` (``refined``: see :func:`find_citations`)."""
     out = []
+    narrative = _NARRATIVE_WHOLE if refined else _NARRATIVE
+    paren_piece = _PAREN_PIECE_WHOLE if refined else _PAREN_PIECE
 
     def take(m, base):
         who = _name(m.group("who"))
@@ -679,13 +758,15 @@ def _works(t: str) -> List[Tuple[int, int, str, str, str, str]]:
         out.append((base + m.start("authors"), base + m.end(),
                     f"work:{who}:{year}", shown, who, year))
 
-    for m in _NARRATIVE.finditer(t):
+    for m in narrative.finditer(t):
+        if refined and _number_pair(t, m):
+            continue
         take(m, 0)
     for g in _PAREN.finditer(t):
         body, at = g.group(1), g.start(1)
         pos = 0
         for piece in body.split(";"):
-            m = _PAREN_PIECE.match(piece)
+            m = paren_piece.match(piece)
             if m:
                 take(m, at + pos)
             pos += len(piece) + 1
@@ -693,21 +774,38 @@ def _works(t: str) -> List[Tuple[int, int, str, str, str, str]]:
 
 
 def find_citations(text: Any, internal: bool = False,
-                   every: bool = False) -> List[DocCited]:
+                   every: bool = False,
+                   refined: bool = False) -> List[DocCited]:
     """Every document and work ``text`` cites, in order, one per document
     (the first time it is cited, with the first section cited). HTML is
     read as its text. ``internal`` also reads the reference library's own
     ids ("gec_11"), as a references result may print them. ``every``
     gives each citation where it stands, with its own section, not just
     each document's first (BACKLOG EV-30: a deliverable that names a
-    document first without a section and cites its sections later)."""
-    t = plain_text(text)
+    document first without a section and cites its sections later).
+
+    ``refined`` is the citation check's own reading (BACKLOG EV-23): a
+    surname with a one-letter particle is read whole ("O'Hara & Lind
+    (2004)", where the plain reading took "Hara"), and brackets holding a
+    list of plain numbers that are not all years are no citation ("Corner
+    (1710, 1342)" is a pair of coordinates; "Hale (1979, 1985)" still
+    cites two works). The plain reading stays as it was for the
+    judgment-call check, which asks only whether a work is cited at all
+    (``funhouse_agent.judgment_check.has_source``): its note to the model
+    does not move."""
+    return _find(plain_text(text), internal, every, refined)
+
+
+def _find(t: str, internal: bool = False, every: bool = False,
+          refined: bool = False) -> List[DocCited]:
+    """:func:`find_citations` of a text already :func:`plain_text`: the
+    positions are in ``t``."""
     docs = _documents(t, internal=internal)
     spans = [(s, e) for s, e, *_ in docs]
     found: List[DocCited] = [DocCited(shown=shown, key=key, section=sec,
                                       start=s, end=e)
                              for s, e, key, shown, sec in docs]
-    for s, e, key, shown, who, year in _works(t):
+    for s, e, key, shown, who, year in _works(t, refined):
         # A year printed with a designation is the document's edition.
         if any(a < e and s < b for a, b in spans):
             continue
@@ -721,6 +819,219 @@ def find_citations(text: Any, internal: bool = False,
         seen.add(c.key)
         out.append(c)
     return out
+
+
+# -- a mention that is not a citation (BACKLOG EV-23 P) ----------------------
+
+#: The record's key for the documents and works a text only MENTIONS: a
+#: pointer to a next step ("verify it with UFC 3-999-01"), a denial ("I have
+#: not relied on GEC-15"), a condition ("if the specification calls for
+#: ASTM D9998, ...").
+MENTIONED = "mentioned_not_cited"
+POINTER = "pointer"
+DENIAL = "denial"
+CONDITION = "condition"
+
+#: Where a clause ends: a line, ";", "!", "?", a colon followed by a space,
+#: a full stop followed by a space and a capital (not "e.g.,", "et al. (",
+#: "Eq. 6-1").
+_CLAUSE_END = re.compile(
+    r"\n|[;!?]|:(?=[*_`]*[ \t])|\.(?=[*_`)\]\"'’”]*[ \t]+[*_`(\[\"'‘“]*"
+    rf"[{_UP}])")
+#: A value stated in a clause: a sign, a number with a unit, a decimal (a
+#: citation is the source of a value; one in the clause keeps the mention a
+#: citation whatever the verb). Designations and years are blanked first.
+_UNITS = (r"%|°|‰|[kMG]?Pa|kN(?:/m[23]?)?|MN|N|kips?|lbs?|psf|psi|ksf|pcf|"
+          r"tsf|kg|t|mm|cm|km|m|ft|feet|foot|in|inch(?:es)?|met(?:er|re)s?|"
+          r"s|sec|min|h|hr|days?|years?|yr|blows?")
+_VALUE = re.compile(
+    r"[=≈≤≥<>±]|(?<![\w.,/-])\d+(?:[.,]\d+)*[ \t]*(?:" + _UNITS
+    + r")(?![\w])|(?<![\w.,/-])\d+\.\d+(?![\w]|\.\d)")
+#: The verbs that send the reader to a document as a next step.
+_NEXT_STEP = re.compile(
+    r"(?i)(?<![\w-])(?:(?:cross-|double-)?check(?:ing|ed)?|"
+    r"confirm(?:ing|ed)?|verif(?:y|ying|ied)|compar(?:e|ing|ed)|"
+    r"validat(?:e|ing|ed)|consult(?:ing|ed)?|us(?:e|ing|ed))(?![\w-])")
+#: Words that may stand between a clause's start (or a comma) and an
+#: instruction ("..., so confirm", "Then check"), or between a modal and
+#: its verb ("could also be", "should not use").
+_FILLER = frozenset((
+    "and or so then also please first finally ideally otherwise instead "
+    "still just simply again but independently separately always now "
+    "next later therefore thus preferably directly carefully further "
+    "not").split())
+#: A modal or "to" before the verb's plain form: a suggestion, not a
+#: statement of what was done ("could be checked", "need to verify").
+_MODALS = frozenset(
+    "can could should must may might would will shall to do".split())
+#: The words before an "-ing" form that make it a suggestion.
+_SUGGEST = frozenset((
+    "recommend recommends recommended suggest suggests suggested consider "
+    "worth advise advises advised try start begin keep").split())
+#: Between a pointer's verb and the mention, any of these makes the mention
+#: the source of something again ("use the factor from GEC-15", "check
+#: it, as UFC 3-999-01 asks") or starts a new claim ("..., which is in
+#: GEC-15").
+_ATTACH = re.compile(
+    r"(?i)\b(?:per|from|according|based|accordance|given|cited|following|"
+    r"which|who|whose|where|because|since|while|whereas)\b"
+    r"|(?<!such )(?<!well )\bas\b(?![ \t]+well\b)")
+_NEGATION = (r"(?:\b(?:not|never|nor|cannot)|\bno[ \t]+longer|n['’]t)")
+_DENIED = (r"(?:cit(?:e|ed|ing)|us(?:e|ed|ing)|rel(?:y|ied|ying)"
+           r"(?:[ \t]+(?:on|upon))?|appl(?:y|ied|ying)|confirm(?:ed|ing)?|"
+           r"f(?:ind|ound)|referenc(?:e|ed|ing)|includ(?:e|ed|ing)|"
+           r"follow(?:ed|ing)?)")
+#: "I have not relied on GEC-15", "we did not find any GEC-15 table": the
+#: verb within two words of the negation, the mention within three plain
+#: words (or other mentions) of the verb.
+_DENIAL_BEFORE = re.compile(
+    rf"(?i){_NEGATION}[ \t]+(?:[a-z]+[ \t]+){{0,2}}?{_DENIED}"
+    r"(?:[ \t]+[A-Za-z'’/-]+){0,3}[ \t]*$")
+#: "GEC-15 was not used", "the GEC-15 tables were not applied".
+_DENIAL_AFTER = re.compile(
+    r"(?i)^[ \t)\]]*(?:[A-Za-z'’/-]+[ \t]+){0,3}?(?:is|was|were|are|"
+    rf"has[ \t]+been|have[ \t]+been)[ \t]+(?:not|never)[ \t]+{_DENIED}\b")
+_CONDITION = re.compile(r"(?i)\b(?:if|unless|whether)\b")
+#: "..., GEC-15, which sets ...", "GEC-15, whose Table 4-1 gives ...": what
+#: follows says what the document holds.
+_SAYS = re.compile(r"[ \t)\]]*,?[ \t]*(?:which|whose)\b", re.IGNORECASE)
+_LIST_MARK = re.compile(r"(?:^|[ \t])(?:\d{1,2}[.)]|[-*+•>#]+)[ \t]*$")
+
+
+def _clause_ends(t: str) -> List[int]:
+    return [m.start() for m in _CLAUSE_END.finditer(t)]
+
+
+def _blanked(t: str, a: int, b: int, spans: Sequence[Tuple[int, int]],
+             keep: Tuple[int, int]) -> str:
+    """``t[a:b]`` with every citation in it but ``keep`` made one word, so
+    its digits are no value and it counts as one word of a list."""
+    out, pos = [], a
+    for s, e in sorted(spans):
+        if e <= pos or s >= b or (s, e) == keep:
+            continue
+        out.append(t[pos:max(s, pos)])
+        out.append(" DOC ")
+        pos = min(e, b)
+    out.append(t[pos:b])
+    return "".join(out)
+
+
+def _words_back(text: str, skip: frozenset) -> Tuple[str, str]:
+    """``(rest, last word)`` of ``text`` once the words in ``skip`` are
+    taken off its end."""
+    rest = text.rstrip()
+    while True:
+        m = re.search(r"([A-Za-z'’]+)[ \t]*$", rest)
+        if not m or m.group(1).lower() not in skip:
+            return rest, (m.group(1).lower() if m else "")
+        rest = rest[:m.start()].rstrip()
+
+
+def _instruction(before: str) -> bool:
+    """Whether a verb's plain form after ``before`` (the clause up to it)
+    is an instruction: at the clause's start, after a comma, a bracket or
+    a colon, or after a modal or "to"."""
+    rest, last = _words_back(before, _FILLER)
+    if last in _MODALS:
+        return True
+    rest = _LIST_MARK.sub("", rest).rstrip(" \t*_`\"'“‘")
+    return not rest or rest[-1] in ",(:–—"
+
+
+def _pointed(pre: str) -> bool:
+    """Whether the mention after ``pre`` (its clause up to it) is what an
+    instruction or a suggestion sends the reader to."""
+    for m in reversed(list(_NEXT_STEP.finditer(pre))):
+        if _ATTACH.search(pre[m.end():]):
+            return False
+        word = m.group(0).lower()
+        before = pre[:m.start()]
+        if word.endswith("ing"):
+            if _words_back(before, frozenset())[1] in _SUGGEST:
+                return True
+        elif word.endswith("ed"):
+            if _words_back(before, _FILLER)[1] == "be":
+                return True
+        elif _instruction(before):
+            return True
+    return False
+
+
+def mention_kind(t: str, c: DocCited, spans: Sequence[Tuple[int, int]],
+                 ends: Optional[Sequence[int]] = None) -> Optional[str]:
+    """``None`` when citation ``c`` (found in ``t``, a :func:`plain_text`)
+    cites its document; else what kind of mention it is (BACKLOG EV-23 P):
+
+    * :data:`DENIAL`: a negation governs it ("I have not relied on GEC-15",
+      "we did not find any GEC-15 table", "GEC-15 was not used");
+    * :data:`CONDITION`: it stands in an "if", "unless" or "whether" clause
+      before that clause's comma ("If the specification calls for ASTM
+      D9998, ...");
+    * :data:`POINTER`: it is what an instruction or a suggestion sends the
+      reader to: a verb of checking or using (confirm, check, verify,
+      cross-check, compare, validate, consult, use) in its plain form at the
+      clause's start or after a comma, a modal or "to", in "be" + its past
+      form after a modal ("should be compared against GEC-15"), or as "-ing"
+      after "recommend", "suggest", "worth"...; with no "per", "from",
+      "according to", "based on", "as", "which"... between the verb and the
+      mention.
+
+    Whatever the words, a clause that states a value (a sign such as "=",
+    a number with a unit, a decimal) keeps the mention a citation: "Use
+    0.29 from GEC-15" and "per GEC-15, the factor is 1.7" are citations,
+    as are "X gives ...", "(see X)", "X, which ...", "X, whose ..." and
+    every mention no rule above takes.
+    A clause runs between line ends, ";", "!", "?", a colon and a full stop
+    followed by a capital."""
+    if ends is None:
+        ends = _clause_ends(t)
+    left = max([p + 1 for p in ends if p < c.start] or [0])
+    right = min([p for p in ends if p >= c.end] or [len(t)])
+    left = max(left, c.start - 600)
+    right = min(right, c.end + 600)
+    keep = (c.start, c.end)
+    pre = _blanked(t, left, c.start, spans, keep)
+    post = _blanked(t, c.end, right, spans, keep)
+    if _VALUE.search(pre) or _VALUE.search(post) or _SAYS.match(post):
+        return None
+    deny = _DENIAL_BEFORE.search(pre)
+    if deny and not _ATTACH.search(pre[deny.start():]):
+        return DENIAL
+    if _DENIAL_AFTER.search(post):
+        return DENIAL
+    cond = list(_CONDITION.finditer(pre))
+    if cond and not re.search(r",|\bthen\b", pre[cond[-1].end():]):
+        return CONDITION
+    if _pointed(pre):
+        return POINTER
+    return None
+
+
+def cited_and_mentioned(text: Any) -> Tuple[List[DocCited],
+                                           List[Tuple[DocCited, str]]]:
+    """What ``text`` cites, one per document or work (where it is first
+    CITED), and what it only mentions (:func:`mention_kind`): ``(cited,
+    [(mention, kind)])``, one per document none of whose mentions cites
+    it. Read the check's way (:func:`find_citations` ``refined``)."""
+    t = plain_text(text)
+    every = _find(t, every=True, refined=True)
+    if not every:
+        return [], []
+    spans = [(c.start, c.end) for c in every]
+    ends = _clause_ends(t)
+    cited: Dict[str, DocCited] = {}
+    aside: Dict[str, Tuple[DocCited, str]] = {}
+    for c in every:
+        if c.key in cited:
+            continue
+        kind = mention_kind(t, c, spans, ends)
+        if kind is None:
+            cited[c.key] = c
+        elif c.key not in aside:
+            aside[c.key] = (c, kind)
+    return (list(cited.values()),
+            [v for k, v in aside.items() if k not in cited])
 
 
 # ---------------------------------------------------------------------------
@@ -746,25 +1057,39 @@ class Marks:
         if old is None or _RANK.get(kind, 9) < _RANK.get(old, 9):
             store[item] = kind
 
-    def add_text(self, text: Any, kind: str, internal: bool = False) -> None:
+    def add_text(self, text: Any, kind: str, internal: bool = False,
+                 not_from: str = "") -> None:
         """Note what ``text`` names, as a source of ``kind``. A user's words
         and a calculation's result name a method in any case ("use
-        rankine", ``"theory": "rankine"``); elsewhere a name is capitalised."""
+        rankine", ``"theory": "rankine"``); elsewhere a name is capitalised.
+        The documents and works ``not_from`` cites (the model's own words
+        that went into this source) are not noted from it."""
         t = plain_text(text)
         if not t.strip():
             return
+        skip_keys: Set[str] = set()
+        skip_names: Set[str] = set()
+        for c in (find_citations(not_from, refined=True) if not_from
+                  else ()):
+            if c.kind == "work":
+                skip_names.add(c.author)
+            else:
+                skip_keys.add(c.key)
         words = _ANY_WORD if kind in (USER, CALCULATION) else _CAP_WORD
         for w in set(words.findall(t)):
-            self._put(self.names, _name(w), kind)
+            if _name(w) not in skip_names:
+                self._put(self.names, _name(w), kind)
         if kind == CATALOG:
             return                     # names only (see CATALOG)
         for c in find_citations(t, internal=internal):
-            self._put(self.keys, c.key, kind)
+            if not (skip_keys and covered(c.key, skip_keys)):
+                self._put(self.keys, c.key, kind)
         for y in _YEAR_ANY.finditer(t):
             before = t[max(0, y.start() - 90):y.start()]
             before = before[before.rfind("\n") + 1:]
             for w in set(words.findall(before)):
-                self._put(self.pairs, (_name(w), y.group(1)), kind)
+                if _name(w) not in skip_names:
+                    self._put(self.pairs, (_name(w), y.group(1)), kind)
 
     def add_keys(self, keys: Iterable[str], kind: str) -> None:
         for key in keys:
@@ -810,6 +1135,11 @@ REFERENCE_PAGE_READERS = ("read_reference_figure", "read_reference_table")
 WRITING_TOOLS = frozenset({"save_file", "write_docx", "write_xlsx",
                            "annotate_document", "annotate_dxf", "plot_data",
                            "plot_code", "call_agent"})
+#: The ``calc_package`` methods that render the MODEL's own text (its HTML):
+#: the app's writer, no source. Every other method runs the app's analysis
+#: and prints the method's basis from the app's own template, so it is a
+#: calculation (BACKLOG EV-23 M).
+MODEL_TEXT_METHODS = frozenset({"html_to_pdf"})
 #: The helper whose whole work is a references read.
 REFERENCES_HELPER = "references"
 #: Keys of a result or arguments that name a file written.
@@ -895,6 +1225,45 @@ def _without_echo(result: str, args: dict) -> str:
     return result
 
 
+def _without_given(text: str, given: Sequence[Any]) -> str:
+    """``text`` without the strings the calls ``given`` (their arguments)
+    were given, matched across line breaks and ligatures: a PDF's text
+    wraps a title the model gave its writer."""
+    t = unicodedata.normalize("NFKC", text)
+    for s in sorted(set(_strings(list(given), [])), key=len, reverse=True):
+        words = unicodedata.normalize("NFKC", s).split()
+        if len(s) > 4000 or len(" ".join(words)) < 8:
+            continue
+        t = re.sub(r"\s+".join(map(re.escape, words)), " ", t)
+    return t
+
+
+def _decoded(data: Any, depth: int = 0) -> str:
+    """A JSON result as the text it holds (BACKLOG EV-23 J): each string as
+    it reads, so a newline is a line end and not a backslash and an "n"
+    against the next word (which hid "\\nASTM D9999" from the patterns), an
+    escaped letter the letter; keys and values in their order on one line,
+    as the JSON had them, so the fields of one record stay together."""
+    if isinstance(data, str):
+        return data
+    if depth > 24:
+        return json.dumps(data, ensure_ascii=False, default=str)
+    if isinstance(data, dict):
+        return "{" + ", ".join(f"{k}: {_decoded(v, depth + 1)}"
+                               for k, v in data.items()) + "}"
+    if isinstance(data, (list, tuple)):
+        return "[" + ", ".join(_decoded(v, depth + 1) for v in data) + "]"
+    return json.dumps(data, default=str)
+
+
+def _result_text(text: str, data: Any) -> str:
+    """A tool result as the text a source is read from: decoded when it is
+    JSON (:func:`_decoded`), else as it came."""
+    if isinstance(data, (dict, list, str)):
+        return _decoded(data)
+    return text
+
+
 class _LookupState:
     """What one ``activity.jsonl`` says so far: it is append-only, so each
     read starts where the last one stopped."""
@@ -909,6 +1278,9 @@ class _LookupState:
         self.starts: Dict[str, Tuple[str, Any, str]] = {}
         self.marks = Marks()
         self.outputs: Set[str] = set()
+        #: The files among ``outputs`` that the app's own method wrote (a
+        #: calculation): base name -> the arguments it was given.
+        self.app_written: Dict[str, Any] = {}
         self.handle_names: Dict[str, str] = {}
 
 
@@ -972,7 +1344,9 @@ def source_kind(name: str, args: dict, agent: str = "") -> Optional[str]:
         if module == "worked_examples":
             return WORKED_EXAMPLE
         if module == "calc_package":
-            return None              # the app's own writer
+            method = str(args.get("method") or "").strip().lower()
+            if method in MODEL_TEXT_METHODS:
+                return None          # the app's writer of the model's text
         return CALCULATION
     if name in DOCUMENT_TOOLS:
         return DOCUMENT
@@ -1060,6 +1434,20 @@ def _feed(st: _LookupState, path: str) -> None:
         _note_call(st, name, args, agent, text, data)
 
 
+def _read_nothing(name: str, data: Any) -> bool:
+    """Whether a reference page read (:data:`REFERENCE_PAGE_READERS`) read
+    none of the pages it sent: every row of ``pages_read`` holds an
+    ``error`` and no ``analysis`` (the table reader's result when the
+    vision reader failed on each page). Such a read returned nothing of the
+    document, so it is no source (BACKLOG EV-23, review)."""
+    if name not in REFERENCE_PAGE_READERS or not isinstance(data, dict):
+        return False
+    rows = data.get("pages_read")
+    return (isinstance(rows, list) and bool(rows)
+            and all(isinstance(r, dict) and r.get("error")
+                    and not r.get("analysis") for r in rows))
+
+
 def _note_call(st: _LookupState, name: str, args: dict, agent: str,
                text: str, data: Any) -> None:
     """One finished tool call into the record."""
@@ -1081,18 +1469,40 @@ def _note_call(st: _LookupState, name: str, args: dict, agent: str,
                                            or data.get("output_path")):
                 _files_named(args, wrote, ("output_path",))
         st.outputs |= {w for w in wrote if w}
+        by_app = (name == "call_agent"
+                  and source_kind(name, args, agent) == CALCULATION)
+        for w in wrote:
+            if w and by_app:
+                st.app_written[w] = args
+            elif w:
+                st.app_written.pop(w, None)
     kind = source_kind(name, args, agent)
-    if kind is None:
+    if kind is None or _read_nothing(name, data):
         return
+    given: Optional[List[Any]] = None
     if kind == DOCUMENT and _base(_target(args, st)) in st.outputs:
-        return                         # a file this conversation wrote
+        wrote_it = st.app_written.get(_base(_target(args, st)))
+        if wrote_it is None:
+            return                     # a file the model's own words made
+        # A file the app's own method wrote, read back: the calculation's
+        # own result, less what the model gave the writer or the reader
+        # (BACKLOG EV-23 M).
+        kind, given = CALCULATION, [wrote_it, args]
+    elif name == "call_agent" and kind == CALCULATION and str(
+            args.get("agent_name") or "").strip().lower() == "calc_package":
+        given = [args]
     if name == "call_agent" and kind == REFERENCES:
         st.marks.add_keys(module_documents(args.get("agent_name")), kind)
     if name in REFERENCE_PAGE_READERS:
         st.marks.add_keys(module_documents(args.get("reference")), kind)
+    words = _result_text(text, data)
+    if given is not None:
+        st.marks.add_text(_without_given(words, given), kind,
+                          not_from="\n".join(_strings(given, [])))
+        return
     if kind == CALCULATION:
-        text = _without_echo(text, args)
-    st.marks.add_text(text, kind, internal=(kind == REFERENCES))
+        words = _without_echo(words, args)
+    st.marks.add_text(words, kind, internal=(kind == REFERENCES))
 
 
 # -- the user's own words -----------------------------------------------------
@@ -1237,15 +1647,23 @@ def check_text(text: Any, looked: Optional[LookedUp] = None,
     Returns ``{"checked", "n_cited", "cited", "not_looked_up", "user_named",
     "looked_up", "year_not_checked", "against"}`` (``checked`` False, with
     ``why``, when there is no record to check against). Each listed
-    citation is ``{"cited": as shown, ...}``."""
-    cites = find_citations(text)
-    if not cites:
+    citation is ``{"cited": as shown, ...}``. A document or work the text
+    only mentions (a pointer, a denial, a condition: :func:`mention_kind`)
+    is no citation: it is kept under :data:`MENTIONED` as ``{"mentioned":
+    as shown, "as": its kind, "looked_up": whether a source names it}``
+    and is never in ``not_looked_up`` (BACKLOG EV-23)."""
+    cites, aside = cited_and_mentioned(text)
+    if not cites and not aside:
         return {"checked": True, "n_cited": 0}
-    result: Dict[str, Any] = {"n_cited": len(cites),
-                              "cited": [c.shown for c in cites][:MAX_LISTED]}
+    result: Dict[str, Any] = {"n_cited": len(cites)}
+    if cites:
+        result["cited"] = [c.shown for c in cites][:MAX_LISTED]
     if looked is None:
         looked = looked_up(record_folder, user_words)
     if not looked.knows:
+        if aside:
+            result[MENTIONED] = [_mention_row(c, how, None)
+                                 for c, how in aside][:MAX_LISTED]
         result.update(checked=False,
                       why="this host keeps no record of what was looked up "
                           "(no activity log), so cited documents were not "
@@ -1256,7 +1674,7 @@ def check_text(text: Any, looked: Optional[LookedUp] = None,
     marks = looked.marks
     lists: Dict[str, List[Dict[str, Any]]] = {
         "not_looked_up": [], "user_named": [], "looked_up": [],
-        "year_not_checked": []}
+        "year_not_checked": [], MENTIONED: []}
     for c in cites:
         row: Dict[str, Any] = {"cited": c.shown}
         if c.kind == "work":
@@ -1277,12 +1695,28 @@ def check_text(text: Any, looked: Optional[LookedUp] = None,
         else:
             row["by"] = SOURCE_WORDS.get(by, by)
             lists["looked_up"].append(row)
+    for c, how in aside:
+        lists[MENTIONED].append(_mention_row(c, how, marks))
     for k, v in lists.items():
         if v:
             result[k] = v[:MAX_LISTED]
             if len(v) > MAX_LISTED:
                 result[f"n_{k}"] = len(v)
     return result
+
+
+def _mention_row(c: DocCited, how: str,
+                 marks: Optional[Marks]) -> Dict[str, Any]:
+    row: Dict[str, Any] = {"mentioned": c.shown, "as": how}
+    if c.kind != "work":
+        row["document"] = c.key
+    if marks is not None:
+        if c.kind == "work":
+            row["looked_up"] = ((c.author, c.year) in marks.pairs
+                                or c.author in marks.names)
+        else:
+            row["looked_up"] = marks.document_kind(c.key) is not None
+    return row
 
 
 def not_looked_up(result: Dict[str, Any]) -> List[str]:
@@ -1463,8 +1897,9 @@ class TurnCitationCheck:
     def _check(self, answer: str) -> Dict[str, Any]:
         try:
             if not self.record_folder:
-                return {"checked": False, "n_cited": len(find_citations(
-                    answer)), "why": "no record folder for this turn"}
+                return {"checked": False, "n_cited": len(
+                    cited_and_mentioned(answer)[0]),
+                    "why": "no record folder for this turn"}
             return check_text(answer, record_folder=self.record_folder,
                               user_words=self.user_words or ())
         except Exception as exc:  # noqa: BLE001 - never the turn
@@ -1472,7 +1907,8 @@ class TurnCitationCheck:
                     "why": f"the check failed: {type(exc).__name__}: {exc}"}
 
     def _record(self, result: Dict[str, Any], action: str) -> None:
-        if self.log is None or not result.get("n_cited"):
+        if self.log is None or not (result.get("n_cited")
+                                    or result.get(MENTIONED)):
             return
         try:
             self.log({**result, "where": "answer", "mode": self.mode,
@@ -1517,4 +1953,6 @@ __all__ = ["RECORD_EVENT", "NOTE_PREFIX", "RETRY_STATUS", "RESULT_LIST",
            "find_citations", "source_kind", "user_texts", "user_words_bound",
            "looked_up", "check_text", "not_looked_up", "note_for_user",
            "note_for_model", "result_note", "deliverable_texts",
-           "check_deliverable", "add_to_result", "clear_cache"]
+           "check_deliverable", "add_to_result", "clear_cache",
+           "MENTIONED", "POINTER", "DENIAL", "CONDITION",
+           "MODEL_TEXT_METHODS", "mention_kind", "cited_and_mentioned"]
