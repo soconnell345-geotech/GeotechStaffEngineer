@@ -1187,7 +1187,8 @@ _NO_CHANGE = {"re": (
     r"drawn\s+|graphic(?:al)?\s+|such\s+|physical\s+)?(?:change|difference|"
     r"relocation|move|movement)s?\b" + _NOT_ELSE +
     r"|\b(?:not|never)\s+(?:actually\s+|been\s+|really\s+)*(?:moved|"
-    r"relocated|changed|revised|shown|drawn|reflected)\b"
+    r"relocated|changed|revised|shown|drawn|reflected|backed|supported|"
+    r"matched\s+by|borne\s+out)\b"
     r"|\b(?:did|does|has|have|was|is)\s?n[o']t\s+(?:actually\s+|been\s+|"
     r"really\s+)*(?:move|moved|relocated|change|changed|reflected|shown)\b"
     r"|(?:^|(?<=[.;:|(]))(?:(?!\b(?:else|other|others|otherwise|rest|"

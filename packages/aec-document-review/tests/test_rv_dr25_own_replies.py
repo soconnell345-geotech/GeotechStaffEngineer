@@ -91,3 +91,22 @@ def test_looked_for_and_not_found(key, reply):
 ])
 def test_found_is_not_missing(key, reply):
     assert not _passes(key, reply)
+
+
+# -- an entry no change stands behind ---------------------------------------
+
+@pytest.mark.parametrize("reply", [
+    "| Sheet | Rev block entry | Comment |\n|---|---|---|\n"
+    "| A-102 | DOOR 205 RELOCATED | Entry is not backed by any change on "
+    "the sheet |",
+    "A-102: the entry for door 205 is not supported by the drawing.",
+])
+def test_an_entry_not_backed_by_a_change(reply):
+    assert _passes("entry-no-change", reply)
+
+
+def test_an_entry_backed_by_its_change():
+    assert not _passes(
+        "entry-no-change",
+        "A-102: the entry for door 205 is backed by the drawing; the door "
+        "moved east.")
