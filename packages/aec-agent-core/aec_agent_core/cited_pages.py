@@ -120,7 +120,7 @@ import os
 import re
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import (Any, Callable, Dict, Iterable, List, Optional, Sequence,
                     Set, Tuple)
 
@@ -391,6 +391,28 @@ class PagesOpened:
         return {p for key in (docs if docs is not None else list(self.pages))
                 for p, hows in self.pages.get(key, {}).items()
                 if hows & OPENED_HOWS}
+
+
+#: File types that are one picture, not a document with pages.
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff",
+                  ".webp")
+
+
+def _is_image(key: Any) -> bool:
+    return os.path.splitext(str(key))[1].lower() in IMAGE_SUFFIXES
+
+
+def without_images(opened: PagesOpened) -> PagesOpened:
+    """``opened`` without its image files (an uploaded picture, a
+    screenshot), for the answer check: a look at one is recorded as page 0
+    of a document of that name, but it is no page of any PDF, so it opens
+    no cited page and its missing page labels say nothing of a document's."""
+    def keep(rows: dict) -> dict:
+        return {k: v for k, v in rows.items() if not _is_image(k)}
+    return replace(opened, pages=keep(opened.pages), names=keep(opened.names),
+                   sources=keep(opened.sources), facts=keep(opened.facts),
+                   n_pages=keep(opened.n_pages), markups=keep(opened.markups),
+                   sheet_seen=keep(opened.sheet_seen))
 
 
 # -- the activity log, read incrementally ------------------------------------
@@ -1977,6 +1999,7 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
         return {"checked": True, "n_cited": 0}
     if opened is None:
         opened = pages_opened(record_folder, folder)
+    opened = without_images(opened)
     names = [opened.names.get(k, k) for k in opened.documents()]
     t = str(text or "").translate(_DASHES)
     cites = find_citations(t, names)
