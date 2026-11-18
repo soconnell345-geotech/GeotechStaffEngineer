@@ -540,7 +540,15 @@ _PLACEHOLDERS = frozenset({"none", "null", "nil", "true", "false", "unset",
                            "redacted", "hidden", "[removed]"})
 #: ``sk-`` / ``pk-`` / ``rk-`` keys (a provider's own refusal quotes one
 #: part-starred: "Incorrect API key provided: sk-...****abcd").
-_PREFIXED_KEY = re.compile(r"\b(?:sk|pk|rk)-[A-Za-z0-9_*\-]{6,}")
+#: Not a document's file name that starts the same way (a sketch sheet
+#: saved as ``sk-101-foundation-plan.pdf``): a tool's error that names the
+#: file it could not open went to the model as ``'….pdf'``. The run is
+#: taken whole (possessive), then kept only where a document extension
+#: follows it; a key before a full stop that ends a sentence is masked.
+_FILE_EXTENSION = (r"\.(?i:pdf|dxf|dwg|docx?|xlsx?|pptx?|csv|txt|md|json|"
+                   r"html?|png|jpe?g|tiff?|gif|bmp|zip)(?![A-Za-z0-9])")
+_PREFIXED_KEY = re.compile(
+    r"\b(?:sk|pk|rk)-[A-Za-z0-9_*\-]{6,}+(?!" + _FILE_EXTENSION + r")")
 _BEARER = re.compile(r"\bBearer\s+[^\s\"',;})\]<>\\]+")
 
 
