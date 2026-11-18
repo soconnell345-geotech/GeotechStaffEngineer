@@ -91,11 +91,13 @@ Each is binding. The long form is where the pointer says ("archive" = `module_wo
 
 ## CURRENT WORKING STATE (replace this block whole, never append; at most 12 lines)
 
-- Released 2026-11-17 (the close-out): geotech-staff-engineer 5.36.0 (tag `v5.36.0`), pinning `aec-agent-core==1.1.0`, `planlens>=0.16.0`, `geotech-references>=1.8.0`; aec-agent-core and aec-document-review 1.1.0 (one tag `aec-v1.1.0`); planlens 0.16.0 and geotech-references 1.8.0 (tags `v0.16.0` and `v1.8.0` in their repositories).
-- Master is 5.36.0 plus notes. The app's code is quiet here; the maintainer's copy starts from tag `v5.36.0`.
-- The testers get Document Review 1.1.0 when the owner bumps the wrapper's pin (OWN-147, then TA-42).
-- BACKLOG was checked item by item on 2026-11-17, before the hand-over: every open id has a keeper (section 0 (a)); the developer's first items are section 0 (b), the owner's open decisions section 0 (c). A session's own list: `python module_work/backlog_dashboard/keeper_view.py developer`.
-- Release notes by module: HANDOFF section 0a-current, item 0. Open work: BACKLOG section 0.
+- Released 2026-11-18: aec-agent-core and aec-document-review 1.2.0 (one tag `aec-v1.2.0`); Document Review pins `aec-agent-core==1.2.0` and `planlens==0.16.0`. Release note `module_work/aec_1_2_0/RELEASE_NOTE.md`.
+- Its four new settings are off unless set and not measured on a model yet: `GEOTECH_VISION_TILE_ANSWERS`, `GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK`, `GEOTECH_PHOTO_PAGES`, `GEOTECH_TURN_MAX_IMAGE_CALLS`. Brief 9 (EV-45) measures them.
+- Released 2026-11-17 (the close-out): geotech-staff-engineer 5.36.0 (tag `v5.36.0`), pinning `aec-agent-core==1.1.0`, `planlens>=0.16.0`, `geotech-references>=1.8.0`; planlens 0.16.0 and geotech-references 1.8.0 (tags `v0.16.0` and `v1.8.0` in their repositories). No app release goes with 1.2.0.
+- Master is 5.36.0 plus 1.2.0 and notes; its `aec-agent-core==1.2.0` pin moved only because `test_wheels.py` keeps it equal to the core's version. The app's code is quiet here; the maintainer's copy starts from tag `v5.36.0`.
+- The testers get 1.2.0 when the owner bumps the wrapper's pins (OWN-147, then TA-42).
+- Every open id has a keeper (BACKLOG section 0 (a)); the developer's first items are section 0 (b), the owner's open decisions section 0 (c). A session's own list: `python module_work/backlog_dashboard/keeper_view.py developer`.
+- State and release notes: HANDOFF section 0a-current (its first block is 1.2.0). Open work: BACKLOG section 0.
 
 ## Where things are
 
