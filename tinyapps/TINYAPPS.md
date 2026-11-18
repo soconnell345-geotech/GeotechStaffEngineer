@@ -337,6 +337,37 @@ round is the owner's call):
   pages unlooked-at takes one more pass of the agent: more model calls,
   and image calls if it looks. Not measured on a model yet (BACKLOG
   DR-48).
+- `GEOTECH_REVIEW_PLAN_TOOLS`: planlens' plan tools on the page and its
+  reading helper: `plan_symbols` (every small symbol on a vector plan
+  sheet with its exact centre and its label) and `plan_grid` (page points
+  turned into local easting / northing). Not measured on a model yet
+  (BACKLOG PL-27).
+- `GEOTECH_REVIEW_FIGURE_EXAMPLES`: the figure helper works from this
+  page's own worked examples (a plan redrawn to scale, a schedule against
+  the count on the sheets, comments by sheet, values against a stated
+  limit, a level as each sheet gives it, a submittal timeline) in place of
+  the geotechnical ones. Not measured on a model yet (BACKLOG DR-35).
+- `GEOTECH_REVIEW_LEAN_PROMPT`: takes the agent library's generic prompt
+  texts off the page's build (its base prompt, its to-do and helper
+  sections, the `write_todos` and `task` descriptions) and puts the page's
+  short ones in their place. All or nothing: where a text the library
+  defines is not found word for word, the prompt goes out as it was and
+  the turn's record says so (`lean_prompt` on `turn_end`). Not measured on
+  a model yet (BACKLOG DR-29).
+- `GEOTECH_VISION_SHOW_UPLOADS`: an image file a tester uploads is shown
+  to the page's main model itself at its next step, with no vision call
+  reading it for the model; one shown image is one image call on the
+  turn's count. **Set it only where the main model takes images**: the
+  page takes a model with no profile to accept them, and a text-only
+  model's turn then fails at its first call after a look. The turn's
+  record says whether the page shows uploads (`build.show_uploads`). Not
+  measured on a model yet (BACKLOG DR-38).
+- `GEOTECH_VISION_PIXEL_REQUESTS`: a request to `analyze_pdf_page` or
+  `render_region` for positions in the page's own units is asked of the
+  vision model as pixel boxes on the image it sees, and the tool converts
+  them to page points itself; page coordinates a reading writes into its
+  prose are named as the model's own estimate. Not measured on a model yet
+  (BACKLOG VIS-24).
 
 ## The owner's first round on the test machine (paste-ready checklist)
 
