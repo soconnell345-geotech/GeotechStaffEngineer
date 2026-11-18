@@ -160,3 +160,43 @@ where the zoom and tile views say on the drawn page; the size and the time
 to make the report on a 40-sheet run. Also check whether a real `task`
 call's own `tool_start` carries the helper's `task_id` (then helpers are
 tied by id; otherwise by the brief's first 80 characters).
+
+## Added in review
+
+An independent review found five things; each is fixed with a test in
+`test_ev17_run_report.py`.
+
+1. **The transcript was read by the wrong key.** `RunRecord.questions` and
+   `RunRecord.answers` read `content`; the pages' writer
+   (`append_transcript`, entries `{"role": "user", "text": ...}` and
+   `{"role": "assistant", "text": ..., "artifacts": [...]}`) writes `text`,
+   as the core's own reader `cited_documents._transcript_user_texts` reads
+   it. Now read by `text`: "The answer as the user received it" appears, a
+   question over 500 characters is whole, and a folder with a transcript
+   and no activity log names its questions. A turn whose answer the record
+   does not hold says so. "When" prints `meta.json`'s `created` (seconds)
+   as a date and time. The conversation test builds its transcript in the
+   writer's shape (a copy of the shape: the core's tests do not import
+   Document Review).
+2. **The page grid said "never opened" with no activity log.** With no
+   `activity.jsonl` no look is recorded at all, so the empty squares, their
+   count and the part's introduction say "no look recorded". With the log
+   present nothing changes.
+3. **The whole-copy path check had no separator.** `RunRecord.sidecar` now
+   reads a file only when its resolved path lies inside the run folder
+   itself; a made-up sibling folder whose name starts with the run folder's
+   name is not read.
+4. **No traceback.** `main` ends a record it cannot build a report from
+   (the turns and the page map are built before any part's own guard) with
+   one plain line naming what failed and exit code 1.
+5. **No absolute path in the page.** The header names the run folder by its
+   own name only; an error line inside a part has the run folder's and the
+   documents folder's paths cut to their names (`Report._plain`). The
+   record's own paths are relative already and page images are inline.
+   Judgement call: the documents folder is not named in the page at all
+   (it never was); nothing was added to name it.
+
+**Size**, measured in review on a made-up run of 300 large sheets and 600
+tiled looks: the page comes out about 1.5 times the size of the activity
+log (a 12 MB log gave a 17.7 MB page in about 12 s), with at most 150 page
+images drawn (`MAX_PAGE_IMAGES`).

@@ -167,6 +167,18 @@ documents); otherwise the page outlines are drawn alone. A missing or older
 record file is named in the report. The file holds the run's text and page
 images: treat it as you treat the documents.
 
+Added in review: the questions and answers are read from `transcript.jsonl`
+as the pages write it (a long question whole, the answer as the user
+received it, or a line saying the record holds none); without an
+`activity.jsonl` the page grid says "no look recorded", not "never opened";
+a whole copy of a cut payload is read only from inside the run folder; a
+record the report cannot be built from ends in one plain line and exit code
+1, never a traceback; and the page names the run folder by its own name,
+never its absolute path. Size, measured on a made-up run of 300 large
+sheets and 600 tiled looks: the page is about 1.5 times the size of the
+activity log (a 12 MB log gave a 17.7 MB page in about 12 s), with at most
+150 page images.
+
 ## Licence
 
 MIT, as GeotechStaffEngineer. See `LICENSE`.
