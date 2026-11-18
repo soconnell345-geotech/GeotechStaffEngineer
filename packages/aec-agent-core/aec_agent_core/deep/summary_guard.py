@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import logging
 import threading
 from typing import Optional
 
@@ -303,12 +304,45 @@ _GUARDS = (("wrap_model_call", _guard_wrap),
 _OPTIONAL = (("_over_budget", _guard_trigger),)
 
 
+logger = logging.getLogger(__name__)
+
+#: The library's summarizer class, as the guard imports it.
+_LIBRARY_CLASS = "deepagents.middleware.summarization.SummarizationMiddleware"
+
+#: The one warning of a process has been written.
+_warned = False
+
+
+def _warn_absent(missing: str) -> None:
+    """Say once per process, through ``logging``, that the guard is absent
+    and what was missing. The app starts all the same."""
+    global _warned
+    if _warned:
+        return
+    _warned = True
+    try:
+        logger.warning(
+            "The summary guard is not installed: %s. A summary that fails "
+            "is left to the agent library (BACKLOG TA-24).", missing)
+    except Exception:  # noqa: BLE001 - a warning never stops a build
+        pass
+
+
 def _library_class():
+    """deepagents' summarizer class; ``None`` without deepagents (nothing
+    to guard, nothing said) or when deepagents imports but the class is
+    not where the guard knows it (said once)."""
+    try:
+        import deepagents  # noqa: F401
+    except Exception:  # noqa: BLE001 - no deepagents: nothing to guard
+        return None
     try:
         from deepagents.middleware.summarization import (
             SummarizationMiddleware)
         return SummarizationMiddleware
-    except Exception:  # noqa: BLE001 - no deepagents: nothing to guard
+    except Exception as exc:  # noqa: BLE001 - the library moved its class
+        _warn_absent(f"{_LIBRARY_CLASS} could not be imported "
+                     f"({type(exc).__name__})")
         return None
 
 
@@ -321,15 +355,22 @@ _INSTALL_LOCK = threading.Lock()
 def install(cls=None) -> bool:
     """Guard the summarizer class ``cls`` (deepagents' by default) once, in
     place. True when it is guarded; False, and nothing changed, when the
-    class is missing or lacks a method the guard needs."""
+    class is missing or lacks a method the guard needs. When deepagents is
+    there and its class is not the shape the guard knows, one warning per
+    process says what was missing (``logging``, this module's logger)."""
     cls = cls if cls is not None else _library_class()
     if cls is None:
         return False
     with _INSTALL_LOCK:
         if cls.__dict__.get(_MARK):
             return True
-        if not all(callable(getattr(cls, name, None))
-                   for name, _ in _GUARDS):
+        missing = [name for name, _ in _GUARDS
+                   if not callable(getattr(cls, name, None))]
+        if missing:
+            _warn_absent(
+                f"{getattr(cls, '__module__', '?')}."
+                f"{getattr(cls, '__qualname__', cls)} has no "
+                + ", ".join(missing))
             return False
         for name, guard in _GUARDS + _OPTIONAL:
             method = getattr(cls, name, None)
