@@ -256,6 +256,9 @@ APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
                         "summary_failed"})
 #: (``summary_failed``: a summary of the earlier conversation failed and the
 #: model was handed the history as it was; ``error_type`` where known;
+#: once per failure. The later calls of that turn that were over the
+#: threshold and not summarized are one count on ``turn_end``,
+#: ``summaries_skipped``, only when there were any;
 #: ``aec_agent_core.deep.summary_guard``, BACKLOG TA-24.)
 
 #: App events written from inside one model call, under that call's run id.
@@ -1272,6 +1275,11 @@ class ActivityLogger(BaseCallbackHandler):
             # what the lean framework prompt did (DR-29); nothing when off
             from aec_agent_core.deep.keep_work import lean_prompt_facts
             rec.update(lean_prompt_facts(self._turn_scope))
+        except Exception:                              # noqa: BLE001
+            pass
+        try:
+            from aec_agent_core.deep.keep_work import summary_facts
+            rec.update(summary_facts(self._turn_scope))
         except Exception:                              # noqa: BLE001
             pass
         written = self.records_written

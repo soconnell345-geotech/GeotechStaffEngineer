@@ -234,6 +234,12 @@ class TurnScope:
         # (GEOTECH_REVIEW_LEAN_PROMPT, BACKLOG DR-29; note_lean_prompt):
         # None when the switch is off
         self.lean_prompt: Optional[dict] = None
+        # the summarizers whose summary failed this turn, each with the
+        # helper run it failed in (None = not in a helper), and the model
+        # calls that were over the summary threshold after that and were
+        # not summarized (aec_agent_core.deep.summary_guard; BACKLOG TA-24)
+        self.summaries_failed: dict = {}
+        self.summaries_skipped = 0
         self._lock = threading.Lock()
 
     def note_full_result(self, call_id: Optional[str], text: str) -> None:
@@ -274,6 +280,27 @@ class TurnScope:
             self.busy_spent_s += max(0.0, float(seconds))
             self.busy_events += 1
             return True
+
+    def note_summary_failed(self, summarizer, helper=None) -> None:
+        """``summarizer``'s summary failed in this turn, in the helper run
+        ``helper`` (``None`` = the main agent, or no helper record): it is
+        not tried again there this turn (TA-24)."""
+        with self._lock:
+            # the objects are kept, so their ids stay theirs for the turn
+            self.summaries_failed[(id(summarizer), id(helper))] = (
+                summarizer, helper)
+
+    def summary_failed(self, summarizer, helper=None) -> bool:
+        """Whether ``summarizer``'s summary already failed this turn in
+        the helper run ``helper`` (TA-24)."""
+        with self._lock:
+            return (id(summarizer), id(helper)) in self.summaries_failed
+
+    def note_summary_skipped(self) -> None:
+        """A model call over the summary threshold was not summarized,
+        because the summary failed earlier this turn (TA-24)."""
+        with self._lock:
+            self.summaries_skipped += 1
 
     def take_image_call(self, look: Optional[dict] = None) -> None:
         """Count one image call on the turn (and on ``look``, the tool call
@@ -459,6 +486,15 @@ def lean_prompt_facts(scope) -> dict:
     value = getattr(scope, "lean_prompt", None) if scope is not None \
         else None
     return {"lean_prompt": dict(value)} if isinstance(value, dict) else {}
+
+
+def summary_facts(scope) -> dict:
+    """For the turn's record: ``summaries_skipped``, the model calls that
+    were over the summary threshold and were not summarized because the
+    summary had failed earlier in the turn; nothing when there were none
+    (:mod:`aec_agent_core.deep.summary_guard`, BACKLOG TA-24)."""
+    skipped = int(getattr(scope, "summaries_skipped", 0) or 0)
+    return {"summaries_skipped": skipped} if skipped else {}
 
 
 # ---------------------------------------------------------------------------

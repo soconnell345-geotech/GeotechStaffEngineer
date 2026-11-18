@@ -91,7 +91,8 @@ the conversation must not be replaced by the library's error line: that
 model call goes ahead with the history as it was, nothing sticks in the
 state, the library tries again at its next call, and the record says a
 summary failed. No retry ladder and no new waits (those stay with TA-24's
-live check).
+live check). (After the review the lead changed "at its next call" to "at
+the next turn": `module_work/b14_ta/FIX.md`.)
 
 **How each library generation summarizes** (read from the sources):
 
@@ -106,14 +107,17 @@ live check).
   returns the state update `_summarization_event` (cutoff, summary message,
   file). Every later call rebuilds what the model sees from that stored
   event, so a stored summary is reused for the rest of the conversation.
-- deepagents 0.6.8 with langchain 1.3 (this laptop): langchain's
-  `_create_summary` catches every error and returns
-  `"Error generating summary: <error>"` as the summary. That line goes to
-  the model and into `_summarization_event`, and sticks.
-- deepagents 0.7.24 with langchain 1.4.4 / 1.4.5 (GitHub, a fresh host):
-  langchain asks the summary call again on its own (`with_retry`) and then
-  raises; deepagents does not catch it, so the model call and the turn end
-  on it. The error line never appears.
+- langchain 1.3.14 and older (this laptop: deepagents 0.6.8 with
+  langchain 1.3.4): langchain's `_create_summary` catches every error and
+  returns `"Error generating summary: <error>"` as the summary. That line
+  goes to the model and into `_summarization_event`, and sticks.
+- langchain 1.3.15 and newer (GitHub and a fresh host: deepagents 0.7.24
+  with langchain 1.4.4 / 1.4.5): langchain asks the summary call again on
+  its own (`with_retry`) and then raises; deepagents does not catch it, so
+  the model call and the turn end on it. The error line never appears.
+- The boundary is langchain's, not deepagents': deepagents 0.6.8 installed
+  today resolves langchain 1.3.18 and raises (the review read the wheels
+  1.3.4 to 1.3.18). The guard reads the behaviour, not a version.
 
 **What was built.** `aec_agent_core/deep/summary_guard.py`, `install()`:
 it wraps five methods of deepagents' summarizer class in place, once:
@@ -123,7 +127,8 @@ exists. While the class's own wrap runs, a summary that fails (the error
 line, or an exception) raises a private `SummaryFailed` before the model
 call and before any state update. The guarded wrap catches it, writes a
 `summary_failed` event, and asks the library's own wrap again with its two
-triggers saying "no" for that one call. The library then hands the model
+triggers saying "no" for that one call (since the review's fix: and for
+every later model call of the same turn, FIX.md). The library then hands the model
 what it hands it when nothing needs summarizing (the history as it was,
 with an earlier good summary if there is one), and it returns no state
 update. `compile_agent` calls `install()` before it builds (both pages and
@@ -138,17 +143,19 @@ gains `summary_failed`.
   as it was. Replacing the library's middleware was the other way; it would
   move it in the stack and depend on each version's profile machinery.
   Wrapping its methods keeps the library's own code for every step.
-- How a failure is read: langchain before 1.4 has no constant or code for
-  it, so the exact prefix of its `except` branch
+- How a failure is read: langchain 1.3.14 and older has no constant or
+  code for it, so the exact prefix of its `except` branch
   (`summary_guard.ERROR_PREFIX`, `"Error generating summary:"`); langchain
-  1.4 by its code path, the exception from `_create_summary`.
-- Both generations get the same outcome. On the 1.4 generation a failed
-  summary used to end the turn; now the turn goes on with the history kept.
+  1.3.15 and newer by its code path, the exception from `_create_summary`.
+- Both generations get the same outcome. On langchain 1.3.15 and newer a
+  failed summary used to end the turn; now the turn goes on with the
+  history kept.
   The turn is not cut short by a summary.
 - If, asked again, the call is too long for the model, the library
   summarizes regardless of the threshold; if that summary fails too, the
-  call ends on the provider's error (langchain 1.4) or on `SummaryFailed`
-  (before 1.4). The history is still kept, and nothing is stored.
+  call ends on the provider's error (langchain 1.3.15 and newer) or on
+  `SummaryFailed` (1.3.14 and older). The history is still kept, and
+  nothing is stored.
 - The record: `{"history": "kept", "what": ..., "error_type": <class
   name>}`. The provider's error text is left out: `mask_error_secrets` is
   not on this branch's base.
@@ -172,8 +179,8 @@ a fake model whose summary call is refused as busy; made-up messages):
   `summary_failed` with no provider text; the next call summarizes and
   stores the summary; the same holds asynchronously;
 - the defect itself on whichever generation is installed (the library's
-  own wrap, `__wrapped__`): the error line is handed and stored (before
-  1.4), or the call ends on the refusal (1.4);
+  own wrap, `__wrapped__`): the error line is handed and stored (langchain
+  1.3.14 and older), or the call ends on the refusal (1.3.15 and newer);
 - a successful summary: the guarded wrap hands the model exactly what the
   library's own wrap hands it, and stores the same event;
 - every summarizer `create_deep_agent` builds (main, general-purpose and a
@@ -187,9 +194,18 @@ a fake model whose summary call is refused as busy; made-up messages):
   (0.7.24); the shape tests cover the other one on each machine.
 
 **Noted, not fixed.**
-- When a summary fails, the older messages were already written to the
-  history file. The next summary writes them again, so that file can hold
-  a part twice.
+- When a summary fails, the older messages were already written to a
+  history file (the library writes it before it makes the summary). Since
+  the review's fix that happens once per TURN whose summary fails, not
+  once per model call: the later calls of the turn write nothing. The next
+  turn's summary writes the older part again. On deepagents 0.7 that is a
+  new file each such turn (the first file's id is in the state update that
+  is dropped, so the file is not named again); on deepagents 0.6 it is one
+  more copy in the one file. Measured on the real library, two failing
+  turns of four and three model calls and then a turn whose summary is
+  made: 3 files with one copy each (0.7.24 with langchain 1.4.5), 1 file
+  with 3 copies (0.6.8 with langchain 1.3.4). With no failure: 1 file,
+  1 copy.
 - The compact-conversation tool (`SummarizationToolMiddleware`, not in
   our stacks) calls `_create_summary` outside the guarded wrap and is
   unchanged.
