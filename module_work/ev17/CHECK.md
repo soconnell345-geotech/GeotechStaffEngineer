@@ -230,7 +230,8 @@ All in `packages/aec-agent-core/aec_agent_core/run_report.py`.
   size once and scales the smaller from it (`fitz.Pixmap(pix, w, h)`, else a
   second render); `PageImages.rect` gives a page's size.
   `Report._image_note` says what the caps left out (part 4, and the viewer
-  on a page with no image).
+  on a page with no image) and the images' size as they sit in the file
+  (base64; in kB below a megabyte).
 - `Report._page_rect`: a page's outline, from the PDF, else the whole-page
   view a look returned, else round its boxes (the logic part 4 had,
   shared).
@@ -289,21 +290,29 @@ All in `packages/aec-agent-core/aec_agent_core/run_report.py`.
   110 large pages; past it the viewer shows part 4's small image),
   `MAX_OTHER_IMAGE_BYTES` 4 MB (about 200 small pages), `MAX_PAGE_IMAGES`
   raised from 150 to 300 (a 200-page document looked at whole is drawn
-  whole), `MAX_IMAGES_DRAWN` 800 (bounds the time to draw). Upper bound of
-  images: about 300 x 25 KB + 8 MB + 4 MB, under 20 MB (27 MB written as
-  base64).
+  whole), `MAX_PAGES_DRAWN` 800 pages drawn in all (bounds the time to
+  draw; a page looked at is drawn at both sizes and counts once, so a long
+  document can give a few more images than 800). There is no ceiling in
+  megabytes: part 4's small images are bounded by a count of pages (300),
+  not by bytes, and the two byte caps count JPEG bytes, which the file
+  holds as base64, a third more. The runs below are measured cases, not a
+  bound.
 
   The whole report, measured on made-up runs written by the real writer
   over those PDFs (each page looked at whole and in 2 x 2 tiles, every
   other one zoomed; or one page in five looked at, all pages read as text):
 
-  | run | page | images | built in | large / small only / others drawn |
+  | run | page | images (JPEG) | built in | large / small only / others drawn |
   |---|---|---|---|---|
   | drawing sheets, all 200 looked at | 17.5 MB | 11.8 MB | 16.9 s | 95 / 105 / 0 |
   | drawing sheets, 40 looked at | 10.4 MB | 7.5 MB | 11.8 s | 40 / 0 / 160 |
   | report pages, all 200 looked at | 17.7 MB | 12.0 MB | 11.0 s | 86 / 114 / 0 |
   | report pages, 40 looked at | 10.7 MB | 7.7 MB | 6.6 s | 40 / 0 / 160 |
   | scans, all 200 looked at | 17.5 MB | 11.8 MB | 13.8 s | 109 / 91 / 0 |
+
+  The review measured a noisier made-up raster, 200 pages all looked at:
+  23.2 MB of JPEG and a 33.2 MB page, which still opened, with the viewer
+  working.
 
   In headless Chrome the 17.5 MB page was ready (DOMContentLoaded) in
   0.35 s and the 10.7 MB one in 0.2 s; the viewer then showed page 1 with
@@ -350,8 +359,13 @@ shown") and passes here.
 - `test_caps_bound_the_images_and_say_what_was_left_out`: with each cap
   made small: the large images stop (the viewer falls back to part 4's),
   the other pages stop after those taken in, pages looked at past the count
-  cap are not drawn but keep their looks and their outline, the cap on all
-  images; the report says each.
+  cap are not drawn but keep their looks and their outline, the cap on
+  pages drawn in all (two pages, three images); the report says each, in
+  pages.
+- `test_the_images_size_is_as_they_sit_in_the_file` (added in review): the
+  size the report gives is the base64 the file holds, in kB below a
+  megabyte, never "0.0 MB"; the other pages' count reads as the pages
+  drawn.
 - `test_without_a_pdf_the_viewer_draws_outlines_and_says_why`.
 - `test_the_viewer_from_the_vision_records_alone`: no activity log, looks
   from `reads.json`, named by file.
@@ -432,7 +446,8 @@ calls" is shown saying what each number counts; a record without the keys
 
 - **What the sentence says, from the code.** `TurnScope.take_image_call`
   counts each image once before it is sent (`vision_engine.analyze_image`;
-  a retry of that image is not counted again) and counts a refused one
+  a retry of that image inside the call is not counted again, while a page
+  looked at twice is two images and counts twice) and counts a refused one
   apart. The report counts every side call with a `model_end`: the vision
   probe's calls (`vision_probe`, labelled `kind: probe`, not counted on the
   turn) are in it, a failed or given-up image is not, and an ask given up
@@ -480,3 +495,26 @@ On one 1.2.0 turn with `GEOTECH_TURN_MAX_IMAGE_CALLS` set low enough to
 refuse: the totals' image calls against the "image calls this turn: k of N"
 status the page showed, and the refused count against the line under the
 answer.
+
+# EV-17: corrected in the review of the branch
+
+Wording and notes only; what a model or a tester is handed does not
+change, and a record without `image_calls` still gives the page it gave.
+
+- The cap of 800 counted pages drawn, not images (a page looked at is
+  drawn at two sizes and counts once): the constant is now
+  `MAX_PAGES_DRAWN` (only this module and its test read it), and the
+  report, the constant's comment, the README and these notes say pages.
+- No ceiling in megabytes is claimed: part 4's small images are bounded by
+  a count of pages; the measured runs are given as cases, with the review's
+  noisier raster beside them.
+- The report gives the images' size as they sit in the file (the base64
+  length, a third more than the JPEG bytes the caps count; the caps are
+  given the same way), in kB below a megabyte.
+- The other pages' line: "drawn at 420 pixels for the page viewer: 52
+  (pages taken in some other way, such as read as text or shown on a
+  contact sheet, are drawn first)", so the number is plainly the pages
+  drawn.
+- `IMAGE_COUNTS_NOTE`: each image counts once with its retries, a page
+  looked at twice counts twice; the second case is now "an ask given up at
+  its time limit answered after all".
