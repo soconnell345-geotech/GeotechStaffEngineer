@@ -523,6 +523,15 @@ _COOKIE = re.compile(
     r"(?i)\b((?:set-)?cookie)" + _SEP +
     r"(?!…)[^\s;=\"'\\]+=[^\s;\"'\\]*"
     r"(?:;\s*[^\s;=\"'\\]+=[^\s;\"'\\]*)*")
+#: The same names inside a URL that is itself a parameter's value, where
+#: ``?``, ``&`` and ``=`` are written ``%3F``, ``%26`` and ``%3D`` (a
+#: sign-in's ``redirect_uri=https%3A%2F%2F...%3Faccess_token%3D...``).
+#: The value ends at the next encoded ``&`` or ``#``.
+_ENCODED_SECRET = re.compile(
+    r"(?i)((?:(?:(?<![A-Za-z0-9])|(?<=%[0-9a-f]{2}))"
+    r"(?:" + _SECRET_NAMES + r")"
+    r"|%(?:3F|26)(?:sig|signature|token|secret|code|key))"
+    r"%3D)((?:(?!%2[36])[^\s&\"'#<>)\\])+)")
 #: A value that says nothing secret: a missing or already-masked one.
 _PLACEHOLDERS = frozenset({"none", "null", "nil", "true", "false", "unset",
                            "undefined", "empty", "missing", "required",
@@ -561,10 +570,16 @@ def _mask(text: str) -> str:
         else f"{m.group(1)}{m.group(2)}…", s)
     s = _QUERY_SECRET.sub(
         lambda m: m.group(0) if _keeps(m.group(2)) else f"{m.group(1)}…", s)
+    low = s.lower()
+    if "%3d" in low:
+        s = _ENCODED_SECRET.sub(
+            lambda m: m.group(0) if _keeps(m.group(2))
+            else f"{m.group(1)}…", s)
     s = _LOOSE_SECRET.sub(
         lambda m: f"{m.group(1)}{m.group(2)}…" if _generated(m.group(3))
         else m.group(0), s)
-    s = _COOKIE.sub(lambda m: f"{m.group(1)}{m.group(2)}…", s)
+    if "cookie" in low:
+        s = _COOKIE.sub(lambda m: f"{m.group(1)}{m.group(2)}…", s)
     s = _PREFIXED_KEY.sub("…", s)
     return _BEARER.sub("…", s)
 

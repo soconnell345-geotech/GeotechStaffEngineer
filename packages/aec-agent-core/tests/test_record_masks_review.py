@@ -131,3 +131,29 @@ def test_the_word_cookie_in_prose_is_kept():
     for text in ("the cookie was rejected", "Cookie: none sent",
                  "cookie banner on page 3"):
         assert mask_error_secrets(text) == text
+
+
+# ---------------------------------------------------------------------------
+# a secret in a URL that is itself a parameter's value (percent-encoded)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text,masked", [
+    ("302 to https://login.example.test/?redirect_uri=https%3A%2F%2F"
+     f"app.example.test%2Fcb%3Faccess_token%3D{VALUE}%26state%3D1",
+     "302 to https://login.example.test/?redirect_uri=https%3A%2F%2F"
+     "app.example.test%2Fcb%3Faccess_token%3D…%26state%3D1"),
+    ("refused next=https%3A%2F%2Fstore.example.test%2Ff.pdf%3Fsv%3D1"
+     f"%26sig%3D{VALUE}%26se%3D2",
+     "refused next=https%3A%2F%2Fstore.example.test%2Ff.pdf%3Fsv%3D1"
+     "%26sig%3D…%26se%3D2"),
+])
+def test_a_secret_in_an_encoded_url_is_masked(text, masked):
+    assert mask_error_secrets(text) == masked
+    assert mask_error_secrets(masked) == masked
+
+
+def test_an_encoded_url_with_no_secret_is_kept():
+    text = ("404 for url: https://files.example.test/open?src=https%3A%2F%2F"
+            "files.example.test%2FShared%2520Documents%2Freport.pdf"
+            "%3Fpage%3D3%26version%3D12")
+    assert mask_error_secrets(text) == text
