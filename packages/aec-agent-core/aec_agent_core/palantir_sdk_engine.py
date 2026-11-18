@@ -1542,14 +1542,16 @@ def _claude_usage(u) -> Optional[dict]:
     inp, out = getattr(u, "input_tokens", None), getattr(u, "output_tokens", None)
     if inp is None or out is None:
         return None
-    read = getattr(u, "cache_read_input_tokens", None) or 0
-    made = getattr(u, "cache_creation_input_tokens", None) or 0
-    total_in = inp + read + made
+    read = getattr(u, "cache_read_input_tokens", None)
+    made = getattr(u, "cache_creation_input_tokens", None)
+    total_in = inp + (read or 0) + (made or 0)
     meta = {"input_tokens": total_in, "output_tokens": out,
             "total_tokens": total_in + out}
-    if read or made:
-        meta["input_token_details"] = {"cache_read": read,
-                                       "cache_creation": made}
+    # A reported 0 is a count too: the run record tells it from a reply
+    # that carried no cache count (BACKLOG INF-66).
+    if read is not None or made is not None:
+        meta["input_token_details"] = {"cache_read": read or 0,
+                                       "cache_creation": made or 0}
     return meta
 
 

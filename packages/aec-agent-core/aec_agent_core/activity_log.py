@@ -71,7 +71,11 @@ no cache fields, as report ingest's ``Usage`` keeps them), and ``turn_end``
 carries ``usage``: ``input_tokens``, ``output_tokens``, ``cache_read`` and
 ``cache_creation`` summed over every ``model_end`` of the turn, with
 ``calls``. Records written before then have neither, and every reader treats
-a missing count as unknown.
+a missing count as unknown. Since 2026-11-18 a call whose reply did report
+a cache count also carries ``cache_reported: true`` beside its ``usage``,
+and ``turn_end`` carries ``cache_reported_calls`` (how many of the turn's
+calls did), so a 0 without the mark reads "not reported", not "nothing
+read" (BACKLOG INF-66).
 
 Since 2026-11-14 (BACKLOG DR-43) each ``model_end`` also keeps
 ``tool_names``: the names of the tool calls the model asked for, in order,
@@ -548,12 +552,15 @@ def _cache_from_details(details: Any) -> Optional[dict]:
     it has none. langchain-openai prefixes the keys with a service tier
     (``priority_cache_read``); langchain-anthropic reports a cache write as
     ``ephemeral_5m_input_tokens`` / ``ephemeral_1h_input_tokens`` and sets
-    ``cache_creation`` to 0 when it does, so the three are added."""
+    ``cache_creation`` to 0 when it does, so the three are added. A key
+    whose value is None was not reported."""
     if not isinstance(details, dict):
         return None
     read = made = 0
     seen = False
     for key, value in details.items():
+        if value is None:
+            continue
         k = str(key)
         if k.endswith("cache_read"):
             read += _count(value)
@@ -569,16 +576,17 @@ def _cache_from_raw(raw: Any) -> Optional[dict]:
     """The cache split in a provider's own usage dict, or None: Anthropic's
     ``cache_read_input_tokens`` / ``cache_creation_input_tokens``, or an
     OpenAI-style ``prompt_tokens_details.cached_tokens`` (a read; OpenAI
-    reports no write, so it is 0)."""
+    reports no write, so it is 0). A key whose value is None (the Anthropic
+    SDK's usage dumped with the fields absent) was not reported."""
     if not isinstance(raw, dict):
         return None
-    if "cache_read_input_tokens" in raw or \
-            "cache_creation_input_tokens" in raw:
+    if raw.get("cache_read_input_tokens") is not None or \
+            raw.get("cache_creation_input_tokens") is not None:
         return {"cache_read": _count(raw.get("cache_read_input_tokens")),
                 "cache_creation": _count(
                     raw.get("cache_creation_input_tokens"))}
     details = raw.get("prompt_tokens_details")
-    if isinstance(details, dict) and "cached_tokens" in details:
+    if isinstance(details, dict) and details.get("cached_tokens") is not None:
         return {"cache_read": _count(details.get("cached_tokens")),
                 "cache_creation": _count(details.get("cache_write_tokens"))}
     return None
@@ -601,10 +609,12 @@ def _raw_usages(response: Any, msg: Any = None, gen: Any = None) -> list:
     return out
 
 
-def _usage_from_response(response: Any) -> Optional[dict]:
-    """Pull ``{input_tokens, output_tokens, total_tokens, cache_read,
-    cache_creation}`` off an LLMResult (``usage_metadata`` on the generated
-    message, else ``llm_output``).
+def _usage_from_response(response: Any) -> tuple:
+    """``(usage, cache_reported)``: ``usage`` is ``{input_tokens,
+    output_tokens, total_tokens, cache_read, cache_creation}`` pulled off an
+    LLMResult (``usage_metadata`` on the generated message, else
+    ``llm_output``); ``cache_reported`` says whether the reply carried a
+    cache count at all.
 
     ``input_tokens`` is as LangChain counts it (cache reads and writes
     INCLUDED), so a turn's totals read as they always have; the two cache
@@ -615,7 +625,8 @@ def _usage_from_response(response: Any) -> Optional[dict]:
     from the provider's own usage dict
     (Anthropic's ``cache_*_input_tokens``, OpenAI's
     ``prompt_tokens_details.cached_tokens``). A response that reports no
-    cache fields records 0 for both, as report ingest's ``Usage`` does; a
+    cache fields records 0 for both, as report ingest's ``Usage`` does, with
+    ``cache_reported`` False, so the record can say the 0 is no count; a
     response with no usage at all stays None."""
     try:
         gens = getattr(response, "generations", None) or []
@@ -634,7 +645,7 @@ def _usage_from_response(response: Any) -> Optional[dict]:
                             if cache is not None:
                                 break
                     out.update(cache or dict.fromkeys(CACHE_KEYS, 0))
-                    return out
+                    return out, cache is not None
         lo = getattr(response, "llm_output", None) or {}
         tu = lo.get("token_usage") or lo.get("usage")
         if isinstance(tu, dict):
@@ -643,11 +654,12 @@ def _usage_from_response(response: Any) -> Optional[dict]:
                    "output_tokens": tu.get("completion_tokens",
                                            tu.get("output_tokens")),
                    "total_tokens": tu.get("total_tokens")}
-            out.update(_cache_from_raw(tu) or dict.fromkeys(CACHE_KEYS, 0))
-            return out
+            cache = _cache_from_raw(tu)
+            out.update(cache or dict.fromkeys(CACHE_KEYS, 0))
+            return out, cache is not None
     except Exception:                                  # noqa: BLE001
         pass
-    return None
+    return None, False
 
 
 #: The keys a ``turn_end``'s ``usage`` sums over every ``model_end`` of the
@@ -910,6 +922,7 @@ class ActivityLogger(BaseCallbackHandler):
         self._turn_scope = None
         self._calls_metered = 0
         self._calls_unmetered = 0
+        self._calls_cache_reported = 0
         self._lock = threading.Lock()
         self.records_written = 0
         self.last_error: Optional[str] = None
@@ -1151,12 +1164,14 @@ class ActivityLogger(BaseCallbackHandler):
         if scope is not None:
             self._turn_scope = scope
 
-    def _add_usage(self, usage: Optional[dict]) -> None:
+    def _add_usage(self, usage: Optional[dict],
+                   cache_reported: bool = False) -> None:
         with self._lock:
             if not usage:
                 self._calls_unmetered += 1
                 return
             self._calls_metered += 1
+            self._calls_cache_reported += bool(cache_reported)
             for key in TURN_USAGE_KEYS:
                 self._usage_sum[key] += _count(usage.get(key))
 
@@ -1180,6 +1195,10 @@ class ActivityLogger(BaseCallbackHandler):
         usage = self.turn_usage()
         if usage is not None:
             out["usage"] = usage
+        if self._calls_cache_reported:
+            # the calls whose reply carried a cache count; the others' 0s
+            # in the sums are no count (BACKLOG INF-66)
+            out["cache_reported_calls"] = self._calls_cache_reported
         passes = [s for s in self._passes if s]
         if passes:
             out["graph_steps"] = max(passes)
@@ -1438,8 +1457,8 @@ class ActivityLogger(BaseCallbackHandler):
             rid = str(run_id)
             t_start = self._starts.pop(rid, None)
             parent = parent_run_id or self._parent.get(rid)
-            usage = _usage_from_response(response)
-            self._add_usage(usage)
+            usage, cache_reported = _usage_from_response(response)
+            self._add_usage(usage, cache_reported)
             record = {"agent": self._agent_of(parent), "event": "model_end",
                       "run_id": rid,
                       "parent_run_id": (str(parent_run_id)
@@ -1449,6 +1468,8 @@ class ActivityLogger(BaseCallbackHandler):
                       "tool_names": _tool_names(response),
                       "duration_s": (round(self._clock() - t_start, 3)
                                      if t_start is not None else None)}
+            if cache_reported:
+                record["cache_reported"] = True
             source = self._sources.pop(rid, None)
             if source:
                 record["source"] = source
