@@ -47,8 +47,9 @@ offered).
   with the switch on and does NOT pass the `plan_tools` option (0.16.0's
   toolkit would refuse an option it does not know: the core checks
   `plan_tools_need_asking()`, i.e. `planlens.review.specs.PLAN_TOOLS`).
-  Anything older than 0.16.0 the core does not take (it asks for 0.15 or
-  later; the tools are in planlens since 0.14).
+  Document Review pins planlens 0.16.0 exactly. The core takes 0.15 or
+  later, whose dispatcher serves the two tools to every host as 0.16.0's
+  does (the tools are in planlens since 0.14).
 - **planlens with PL-27 (after 0.16.0):** its dispatcher serves the plan
   tools only to a host that asks, and the page asks. Its host layer then
   specifies them exactly as the core shows them (a test compares the two).
