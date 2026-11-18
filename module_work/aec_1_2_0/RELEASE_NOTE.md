@@ -37,6 +37,9 @@ What you will notice after the update:
   line work drawn over a photograph) becomes a full-colour JPEG (DR-47).
 - **Word files are read more fully.** A character from the Symbol font (a
   Greek phi in a soils report, a degree sign) is read as that character.
+  A character set in a picture font (Wingdings, Webdings and the like, as
+  the check boxes of a form often are) keeps its text and is counted as
+  not read, so a form with check boxes gains that line.
   Equations in Word's own format are counted and said to be not read,
   instead of dropped without a word. A file that holds tracked changes says
   so, and the text that was deleted is given in a section of its own,
@@ -45,9 +48,11 @@ What you will notice after the update:
   note it gets with an attached file, the note about files a helper saved
   and the SharePoint tools' descriptions named tools and soil-test examples
   from another application (DR-42, DR-34).
-- **A reading helper's hand-back names more of what it left unread:** a
-  text read that was cut at its size limit and never finished, and a
-  close-up that failed and was not done again (DR-50).
+- **A reading helper's hand-back is truer about what it left unread.** A
+  text read that was cut at its size limit and never finished is now
+  named. A close-up that failed and was then done again is no longer
+  named; one that failed and was not done again is named, as before
+  (DR-50).
 - **A page read in close-up tiles says when the two readings disagree.**
   When the whole-page reading and a close-up give different readings of
   one tag at one place, the result names both and says a zoom settles it,
@@ -83,7 +88,7 @@ Turning one on for a tester round is the owner's call.
 | `GEOTECH_TURN_MAX_IMAGE_CALLS` | A number: the most images one turn may send to the model for reading, helpers included. At the ceiling a further look is refused with a plain message and the agent finishes with what it has read; the running turn shows "image calls this turn: k of N", and one line under the answer says how many image calls were not made. Unset or `0`: no ceiling. | A page read in tiles is up to 17 images, so a 50-sheet set read sheet by sheet is about 850. The count itself is always kept in the turn's record (`image_calls`), set or not, so a sensible number can be chosen from real turns. It counts images sent for a separate reading; a page shown to the agent's own model (`GEOTECH_VISION_SHOW_ME`) is not counted (TA-43). |
 | `GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK` | `1`: a page of photographs takes one look instead of a whole-page look and four to sixteen tiles. Only a page that shows it is one (few words, photographs over a fifth of it, little line work, nothing drawn over a picture); any doubt tiles the page as before. | Saves image calls on photograph pages. Not measured on a model yet (VIS-33). |
 | `GEOTECH_VISION_TILE_ANSWERS` | `1`: each tile of a tiled read answers the request from what it holds, with one line where it holds nothing on it, and quotes the part of a table or note its edge cuts. | Saves output on large sheets. Not measured on a model yet (VIS-34). |
-| `GEOTECH_PHOTO_PAGES` | `record`: the turn's record names the attached documents' photograph pages that nothing looked at. `retry` (or `1`): the same, and the agent is told once, before its answer goes out. | The check itself calls no model. It reads every page of each attached PDF once, at the first turn end after the PDF is attached: a few seconds for a document of a few hundred pages, before the answer is shown. With `retry`, a turn that left photograph pages unlooked-at takes one more pass of the agent: more model calls, and image calls if it looks; where the turn's image ceiling is already met the note waits for the next turn. Not measured on a model yet (DR-48). |
+| `GEOTECH_PHOTO_PAGES` | `record`: the turn's record names the attached documents' photograph pages that nothing looked at. `retry` (or `1`, `true`, `yes`, `on`): the same, and the agent is told once, before its answer goes out. | The check itself calls no model. It reads every page of each attached PDF once, at the first turn end after the PDF is attached: a few seconds for a document of a few hundred pages, before the answer is shown. With `retry`, a turn that left photograph pages unlooked-at takes one more pass of the agent: more model calls, and image calls if it looks; where the turn's image ceiling is already met the note waits for the next turn. Not measured on a model yet (DR-48). |
 
 ## For developers
 
@@ -115,7 +120,9 @@ Turning one on for a tester round is the owner's call.
   did in 1.1.0.
 - `vision_tools`, `deep/limits`, `deep/vision_engine`, `deep/vision_kit`:
   the turn counts the images sent for a separate reading (`image_calls` on
-  the turn's scope and in the record's `turn_end`; images shown inline to
+  the turn's scope and in the record's `turn_end`, a new key in the
+  records of every page built on the core, the geotech page included;
+  images shown inline to
   the agent's own model, as the minimal build and `show_me` do, are not
   counted, so 0 there means "not counted"); `_place_disagreements` writes
   VIS-32's sentence into `found_note`, tested at each place, and the row
