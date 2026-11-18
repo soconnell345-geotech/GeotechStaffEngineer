@@ -172,3 +172,92 @@ def test_a_url_password_with_an_at_sign_is_masked_whole():
     for plain in ("cannot open https://host.example.test:8443/a/b@c.pdf",
                   "see http://host.example.test:8080 or mail a@example.test"):
         assert mask_error_secrets(plain) == plain
+
+
+# ---------------------------------------------------------------------------
+# a tool's OWN error text, on its way to the model (ToolErrorGuard)
+# ---------------------------------------------------------------------------
+
+SIGNED = f"https://files.example.test/a/d.pdf?download=1&tempauth={VALUE}"
+
+
+def _through_the_guard(content, **kw):
+    import asyncio
+    from types import SimpleNamespace
+
+    from langchain_core.messages import ToolMessage
+
+    from aec_agent_core.deep.tool_guards import ToolErrorGuard
+    request = SimpleNamespace(tool_call={"name": "fetch", "id": "c1",
+                                         "args": {}})
+    result = (ToolMessage(content=content, name="fetch", tool_call_id="c1",
+                          **kw) if isinstance(content, (str, list))
+              else content)
+    out = ToolErrorGuard().wrap_tool_call(request, lambda _r: result)
+
+    async def handler(_r):
+        return result
+    again = asyncio.run(ToolErrorGuard().awrap_tool_call(request, handler))
+    assert getattr(again, "content", again) == getattr(out, "content", out)
+    return result, out
+
+
+def test_a_tools_own_error_text_is_masked_before_the_model_reads_it():
+    content = json.dumps({
+        "error": f"HTTPError: 403 Client Error for url: {SIGNED}",
+        "hint": "ask for a new link", "link": SIGNED})
+    result, out = _through_the_guard(content, status="error")
+    data = json.loads(out.content)
+    assert VALUE not in data["error"]
+    assert data["error"] == ("HTTPError: 403 Client Error for url: https://"
+                             "files.example.test/a/d.pdf?download=1"
+                             "&tempauth=…")
+    # only the error's text: the other keys, the name, the id, the status
+    assert data["hint"] == "ask for a new link" and data["link"] == SIGNED
+    assert list(data) == ["error", "hint", "link"]
+    assert (out.name, out.tool_call_id, out.status) == ("fetch", "c1",
+                                                        "error")
+    assert result.content == content            # the tool's own, untouched
+
+
+@pytest.mark.parametrize("content", [
+    # an error with no secret, spaced and escaped its own way
+    '{"error":"page 7 of 12: no text layer",  "page":7, "note":"caf\\u00e9"}',
+    json.dumps({"error": "FileNotFoundError: 'Site_Report_Rev2_Final.pdf'",
+                "request_id": "req_0123456789abcdef0123456789abcdef"}),
+    # not an error: a result that holds a signed link, and the word "error"
+    json.dumps({"link": SIGNED, "note": 'no "error" here'}),
+    json.dumps({"error": None, "link": SIGNED}),
+    json.dumps({"error": {"message": "nested"}, "link": SIGNED}),
+    json.dumps([{"error": f"tempauth={VALUE}"}]),
+    f'plain text with "error" and tempauth={VALUE}',
+    '{"error": "cut off JSON, tempauth=' + VALUE,
+    "",
+])
+def test_every_other_result_passes_the_guard_as_the_same_object(content):
+    result, out = _through_the_guard(content)
+    assert out is result and out.content == content
+
+
+def test_a_result_that_is_no_text_passes_the_guard_untouched():
+    blocks = [{"type": "text", "text": '{"error": "tempauth=' + VALUE + '"}'}]
+    result, out = _through_the_guard(blocks)
+    assert out is result
+    other = object()
+    assert _through_the_guard(other)[1] is other
+
+
+def test_an_error_text_that_cannot_be_checked_is_not_handed_on(monkeypatch):
+    from aec_agent_core import error_text
+    from aec_agent_core.deep import tool_guards
+
+    def broken(_text):
+        raise RuntimeError("the masker broke")
+    monkeypatch.setattr(error_text, "_mask", broken)
+    content = json.dumps({"error": f"refused tempauth={VALUE}", "page": 3})
+    _result, out = _through_the_guard(content, status="error")
+    data = json.loads(out.content)
+    assert data == {"error": tool_guards.ERROR_NOT_CHECKED, "page": 3}
+    assert out.status == "error"
+    # ... and a tool that raises still hands on an error, its type alone
+    assert error_line(ValueError(f"tempauth={VALUE}")) == "ValueError"
