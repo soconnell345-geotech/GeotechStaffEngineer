@@ -67,15 +67,16 @@ REVIEW_READER_DESCRIPTION = (
 
 
 #: Tools the geotech page has and this page cannot use: they render a
-#: reference library figure and a worked example's printed source page, and
-#: the review page has neither the library nor the examples (DR-04; the
-#: review of 2026-09-26). ``log_grid`` reads a
+#: reference library figure, a reference table's printed page and a worked
+#: example's printed source page, and the review page has neither the
+#: library nor the examples (DR-04; the review of 2026-09-26; the table
+#: reader since BACKLOG REF-114). ``log_grid`` reads a
 #: boring or test-pit log as its grid: a geotechnical report's page, which
 #: is not this page's document (BACKLOG RI-34). Since INF-30 step 4 the page
-#: is built without the first two (:data:`GEOTECH_VISION_TOOLS`, which GSE
+#: is built without the first three (:data:`GEOTECH_VISION_TOOLS`, which GSE
 #: adds to the vision kit) and drops only ``log_grid``, a planlens tool.
-GEOTECH_ONLY_TOOLS = ("read_reference_figure", "view_worked_example_source",
-                      "log_grid")
+GEOTECH_ONLY_TOOLS = ("read_reference_figure", "read_reference_table",
+                      "view_worked_example_source", "log_grid")
 
 
 def _review_page_descriptions() -> dict:

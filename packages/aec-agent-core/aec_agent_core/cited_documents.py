@@ -73,7 +73,9 @@ names it:
   cite and is never flagged;
 * a REFERENCES result: anything the ``references`` helper's tools returned
   and its hand-back, ``consult_references``, ``read_reference_figure``,
-  ``view_worked_example_source``, and ``call_agent`` on a reference module
+  ``read_reference_table`` (both name the reference they render, which is
+  looked up whatever the read prints), ``view_worked_example_source``, and
+  ``call_agent`` on a reference module
   (``gec11``, ``dm7``, ``ufc_*``... - which looks up that module's own
   document even when its result does not print the name);
 * a WORKED EXAMPLE fetched (``worked_examples``: each carries its source);
@@ -796,7 +798,13 @@ DOCUMENT_TOOLS = frozenset({
     "title_block", "drawing_callouts"})
 #: Tools whose results are a reference read.
 REFERENCE_TOOLS = frozenset({"consult_references", "read_reference_figure",
+                             "read_reference_table",
                              "view_worked_example_source"})
+#: The reference readers whose ``reference`` argument names the library's
+#: document they render (``dm7_2``, ``gec_11``): that document is looked up
+#: whatever the read's text prints. The table reader is one (BACKLOG
+#: REF-114: its reads were no source at all before).
+REFERENCE_PAGE_READERS = ("read_reference_figure", "read_reference_table")
 #: Tools that write a file: what they write is the conversation's own, and
 #: reading it back is not a source.
 WRITING_TOOLS = frozenset({"save_file", "write_docx", "write_xlsx",
@@ -1080,7 +1088,7 @@ def _note_call(st: _LookupState, name: str, args: dict, agent: str,
         return                         # a file this conversation wrote
     if name == "call_agent" and kind == REFERENCES:
         st.marks.add_keys(module_documents(args.get("agent_name")), kind)
-    if name == "read_reference_figure":
+    if name in REFERENCE_PAGE_READERS:
         st.marks.add_keys(module_documents(args.get("reference")), kind)
     if kind == CALCULATION:
         text = _without_echo(text, args)
