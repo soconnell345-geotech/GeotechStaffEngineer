@@ -291,8 +291,12 @@ def _together_in_findings(answer: str, terms: Sequence[Any],
                           window: int) -> Tuple[bool, str]:
     """:func:`check_stated_together` with ``scope="finding"``."""
     pieces = [(normalize(h), normalize(u)) for h, u in _findings(answer)]
-    seen = " ".join(h + " " + u for h, u in pieces)
-    missing = [_label(t) for t in terms if not _term_spans(t, seen)]
+    # each term is looked for one piece at a time, as the pieces are read
+    # below: in the pieces joined, a cell's "No" at the end of a table row
+    # would be followed by the next row and no longer end anything
+    missing = [_label(t) for t in terms
+               if not any(_term_spans(t, h) or _term_spans(t, u)
+                          for h, u in pieces)]
     if missing:
         return False, f"missing: {missing}"
     best = None
