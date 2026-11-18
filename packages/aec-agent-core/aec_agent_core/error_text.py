@@ -495,9 +495,14 @@ _SECRET_NAMES = (
     r"client[-_]?assertion|password|passwd|tempauth|x-amz-signature|"
     r"x-amz-credential|x-amz-security-token|x-goog-signature|"
     r"x-goog-credential|account[-_]?key|shared[-_]?access[-_]?key|"
-    r"shared[-_]?access[-_]?signature")
+    r"shared[-_]?access[-_]?signature|secret[-_]?access[-_]?key|"
+    r"secret[-_]?key|private[-_]?key|passphrase|x-auth-token")
+#: The name may be the end of a longer one joined by ``_`` or ``-``, as a
+#: setting is written (``GRAPH_CLIENT_SECRET=``, ``PROMPTER_API_KEY=``,
+#: ``aws_secret_access_key=``), and may carry a per-user suffix after
+#: ``--`` (``PROMPTER-API-KEY--<NAME>=``).
 _NAMED_SECRET = re.compile(
-    r"(?i)(?<![A-Za-z0-9_-])(" + _SECRET_NAMES + r")" + _SEP +
+    r"(?i)(?<![A-Za-z0-9])((?:" + _SECRET_NAMES + r")(?:--[\w.]+)?)" + _SEP +
     r"(?!\[removed\])([^\s&\"',;}\])#<>\\]+)(?<!\.)")
 #: Names that are a secret only as a URL's query parameter (``?sig=``,
 #: ``&token=``, ``?code=``, ``?key=``): in prose they are ordinary words.

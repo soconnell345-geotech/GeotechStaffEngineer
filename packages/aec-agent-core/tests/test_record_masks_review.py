@@ -40,3 +40,33 @@ def test_a_key_block_cut_short_is_masked_to_the_end():
     whole = ("bad key\n-----BEGIN PRIVATE KEY-----\nMADEUPMADEUP\n"
              "-----END PRIVATE KEY-----\nend")
     assert mask_error_secrets(whole) == "bad key\n…\nend"
+
+
+# ---------------------------------------------------------------------------
+# a secret's name at the end of a longer one (a setting's name)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text,masked", [
+    (f"GRAPH_CLIENT_SECRET={VALUE} was refused",
+     "GRAPH_CLIENT_SECRET=… was refused"),
+    (f"env PROMPTER_API_KEY='{VALUE}'", "env PROMPTER_API_KEY='…'"),
+    (f"GRAPH_CLIENT_KEY_PASSWORD: {VALUE}", "GRAPH_CLIENT_KEY_PASSWORD: …"),
+    (f"PROMPTER-API-KEY--J.DOE={VALUE}", "PROMPTER-API-KEY--J.DOE=…"),
+    (f"MADE_UP_ACCESS_TOKEN={VALUE}; retry", "MADE_UP_ACCESS_TOKEN=…; retry"),
+    (f"made_up_secret_access_key={VALUE}", "made_up_secret_access_key=…"),
+    ('{"private_key": "' + VALUE + '", "client_email": "a@example.test"}',
+     '{"private_key": "…", "client_email": "a@example.test"}'),
+    (f"X-Auth-Token: {VALUE}", "X-Auth-Token: …"),
+    (f"passphrase={VALUE}", "passphrase=…"),
+])
+def test_a_secret_named_as_a_setting_is_masked(text, masked):
+    assert mask_error_secrets(text) == masked
+    assert mask_error_secrets(masked) == masked
+
+
+def test_names_that_only_end_like_a_secret_keep_ordinary_values():
+    for text in ("GRAPH_CLIENT_SECRET is not set", "PROMPTER_API_KEY=None",
+                 "no_password=true", "max_tokens=4096",
+                 "the private key file was not found",
+                 "set GRAPH_CLIENT_SECRET and GRAPH_CLIENT_ID"):
+        assert mask_error_secrets(text) == text
