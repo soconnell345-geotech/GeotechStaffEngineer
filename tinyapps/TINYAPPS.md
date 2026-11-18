@@ -3,12 +3,14 @@
 **Status (2026-11-18).** Tiny Apps
 hosts **Document Review alone**. The geotechnical page left this host at the
 app split (owner, 2026-10-20) and runs on its own elsewhere. Document Review
-is its own public package, `aec-document-review` 1.1.0, which pins the
-shared core `aec-agent-core` 1.1.0 and the document layer `planlens` 0.16.0
+is its own public package, `aec-document-review` 1.2.0, which pins the
+shared core `aec-agent-core` 1.2.0 and the document layer `planlens` 0.16.0
 exactly (`packages/aec-document-review/`; built at step 13,
-`module_work/inf33/CHECK_STEP13.md`). All three are on PyPI since
-2026-11-17; this is the first release of Document Review and the core as
-one unit (the release note is `module_work/inf76/RELEASE_NOTE.md`);
+`module_work/inf33/CHECK_STEP13.md`). All three are on PyPI: planlens
+0.16.0 since 2026-11-17, Document Review and the core at 1.2.0 since
+2026-11-18, their second release as one unit (release notes:
+`module_work/aec_1_2_0/RELEASE_NOTE.md`, and for 1.1.0, the first,
+`module_work/inf76/RELEASE_NOTE.md`);
 the company's Nexus mirror carries a release a day or two later. Document
 Review and the core carry ONE version number and go out together on one
 tag (`aec-v<version>`, the core first; BACKLOG INF-76), so an update moves
@@ -151,8 +153,8 @@ its commands without installing or starting anything.
 | Route | Put in the repo | Setting |
 | --- | --- | --- |
 | **C. Nexus** (the normal one; owner, 2026-11-09) | Only the template: `packages.txt` pins the three packages and includes the third-party pins. | `APP_SOURCE=nexus` |
-| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.1.0-py3-none-any.whl` and `wheels/aec_document_review-1.1.0-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.16.0, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
-| **A. Source folder** (development copies) | `app_src/aec_document_review/` (copied from `packages/aec-document-review/`) and `app_src/requirements.txt` holding `aec-agent-core==1.1.0`, `planlens==0.16.0` and `websockets>=14,<16`. It goes first on `PYTHONPATH` (`app.py` also adds it for a plain `streamlit run app.py`). For an unreleased core as well, add `app_src/aec_agent_core/` and list the core's own dependencies in place of its pin. | `APP_SOURCE=source` |
+| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.2.0-py3-none-any.whl` and `wheels/aec_document_review-1.2.0-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.16.0, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
+| **A. Source folder** (development copies) | `app_src/aec_document_review/` (copied from `packages/aec-document-review/`) and `app_src/requirements.txt` holding `aec-agent-core==1.2.0`, `planlens==0.16.0` and `websockets>=14,<16`. It goes first on `PYTHONPATH` (`app.py` also adds it for a plain `streamlit run app.py`). For an unreleased core as well, add `app_src/aec_agent_core/` and list the core's own dependencies in place of its pin. | `APP_SOURCE=source` |
 
 Tests: `webapp/tests/test_tinyapps_wrapper.py` (each route's dry run, the
 import line, the pins against the package's pyproject, pandas==3.0.2).
@@ -277,6 +279,10 @@ in `wrapper_repo/.env.example`): `GEOTECH_TOKENS_PER_MINUTE` (pace calls a
 little under the deployment's limit; unset means no pacing),
 `GEOTECH_MAX_HELPERS` (2), `GEOTECH_HELPER_MAX_MODEL_CALLS` (30),
 `GEOTECH_AGENT_BUSY_TRIES` (5), `GEOTECH_BUSY_TURN_MAX_S` (900),
+`GEOTECH_TURN_MAX_IMAGE_CALLS` (unset or `0`: no ceiling; a number is the
+most images one turn, helpers included, may send to the model for a
+reading; past it a look is refused and the turn finishes with what it
+read; the count is kept in the turn's record either way, BACKLOG TA-43),
 `GEOTECH_PROMPTER_STREAM_USAGE` (on), `GEOTECH_PROMPTER_MAX_RETRIES` (1; `0`
 turns the client's own retry off), `GEOTECH_VISION_CALL_TIMEOUT_S` (90),
 `GEOTECH_VISION_SLOT_WAIT_S` (600; `0` = no bound), and the figure helper's
@@ -312,15 +318,31 @@ round is the owner's call):
 - `GEOTECH_VISION_SHOW_ME`: the agent may have a page or region shown to
   its own model, instead of a separate reading's description of it. Not
   measured on the review suite yet.
+- `GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK`: a page of photographs takes one
+  look instead of a whole-page look and four to sixteen tiles, only where
+  the page itself shows it is one (few words, photographs over a fifth of
+  it, little line work, nothing drawn over a picture); any doubt tiles the
+  page as before. Not measured on a model yet (BACKLOG VIS-33).
+- `GEOTECH_VISION_TILE_ANSWERS`: each tile of a tiled read answers the
+  request from what it holds, with one line where it holds nothing on it,
+  and quotes the part of a table or note its edge cuts. Not measured on a
+  model yet (BACKLOG VIS-34).
+- `GEOTECH_PHOTO_PAGES` (set to `record` or `retry`; `1` means `retry`):
+  `record` keeps, in the turn's record, the attached documents'
+  photograph pages that nothing looked at; `retry` also tells the agent
+  once, before its answer goes out. No model call, but every page of each
+  attached PDF is read once at the first turn end after it is attached (a
+  few seconds for a document of a few hundred pages, before the answer is
+  shown). Not measured on a model yet (BACKLOG DR-48).
 
 ## The owner's first round on the test machine (paste-ready checklist)
 
 Do these in order. Each step says what you should see. If a step fails,
 stop and copy the last screen's text into a note for the lead.
 
-**Before you start.** The three packages are on PyPI since 2026-11-17
-(`aec-document-review` 1.1.0, `aec-agent-core` 1.1.0 and
-`planlens` 0.16.0). The company's Nexus mirror carries a
+**Before you start.** The three packages are on PyPI
+(`aec-document-review` 1.2.0 and `aec-agent-core` 1.2.0 since 2026-11-18,
+`planlens` 0.16.0 since 2026-11-17). The company's Nexus mirror carries a
 release a day or two after PyPI; step 2 shows whether it has them. You need
 from CfA: the Prompter values (URL, model, key, CA bundle) and, for step 7,
 the four SharePoint values. If the SharePoint values have not arrived, do
@@ -348,8 +370,8 @@ steps 1-6 and leave step 7 for later.
    Every command below starts with `.venv\Scripts\python`, the folder's own
    Python, so nothing needs "activating" (PowerShell often refuses the
    activate script). Run them in the `document-review-tinyapp` folder; in a
-   new terminal, `cd` there first. You should see "Successfully installed ... aec-document-review-1.1.0 ...
-   aec-agent-core-1.1.0 ... planlens-0.16.0 ... pandas-3.0.2 ...". If pip
+   new terminal, `cd` there first. You should see "Successfully installed ... aec-document-review-1.2.0 ...
+   aec-agent-core-1.2.0 ... planlens-0.16.0 ... pandas-3.0.2 ...". If pip
    says it cannot find `aec-document-review` (or the core or planlens), the
    mirror does not carry it yet: wait a day, or ask CfA (ask 1 below). If
    pip prints a conflict, copy it into the note and stop.
@@ -416,7 +438,7 @@ steps 1-6 and leave step 7 for later.
 ## What to ask CfA (paste-ready)
 
 1. **Nexus carries our three public packages.** "Please make sure the Nexus
-   mirror carries `aec-document-review==1.1.0`, `aec-agent-core==1.1.0` and
+   mirror carries `aec-document-review==1.2.0`, `aec-agent-core==1.2.0` and
    `planlens==0.16.0` from PyPI, and clears them through the firewall if it
    holds them back. They are our own packages, public on PyPI." (If this
    cannot be done, the backup is route B: "May our repo carry two small

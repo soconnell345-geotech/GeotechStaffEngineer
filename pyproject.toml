@@ -67,7 +67,13 @@ dependencies = [
     # REQUIRED FROM 5.36.0 (2026-11-17): 1.1.0, INF-76's first one-unit
     # version, published with aec-document-review 1.1.0 by the tag
     # aec-v1.1.0 BEFORE the app's tag.
-    "aec-agent-core==1.1.0",
+    # 1.2.0 on master since 2026-11-18 (the developer's items after the
+    # close-out: BACKLOG DR-34, DR-42, DR-45, DR-47, DR-48, DR-50, EV-17,
+    # EV-48, TA-41, TA-43, VIS-32 to VIS-34), published with
+    # aec-document-review 1.2.0 by the tag aec-v1.2.0. No app release goes
+    # with it: 5.36.0 on PyPI pins 1.1.0, and this pin moves here only
+    # because test_wheels.py keeps it equal to the core's version.
+    "aec-agent-core==1.2.0",
     # -- agent stack (formerly the [deep] extra) --
     # Agent-stack UPPER BOUNDS (5.10.2): unpinned drift has broken deployed
     # clusters twice (Pygments via pydiggs; then deepagents 0.7.11 dropping the

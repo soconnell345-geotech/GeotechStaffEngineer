@@ -16,7 +16,26 @@ Two applications are built on it:
 
 ## Status
 
-**1.1.0 (not released yet; the first release with Document Review as one unit, BACKLOG INF-76).** One more module moved in:
+**1.2.0 (2026-11-18).** Word out: `write_docx` stores a photograph as a
+JPEG at print size, so a report of 20 photographs is about 4 to 13 MB
+(line work, charts and scans are stored as before). Word in: characters
+from the Symbol font are read, equations in Word's own format are counted
+as not read, and a file with tracked changes says so and gives its
+deletions under a key of their own. A reading helper's open items name a
+text read cut at its size limit and a failed zoom that was not redone. A
+page read in tiles names a tag that the whole-page reading and a tile read
+differently at one place. The turn counts the images it sends for reading
+(`image_calls` in the record), with a ceiling when
+`GEOTECH_TURN_MAX_IMAGE_CALLS` is set. Three switches, off by default and
+not measured on a model yet: `GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK`,
+`GEOTECH_VISION_TILE_ANSWERS` and `GEOTECH_PHOTO_PAGES` (`review_flags`).
+New: `run_report`, an HTML report of a saved run ("Reading a saved run"
+below). The review suite's "found only in the working notes" line reads
+only what a reading said, and a table column headed "NO." is no longer
+taken for the word "no". Release note: GeotechStaffEngineer's
+`module_work/aec_1_2_0/RELEASE_NOTE.md`.
+
+**1.1.0 (2026-11-17; the first release with Document Review as one unit, BACKLOG INF-76).** One more module moved in:
 `foundry_dataset_store`, the Foundry dataset store, from
 GeotechStaffEngineer's `webapp` (BACKLOG INF-74), so that Document Review
 can keep its conversations on Palantir Foundry the way the geotech page

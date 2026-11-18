@@ -105,9 +105,13 @@ the working folder.
 | `GEOTECH_REVIEW_SHEET_TOOLS` | `1`: planlens' sheet tools on the page (the sheet index, the callout check and, from planlens 0.16, the schedule-mark check), with `open_document` bringing the sheet index and the schedule check (off by default; not measured on a model yet) |
 | `GEOTECH_REVIEW_TODOS_WITH_CALLS` | `1`: one sentence asking the agent to update its to-do list in the same step as its next tool call (off by default; not measured yet) |
 | `GEOTECH_VISION_SHOW_ME` | `1`: the page's looks take `show_me`, so the agent's own model sees the page or region at its next step instead of a separate reading's description (off by default; not measured on the review suite yet) |
+| `GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK` | `1`: a page of photographs takes one look instead of a whole-page look and tiles, only where the page itself shows it is one; any doubt tiles the page as before (off by default; not measured on a model yet) |
+| `GEOTECH_VISION_TILE_ANSWERS` | `1`: each tile of a tiled read answers the request from what it holds, with one line where it holds nothing on it (off by default; not measured on a model yet) |
+| `GEOTECH_PHOTO_PAGES` | `record`: the turn's record names the attached documents' photograph pages that nothing looked at; `retry` (or `1`): the same, and the agent is told once before its answer goes out. Every page of each attached PDF is read once at the first turn end after it is attached (off by default; not measured on a model yet) |
+| `GEOTECH_TURN_MAX_IMAGE_CALLS` | A number: the most images one turn, helpers included, may send to the model for a reading; past it a look is refused and the turn finishes with what it read (unset or `0`: no ceiling; the count is kept in the turn's record either way) |
 | `GEOTECH_PROMPTER_MAX_RETRIES`, `GEOTECH_VISION_CALL_TIMEOUT_S`, `GEOTECH_VISION_SLOT_WAIT_S` | The model client's quick retries (default 1), the seconds before a page reading is given up and asked once more (default 90), and the seconds a look waits for a free reading slot (default 600; 0 = no bound) |
 
-The settings in the last seven rows are read from the environment only (on a local run a `.env` line is put there at start-up), not from the Key Vault.
+The settings in the last eleven rows are read from the environment only (on a local run a `.env` line is put there at start-up), not from the Key Vault.
 
 The settings keep the `GEOTECH_` names the page had before the split, so a
 deployment carries on unchanged.
