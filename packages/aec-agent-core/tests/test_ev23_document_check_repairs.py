@@ -247,6 +247,34 @@ def test_a_citation_nothing_looked_up_still_fires(tmp_path, answer, shown):
     assert not res.get(cd.MENTIONED)
 
 
+@pytest.mark.parametrize("answer,flagged,mentioned", [
+    # an instruction that is really the basis, with no value: a mention
+    ("Use the GEC-15 method for the drains.", [], [("GEC-15", cd.POINTER)]),
+    ("If the drains follow GEC-15 they work.", [],
+     [("GEC-15", cd.CONDITION)]),
+    # a value in the clause keeps a pointer a citation
+    ("Verify the 3.0 m spacing with UFC 3-999-01.", ["UFC 3-999-01"], []),
+    # a denial reaches three words past its verb, no further
+    ("I did not use the drainage chart in GEC-15.", ["GEC-15"], []),
+])
+def test_what_the_mention_rules_let_through(tmp_path, answer, flagged,
+                                            mentioned):
+    """The limits module_work/ev23/CHECK.md states, pinned."""
+    conv = _turn(_conv(tmp_path), [LAB_SHEET])
+    res = _check(conv, answer)
+    assert _flagged(res) == flagged
+    assert _mentioned(res) == mentioned
+
+
+def test_what_the_number_rule_lets_through():
+    def works(text):
+        return [c.shown for c in cd.find_citations(text, refined=True)
+                if c.kind == "work"]
+    assert works("Lind (2004, 12) gives the rule.") == []
+    assert "Corner (1850)" in works("The point Corner (1850, 1956) lies "
+                                    "east.")
+
+
 def test_a_document_cited_after_a_pointer_to_it_fires(tmp_path):
     conv = _turn(_conv(tmp_path), [LAB_SHEET])
     for answer in ("Verify the spacing with UFC 3-999-01. UFC 3-999-01 "
