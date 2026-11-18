@@ -12,6 +12,14 @@ and looks at an uploaded picture whose vision answer is cut off at its
 output limit; it then answers that nothing is open. Helper L looks at one
 page and finds nothing wrong. Every value is made up.
 
+A second turn hands one job to helper V, which zooms the way the arm's own
+prompt asks: ``view`` + ``image_box``, with no question. A zoom that fails
+and is not redone is listed; one redone at the same ``view`` +
+``image_box`` is not; one followed by a good zoom elsewhere on the page
+stays listed, and so does one followed by a good zoom in a merely
+overlapping place (with no question, no redo rule settles it: the note
+names more than it must, the safe side).
+
 The arm's helper has no text tool: it reads by looking. The test adds the
 core's real ``read_pdf_text`` to the helper's tools only, to show that the
 same code carries a cut text read in this build too.
@@ -50,6 +58,16 @@ BOX_REDO = [20, 8, 320, 70]          # page 1: overlaps it, renders
 BOX_FAILS_2 = [30, 100, 200, 160]    # page 2: fails, never redone
 ANSWER_T = "Findings: none on these pages.\nCould not check: nothing."
 ANSWER_L = "Findings: none on this page.\nCould not check: nothing."
+JOB_V = (f"LOOKING JOB V: look at pdf pages 3-6 of {DOC} and read each "
+         "page's table.")
+ANSWER_V = "Findings: none on these pages.\nCould not check: nothing."
+VIEW = [0, 0, 612, 792]              # a whole page's view, in page points
+IB_FAILS = [400, 300, 600, 420]      # pages 3-6: the first render fails
+IB_FAR = [50, 800, 250, 950]         # far from it on the same page
+IB_OVERLAP = [500, 380, 700, 500]    # overlaps it
+#: 0-based page -> a point in page points: the first render of a window
+#: that holds it fails (helper V's zooms; set by its test only)
+FAIL_ONCE: dict = {}
 
 
 def _made_up_spec(pages=6, lines=100) -> bytes:
@@ -90,6 +108,7 @@ class Played(BaseChatModel):
     """Plays the main agent and both helpers from what each call shows."""
 
     seen: list = []
+    jobs: list = [("T", JOB_T), ("L", JOB_L)]
 
     @property
     def _llm_type(self):
@@ -102,20 +121,38 @@ class Played(BaseChatModel):
         first = next((_text(m) for m in messages
                       if isinstance(m, HumanMessage)), "")
         results = [m for m in messages if isinstance(m, ToolMessage)]
-        who = ("T" if first.startswith("LOOKING JOB T") else
-               "L" if first.startswith("LOOKING JOB L") else "main")
+        who = next((w for w in ("T", "L", "V")
+                    if first.startswith(f"LOOKING JOB {w}")), "main")
         self.seen.append((who, list(messages)))
         msg = self._step(who, len(results))
         return ChatResult(generations=[ChatGeneration(message=msg)])
 
     def _step(self, who, n):
         if who == "main":
-            if n < 2:
-                job, cid = ((JOB_T, "task_T") if n == 0 else
-                            (JOB_L, "task_L"))
+            if n < len(self.jobs):
+                w, job = self.jobs[n]
                 return _call("task", {"description": job,
-                                      "subagent_type": "page_looker"}, cid)
+                                      "subagent_type": "page_looker"},
+                             f"task_{w}")
             return AIMessage(content="Done.")
+        if who == "V":
+            # the arm's own shape: view + image_box, no question
+            def zoom(page, image_box, cid):
+                return ("render_region", {
+                    "attachment_key": DOC, "pdf_page": page, "view": VIEW,
+                    "image_box": image_box}, cid)
+            steps = [
+                zoom(4, IB_FAILS, "zoom_v1"),     # fails, never redone
+                zoom(5, IB_FAILS, "zoom_v2"),     # fails
+                zoom(5, IB_FAILS, "zoom_v3"),     # the same place: reads
+                zoom(6, IB_FAILS, "zoom_v4"),     # fails
+                zoom(6, IB_FAR, "zoom_v5"),       # elsewhere: reads
+                zoom(3, IB_FAILS, "zoom_v6"),     # fails
+                zoom(3, IB_OVERLAP, "zoom_v7"),   # overlapping: reads
+            ]
+            if n < len(steps):
+                return _call(*steps[n])
+            return AIMessage(content=ANSWER_V)
         if who == "L":
             if n == 0:
                 return _call("analyze_pdf_page", {
@@ -162,6 +199,12 @@ def _minimal(monkeypatch):
                 [float(v) for v in BOX_FAILS],
                 [float(v) for v in BOX_FAILS_2]):
             raise ValueError("made-up render failure")
+        point = FAIL_ONCE.get(kw.get("page"))
+        if (box is not None and point is not None
+                and box[0] <= point[0] <= box[2]
+                and box[1] <= point[1] <= box[3]):
+            FAIL_ONCE.pop(kw.get("page"))
+            raise ValueError("made-up render failure")
         return real_render(source, *args, **kw)
 
     monkeypatch.setattr(vision_view, "render_view", render)
@@ -181,12 +224,14 @@ def _minimal(monkeypatch):
 
     monkeypatch.setattr(minimal_agent, "_looking_tools", tools)
     inline_store.clear()
+    FAIL_ONCE.clear()
     yield
+    FAIL_ONCE.clear()
     inline_store.clear()
 
 
-def _turn(folder):
-    model = Played(seen=[])
+def _turn(folder, jobs=(("T", JOB_T), ("L", JOB_L))):
+    model = Played(seen=[], jobs=list(jobs))
     agent = build_review_page_agent(
         model, attachments={DOC: _made_up_spec(), IMG: _made_up_picture()},
         engine=FakeEngine(reply=_cut_answer), **_review_kwargs())
@@ -200,17 +245,20 @@ def _turn(folder):
     last = [m for who, m in model.seen if who == "main"][-1]
     got = {m.tool_call_id: _text(m) for m in last
            if isinstance(m, ToolMessage)}
-    assert set(got) == {"task_T", "task_L"}
-    # what helper T's tools returned, as it received them
-    helper = [m for who, m in model.seen if who == "T"][-1]
-    tools = {m.tool_call_id: _text(m) for m in helper
-             if isinstance(m, ToolMessage)}
-    return got["task_T"], got["task_L"], tools
+    assert set(got) == {f"task_{w}" for w, _job in jobs}
+    # what each helper's tools returned, as it received them
+    tools = {}
+    for w, _job in jobs:
+        helper = [m for who, m in model.seen if who == w][-1]
+        tools[w] = {m.tool_call_id: _text(m) for m in helper
+                    if isinstance(m, ToolMessage)}
+    return got, tools
 
 
 def test_the_minimal_helper_hands_back_the_open_items_its_tools_flagged(
         tmp_path):
-    text, look, tools = _turn(tmp_path)
+    got, tools = _turn(tmp_path)
+    text, look, tools = got["task_T"], got["task_L"], tools["T"]
 
     # what the helper's tools returned: a text read cut at its size limit,
     # a zoom that failed and its redo in an overlapping box, a zoom on
@@ -245,3 +293,28 @@ def test_the_minimal_helper_hands_back_the_open_items_its_tools_flagged(
     # a helper with no open item: its answer exactly as before
     assert look == ANSWER_L
 
+
+def test_the_minimal_helper_s_own_zooms_by_view_with_no_question(tmp_path):
+    x0, y0, x1, y1 = vision_view.image_box_to_page(VIEW, IB_FAILS)
+    for pdf_page in (3, 4, 5, 6):
+        FAIL_ONCE[pdf_page - 1] = ((x0 + x1) / 2, (y0 + y1) / 2)
+    got, tools = _turn(tmp_path, jobs=[("V", JOB_V)])
+    tools = tools["V"]
+
+    # what the helper's zooms returned
+    for cid in ("zoom_v1", "zoom_v2", "zoom_v4", "zoom_v6"):
+        assert json.loads(tools[cid]) == {
+            "error": "made-up render failure"}, (cid, tools[cid][:400])
+    for cid in ("zoom_v3", "zoom_v5", "zoom_v7"):
+        assert "error" not in json.loads(tools[cid]), (cid, tools[cid][:400])
+
+    # page 4: failed, never redone; page 6: failed, then a good zoom far
+    # away (it stays; before, any later good zoom by view on the page
+    # dropped it); page 3: failed, then a good zoom in an overlapping place
+    # (with no question no redo rule settles it: it stays); page 5: redone
+    # at the same view + image_box, so not listed
+    expected = [f"- {DOC} page {p} (a zoom): render_region failed: made-up "
+                "render failure" for p in (4, 6, 3)]
+    assert got["task_V"] == (ANSWER_V + "\n\n"
+                             + keep_work.open_items_note(expected, None)), \
+        got["task_V"]

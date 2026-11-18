@@ -1466,6 +1466,21 @@ def _failed_zoom_box(args: dict) -> tuple:
     return box, False
 
 
+def _zoom_place(args: dict) -> Optional[str]:
+    """A zoom's place in the key of its flags, as it was given: its
+    ``bbox``, else its ``view`` + ``image_box``; ``None`` for a zoom on a
+    whole page or image. Only a later zoom of the same place settles a flag
+    by its key (DR-50); before, every ``view`` + ``image_box`` zoom on a
+    page shared one key, so any later good one there dropped a failed
+    one."""
+    if args.get("bbox") is not None:
+        return _json(args.get("bbox"))
+    if args.get("view") is not None or args.get("image_box") is not None:
+        return _json({"view": args.get("view"),
+                      "image_box": args.get("image_box")})
+    return None
+
+
 def open_items(rec: HelperRecord) -> List[str]:
     """The open items a helper's own tools flagged, one line per file and
     page, the most serious first: a call that failed; a look whose
@@ -1478,8 +1493,9 @@ def open_items(rec: HelperRecord) -> List[str]:
     reading asked to check.
 
     A flag is dropped when the helper read the thing again: a later result
-    of the same tool on the same file and page (for a zoom, the same box)
-    without it; for a page with no text layer, a later look at it.
+    of the same tool on the same file and page (for a zoom, the same place,
+    given the same way: :func:`_zoom_place`) without it; for a page with no
+    text layer, a later look at it.
 
     DR-50, where it is not clear that a later call replaced an earlier one,
     the earlier one stays listed:
@@ -1521,8 +1537,7 @@ def open_items(rec: HelperRecord) -> List[str]:
         data = _result_dict(s.get("text") or "")
         source = _source_of(args)
         page = _page_of(data, args)
-        box = (_json(args.get("bbox")) if tool in _ZOOM_TOOLS
-               and args.get("bbox") is not None else None)
+        box = _zoom_place(args) if tool in _ZOOM_TOOLS else None
         key = (tool, source, page, box)
         label = " ".join(x for x in (
             source or tool, f"page {page}" if page is not None else "",

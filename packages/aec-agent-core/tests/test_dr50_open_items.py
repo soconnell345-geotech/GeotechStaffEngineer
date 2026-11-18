@@ -458,6 +458,86 @@ def test_a_redo_settles_only_the_failure_not_its_own_flags():
         f"- {DOC} page 2 (a zoom): lettering runs past the top edge"]
 
 
+VIEW = [0, 0, 612, 792]              # a whole page's view, in page points
+
+
+def _close_up(image_box, result=VISION_ERROR, prompt=ASK, page=1):
+    """A zoom asked for the way the reading prompts ask: the ``view`` of a
+    look and an ``image_box`` on its 0-999 grid; ``result`` ``None`` = it
+    read, and its result gives its box in page points, as the tool's
+    does."""
+    if result is None:
+        x0, y0, x1, y1 = image_box
+        result = {"page": page, "pdf_page": page + 1, "analysis": "made up",
+                  "bbox": [round(v / 999 * s, 1) for v, s in (
+                      (x0, 612), (y0, 792), (x1, 612), (y1, 792))]}
+    return _zoom(page, prompt=prompt, result=result, view=VIEW,
+                 image_box=image_box)
+
+
+def test_a_close_up_by_view_is_settled_only_at_its_place_or_by_a_redo():
+    """A close-up's place is part of its key whichever way it was given:
+    before, every ``view`` + ``image_box`` close-up on a page shared one
+    key, so a later good close-up anywhere on the page dropped an earlier
+    failed one, and a region never read went unnamed."""
+    failed = _close_up([100, 100, 300, 200])
+    line = FAILED + "made-up vision failure"
+    # (a) a good close-up far away on the same page, with the same
+    # question or another: the failure stays
+    for far in (_close_up([700, 700, 900, 900], result=None),
+                _close_up([700, 700, 900, 900], result=None,
+                          prompt="Read the made-up notes.")):
+        assert keep_work.open_items(_steps([failed], [far])) == [line], far
+    # sent with it in one step, far away: stays too
+    assert keep_work.open_items(_steps([failed, _close_up(
+        [700, 700, 900, 900], result=None)])) == [line]
+    # (b) the same view + image_box read: settled by its key, with or
+    # without a question
+    assert keep_work.open_items(_steps([failed], [_close_up(
+        [100, 100, 300, 200], result=None)])) == []
+    bare = _close_up([100, 100, 300, 200], prompt=None)
+    assert keep_work.open_items(_steps([bare], [_close_up(
+        [100, 100, 300, 200], prompt=None, result=None)])) == []
+    # (c) the same question in an overlapping place, after the failure
+    # came back: settled by the redo rule, however the place was given
+    assert keep_work.open_items(_steps([failed], [_close_up(
+        [200, 150, 400, 300], result=None)])) == []
+    assert keep_work.open_items(_steps([failed], [_zoom(
+        1, bbox=[100, 100, 250, 250], prompt=ASK)])) == []
+    # with no question, a merely overlapping place does not settle it
+    assert keep_work.open_items(_steps([bare], [_close_up(
+        [200, 150, 400, 300], prompt=None, result=None)])) == [line]
+    # a look's own flag stays only at its place too
+    edge = _close_up([100, 100, 300, 200], result={
+        "page": 1, "pdf_page": 2, "analysis": "made up",
+        "edge_note": "lettering runs past the top edge"})
+    assert keep_work.open_items(_steps([edge], [_close_up(
+        [700, 700, 900, 900], result=None)])) == [
+        f"- {DOC} page 2 (a zoom): lettering runs past the top edge"]
+    assert keep_work.open_items(_steps([edge], [_close_up(
+        [100, 100, 300, 200], result=None)])) == []
+
+
+def test_a_close_up_by_bbox_is_keyed_as_before():
+    """(d) A ``bbox`` close-up keeps the key it always had."""
+    failed = _zoom(1, bbox=[60, 80, 180, 160], prompt=ASK,
+                   result=VISION_ERROR)
+    line = FAILED + "made-up vision failure"
+    assert keep_work.open_items(_steps([failed], [_zoom(
+        1, bbox=[430, 550, 550, 710], prompt=ASK)])) == [line]
+    assert keep_work.open_items(_steps([failed], [_zoom(
+        1, bbox=[60, 80, 180, 160], prompt=ASK)])) == []
+    bare = _zoom(1, bbox=[60, 80, 180, 160], result=VISION_ERROR)
+    assert keep_work.open_items(_steps([bare], [_zoom(
+        1, bbox=[60, 80, 180, 160])])) == []
+    # a bbox and a view + image_box of the same place are two places by
+    # key; with the same question the redo rule settles it
+    assert keep_work.open_items(_steps([bare], [_close_up(
+        [100, 100, 300, 200], prompt=None, result=None)])) == [line]
+    assert keep_work.open_items(_steps([failed], [_close_up(
+        [100, 100, 300, 200], result=None)])) == []
+
+
 # ---------------------------------------------------------------------------
 # A helper with no cut text and no failed look gets what it got before
 # ---------------------------------------------------------------------------
