@@ -110,7 +110,8 @@ def read_office(path, *, image_dir: Optional[str] = None,
 # -- Word ---------------------------------------------------------------------
 
 def _docx(path, image_dir, image_ref):
-    from aec_agent_core.docx_renderer import docx_to_markdown
+    from aec_agent_core.docx_renderer import (TRACKED_CHANGES_HEADING,
+                                              docx_to_markdown)
     stem = re.sub(r"[^A-Za-z0-9_-]+", "_",
                   os.path.splitext(os.path.basename(path))[0]).strip("_")
     read = docx_to_markdown(path, image_dir=image_dir,
@@ -130,7 +131,15 @@ def _docx(path, image_dir, image_ref):
         note += (f" (title='{read['title']}': its Title is the first # "
                  f"line, written once)")
     note += "; the layout carries over."
-    extras = read.get("extras") or []
+    extras = list(read.get("extras") or [])
+    markdown = read["markdown"]
+    # DR-45: tracked changes, with the deleted text, come apart from the
+    # body (which stays the writer's inverse); the model reads them last.
+    tracked = read.get("tracked_changes") or ""
+    if tracked:
+        markdown = (markdown.rstrip("\n") + "\n\n" if markdown.strip()
+                    else "") + tracked
+        extras.append(TRACKED_CHANGES_HEADING)
     if extras:
         note += (" After the body come sections headed "
                  + ", ".join(f"'{e}'" for e in extras)
@@ -146,7 +155,7 @@ def _docx(path, image_dir, image_ref):
         note += (" Pictures marked 'not extracted' are only named: they "
                  "will not be in a rewritten file.")
     fields["note"] = note
-    return read["markdown"], fields
+    return markdown, fields
 
 
 # -- Excel --------------------------------------------------------------------
