@@ -276,8 +276,12 @@ def box_paths(root: str, tmp: str = "", files=(), libraries=LIBRARIES,
             spec = None
         origin = getattr(spec, "origin", None)
         if origin and os.path.isabs(origin):
-            add(os.path.dirname(os.path.dirname(origin)), "read",
-                f"the folder {name} is installed in")
+            # a package's __init__ file is one folder below the folder the
+            # library is installed in; a library that is one file is in it
+            here = os.path.dirname(origin)
+            if os.path.basename(origin).split(".")[0] == "__init__":
+                here = os.path.dirname(here)
+            add(here, "read", f"the folder {name} is installed in")
     box_dir = box_dir or os.path.dirname(os.path.abspath(__file__))
     add(box_dir, "read", "the box's own code")
     add(os.path.join(os.path.dirname(box_dir), "charts"), "read",

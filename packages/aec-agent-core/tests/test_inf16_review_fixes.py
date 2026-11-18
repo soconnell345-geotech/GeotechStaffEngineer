@@ -152,3 +152,31 @@ def test_no_datagram_reaches_a_unix_socket_outside_the_box(tmp_path):
             listener.recv(64)
     finally:
         listener.close()
+
+
+# ---------------------------------------------------------------------------
+# the paths: a library that is one file
+# ---------------------------------------------------------------------------
+
+def test_a_one_file_library_opens_its_own_folder_not_the_one_above(
+        tmp_path, monkeypatch):
+    """A package's folder sits in the folder it is installed in; a library
+    that is ONE file sits there itself. Taken two folders up, an app that
+    keeps its libraries beside its settings (``pip install --target``)
+    would have had the app's whole folder made readable."""
+    app = tmp_path / "app"
+    libs = app / "libs"
+    conv = tmp_path / "conversations" / "c1"
+    for d in (libs / "madeuppkg", conv):
+        d.mkdir(parents=True)
+    (app / "settings.toml").write_text("made_up_key = 'made up'\n")
+    (libs / "madeuplib.py").write_text("VALUE = 1\n")
+    (libs / "madeuppkg" / "__init__.py").write_text("VALUE = 2\n")
+    monkeypatch.syspath_prepend(str(libs))
+    import importlib
+    importlib.invalidate_caches()
+    for name in ("madeuplib", "madeuppkg"):
+        rows = kernel_layer.box_paths(str(conv), libraries=(name,))
+        readable = [p for p, kind, _why in rows if kind == "read"]
+        assert os.path.realpath(libs) in readable, (name, readable)
+        assert os.path.realpath(app) not in readable, (name, readable)
