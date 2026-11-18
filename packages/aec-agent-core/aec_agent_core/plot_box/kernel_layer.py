@@ -92,7 +92,10 @@ FS_REMOVE_DIR, FS_REMOVE_FILE, FS_MAKE_DIR, FS_MAKE_REG = 16, 32, 128, 256
 FS_REFER, FS_TRUNCATE, FS_IOCTL_DEV = 1 << 13, 1 << 14, 1 << 15
 #: Every file right a Landlock version knows (all are handled, so all are
 #: denied where no rule allows them).
-_FS_BY_ABI = {1: (1 << 13) - 1, 2: (1 << 14) - 1, 3: (1 << 15) - 1}
+_FS_BY_ABI = {1: (1 << 13) - 1, 2: (1 << 14) - 1, 3: (1 << 15) - 1,
+              # version 4 added the TCP rules and no file right: a rule set
+              # naming the device-ioctl right is refused there (EINVAL)
+              4: (1 << 15) - 1}
 _FS_ALL = (1 << 16) - 1                                    # version 5 on
 #: Rights that can be granted on a path that is a file, not a folder.
 _FS_FILE = (FS_EXECUTE | FS_WRITE_FILE | FS_READ_FILE | FS_TRUNCATE
