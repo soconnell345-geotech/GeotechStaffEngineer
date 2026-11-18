@@ -173,6 +173,23 @@ def _lean_prompt():
         task_tool_description=LEAN_TASK_TOOL_DESCRIPTION)
 
 
+def _show_uploads(model, engine):
+    """``(middleware, record note)`` for the main agent under
+    ``GEOTECH_VISION_SHOW_UPLOADS`` (BACKLOG DR-38): the middleware that
+    shows the main model an image the user uploaded, and the line the
+    turn's record keeps (``build.show_uploads``). ``(None, None)`` with the
+    switch unset; ``(None, "off: <why>")`` where the main model is not known
+    to take images, which then gets today's looks."""
+    from aec_agent_core import review_flags
+    if not review_flags.show_uploads():
+        return None, None
+    from aec_agent_core.deep import upload_view
+    takes, why = upload_view.takes_images(model, engine)
+    if not takes:
+        return None, f"off: {why}"
+    return upload_view.UploadImageMiddleware(engine=engine), f"on: {why}"
+
+
 def review_page_budget() -> Optional[int]:
     """The review page's model calls per request on this build
     (``GEOTECH_REVIEW_MAX_MODEL_CALLS``, default 40), or
@@ -382,7 +399,11 @@ def build_review_page_agent(
     # checked, never a GraphRecursionError (DR-03).
     # First, so it reads the tool results as the turn left them: an image a
     # look asked to be shown goes in front of the model at its next call.
-    page_middleware = [*([m] if (m := _show_images(engine)) is not None
+    # Behind GEOTECH_VISION_SHOW_UPLOADS one middleware does both: it shows
+    # the stored images and marks the main agent's uploads to be shown.
+    uploads, uploads_note = _show_uploads(model, engine)
+    page_middleware = [*([m] if (m := uploads if uploads is not None
+                                 else _show_images(engine)) is not None
                          else []),
                        HideScratchFilesystem()]
     page_budget = review_page_budget()
@@ -416,12 +437,19 @@ def build_review_page_agent(
         create or assembly.create_deep_agent, model=model, tools=tools,
         system_prompt=system_prompt, subagents=subagents,
         create_kwargs=create_kwargs)
-    return assembly.record_build(
+    agent = assembly.record_build(
         agent, attachments=attachments, model=model, tools=tools,
         subagents=subagents, system_prompt=system_prompt,
         helper_models=helper_models, judgment_consult=False,
         min_recursion_limit=(REVIEW_PAGE_STEPS_PER_CALL * page_budget + 30
                              if page_budget else None))
+    if uploads_note:
+        # whether the main model is shown uploads, and why (DR-38)
+        try:
+            agent.geotech_build["show_uploads"] = uploads_note
+        except Exception:                              # noqa: BLE001
+            pass
+    return agent
 
 
 #: ``build_deep_agent`` arguments the page has nothing to act on (they ask

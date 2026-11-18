@@ -2553,6 +2553,14 @@ def _dispatch_analyze_image(arguments, engine, attachments):
         return json.dumps({"error": str(e)})
     _note_image_read(key, image_data, src)
 
+    # An upload shown to the page's main model itself, where its build asks
+    # for that (GEOTECH_VISION_SHOW_UPLOADS, BACKLOG DR-38).
+    if src == "attachment":
+        from aec_agent_core.deep import upload_view
+        if upload_view.active():
+            return upload_view.show_upload(arguments, engine, attachments,
+                                           image_data, key, tools)
+
     # An image FILE in the working folder (a contact sheet); an upload too
     # where the call asked to be shown it (show_me, BACKLOG DR-38).
     if arguments.get("_inline") and (src == "path"
