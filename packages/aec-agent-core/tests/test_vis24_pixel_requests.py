@@ -49,11 +49,11 @@ NEW_KEYS = ("page_points", "page_points_cut", "page_points_note",
             "coordinates_note")
 
 
-def _sheet_pdf() -> bytes:
-    """A made-up sheet with one black square on it."""
+def _sheet_pdf(rect=SQUARE) -> bytes:
+    """A made-up sheet with one black rectangle on it (the square)."""
     d = pymupdf.open()
     page = d.new_page(width=1224, height=792)
-    page.draw_rect(pymupdf.Rect(*SQUARE), color=(0, 0, 0), fill=(0, 0, 0))
+    page.draw_rect(pymupdf.Rect(*rect), color=(0, 0, 0), fill=(0, 0, 0))
     data = d.tobytes()
     d.close()
     return data
@@ -73,11 +73,13 @@ class Finder:
     the looks ``extra_in`` names (``whole``, ``r1c1``, ...; all when
     ``None``)."""
 
-    def __init__(self, extra="", extra_in=None, boxes=True):
+    def __init__(self, extra="", extra_in=None, boxes=True,
+                 label="Black square"):
         self.lock = threading.Lock()
         self.prompts = {}
         self.seen = []
         self.extra, self.extra_in, self.boxes = extra, extra_in, boxes
+        self.label = label
 
     def analyze_image(self, image, prompt=""):
         m = TILE.search(prompt)
@@ -89,7 +91,7 @@ class Finder:
         dark = img.point(lambda v: 255 if v < 100 else 0).getbbox()
         lines = []
         if dark and self.boxes:
-            lines.append("Black square px=[{}, {}, {}, {}]".format(*dark))
+            lines.append("{} px=[{}, {}, {}, {}]".format(self.label, *dark))
         elif not dark:
             lines.append("No square in this view.")
         if self.extra and (self.extra_in is None or who in self.extra_in):
@@ -119,18 +121,18 @@ def _zoom(engine, prompt, **args):
     return raw
 
 
-def _page(engine, prompt, tiles="off"):
+def _page(engine, prompt, tiles="off", rect=SQUARE):
     raw = dispatch_extended_tool(
         "analyze_pdf_page",
         {"attachment_key": "made_up.pdf", "page": 0, "prompt": prompt,
          "tiles": tiles},
-        engine=engine, attachments={"made_up.pdf": _sheet_pdf()})
+        engine=engine, attachments={"made_up.pdf": _sheet_pdf(rect)})
     vision_tools.clear_repeat_reads()
     return raw
 
 
-def _tiled(engine, prompt):
-    return _page(engine, prompt, tiles="2")
+def _tiled(engine, prompt, rect=SQUARE):
+    return _page(engine, prompt, tiles="2", rect=rect)
 
 
 def _image(engine, prompt):
@@ -240,6 +242,14 @@ def test_anything_else_is_left_alone(prompt):
     "B-7 at x=88.5, y=140.25 (PDF points)",
     "box [10, 20, 30, 40] pts",
     STATED,
+    "center≈(516,1170) PDF-view pt",
+    "(x=612, y=396) pt",
+    "(612 pt, 396 pt)",
+    "centre at 612.4, 396.0 pt",
+    '{"x": 612, "y": 396} points',
+    'Centre in PDF points: {"x": 612, "y": 396}',
+    'The centre in points: {"x": 612, "y": 396}',
+    "Tag box px=[12, 14, 80, 30] pt",
 ])
 def test_page_coordinates_in_prose_are_found(text):
     assert vision_tools.states_page_coordinates(text)
@@ -262,6 +272,15 @@ def test_page_coordinates_in_prose_are_found(text):
     "The chart shows points (1, 2) and (3, 4) on the curve.",
     ORDINARY,
     "",
+    "px=[12, 14, 80, 30]",
+    "General notes in 8 pt text at (2, 3).",
+    "Text heights 8, 10 pt",
+    "Text heights (8 pt, 10 pt)",
+    "(8 pt, 10 pt) lettering",
+    "Pad centre at (12 ft, 18 ft) from grid A-1",
+    "Sheet C-101 (2 of 5), details 3, 4",
+    "The arrow at (612, 396) points to the valve",
+    "Tag px=[12, 14, 80, 30] points to the valve",
 ])
 def test_ordinary_numbers_are_not_page_coordinates(text):
     assert not vision_tools.states_page_coordinates(text)
@@ -298,7 +317,8 @@ def test_off_every_prompt_and_result_is_as_before(monkeypatch, read, unset):
     with monkeypatch.context() as m:
         m.setattr(vision_tools, "_vision_prompt", _master_vision_prompt)
         for name in ("asks_page_positions", "states_page_coordinates",
-                     "_px_page_boxes", "_note_page_units"):
+                     "_px_page_boxes", "_tiled_page_points",
+                     "_note_page_units"):
             m.setattr(vision_tools, name, _never)
         before = Finder(extra=STATED)
         raw_before = read(before, ASK_POINTS)
@@ -307,7 +327,7 @@ def test_off_every_prompt_and_result_is_as_before(monkeypatch, read, unset):
     out = json.loads(raw_now)
     assert "error" not in out, out
     assert not any(k in raw_now for k in NEW_KEYS)
-    assert "_page_units" not in raw_now
+    assert "_page_units" not in raw_now and "_px_points" not in raw_now
     for prompt in now.seen:
         assert vision_tools.POSITIONS_AS_PIXELS not in prompt
 
@@ -344,9 +364,10 @@ def test_on_a_zoom_asked_for_page_points_gets_them_converted(monkeypatch,
 
 @pytest.mark.parametrize("read", [_page, _tiled])
 def test_on_a_page_read_whole_or_in_tiles_converts_too(monkeypatch, read):
-    """A page read whole converts its own pixel boxes; a tiled read lists
-    its merged 'found' boxes, each with where it was seen. Every look of
-    the read is asked for pixel boxes."""
+    """A page read whole converts its own pixel boxes; a tiled read its
+    overview's and each tile's, each in its own frame, one row per thing
+    with where it was seen. Every look of the read is asked for pixel
+    boxes."""
     monkeypatch.setenv(ENV, "1")
     engine = Finder()
     out = json.loads(read(engine, ASK_POINTS))
@@ -359,11 +380,102 @@ def test_on_a_page_read_whole_or_in_tiles_converts_too(monkeypatch, read):
     assert _near(row["page_bbox"], SQUARE), row
     if read is _tiled:
         assert len(engine.seen) == 5                    # whole + 2x2 tiles
-        assert "r1c1" in row["seen_in"]
-        assert not any("_page_units" in t for t in out["tiles"])
+        assert row["seen_in"] == ["page", "r1c1"]
+        assert not any("_page_units" in t or "_px_points" in t
+                       for t in out["tiles"])
     else:
         assert "seen_in" not in row
     assert out["page_points_note"] == vision_tools.PAGE_POINTS_NOTE
+
+
+#: Made-up prose giving a box in page units (the square's own place).
+PT_BOX = "Its box is [300, 200, 320, 220] pt on the page."
+
+
+@pytest.mark.parametrize("read", [_zoom, _page, _tiled])
+def test_on_a_box_in_page_units_never_becomes_a_page_point(monkeypatch,
+                                                         read):
+    """Every look answers a pixel box and a box in page units: only the
+    pixel box is converted (in a tiled read too, where the page-unit box
+    used to come through 'found' as if it were pixels), and the page-unit
+    box is said to be the model's own. The note is true with planlens
+    0.16.0, which rewrites that box onto the grid as if it were pixels,
+    and with a planlens that leaves it as written."""
+    from planlens.review import frames
+    monkeypatch.setenv(ENV, "1")
+    raw = read(Finder(extra=PT_BOX), ASK_POINTS)
+    out = json.loads(raw)
+    assert "error" not in out, out
+    (row,) = out["page_points"]
+    assert _near(row["page_bbox"], SQUARE), row
+    assert out["page_points_note"] == vision_tools.PAGE_POINTS_NOTE
+    assert out["coordinates_note"] == vision_tools.COORDINATES_NOTE
+    assert "_px_points" not in raw and "_page_units" not in raw
+    if hasattr(frames, "_PAGE_UNIT_AFTER"):        # the repair: as written
+        assert "[300, 200, 320, 220] pt" in out["analysis"]
+        assert out["boxes"].startswith("1 box(es) with a page unit")
+    else:                                          # 0.16.0: rewritten
+        assert "[300, 200, 320, 220] pt" not in out["analysis"]
+        assert re.search(r"\[\d+, \d+, \d+, \d+\] pt", out["analysis"])
+
+
+def test_on_a_tiled_read_a_bare_box_is_not_a_page_point(monkeypatch):
+    """A tile's box with no pixel tag may be the model's own page numbers:
+    it is not converted, and the read says it got no box to convert."""
+    monkeypatch.setenv(ENV, "1")
+    raw = _tiled(Finder(extra="Black square [130, 120, 160, 150]",
+                        boxes=False), ASK_POINTS)
+    out = json.loads(raw)
+    assert "page_points" not in out
+    assert out["page_points_note"] == vision_tools.NO_PAGE_POINTS_NOTE
+    assert "coordinates_note" not in out
+
+
+TITLE = (1100.0, 20.0, 1200.0, 772.0)
+
+
+def test_on_a_tiled_read_a_large_pixel_box_is_listed(monkeypatch):
+    """A title block running down the sheet's edge is cut by the tiles'
+    seam: each tile's part, converted in that tile's frame, joins into one
+    row at its place, though 'found' leaves a box that big out."""
+    monkeypatch.setenv(ENV, "1")
+    out = json.loads(_tiled(
+        Finder(label="Title block"),
+        "What are the page coordinates of the title block?", rect=TITLE))
+    assert "error" not in out, out
+    (row,) = out["page_points"]
+    assert row["what"] == "Title block"
+    assert row["seen_in"] == ["page", "r1c2", "r2c2"]
+    assert _near(row["page_bbox"], TITLE), row
+    assert not any(_near(r["page_bbox"], TITLE)
+                   for r in out.get("found") or ())
+
+
+SEAM = (600.0, 380.0, 620.0, 400.0)
+
+
+def test_on_a_tiled_read_one_thing_in_four_tiles_is_one_row(monkeypatch):
+    """A square where all four tiles overlap is one row, at its place: each
+    tile's box was converted in that tile's own frame."""
+    monkeypatch.setenv(ENV, "1")
+    out = json.loads(_tiled(Finder(), ASK_POINTS, rect=SEAM))
+    (row,) = out["page_points"]
+    assert row["seen_in"] == ["page", "r1c1", "r1c2", "r2c1", "r2c2"]
+    assert _near(row["page_bbox"], SEAM), row
+
+
+def test_on_a_tiled_read_the_cut_counts_the_whole_list(monkeypatch):
+    """'page_points_cut' counts every converted row, not a list already
+    capped ('found' keeps at most MAX_MERGED)."""
+    monkeypatch.setenv(ENV, "1")
+    tags = "\n".join(
+        f"T-{k} px=[{10 + 20 * (k % 30)}, {10 + 20 * (k // 30)}, "
+        f"{20 + 20 * (k % 30)}, {20 + 20 * (k // 30)}]" for k in range(70))
+    out = json.loads(_tiled(Finder(extra=tags, extra_in={"r1c1"}),
+                            ASK_POINTS))
+    assert vision_tools.MAX_MERGED < 71
+    assert len(out["page_points"]) == vision_tools.MAX_PAGE_POINTS
+    assert out["page_points_cut"] == "47 more not listed"    # 71 rows
 
 
 @pytest.mark.parametrize("read", [_zoom, _page, _tiled])
@@ -400,7 +512,8 @@ def test_on_stated_page_coordinates_are_said_once(monkeypatch, read):
     monkeypatch.setenv(ENV, "1")
     out = json.loads(read(Finder(extra=STATED), ASK_PLAIN))
     assert out["coordinates_note"] == vision_tools.COORDINATES_NOTE
-    for words in ("did not convert", "own estimate", "not measured"):
+    for words in ("of its own", "estimate", "not measured",
+                  "do not use it as a place"):
         assert words in out["coordinates_note"]
     assert "page_points" not in out and "page_points_note" not in out
 
