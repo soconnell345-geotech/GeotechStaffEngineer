@@ -2573,7 +2573,10 @@ def _dispatch_analyze_image(arguments, engine, attachments):
         image_data, src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
-    _note_image_read(key, image_data, src)
+    if not arguments.get("_image_read_noted"):
+        # once per tool call: an upload that could not be shown comes
+        # back through here for today's read (upload_view._today)
+        _note_image_read(key, image_data, src)
 
     # An upload shown to the page's main model itself, where its build asks
     # for that (GEOTECH_VISION_SHOW_UPLOADS, BACKLOG DR-38).
@@ -4139,11 +4142,16 @@ class _Failed:
 def _vision_error(exc) -> str:
     """Why a vision call gave no reading, in plain words (a busy model is
     said to be busy, not dumped as the SDK's error text)."""
+    # Masked where it is made: this text also lands one level down in a
+    # result (a tile's ``error``, ``tiles_not_read``, ``overview_not_read``),
+    # where neither the guard on a tool's error result nor the run record
+    # masks it by its key.
+    from aec_agent_core.error_text import masked_error_text
     from aec_agent_core.deep.vision_engine import describe_error
     try:
-        return describe_error(exc)
+        return masked_error_text(describe_error(exc))
     except Exception:  # noqa: BLE001
-        return f"{type(exc).__name__}: {exc}"
+        return masked_error_text(f"{type(exc).__name__}: {exc}")
 
 
 def _run_together(jobs):
