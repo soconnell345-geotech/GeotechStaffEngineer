@@ -433,6 +433,8 @@ _DOCUMENT_TOOL_NOTES = {
     "find_quantities": _PDF_PAGES_NOTE,
     "check_cross_references": _PDF_PAGES_NOTE,
     "check_schedule_marks": _PDF_PAGES_NOTE,
+    "plan_symbols": _PDF_PAGE_NOTE,
+    "plan_grid": _PDF_PAGE_NOTE,
     "render_page_thumbnails": _PDF_PAGES_NOTE,
     "annotate_document": (
         " In this app give output_path a bare file name: it is written into "
@@ -496,7 +498,10 @@ def _document_tool_schemas(name: str) -> Dict[str, Dict[str, Any]]:
     ``annotate_document``'s ``markups`` with planlens' markup fields (it
     was an array of anything) and ``remove`` as strings; ``search_document``'s
     ``min_score`` with planlens' default, 80, though the function's is
-    ``None`` so a score given without ``fuzzy`` can be said."""
+    ``None`` so a score given without ``fuzzy`` can be said; the plan
+    tools' arguments as planlens' own spec shows them (BACKLOG PL-27)."""
+    if name in _document_tools.PLAN_TOOL_NAMES:
+        return _document_tools.plan_tool_schemas(name)
     if name == "annotate_document":
         shown = {"remove": {"type": "array", "items": {"type": "string"}}}
         item = _document_tools.annotate_markups_schema()
@@ -549,6 +554,7 @@ def make_vision_tools(
     inline_image_files: bool = False,
     show_choice: bool = False,
     sheet_tools: bool = False,
+    plan_tools: bool = False,
     plot_data_replaces: bool = False,
     description_rewrites: Optional[
         Dict[str, Sequence[Tuple[str, str]]]] = None,
@@ -586,6 +592,9 @@ def make_vision_tools(
     (after 0.15.1; nothing is added otherwise), and
     ``check_schedule_marks`` where it has that too, behind
     ``GEOTECH_REVIEW_SHEET_TOOLS`` (BACKLOG PL-37, DR-07, PL-42).
+    ``plan_tools`` adds planlens' ``plan_symbols`` and ``plan_grid`` where
+    the installed planlens publishes them (nothing is added otherwise),
+    behind ``GEOTECH_REVIEW_PLAN_TOOLS`` (BACKLOG PL-27).
 
     ``added_tools`` are tools another app adds to the kit, ``{name:
     builder}``: ``builder(dispatch)`` returns ``(function, description)``,
@@ -642,6 +651,10 @@ def make_vision_tools(
     sheet_names = (set(_document_tools.sheet_tool_names())
                    if sheet_tools and _document_tools.available()
                    and _document_tools.sheet_tools_available() else set())
+    # The plan tools: asked for AND in the installed planlens.
+    plan_names = (set(_document_tools.PLAN_TOOL_NAMES)
+                  if plan_tools and _document_tools.available()
+                  and _document_tools.plan_tools_available() else set())
     default_include = include is None
     if include is None:
         include = {
@@ -674,16 +687,18 @@ def make_vision_tools(
         if _find_like_available():
             include |= {"find_like"}
     if default_include:
-        include |= sheet_names
+        include |= sheet_names | plan_names
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
     # Resolved once per build: the newer tools depend on the installed planlens.
-    document_names = set(_document_tools.document_tool_names()) | sheet_names
+    document_names = (set(_document_tools.document_tool_names())
+                      | sheet_names | plan_names)
     # This build's host for planlens.review (BACKLOG PL-29 (b)): its look is
     # this build's engine and its signer this build's markup_author, passed
     # on every document call, so two conversations never share either.
     review_host = _document_tools.host_for(engine, markup_author,
-                                           sheet_tools=bool(sheet_names))
+                                           sheet_tools=bool(sheet_names),
+                                           plan_tools=bool(plan_names))
     # plot_data draws per figure name, for the redraw note.
     draws: Dict[str, int] = {}
 
@@ -1180,6 +1195,44 @@ def make_vision_tools(
         return _dispatch("check_schedule_marks",
                          _with_pdf_pages(args, pdf_pages))
 
+    def plan_symbols(handle: str, page: Optional[int] = None,
+                     label_pattern: Optional[str] = None,
+                     shapes: Optional[list] = None,
+                     min_size: Optional[float] = None,
+                     max_size: Optional[float] = None,
+                     max_label_gap: Optional[float] = None,
+                     bbox: Optional[list] = None,
+                     pdf_page: Optional[int] = None) -> str:
+        """Every small symbol on a vector plan sheet, with its exact centre
+        and the label beside it (planlens' own words describe it)."""
+        args = {"handle": handle, "page": page,
+                "label_pattern": label_pattern, "shapes": shapes,
+                "min_size": min_size, "max_size": max_size,
+                "max_label_gap": max_label_gap, "bbox": bbox,
+                "pdf_page": pdf_page}
+        # what was given, no more: planlens' defaults apply to the rest
+        return _dispatch("plan_symbols", {k: v for k, v in args.items()
+                                          if v not in (None, "")})
+
+    def plan_grid(controls: Optional[list] = None,
+                  north: Optional[list] = None,
+                  scale: Optional[float] = None,
+                  origin: Optional[dict] = None,
+                  points: Optional[list] = None,
+                  on_mirror: Optional[str] = None,
+                  units: Optional[str] = None,
+                  handle: Optional[str] = None,
+                  page: Optional[int] = None,
+                  pdf_page: Optional[int] = None) -> str:
+        """Page points turned into local easting / northing, right-handed
+        (planlens' own words describe it)."""
+        args = {"controls": controls, "north": north, "scale": scale,
+                "origin": origin, "points": points, "on_mirror": on_mirror,
+                "units": units, "handle": handle, "page": page,
+                "pdf_page": pdf_page}
+        return _dispatch("plan_grid", {k: v for k, v in args.items()
+                                       if v not in (None, "")})
+
     def annotate_document(handle: str, markups: Optional[list] = None,
                           output_path: str = "",
                           append: bool = True, check: bool = True,
@@ -1457,6 +1510,9 @@ def make_vision_tools(
         if "check_schedule_marks" in sheet_names:
             document_review_builders.append(
                 ("check_schedule_marks", check_schedule_marks))
+    if plan_names:
+        document_review_builders += [("plan_symbols", plan_symbols),
+                                     ("plan_grid", plan_grid)]
     if _document_tools.has_tool("annotate_document"):
         document_review_builders.append(("annotate_document", annotate_document))
     # Visual scales (planlens' find_scales behind both): described in the

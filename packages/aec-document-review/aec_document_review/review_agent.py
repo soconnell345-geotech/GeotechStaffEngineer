@@ -138,6 +138,10 @@ REVIEW_REWRITES: Dict[str, Tuple[Tuple[str, str], ...]] = {
          "points along a section start at different levels"),
         ("(boring-log convention)", "(the depth convention)"),
         ("as a boring log reads", "as a depth profile reads"),),
+    # planlens' plan tool (behind GEOTECH_REVIEW_PLAN_TOOLS, PL-27): the
+    # example label that names a geotechnical test is left out
+    "plan_symbols": (
+        ("(B-1, TP-1, CPT-3 ...)", "(B-1, TP-1 ...)"),),
 }
 
 #: The same for a helper's description in the ``task`` tool: the figure

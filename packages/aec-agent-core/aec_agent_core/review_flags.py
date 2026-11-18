@@ -227,6 +227,23 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     ``("photo_one_look", {"GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK": "1"})``.
     Kept in :data:`LATER_ENVS` for the reasons given for
     ``GEOTECH_VISION_TILE_ANSWERS``.
+
+``GEOTECH_REVIEW_PLAN_TOOLS`` (default off)
+    ``1`` gives the Document Review page (and its reading helper) planlens'
+    plan tools, where the installed planlens has them: ``plan_symbols``,
+    every small symbol on a VECTOR plan sheet with its exact centre from
+    the PDF's own paths, its shape, size and fill, and the label beside it;
+    and ``plan_grid``, page points turned into local easting / northing,
+    right-handed, from control points or a north arrow and a scale, with
+    the handedness tested. Code reads the positions the drawing holds
+    exactly; the agent says which symbols are which and what to convert.
+    Read when the page is built, as ``GEOTECH_REVIEW_SHEET_TOOLS`` is; on
+    a planlens without them the page is the default build. Unset, the tool
+    lists, descriptions and schemas are byte-for-byte as before. BACKLOG
+    PL-27 (from PL-25). Not measured on a model yet: the suite takes it as
+    the arm ``("plan_tools", {"GEOTECH_REVIEW_PLAN_TOOLS": "1"})``. Kept in
+    :data:`LATER_ENVS` for the reasons given for
+    ``GEOTECH_VISION_TILE_ANSWERS``.
 """
 
 from __future__ import annotations
@@ -256,15 +273,18 @@ ALL_ENVS = (AGENT_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
 
 TILE_ANSWERS_ENV = "GEOTECH_VISION_TILE_ANSWERS"
 PHOTO_PAGE_ONE_LOOK_ENV = "GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK"
+PLAN_TOOLS_ENV = "GEOTECH_REVIEW_PLAN_TOOLS"
 
 #: Switches added after the geotech app's copy went quiet (5.36.0), whose
 #: tests pin :data:`ALL_ENVS` and :data:`ARMS` whole. They are switches like
 #: the rest: :func:`switches` clears them unless an arm names them and
 #: :func:`describe` names them when set. The first two are read by the
 #: vision tools as they look (the build is unchanged); the third at turn
-#: end. Fold them into ``ALL_ENVS`` (and give each its arm) when the app's
-#: tests are next renewed.
-LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV)
+#: end; the fourth when the Document Review page is built. Fold them into
+#: ``ALL_ENVS`` (and give each its arm) when the app's tests are next
+#: renewed.
+LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV,
+              PLAN_TOOLS_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -319,6 +339,13 @@ def sheet_tools() -> bool:
     """Whether the review page asks planlens for its sheet tools (a sheet
     index from the title blocks and a check of the callouts)."""
     return _on(SHEET_TOOLS_ENV)
+
+
+def plan_tools() -> bool:
+    """Whether the review page asks planlens for its plan tools (a vector
+    plan's symbols with their centres and labels, and page points turned
+    into local coordinates)."""
+    return _on(PLAN_TOOLS_ENV)
 
 
 def tile_answers() -> bool:
@@ -522,7 +549,8 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "TODOS_WITH_CALLS_ENV", "todos_with_calls",
            "TILE_ANSWERS_ENV", "tile_answers",
            "PHOTO_PAGE_ONE_LOOK_ENV", "photo_page_one_look",
-           "PHOTO_PAGES_ENV", "photo_pages", "LATER_ENVS",
+           "PHOTO_PAGES_ENV", "photo_pages",
+           "PLAN_TOOLS_ENV", "plan_tools", "LATER_ENVS",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",
