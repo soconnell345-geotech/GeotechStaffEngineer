@@ -16,13 +16,26 @@ from a notebook, or from a terminal::
 Each check returns a dict: ``{"name", "status": "pass"|"fail"|"warn"|"skip",
 "detail"}``. A ``fail`` carries the full exception text — that string is the
 diagnosis.
+
+On a slow day (BACKLOG TA-41) the live checks, which run in the page while
+the tester waits, are bounded: each waits at most :data:`CALL_LIMIT_S` for
+the model (:data:`VISION_LIMIT_S` for the vision probe's few calls), always
+its whole limit once started; no check is started once :data:`BUDGET_S`
+have passed since the first, and a check not started for that reason is
+listed as not run (skipped, never failed). The battery stops at the first
+live check that fails, naming it, with every check after it listed as not
+run. A request left waiting finishes on its own in the background. A run
+where every check passes shows what it showed before.
 """
 
 from __future__ import annotations
 
+import contextvars
 import os
+import threading
+import time
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Report shape
@@ -31,6 +44,21 @@ from typing import Any, List, Optional
 PASS, FAIL, WARN, SKIP = "pass", "fail", "warn", "skip"
 
 _ICON = {PASS: "✅", FAIL: "❌", WARN: "⚠️", SKIP: "⏭️"}
+
+#: Seconds one live check waits for the model (TA-41). Each asks for a few
+#: words, which a working service returns in seconds; a chat turn's own
+#: requests keep their longer limit and retries.
+CALL_LIMIT_S = 30.0
+#: The vision check: the probe's four small image requests, once a process.
+VISION_LIMIT_S = 60.0
+#: Seconds after the first live check within which a check may still be
+#: started. An ordinary passing run (three small calls, the vision probe,
+#: two calls for each of two helper models) takes about a minute on a slow
+#: day, so this leaves it room to spare; the page is held at most this plus
+#: one check's own limit, and less when a check fails (the battery stops).
+BUDGET_S = 180.0
+#: The clock the live checks are timed by (tests replace it).
+_clock = time.monotonic
 
 
 def _check(name: str, status: str, detail: str) -> dict:
@@ -513,20 +541,81 @@ def _helper_models(model_id: Optional[str], identity: Any,
                    helper_models.summary(main, helpers)), helpers)
 
 
-def _helper_request_checks(helpers) -> List[dict]:
+#: One live check: ``(name, the check, its time limit, a note added to its
+#: detail when it does not pass)``.
+_Step = Tuple[str, Callable[[], dict], float, str]
+
+
+def _helper_steps(helpers) -> List[_Step]:
     """A plain and a tool-calling request on each helper model that is not
     the main one (two tiny calls each)."""
-    checks = []
+    steps: List[_Step] = []
     for h in helpers:
         if not h.own_model:
             continue
-        for check in (_invoke_check(h.model), _tool_check(h.model)):
-            check["name"] = f"{check['name']} ({h.name} helper)"
-            if check["status"] != PASS:
-                check["detail"] += (f" | {h.name} helper: {h.label}"
-                                    + (f" | {h.route}" if h.route else ""))
-            checks.append(check)
-    return checks
+        note = (f" | {h.name} helper: {h.label}"
+                + (f" | {h.route}" if h.route else ""))
+        steps.append((f"plain request (invoke) ({h.name} helper)",
+                      lambda m=h.model: _invoke_check(m), CALL_LIMIT_S, note))
+        steps.append((f"tool-calling request ({h.name} helper)",
+                      lambda m=h.model: _tool_check(m), CALL_LIMIT_S, note))
+    return steps
+
+
+def _limited(name: str, fn: Callable[[], dict], limit_s: float) -> dict:
+    """``fn()``, a live check, waited on for at most ``limit_s``. It runs in
+    a thread of its own (with this context's variables: the caller's key),
+    which a request that never answers is left to finish in the background;
+    the check then fails, naming the limit."""
+    box: dict = {}
+    ctx = contextvars.copy_context()
+
+    def run() -> None:
+        try:
+            box["check"] = ctx.run(fn)
+        except BaseException as exc:                     # noqa: BLE001
+            box["check"] = _check(name, FAIL, f"{type(exc).__name__}: {exc}")
+
+    worker = threading.Thread(target=run, daemon=True,
+                              name=f"connection test: {name}")
+    worker.start()
+    worker.join(max(0.0, limit_s))
+    if "check" not in box:
+        return _check(name, FAIL,
+                      f"no answer within {limit_s:.3g} s: the model service "
+                      "is slow or not answering. The request was left to "
+                      "finish on its own; a chat turn waits longer and "
+                      "retries, so it may still answer, slowly.")
+    check = dict(box["check"])
+    check["name"] = name
+    return check
+
+
+#: The detail of a live check not started because :data:`BUDGET_S` passed.
+TIME_USED_UP = "not run: the time allowed for the checks was used up"
+
+
+def _live_checks(steps: List[_Step], budget_s: float) -> List[dict]:
+    """The live checks one after another, each given its whole own limit;
+    none is started once ``budget_s`` have passed since the first. The
+    battery stops at the first that fails, or when that time is used up,
+    and lists the rest as not run (skipped, never failed)."""
+    out: List[dict] = []
+    deadline = _clock() + max(0.0, budget_s)
+    for i, (name, fn, limit_s, note) in enumerate(steps):
+        if _clock() >= deadline:
+            out.extend(_check(n, SKIP, TIME_USED_UP)
+                       for n, _f, _l, _n in steps[i:])
+            break
+        check = _limited(name, fn, limit_s)
+        if check["status"] != PASS and note:
+            check["detail"] += note
+        out.append(check)
+        if check["status"] == FAIL:
+            out.extend(_check(n, SKIP, f"not run: '{name}' failed first")
+                       for n, _f, _l, _n in steps[i + 1:])
+            break
+    return out
 
 
 def run_diagnostics(model_id: Optional[str] = None,
@@ -536,9 +625,10 @@ def run_diagnostics(model_id: Optional[str] = None,
     """Run every stage against the CURRENTLY CONFIGURED engine and return the
     check list. Never raises. Live checks each make one tiny model call (a few
     tokens) — three calls when everything passes, plus the vision probe's four
-    the first time it runs in this process. ``identity`` is the signed-in
-    caller: on Tiny Apps the engine is built with THEIR key, and the report
-    says which key source that is (never the key). ``helper_models`` are the
+    the first time it runs in this process. The live checks are bounded and
+    stop at the first that fails (:func:`_live_checks`; TA-41).
+    ``identity`` is the signed-in caller: on Tiny Apps the engine is built
+    with THEIR key, and the report says which key source that is (never the key). ``helper_models`` are the
     sidebar's picks for helpers on a model of their own; the report names
     the model each agent runs on and tries each helper model with two more
     tiny requests (:mod:`aec_document_review.helper_models`). ``page_checks`` is the
@@ -572,9 +662,13 @@ def run_diagnostics(model_id: Optional[str] = None,
         checks.append(_check("plain request (invoke)", SKIP,
                              "engine did not resolve"))
         return checks
-    checks.append(_invoke_check(model))
-    checks.append(_stream_check(model))
-    checks.append(_tool_check(model))
-    checks.append(_vision_check(model))
-    checks.extend(_helper_request_checks(helpers))
+    steps: List[_Step] = [
+        ("plain request (invoke)", lambda: _invoke_check(model),
+         CALL_LIMIT_S, ""),
+        ("streaming request", lambda: _stream_check(model), CALL_LIMIT_S, ""),
+        ("tool-calling request", lambda: _tool_check(model),
+         CALL_LIMIT_S, ""),
+        ("vision model", lambda: _vision_check(model), VISION_LIMIT_S, ""),
+    ] + _helper_steps(helpers)
+    checks.extend(_live_checks(steps, BUDGET_S))
     return checks

@@ -134,7 +134,7 @@ def test_the_turn_record_names_the_switch_and_an_arm_sets_it_alone(
     when the switch is on. An arm sets exactly what it names: the pair the
     suite takes turns it on; the baseline clears a value left in the
     notebook's environment."""
-    assert review_flags.TILE_ANSWERS_ENV in review_flags.VISION_ENVS
+    assert review_flags.TILE_ANSWERS_ENV in review_flags.LATER_ENVS
     assert review_flags.TILE_ANSWERS_ENV not in review_flags.describe()
     with review_flags.switches({review_flags.TILE_ANSWERS_ENV: "1"}):
         assert review_flags.tile_answers()

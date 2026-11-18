@@ -90,6 +90,25 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     goes out, and the answer it writes after that note is the one delivered
     (with the note appended if it still cites such pages). Off: the answer is
     left as the model wrote it. Both pages (BACKLOG EV-18).
+``GEOTECH_PHOTO_PAGES`` (default off)
+    Whether the app checks, at turn end, the attached documents'
+    photograph pages that no tool or helper looked at, and that were not on
+    a contact sheet that was then looked at, in the conversation
+    (photograph pages by planlens' own page roles; :func:`aec_agent_core.
+    cited_pages.photo_coverage`). Off (unset): nothing of it runs at turn
+    end; the turn's record and what the model is handed are as before.
+    ``record``: the check runs and is kept in ``activity.jsonl`` under
+    ``photo_pages`` in the turn's ``cited_pages`` event; the model is
+    handed exactly what it was before. ``retry`` (or ``1``): the record,
+    and the model told once, before the answer goes out, which documents'
+    photograph pages nothing looked at; the answer it writes after that
+    note is the one delivered, and pages it was told about are not told
+    again in a later turn of the conversation. What ``record`` and
+    ``retry`` cost: no model call, but one planlens pass over every page of
+    each attached PDF at the first turn end after it is attached (again
+    after each restart of the app), before the answer is shown: a few
+    seconds for a document of a few hundred pages, more with several.
+    Both pages (BACKLOG DR-48).
 ``GEOTECH_CITED_DOCUMENTS``
     What the app does when an answer or a deliverable cites a published
     document (a GEC, AASHTO LRFD, a UFC, an ASTM standard...) or an author
@@ -183,7 +202,7 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     the arm ``("tile_answers", {"GEOTECH_VISION_TILE_ANSWERS": "1"})``
     (``arms`` of :func:`aec_agent_core.review_eval.runner.
     score_review_suite` takes such a pair). The vision tools read it as
-    they look, and it is kept in :data:`VISION_ENVS`, apart from
+    they look, and it is kept in :data:`LATER_ENVS`, apart from
     :data:`ALL_ENVS` and :data:`ARMS`, whose contents the geotech app's own
     tests pin (the app is not changed in this repository); :func:`switches`
     clears it and :func:`describe` names it as it does the others, so a
@@ -206,7 +225,7 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     times longer than one look that answered the same questions. Not
     measured on a model yet: the suite takes it as the arm
     ``("photo_one_look", {"GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK": "1"})``.
-    Kept in :data:`VISION_ENVS` for the reasons given for
+    Kept in :data:`LATER_ENVS` for the reasons given for
     ``GEOTECH_VISION_TILE_ANSWERS``.
 """
 
@@ -221,6 +240,7 @@ CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
 REPORT_INGEST_ENV = "GEOTECH_REPORT_INGEST"
 CITED_PAGES_ENV = "GEOTECH_CITED_PAGES"
 CITED_DOCUMENTS_ENV = "GEOTECH_CITED_DOCUMENTS"
+PHOTO_PAGES_ENV = "GEOTECH_PHOTO_PAGES"
 FIGURE_HELPER_ENV = "GEOTECH_FIGURE_HELPER"
 PLOT_CODE_ENV = "GEOTECH_PLOT_CODE"
 STEP_CAP_ANSWER_ENV = "GEOTECH_STEP_CAP_ANSWER"
@@ -237,11 +257,14 @@ ALL_ENVS = (AGENT_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
 TILE_ANSWERS_ENV = "GEOTECH_VISION_TILE_ANSWERS"
 PHOTO_PAGE_ONE_LOOK_ENV = "GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK"
 
-#: Switches the vision tools read as they look (the build is unchanged).
-#: Kept apart from :data:`ALL_ENVS`, whose contents the geotech app's own
-#: tests pin; :func:`switches` clears them and :func:`describe` names them
-#: as it does the switches of :data:`ALL_ENVS`.
-VISION_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV)
+#: Switches added after the geotech app's copy went quiet (5.36.0), whose
+#: tests pin :data:`ALL_ENVS` and :data:`ARMS` whole. They are switches like
+#: the rest: :func:`switches` clears them unless an arm names them and
+#: :func:`describe` names them when set. The first two are read by the
+#: vision tools as they look (the build is unchanged); the third at turn
+#: end. Fold them into ``ALL_ENVS`` (and give each its arm) when the app's
+#: tests are next renewed.
+LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -363,6 +386,19 @@ def cited_pages() -> str:
     return "off"
 
 
+def photo_pages() -> str:
+    """What the turn end does about attached documents' photograph pages
+    nothing looked at: ``"off"`` (the default: nothing runs), ``"record"``
+    (checked and recorded) or ``"retry"`` (recorded, and the model told
+    once before the answer goes out); both pages."""
+    value = str(os.environ.get(PHOTO_PAGES_ENV, "")).strip().lower()
+    if value == "record":
+        return "record"
+    if value == "retry" or value in _ON:
+        return "retry"
+    return "off"
+
+
 def cited_documents() -> str:
     """What an answer or a deliverable citing a document nothing in the
     conversation looked up gets: ``"off"`` (the default: the answer's check
@@ -399,6 +435,10 @@ ARMS: Dict[str, Dict[str, str]] = {
     # or the model told once. On the DEFAULT agent, against `baseline`.
     "cited_pages_note": {CITED_PAGES_ENV: "note"},
     "cited_pages_retry": {CITED_PAGES_ENV: "retry"},
+    # (GEOTECH_PHOTO_PAGES, DR-48, has no named arm yet: the geotech app's
+    # own test pins this table whole. A run passes it as the pairs
+    # ("photo_pages_record", {PHOTO_PAGES_ENV: "record"}) and
+    # ("photo_pages_retry", {PHOTO_PAGES_ENV: "retry"}).)
     # The figure helper (GM-92, 2026-10-15). On the DEFAULT agent. On by
     # default since GM-227, so this arm is `baseline`.
     "figure_helper": {FIGURE_HELPER_ENV: "1"},
@@ -438,15 +478,14 @@ ARMS: Dict[str, Dict[str, str]] = {
 
 @contextmanager
 def switches(values: Optional[Mapping[str, str]]) -> Iterator[None]:
-    """Set exactly ``values`` for the block: every switch (:data:`ALL_ENVS`)
-    and every switch setting (:data:`SETTINGS_ENVS`) NOT named is unset (a
+    """Set exactly ``values`` for the block: every switch (:data:`ALL_ENVS`,
+    :data:`LATER_ENVS`) and every switch setting (:data:`SETTINGS_ENVS`) NOT named is unset (a
     switch of :data:`DEFAULT_ON_ENVS` unset is on), so an arm is what it
     says and nothing leaks in from the notebook's own
     environment. Any other variable the arm names (a budget, a vision
     policy) is set too. The previous environment is restored afterwards."""
     values = dict(values or {})
-    keys = set(ALL_ENVS) | set(VISION_ENVS) | set(SETTINGS_ENVS) | \
-        set(values)
+    keys = set(ALL_ENVS) | set(LATER_ENVS) | set(SETTINGS_ENVS) | set(values)
     saved = {k: os.environ.get(k) for k in keys}
     try:
         for k in keys:
@@ -467,7 +506,7 @@ def describe() -> str:
     """One line naming the switches that are set, and each switch on by
     default as ``=1 (default)`` while unset (for diagnostics and logs)."""
     out = []
-    for k in ALL_ENVS + VISION_ENVS:
+    for k in ALL_ENVS + LATER_ENVS:
         value = str(os.environ.get(k, "")).strip()
         if value:
             out.append(f"{k}={value}")
@@ -482,7 +521,8 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "SHOW_ME_ENV", "show_me", "SHEET_TOOLS_ENV", "sheet_tools",
            "TODOS_WITH_CALLS_ENV", "todos_with_calls",
            "TILE_ANSWERS_ENV", "tile_answers",
-           "PHOTO_PAGE_ONE_LOOK_ENV", "photo_page_one_look", "VISION_ENVS",
+           "PHOTO_PAGE_ONE_LOOK_ENV", "photo_page_one_look",
+           "PHOTO_PAGES_ENV", "photo_pages", "LATER_ENVS",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",

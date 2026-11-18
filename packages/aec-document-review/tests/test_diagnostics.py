@@ -56,6 +56,13 @@ class _BoomModel(_GoodModel):
         yield  # pragma: no cover
 
 
+class _StreamBoomModel(_GoodModel):
+    """Plain requests work; streaming is refused."""
+    def stream(self, _msg):
+        raise RuntimeError("streaming is not permitted for this model")
+        yield  # pragma: no cover
+
+
 def _patch_engine(monkeypatch, model):
     monkeypatch.setattr(
         engine_config, "resolve_engine",
@@ -91,6 +98,10 @@ def test_errors_reported_verbatim(monkeypatch):
     inv = _by_name(checks, "plain request (invoke)")
     assert inv["status"] == diag.FAIL
     assert "max_tokens is not supported" in inv["detail"]
+    # TA-41: the battery stops at the first live check that fails
+    assert _by_name(checks, "streaming request")["status"] == diag.SKIP
+    _patch_engine(monkeypatch, _StreamBoomModel())
+    checks = diag.run_diagnostics("ri.fake")
     str_c = _by_name(checks, "streaming request")
     assert str_c["status"] == diag.FAIL
     assert "streaming is not permitted" in str_c["detail"]
@@ -190,7 +201,7 @@ def test_the_streaming_switch_is_named_for_the_host(monkeypatch):
     assert diag._streaming_switch() == "GEOTECH_FOUNDRY_DISABLE_STREAMING"
     monkeypatch.setenv("GEOTECH_DEPLOYMENT", "tinyapps")
     assert diag._streaming_switch() == "GEOTECH_PROMPTER_DISABLE_STREAMING"
-    _patch_engine(monkeypatch, _BoomModel())
+    _patch_engine(monkeypatch, _StreamBoomModel())
     detail = _by_name(diag.run_diagnostics("ri.fake"),
                       "streaming request")["detail"]
     assert "GEOTECH_PROMPTER_DISABLE_STREAMING=1" in detail

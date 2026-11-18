@@ -22,7 +22,7 @@ page of photographs with short captions, or none, falls into that rule.
 **The switch.** `GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK`, default off; `1` turns
 it on. It lives in `review_flags.py` (`PHOTO_PAGE_ONE_LOOK_ENV`,
 `photo_page_one_look()`), is documented in that module's docstring beside
-`GEOTECH_VISION_TILE_ANSWERS`, and sits in `review_flags.VISION_ENVS` with
+`GEOTECH_VISION_TILE_ANSWERS`, and sits in `review_flags.LATER_ENVS` with
 it (out of `ALL_ENVS` and `ARMS`, for the reasons under VIS-34). Off, the
 page's kind is never read and every read is byte-for-byte as on master,
 pages of photographs included. The lead's ruling: robust first, cost second.
@@ -211,7 +211,7 @@ ask.
   `funhouse_agent/deep/tests/test_judgment_calls.py` (readers ==
   `ALL_ENVS`) and `funhouse_agent/deep/tests/test_review_switches_offline.py`
   (`ARMS ==`). A builder here may not edit the app. So the switch sits in
-  a new tuple, `review_flags.VISION_ENVS`: `switches()` clears it like the
+  a new tuple, `review_flags.LATER_ENVS`: `switches()` clears it like the
   others, and `describe()` names it when set, so the turn record's
   `build.switches` shows it. The suite takes the arm as a pair:
   `("tile_answers", {"GEOTECH_VISION_TILE_ANSWERS": "1"})`.

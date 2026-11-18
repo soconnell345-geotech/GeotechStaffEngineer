@@ -53,6 +53,29 @@ page map, and is recorded apart (``page_map``). A page cited beside the
 name of a published code, manual or work (a designation such as an agency
 manual's, or an author and year) is another document's page and is not
 checked here. Pages are 0-based inside this module, as in every tool.
+
+PHOTOGRAPH PAGES NOTHING LOOKED AT (BACKLOG DR-48). At turn end the same
+record answers a second question: which photograph pages of the attached
+documents did no tool or helper look at (``analyze_pdf_page``,
+``render_region``, the vision records), and were not on a
+``render_page_thumbnails`` contact sheet that a later call then looked at
+(:func:`photo_coverage`). "Photograph page" is planlens' own page role
+(``photos``, :mod:`planlens.document.roles`: a photograph caption on an
+image page), never a file name; a document whose page kinds cannot be told
+here (not a PDF, not in the conversation's folder, a planlens without page
+roles) is left out and the record says why. The attached documents are the
+page's upload list (``attachments.json`` beside the activity log), else the
+documents the call log opened. It costs no model call, but one planlens pass
+over each attached PDF (cached per file while the process lives), so at turn
+end it runs only behind ``GEOTECH_PHOTO_PAGES``
+(:func:`aec_agent_core.review_flags.photo_pages`, OFF by default: nothing of
+it runs and the turn's record is as before). ``record`` keeps the answer
+under :data:`PHOTO_KEY` in the turn's :data:`RECORD_EVENT` event (any error
+in it swallowed and recorded); ``retry`` also tells the model once, before
+the answer goes out, through the same :class:`TurnPageCheck` ``feedback``
+the cited-pages retry uses; pages it was told about are not told again later
+in the conversation. :func:`photo_coverage` also reads a saved run's folder
+by itself, with no switch.
 """
 
 from __future__ import annotations
@@ -98,6 +121,24 @@ HIT_TOOLS = ("search_document", "find_quantities", "digest_search",
 OPENED_HOWS = frozenset({"text", "look", "sweep"})
 TEXT_EMPTY = "text_empty"
 HIT = "hit"
+
+#: The planlens page role of a page of photographs (DR-48).
+PHOTO_ROLE = "photos"
+#: The key of the photograph-page check in the turn's :data:`RECORD_EVENT`.
+PHOTO_KEY = "photo_pages"
+#: How the photograph-page note to the model opens (``GEOTECH_PHOTO_PAGES``).
+PHOTO_NOTE_PREFIX = "[Photo-page check]"
+#: The status line the page shows while the model answers that note.
+PHOTO_RETRY_STATUS = ("photo-page check: attached documents have photograph "
+                      "pages nothing looked at; the answer is held back once")
+#: The page's list of the conversation's uploads, beside the activity log.
+ATTACHMENTS_FILE = "attachments.json"
+#: Tools that write contact sheets of a document's pages (PNG files that a
+#: later call looks at).
+CONTACT_SHEET_TOOLS = ("render_page_thumbnails",)
+#: The tools that look at an image file: only a call of one of these that
+#: names a contact sheet counts as seeing the pages on it.
+SHEET_LOOK_TOOLS = ("analyze_image",) + LOOK_TOOLS
 
 #: Most citations / entries kept in one result.
 MAX_LISTED = 40
@@ -233,6 +274,18 @@ class PagesOpened:
     #: (a segment, a run of one page kind, a work item): an answer naming
     #: exactly one describes where something is, from the page map.
     runs: Set[Tuple[int, int]] = field(default_factory=set)
+    #: document key -> 0-based pages that were on a contact sheet a later
+    #: call looked at (kept apart: a cited page is not "opened" by it).
+    sheet_seen: Dict[str, Set[int]] = field(default_factory=dict)
+    #: document key -> 0-based photograph pages the model was already told
+    #: nothing looked at (``GEOTECH_PHOTO_PAGES``), earlier in the record.
+    photos_told: Dict[str, Set[int]] = field(default_factory=dict)
+
+    def looked(self, key: str) -> Set[int]:
+        """The pages of one document something looked at: a look, or a
+        contact sheet that was looked at."""
+        return ({p for p, hows in self.pages.get(key, {}).items()
+                 if "look" in hows} | set(self.sheet_seen.get(key, ())))
 
     def add(self, key: str, page: int, how: str, name: str = "",
             source: str = "") -> None:
@@ -305,9 +358,16 @@ class _ActivityState:
         self.n_pages: Dict[str, int] = {}
         self.sources: Dict[str, Set[str]] = {}
         self.runs: Set[Tuple[int, int]] = set()
+        #: contact-sheet file (base name, case folded) -> (ref kind, ref
+        #: value, 0-based pages on it).
+        self.sheets: Dict[str, Tuple[str, str, List[int]]] = {}
+        #: (ref kind, ref value, page) of every page on a sheet looked at.
+        self.sheet_seen: List[Tuple[str, str, int]] = []
+        #: document key -> 0-based photograph pages already told.
+        self.photos_told: Dict[str, Set[int]] = {}
 
 
-_ACTIVITY: "OrderedDict[str, _ActivityState]" = OrderedDict()
+_ACTIVITY:"OrderedDict[str, _ActivityState]" = OrderedDict()
 _ACTIVITY_LOCK = threading.Lock()
 _ACTIVITY_KEEP = 32
 
@@ -325,9 +385,12 @@ def _state_for(path: str) -> _ActivityState:
 
 
 def clear_cache() -> None:
-    """Forget what the activity logs said (tests; a host that rewrites one)."""
+    """Forget what the activity logs said, and the photograph pages measured
+    (tests; a host that rewrites one)."""
     with _ACTIVITY_LOCK:
         _ACTIVITY.clear()
+    with _PHOTO_LOCK:
+        _PHOTO_CACHE.clear()
 
 
 def _args_dict(args: Any) -> dict:
@@ -482,6 +545,62 @@ def _whole_result(rec: dict, base: str) -> Any:
     return result
 
 
+def _file_key(value: Any) -> str:
+    """A file named in a result or an argument, by its base name (case
+    folded): the record shortens paths one way and a call names them
+    another."""
+    text = str(value or "").strip().replace("\\", "/").rstrip("/")
+    return os.path.basename(text).lower() if text else ""
+
+
+def _note_sheets(st: _ActivityState, args: dict, result: Any) -> None:
+    """The contact sheets a ``render_page_thumbnails`` call wrote, and the
+    pages on each (seen only once a later call looks at the sheet)."""
+    data = _json(result)
+    if data is None or data.get("error"):
+        return
+    ref = _ref_of(args, data)
+    if not ref[1]:
+        return
+    for sheet in data.get("sheets") or []:
+        if not isinstance(sheet, dict):
+            continue
+        key = _file_key(sheet.get("image_path") or sheet.get("path"))
+        pages = _pages(sheet.get("pages"))
+        if key and pages:
+            st.sheets[key] = (ref[0], ref[1], pages)
+
+
+def _note_sheet_looks(st: _ActivityState, args: dict, result: Any) -> None:
+    """A finished call of a looking tool (:data:`SHEET_LOOK_TOOLS`) whose
+    arguments name a contact sheet written earlier (``analyze_image`` on
+    its PNG) saw the pages on that sheet."""
+    data = _json(result)
+    if data is not None and data.get("error"):
+        return
+    values: List[Any] = []
+    for v in args.values():
+        values.extend(v if isinstance(v, (list, tuple)) else [v])
+    for v in values:
+        if not isinstance(v, str):
+            continue
+        got = st.sheets.get(_file_key(v))
+        if got:
+            st.sheet_seen.extend((got[0], got[1], p) for p in got[2])
+
+
+def _note_told(st: _ActivityState, photos: Any) -> None:
+    """The photograph pages an earlier note told the model about (the
+    ``told`` of a :data:`PHOTO_KEY` record: 1-based PDF pages)."""
+    told = photos.get("told") if isinstance(photos, dict) else None
+    if not isinstance(told, dict):
+        return
+    for name, spec in told.items():
+        got = {p - 1 for p in _pages(spec) if p >= 1}
+        if got:
+            st.photos_told.setdefault(doc_key(name), set()).update(got)
+
+
 def _feed_activity(st: _ActivityState, path: str) -> None:
     """Read what was added to ``path`` since the last call."""
     try:
@@ -511,6 +630,9 @@ def _feed_activity(st: _ActivityState, path: str) -> None:
             continue
         ev = rec.get("event")
         rid = str(rec.get("run_id") or "")
+        if ev == RECORD_EVENT:
+            _note_told(st, rec.get(PHOTO_KEY))
+            continue
         if ev == "tool_start" and rid:
             st.starts[rid] = (str(rec.get("name") or ""), rec.get("args"))
             continue
@@ -522,6 +644,10 @@ def _feed_activity(st: _ActivityState, path: str) -> None:
         name, args = start
         args = _args_dict(args)
         result = _whole_result(rec, base)
+        if name in CONTACT_SHEET_TOOLS:
+            _note_sheets(st, args, result)
+        elif st.sheets and name in SHEET_LOOK_TOOLS:
+            _note_sheet_looks(st, args, result)
         if name == "open_document":
             data = _json(result) or {}
             handle = str(data.get("handle") or "")
@@ -562,6 +688,17 @@ def _from_activity(path: str, out: PagesOpened) -> bool:
         n_pages = dict(st.n_pages)
         sources = {k: set(v) for k, v in st.sources.items()}
         out.runs |= st.runs
+        sheet_seen = list(st.sheet_seen)
+        for key, told in st.photos_told.items():
+            out.photos_told.setdefault(key, set()).update(told)
+    for kind, value, page in sheet_seen:
+        if kind == "handle":
+            shown = handle_names.get(value) or _handle_name(value)
+            key = doc_key(shown) if shown else value
+        else:
+            key = doc_key(value)
+        if key:
+            out.sheet_seen.setdefault(key, set()).add(page)
     for kind, value, page, how in reached:
         if kind == "handle":
             shown = handle_names.get(value) or _handle_name(value)
@@ -1301,18 +1438,233 @@ def _row_text(row: Dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Photograph pages nothing looked at (BACKLOG DR-48)
+# ---------------------------------------------------------------------------
+
+#: ``path -> (0-based photograph pages, "")`` or ``(None, why)``.
+PhotoSource = Callable[[str], Tuple[Optional[List[int]], str]]
+
+_PHOTO_CACHE: "OrderedDict[tuple, Tuple[Optional[List[int]], str]]" = \
+    OrderedDict()
+_PHOTO_LOCK = threading.Lock()
+_PHOTO_KEEP = 64
+
+
+def photograph_pages(path: str) -> Tuple[Optional[List[int]], str]:
+    """The 0-based photograph pages of the PDF at ``path`` by planlens' own
+    page roles (:data:`PHOTO_ROLE`), with ``""``; or ``(None, why)`` when
+    its page kinds cannot be told here. Measured once per file (its path,
+    size and time), with no model call."""
+    if os.path.splitext(str(path))[1].lower() != ".pdf":
+        return None, "not a PDF: its page kinds are not measured"
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None, "the file is not in the conversation's folder"
+    key = (os.path.normcase(os.path.realpath(path)), info.st_size,
+           info.st_mtime_ns)
+    with _PHOTO_LOCK:
+        got = _PHOTO_CACHE.get(key)
+        if got is not None:
+            _PHOTO_CACHE.move_to_end(key)
+            return got
+    try:
+        from planlens.document import open_document
+        from planlens.document.roles import page_roles
+    except Exception:  # noqa: BLE001 - an older planlens
+        return None, "the installed planlens names no page roles"
+    try:
+        with open_document(str(path)) as doc:
+            roles = page_roles(doc)
+        got = (sorted({int(r.page) for r in roles
+                       if getattr(r, "role", None) == PHOTO_ROLE}), "")
+    except Exception as exc:  # noqa: BLE001 - a file planlens cannot read
+        got = (None, "planlens could not measure its pages: "
+                     f"{type(exc).__name__}")
+    with _PHOTO_LOCK:
+        _PHOTO_CACHE[key] = got
+        while len(_PHOTO_CACHE) > _PHOTO_KEEP:
+            _PHOTO_CACHE.popitem(last=False)
+    return got
+
+
+def _under(path: str, root: str) -> bool:
+    try:
+        top = os.path.realpath(root)
+        return os.path.commonpath([os.path.realpath(path), top]) == top
+    except ValueError:
+        return False
+
+
+def attached_documents(record_folder: str, opened: PagesOpened
+                       ) -> Tuple[List[Tuple[str, Optional[str]]], str]:
+    """The conversation's attached documents as ``(name, path or None)``,
+    and where the list came from: the page's upload list
+    (:data:`ATTACHMENTS_FILE` beside the activity log, each key a file in
+    its ``files`` folder), else the documents the call log opened that are
+    files in the conversation's own folder (a reference read by its path
+    elsewhere is not an attachment)."""
+    files = os.path.join(record_folder, "files")
+    try:
+        with open(os.path.join(record_folder, ATTACHMENTS_FILE),
+                  encoding="utf-8") as fh:
+            keys = json.load(fh)
+    except (OSError, ValueError):
+        keys = None
+    out: List[Tuple[str, Optional[str]]] = []
+    if isinstance(keys, list):
+        for k in keys:
+            name = str(k or "").strip()
+            if not name:
+                continue
+            path = os.path.join(files, name)
+            ok = _under(path, files) and os.path.isfile(path)
+            out.append((name, path if ok else None))
+        return out, "attachment list"
+    for key in sorted(set(opened.documents()) | set(opened.sources)):
+        for name in [opened.names.get(key)] + sorted(
+                opened.sources.get(key, ())) + [key]:
+            base = os.path.basename(str(name or "").replace("\\", "/"))
+            if not os.path.splitext(base)[1]:
+                continue             # a handle, not a file
+            path = next((c for c in (os.path.join(files, base),
+                                     os.path.join(record_folder, base))
+                         if os.path.isfile(c)), None)
+            if path:
+                out.append((base, path))
+                break
+    return out, "call log"
+
+
+def photo_coverage(record_folder: Optional[str] = None, folder=None,
+                   opened: Optional[PagesOpened] = None,
+                   photo_source: Optional[PhotoSource] = None
+                   ) -> Optional[Dict[str, Any]]:
+    """Per attached document, its photograph pages that nothing looked at
+    (no look, and no contact sheet holding them that a later call looked
+    at). No model call.
+
+    ``None`` when the conversation has no record folder or no attached
+    document. Else ``{"checked", "attached", "against", "documents" (those
+    whose page kinds were told), "photos" (each one's photograph pages),
+    "unseen" ({} when every photograph page was looked at)}``, with
+    ``"told_before"`` (unseen pages an earlier note named) and ``"left_out"``
+    (a document whose page kinds cannot be told here, and why) when any.
+    Pages are PDF page numbers, 1-based as a viewer shows them."""
+    base = record_folder or record_dir(folder)
+    if not base:
+        return None
+    if opened is None:
+        opened = pages_opened(base, folder)
+    docs, where = attached_documents(base, opened)
+    if not docs:
+        return None
+    if not opened.knows_text:
+        return {"checked": False, "attached": where,
+                "why": "this host keeps no record of the pages looked at "
+                       "(no activity log)"}
+    source = photo_source or photograph_pages
+    result: Dict[str, Any] = {
+        "checked": True, "attached": where,
+        "against": ", ".join(opened.records) or "no record",
+        "documents": [], "photos": {}, "unseen": {}}
+    told_before: Dict[str, str] = {}
+    left_out: Dict[str, str] = {}
+    for name, path in docs[:MAX_LISTED]:
+        if path is None:
+            left_out[name] = "the file is not in the conversation's folder"
+            continue
+        try:
+            pages, why = source(path)
+        except Exception as exc:  # noqa: BLE001 - that document only
+            pages, why = None, ("its pages could not be measured: "
+                                f"{type(exc).__name__}")
+        if pages is None:
+            left_out[name] = why or "its page kinds cannot be told here"
+            continue
+        result["documents"].append(name)
+        if not pages:
+            continue
+        key = doc_key(name)
+        result["photos"][name] = compact(pages, 1)
+        missing = sorted(set(pages) - opened.looked(key))
+        if missing:
+            result["unseen"][name] = compact(missing, 1)
+            before = set(missing) & opened.photos_told.get(key, set())
+            if before:
+                told_before[name] = compact(before, 1)
+    if told_before:
+        result["told_before"] = told_before
+    if left_out:
+        result["left_out"] = left_out
+    if len(docs) > MAX_LISTED:
+        result["n_attached"] = len(docs)
+    return result
+
+
+def _pdf_pages_text(spec: str) -> str:
+    return (f"PDF pages {spec}" if any(c in spec for c in "-,")
+            else f"PDF page {spec}")
+
+
+def photo_note_for_model(result: Optional[Dict[str, Any]]
+                         ) -> Tuple[Optional[str], Dict[str, str]]:
+    """The note the model is given once (``GEOTECH_PHOTO_PAGES=retry``),
+    and the pages it names per document; ``(None, {})`` when every
+    photograph page was looked at or was named by an earlier note."""
+    unseen = (result or {}).get("unseen") or {}
+    before = (result or {}).get("told_before") or {}
+    tell: Dict[str, str] = {}
+    for name, spec in unseen.items():
+        left = sorted(set(_pages(spec)) - set(_pages(before.get(name))))
+        if left:
+            tell[name] = compact(left)
+    if not tell:
+        return None, {}
+    lines = "\n".join(f"- {name}: {_pdf_pages_text(spec)}"
+                      for name, spec in list(tell.items())[:20])
+    return (f"{PHOTO_NOTE_PREFIX} Before your answer goes to the user, the "
+            "app compared the photograph pages of the attached documents "
+            "(the page kinds the document tools measure) with its record of "
+            "the pages any tool or helper looked at in this conversation, a "
+            "contact sheet counting once it was looked at. Nothing looked "
+            "at these photograph pages:\n" + lines + "\n"
+            "The answer you wrote is held back: the user will not see it. "
+            "If your answer rests on these documents or names them as its "
+            "basis, look at those pages and check what you say; otherwise "
+            "say plainly that their photographs were not looked at. This "
+            "note comes once. Then write your whole answer to the user's "
+            "request again, as they will read it: it replaces the one held "
+            "back."), tell
+
+
+# ---------------------------------------------------------------------------
 # One turn's check (webapp.core.stream_turn)
 # ---------------------------------------------------------------------------
 
 class TurnPageCheck:
     """The answer check of one turn: ``feedback`` before the answer goes out
     (``retry`` mode, once), ``finish`` when it does (records the check and,
-    per the mode, notes the answer). Never raises."""
+    per the mode, notes the answer). Never raises.
+
+    It carries the photograph-page check too (BACKLOG DR-48), by
+    ``photo_mode`` (``GEOTECH_PHOTO_PAGES``): ``off``, nothing of it runs;
+    ``record``, ``finish`` records it (:data:`PHOTO_KEY` in the same event);
+    ``retry``, that and ``feedback`` tells the model once, in the same note
+    as the page check's when both speak. The pages a note named are
+    recorded as told (a ``photos_fed_back`` event) once the note is handed
+    to the model: when ``feedback`` returns it, or, for a page built with
+    ``confirms_notes`` (one that may drop a note it was given, as Document
+    Review does when the turn's budget has ended), when the page calls
+    :meth:`note_handed`."""
 
     def __init__(self, record_folder: Optional[str] = None, folder=None,
                  log: Optional[Callable[[Dict[str, Any]], None]] = None,
                  mode: Optional[str] = None,
-                 label_source: Optional[LabelSource] = None):
+                 label_source: Optional[LabelSource] = None,
+                 photo_mode: Optional[str] = None,
+                 photo_source: Optional[PhotoSource] = None,
+                 confirms_notes: bool = False):
         self.record_folder = record_folder
         self.folder = folder
         self.log = log
@@ -1323,8 +1675,31 @@ class TurnPageCheck:
             except Exception:  # noqa: BLE001
                 mode = "off"
         self.mode = mode
+        if photo_mode is None:
+            try:
+                from aec_agent_core import review_flags
+                photo_mode = review_flags.photo_pages()
+            except Exception:  # noqa: BLE001
+                photo_mode = "off"
+        self.photo_mode = photo_mode
         self.label_source = label_source
+        self.photo_source = photo_source
+        self.confirms_notes = bool(confirms_notes)
         self.fed_back = False
+        self.photos_told = False
+        #: The photograph-page record of a note not yet handed to the model.
+        self._photo_pending: Optional[Dict[str, Any]] = None
+        #: What the last note was about: "pages", "photos" or both.
+        self._told: Tuple[str, ...] = ()
+
+    @property
+    def retry_status(self) -> str:
+        """The status line for the last note (the page check's alone is
+        :data:`RETRY_STATUS`, as before)."""
+        parts = [RETRY_STATUS] if "pages" in self._told else []
+        if "photos" in self._told:
+            parts.append(PHOTO_RETRY_STATUS)
+        return "; ".join(parts) or RETRY_STATUS
 
     def _check(self, answer: str) -> Dict[str, Any]:
         try:
@@ -1335,37 +1710,93 @@ class TurnPageCheck:
             return {"checked": False, "n_cited": 0,
                     "why": f"the check failed: {type(exc).__name__}: {exc}"}
 
-    def _record(self, result: Dict[str, Any], action: str) -> None:
-        if self.log is None or not result.get("n_cited"):
-            return
+    def _photos(self) -> Optional[Dict[str, Any]]:
+        """The photograph-page check (``None`` with no attached document);
+        a failure is the record's, never the turn's."""
+        if not self.record_folder:
+            return None
         try:
-            self.log({**result, "mode": self.mode, "action": action})
+            return photo_coverage(self.record_folder, self.folder,
+                                  photo_source=self.photo_source)
+        except Exception as exc:  # noqa: BLE001 - never the turn
+            return {"checked": False,
+                    "why": f"the check failed: {type(exc).__name__}: {exc}"}
+
+    def _record(self, result: Dict[str, Any], action: str,
+                photos: Optional[Dict[str, Any]] = None) -> None:
+        if self.log is None or not (result.get("n_cited") or photos):
+            return
+        data = dict(result)
+        if photos:
+            data[PHOTO_KEY] = photos
+            data["photo_mode"] = self.photo_mode
+        try:
+            self.log({**data, "mode": self.mode, "action": action})
         except Exception:  # noqa: BLE001
             pass
 
     def feedback(self, answer: str) -> Optional[str]:
         """The note to give the model before this answer goes out, once a
-        turn, in ``retry`` mode; else ``None``."""
-        if self.mode != "retry" or self.fed_back or not str(answer).strip():
+        turn for each check that has one (the page check in ``retry``
+        mode, the photograph-page check with ``photo_mode`` ``retry``);
+        else ``None``."""
+        if not str(answer).strip():
             return None
-        result = self._check(answer)
-        note = note_for_model(result)
-        if note:
-            self.fed_back = True
+        notes: List[str] = []
+        told: List[str] = []
+        result: Dict[str, Any] = {}
+        if self.mode == "retry" and not self.fed_back:
+            result = self._check(answer)
+            note = note_for_model(result)
+            if note:
+                self.fed_back = True
+                notes.append(note)
+                told.append("pages")
+        if self.photo_mode == "retry" and not self.photos_told:
+            photos = self._photos()
+            try:
+                note, named = photo_note_for_model(photos)
+            except Exception:  # noqa: BLE001 - never the turn
+                note, named = None, {}
+            if note:
+                self.photos_told = True
+                self._photo_pending = {**photos, "told": named}
+                notes.append(note)
+                told.append("photos")
+        if not notes:
+            return None
+        self._told = tuple(told)
+        if "pages" in told:
             self._record(result, "fed_back")
-        return note
+        if "photos" in told and not self.confirms_notes:
+            self.note_handed()
+        return "\n\n".join(notes)
+
+    def note_handed(self) -> None:
+        """The page handed this turn's note to the model: the photograph
+        pages it named are recorded as told, so a later turn of the
+        conversation does not tell them again. Nothing when no photograph
+        note is waiting."""
+        pending, self._photo_pending = self._photo_pending, None
+        if pending:
+            self._record({}, "photos_fed_back", pending)
 
     def finish(self, answer: str) -> str:
         """``answer`` as the user gets it: checked, recorded, and in
         ``note`` mode (or after a ``retry`` that still cites pages no tool
-        opened) with the note appended."""
+        opened) with the note appended. The photograph-page check is
+        recorded with it when ``photo_mode`` is ``record`` or ``retry``."""
         try:
+            photos = (self._photos()
+                      if self.photo_mode in ("record", "retry") else None)
             if not str(answer or "").strip():
+                if photos:
+                    self._record({}, "none", photos)
                 return answer
             result = self._check(answer)
             note = (note_for_user(result)
                     if self.mode in ("note", "retry") else None)
-            self._record(result, "noted" if note else "none")
+            self._record(result, "noted" if note else "none", photos)
             if note:
                 return f"{str(answer).rstrip()}\n\n---\n{note}"
             return answer
@@ -1379,4 +1810,9 @@ __all__ = ["RECORD_EVENT", "ENTRY_KIND", "NOTE_PREFIX", "RETRY_STATUS",
            "record_pages", "record_entries",
            "find_citations", "check_answer", "summary_labels",
            "planlens_labels", "note_for_user", "note_for_model",
-           "clear_cache", "doc_key"]
+           "clear_cache", "doc_key",
+           "PHOTO_ROLE", "PHOTO_KEY", "PHOTO_NOTE_PREFIX",
+           "PHOTO_RETRY_STATUS", "ATTACHMENTS_FILE", "CONTACT_SHEET_TOOLS",
+           "SHEET_LOOK_TOOLS",
+           "photograph_pages", "attached_documents", "photo_coverage",
+           "photo_note_for_model"]

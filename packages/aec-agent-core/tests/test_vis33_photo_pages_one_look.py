@@ -394,7 +394,7 @@ def _auto_would_tile(pdf) -> int:
 
 def test_the_switch_is_off_unless_set(monkeypatch):
     assert ENV == "GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK"
-    assert ENV in review_flags.VISION_ENVS
+    assert ENV in review_flags.LATER_ENVS
     assert ENV not in review_flags.ALL_ENVS
     assert not review_flags.photo_page_one_look()
     for off in ("", "0", "no", "off", "false"):
