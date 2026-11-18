@@ -194,3 +194,33 @@ def test_a_page_named_as_unread_is_still_filed_apart(tmp_path, text, cited):
     res = _check(tmp_path, text)
     assert _cited(res, "named_unread") == cited
     assert "never_opened" not in res
+
+
+# ---------------------------------------------------------------------------
+# 4. A page number beside a PDF page that is another place
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "The ratio of 0.6 is on page 34; PDF page 1 is the cover.",
+    "Strength 30 MPa on page 34, PDF page 2 the title.",
+    "Page 34 or PDF page 2 gives the ratio 0.6.",
+    "| Finding | Page | PDF page |\n|---|---|---|\n| Ratio 0.6 | 34 | 2 |",
+])
+def test_a_pdf_page_that_prints_another_number_is_not_its_pair(tmp_path,
+                                                               text):
+    # PDF pages 1 and 2 were read and print "1" and "2": not page 34
+    res = _check(tmp_path, text)
+    assert _cited(res, "never_opened") == ["page 34"]
+
+
+def test_a_printed_number_beside_its_own_pdf_page_is_still_one_place(
+        tmp_path):
+    # the page map says PDF page 34 prints "32"; and knows nothing of 13
+    labels = {33: {"32"}}
+    res = _check(tmp_path, "The mix is on printed page 32 (PDF page 34).",
+                 labels=labels)
+    assert _cited(res, "never_opened") == ["PDF page 34"]
+    res = _check(tmp_path, "See printed page 1-3; PDF page 13.",
+                 labels=labels)
+    assert _cited(res, "never_opened") == ["PDF page 13"]
+    assert "unverified" not in res

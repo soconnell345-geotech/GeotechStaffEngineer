@@ -1905,12 +1905,13 @@ def _introduces(text: str, c: Cited) -> bool:
                 or line.rstrip("*_ \t").endswith(":"))
 
 
-def _paired(text: str, cites: Sequence[Cited]) -> Set[int]:
+def _paired(text: str, cites: Sequence[Cited]) -> Dict[int, Cited]:
     """The citations of a page number that sit beside a PDF page given for
     the same place: in the same table row, or next to it with nothing
     between but punctuation and words such as "printed" ("printed page
-    1-3; PDF page 13", "page 238 (PDF page 284)")."""
-    out: Set[int] = set()
+    1-3; PDF page 13", "page 238 (PDF page 284)"). Each with the PDF-page
+    citation it sits beside."""
+    out: Dict[int, Cited] = {}
     for i, c in enumerate(cites):
         if c.kind == "pdf" or c.elsewhere:
             continue
@@ -1920,14 +1921,14 @@ def _paired(text: str, cites: Sequence[Cited]) -> Set[int]:
             if c.table and d.table:
                 if text.rfind("\n", 0, c.lead) == text.rfind("\n", 0,
                                                               d.lead):
-                    out.add(i)
+                    out[i] = d
                     break
                 continue
             a, b = (c, d) if _grp(c) < _grp(d) else (d, c)
             gap = text[max(a.end, a.start):_grp(b)]
             if len(gap) <= 40 and "\n" not in gap \
                     and _PAIR_GAP.fullmatch(gap):
-                out.add(i)
+                out[i] = d
                 break
     return out
 
@@ -2077,6 +2078,22 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
                 units.append(u)
         return units
 
+    def apart(c: Cited, d: Cited) -> bool:
+        """The PDF page given beside a page number is known to print
+        another number ("the ratio is on page 34; PDF page 1 is the
+        cover"): two places, so the page number is checked by itself.
+        False where the page map knows no printed number for that page."""
+        lab = labels()
+        if not lab:
+            return False
+        wanted = {str(n) for n in c.numbers} | set(c.all_labels())
+        for n in d.numbers:
+            known = [ls for ls in (rows.get(n - 1) for rows in lab.values())
+                     if ls]
+            if not known or any(ls & wanted for ls in known):
+                return False
+        return bool(d.numbers)
+
     fact_cache: Dict[Tuple[str, int], str] = {}
 
     def facts_of(k: str, p: int) -> str:
@@ -2112,7 +2129,7 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
             lists["other_documents"].append({"cited": c.shown,
                                              "beside": c.elsewhere})
             continue
-        if i in paired:
+        if i in paired and not apart(c, paired[i]):
             continue          # the PDF page given beside it decides
         cur_refs[:] = refs_for(c)
         readings: List[Tuple[str, List[Unit]]] = []
