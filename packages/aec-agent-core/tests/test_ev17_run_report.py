@@ -426,6 +426,75 @@ def test_the_grid_says_no_look_recorded_without_the_activity_log(tmp_path):
     assert "never opened" in page and "no look recorded" not in page
 
 
+def test_a_whole_copy_outside_the_run_folder_is_not_read(tmp_path):
+    """A cut result whose whole copy points into a sibling folder whose name
+    starts with the run folder's name is not read."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    other = tmp_path / "run_other"
+    other.mkdir()
+    (other / "secret.txt").write_text("MADE-UP SIBLING TEXT",
+                                      encoding="utf-8")
+    made_up_run(run_dir)
+    log = run_dir / "activity.jsonl"
+    rows = [json.loads(line) for line in
+            log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    moved = 0
+    for row in rows:
+        if row.get("full"):
+            row["full"] = "../run_other/secret.txt"
+            moved += 1
+    assert moved, "the made-up run cut nothing"
+    log.write_text("".join(json.dumps(r) + "\n" for r in rows),
+                   encoding="utf-8")
+    page = run_report.build_report(str(run_dir))
+    assert "MADE-UP SIBLING TEXT" not in page
+    assert "its whole copy ../run_other/secret.txt is missing" in page
+    record = run_report.RunRecord(str(run_dir))
+    assert record.sidecar("../run_other/secret.txt") is None
+    assert record.sidecar(str(other / "secret.txt")) is None
+    assert record.sidecar(".") is None
+
+
+def test_a_malformed_record_is_one_plain_line(tmp_path, capsys):
+    """A record the report cannot be built from ends in one line naming
+    what failed and a non-zero exit, not a traceback."""
+    run_dir = tmp_path / "made_up_run"
+    run_dir.mkdir()
+    (run_dir / "page_readings.json").write_text(json.dumps({"readings": [
+        {"document": DOC, "page": 1, "view": "page+tiles 2x2",
+         "result": {"tiles": 5}}]}), encoding="utf-8")
+    out = tmp_path / "report.html"
+    assert run_report.main([str(run_dir), "-o", str(out)]) == 1
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert err.strip().count("\n") == 0
+    assert err.startswith("The report could not be made from the record in "
+                          "made_up_run: TypeError")
+    assert not out.exists()
+
+
+def test_the_page_names_no_absolute_path(tmp_path):
+    """A report is passed to other people: the run folder and the documents
+    folder appear by their own names only."""
+    run_dir = tmp_path / "made_up_run_folder"
+    run_dir.mkdir()
+    docs = tmp_path / "made_up_documents"
+    docs.mkdir()
+    made_up_run(run_dir)
+    page = run_report.build_report(str(run_dir), str(docs))
+    assert "made_up_run_folder" in page
+    for p in (run_dir, docs, tmp_path):
+        for form in {str(p), str(p.resolve()), p.as_posix(),
+                     p.resolve().as_posix()}:
+            assert form not in page, form
+    report = run_report.Report(str(run_dir), str(docs))
+    line = report._plain(f"no such file: {run_dir / 'x.json'}; "
+                         f"{(docs / 'y.pdf').as_posix()}")
+    assert str(tmp_path) not in line and tmp_path.as_posix() not in line
+    assert "made_up_run_folder" in line and "made_up_documents" in line
+
+
 def test_command_line_writes_only_where_asked(tmp_path, capsys):
     run_dir = tmp_path / "run"
     run_dir.mkdir()

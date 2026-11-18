@@ -205,6 +205,13 @@ def _when(ts: Any) -> str:
         return ""
 
 
+def _folder_name(folder: Any) -> str:
+    """A folder's own name: the page names no absolute path (a report is
+    passed to other people, and a local path carries the user's name)."""
+    full = os.path.abspath(str(folder))
+    return os.path.basename(full.rstrip("\\/")) or "the run folder"
+
+
 def _when_any(value: Any) -> str:
     """A time a record holds: a number of seconds (``meta.json``'s
     ``created``) as a date and time; a text (the suite's stamp) as it is."""
@@ -441,8 +448,14 @@ class RunRecord:
         """The whole payload kept beside the log under ``rel``, if readable."""
         if not rel:
             return None
-        path = os.path.normpath(os.path.join(self.folder, str(rel)))
-        if not path.startswith(self.folder):
+        # only a file inside the run folder itself: resolved paths, compared
+        # whole (a sibling folder whose name starts with this one's is out)
+        base = os.path.realpath(self.folder)
+        path = os.path.realpath(os.path.join(base, str(rel)))
+        try:
+            if path == base or os.path.commonpath([base, path]) != base:
+                return None
+        except ValueError:                 # another drive
             return None
         try:
             if os.path.getsize(path) > MAX_SIDECAR_BYTES:
@@ -1339,8 +1352,7 @@ class Report:
             ]
         finally:
             self.images.close()
-        name = os.path.basename(self.record.folder.rstrip("\\/")) or \
-            self.record.folder
+        name = _folder_name(self.record.folder)
         toc = ["<nav class='toc'><b>Contents</b><ol>"]
         for anchor, title, _body in sections:
             sub = ""
@@ -1372,7 +1384,7 @@ class Report:
             f"<h1>Run report: {_e(name)}</h1>"
             f"<p class='holds'><b>{_e(CONTENT_NOTE)}</b></p>"
             f"<p class='muted'>Made {_e(_when(time.time()))} from the record "
-            f"in {_e(self.record.folder)}, {_e(self.record.kind())}. Pages "
+            f"in the folder {_e(name)}, {_e(self.record.kind())}. Pages "
             "are numbered as a PDF viewer shows them, from 1.</p>"
             f"{banner}<div id='tools'></div>{''.join(toc)}{body}"
             f"<script>{_SCRIPT}</script></body></html>")
@@ -1382,7 +1394,22 @@ class Report:
             return fn()
         except Exception as exc:  # noqa: BLE001 - say it, never a traceback
             return (f'<p class="warn">This part could not be made from the '
-                    f'record: {_e(type(exc).__name__)}: {_e(exc)}</p>')
+                    f'record: {_e(type(exc).__name__)}: '
+                    f'{_e(self._plain(str(exc)))}</p>')
+
+    def _plain(self, text: str) -> str:
+        """``text`` with the run folder's and the documents folder's paths
+        cut to their own names (an error line can carry a path)."""
+        for top in (self.record.folder, self.documents):
+            if not top:
+                continue
+            full = os.path.abspath(top)
+            for form in sorted({full, os.path.realpath(full),
+                                full.replace("\\", "/"),
+                                os.path.realpath(full).replace("\\", "/")},
+                               key=len, reverse=True):
+                text = text.replace(form, _folder_name(full))
+        return text
 
     def _docs(self) -> List[Document]:
         return sorted(self.pages.docs.values(), key=lambda d: d.index)
@@ -2161,6 +2188,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         path = write_report(a.folder, a.out, a.documents)
     except OSError as exc:
         print(f"The report could not be written: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # noqa: BLE001 - one plain line, never a traceback
+        print(f"The report could not be made from the record in "
+              f"{_folder_name(a.folder)}: {type(exc).__name__}: "
+              f"{_one_line(exc, 300)}", file=sys.stderr)
         return 1
     print(f"Wrote {path}")
     print(CONTENT_NOTE)
