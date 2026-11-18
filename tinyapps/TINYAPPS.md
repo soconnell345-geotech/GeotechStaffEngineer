@@ -1,25 +1,22 @@
 # Tiny Apps: Document Review, plan of record and working notes
 
-**Status (2026-11-10, the app split's step 14, BACKLOG INF-34).** Tiny Apps
+**Status (2026-11-18).** Tiny Apps
 hosts **Document Review alone**. The geotechnical page left this host at the
 app split (owner, 2026-10-20) and runs on its own elsewhere. Document Review
 is its own public package, `aec-document-review` 1.1.0, which pins the
 shared core `aec-agent-core` 1.1.0 and the document layer `planlens` 0.16.0
 exactly (`packages/aec-document-review/`; built at step 13,
-`module_work/inf33/CHECK_STEP13.md`). 1.1.0 is the first release of the
-two as one unit and is not on PyPI until the lead releases it; until then
-the released set is 0.1.1 and 1.0.1 with planlens 0.15.1 (on PyPI since
-2026-11-10: they carry the fixes of the deployment review of that
-day, `module_work/docreview_review_2026-11-10/REVIEW.md`, and replace the
-first releases 0.1.0, 1.0.0 and 0.15.0);
-the company's Nexus mirror carries a release a day or two later. From the
-next release on (BACKLOG INF-76) Document Review and the core carry ONE
-version number and go out together on one tag (`aec-v<version>`, the core
-first), so an update moves both pins to the same number; planlens keeps
-its own. The wrapper
+`module_work/inf33/CHECK_STEP13.md`). All three are on PyPI since
+2026-11-17; this is the first release of Document Review and the core as
+one unit (the release note is `module_work/inf76/RELEASE_NOTE.md`);
+the company's Nexus mirror carries a release a day or two later. Document
+Review and the core carry ONE version number and go out together on one
+tag (`aec-v<version>`, the core first; BACKLOG INF-76), so an update moves
+both pins to the same number; planlens keeps its own. The wrapper
 template in `tinyapps/wrapper_repo/` installs them from Nexus, or from two
 wheels in the repo as the backup. Next: the owner's first round on the test
-machine (dosdev), with the checklist below. The end-to-end check of the
+machine (dosdev), with the checklist below; a published app that already
+has testers answers BACKLOG OWN-147 before it moves to this release. The end-to-end check of the
 wheels route is in `module_work/inf34/CHECK_STEP14.md`.
 
 The platform team that runs Tiny Apps is called **CfA** in these notes.
@@ -321,10 +318,9 @@ round is the owner's call):
 Do these in order. Each step says what you should see. If a step fails,
 stop and copy the last screen's text into a note for the lead.
 
-**Before you start.** The three packages must be on PyPI
+**Before you start.** The three packages are on PyPI since 2026-11-17
 (`aec-document-review` 1.1.0, `aec-agent-core` 1.1.0 and
-`planlens` 0.16.0; planlens since 2026-11-17, the other two once the lead
-releases them as one unit). The company's Nexus mirror carries a
+`planlens` 0.16.0). The company's Nexus mirror carries a
 release a day or two after PyPI; step 2 shows whether it has them. You need
 from CfA: the Prompter values (URL, model, key, CA bundle) and, for step 7,
 the four SharePoint values. If the SharePoint values have not arrived, do
@@ -401,6 +397,21 @@ steps 1-6 and leave step 7 for later.
    again, with the secret name that message shows.
 9. **Send the lead your note**: which steps passed, and the text of anything
    that failed.
+10. **Add a tester** (once step 8 works for you). Have the person open the
+    published address. The exact name of the Key Vault secret their key
+    goes in is shown to them: in the refusal message if they have no key
+    yet, else on the "Prompter key source" line under **Connection
+    diagnostics** in the sidebar. Send CfA that secret name with the
+    request for the person's key (the last part of ask 4). The key works
+    at their next page reload; nothing is restarted. When every tester has
+    a key of their own, ask CfA to remove `PROMPTER-SHARED-KEY-FALLBACK`:
+    from then on only a person with a key is served.
+11. **Update the app later.** A new release reaches the testers only when
+    the three version lines in your repository's `packages.txt` change.
+    Copy the three versions from the new release's note, run
+    `.venv\Scripts\python -m pip install -r packages.txt` on the test
+    machine, repeat steps 4 and 5 there, then commit, push and ask the App
+    Services team to sync.
 
 ## What to ask CfA (paste-ready)
 
