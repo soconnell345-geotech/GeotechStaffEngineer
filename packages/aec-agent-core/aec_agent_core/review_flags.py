@@ -244,6 +244,26 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     the arm ``("plan_tools", {"GEOTECH_REVIEW_PLAN_TOOLS": "1"})``. Kept in
     :data:`LATER_ENVS` for the reasons given for
     ``GEOTECH_VISION_TILE_ANSWERS``.
+
+``GEOTECH_VISION_SHOW_UPLOADS`` (default off)
+    ``1`` shows an image file the user uploaded to the Document Review
+    page's main model itself: its ``analyze_image`` of an upload runs no
+    vision call, and the image (shrunk to the model's budget as a
+    whole-image look is) is shown to the model at its next step, as a
+    ``show_me`` look is, without the model having to ask
+    (:mod:`aec_agent_core.deep.upload_view`). One shown image is one image
+    call on the turn's count and ceiling (``GEOTECH_TURN_MAX_IMAGE_CALLS``);
+    one too large to show is read by a vision call as before, and its
+    result says so. A PDF, a file opened by its path, a zoom and every
+    helper's look stay as they are; so does a page whose main model is not
+    known to take images (decided when the page is built; the turn's record
+    says why, ``build.show_uploads``). Read when the page is built; the
+    geotech page never reads it. BACKLOG DR-38: on the chart suite every
+    loss traced to the side call's text about an uploaded chart, and
+    ``show_me`` was offered and never chosen. Not measured on a model yet:
+    the suite takes it as the arm ``("show_uploads",
+    {"GEOTECH_VISION_SHOW_UPLOADS": "1"})``. Kept in :data:`LATER_ENVS` for
+    the reasons given for ``GEOTECH_VISION_TILE_ANSWERS``.
 """
 
 from __future__ import annotations
@@ -274,17 +294,18 @@ ALL_ENVS = (AGENT_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
 TILE_ANSWERS_ENV = "GEOTECH_VISION_TILE_ANSWERS"
 PHOTO_PAGE_ONE_LOOK_ENV = "GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK"
 PLAN_TOOLS_ENV = "GEOTECH_REVIEW_PLAN_TOOLS"
+SHOW_UPLOADS_ENV = "GEOTECH_VISION_SHOW_UPLOADS"
 
 #: Switches added after the geotech app's copy went quiet (5.36.0), whose
 #: tests pin :data:`ALL_ENVS` and :data:`ARMS` whole. They are switches like
 #: the rest: :func:`switches` clears them unless an arm names them and
 #: :func:`describe` names them when set. The first two are read by the
 #: vision tools as they look (the build is unchanged); the third at turn
-#: end; the fourth when the Document Review page is built. Fold them into
-#: ``ALL_ENVS`` (and give each its arm) when the app's tests are next
-#: renewed.
+#: end; the fourth and fifth when the Document Review page is built. Fold
+#: them into ``ALL_ENVS`` (and give each its arm) when the app's tests are
+#: next renewed.
 LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV,
-              PLAN_TOOLS_ENV)
+              PLAN_TOOLS_ENV, SHOW_UPLOADS_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -346,6 +367,12 @@ def plan_tools() -> bool:
     plan's symbols with their centres and labels, and page points turned
     into local coordinates)."""
     return _on(PLAN_TOOLS_ENV)
+
+
+def show_uploads() -> bool:
+    """Whether the review page shows an uploaded image file to its main
+    model itself instead of a vision call's reading."""
+    return _on(SHOW_UPLOADS_ENV)
 
 
 def tile_answers() -> bool:
@@ -550,7 +577,8 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "TILE_ANSWERS_ENV", "tile_answers",
            "PHOTO_PAGE_ONE_LOOK_ENV", "photo_page_one_look",
            "PHOTO_PAGES_ENV", "photo_pages",
-           "PLAN_TOOLS_ENV", "plan_tools", "LATER_ENVS",
+           "PLAN_TOOLS_ENV", "plan_tools",
+           "SHOW_UPLOADS_ENV", "show_uploads", "LATER_ENVS",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",
