@@ -2140,14 +2140,22 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
         """The PDF page given beside a page number is known to print
         another number ("the ratio is on page 34; PDF page 1 is the
         cover"): two places, so the page number is checked by itself.
-        False where the page map knows no printed number for that page."""
+        False where the page map knows no printed number for that page,
+        or (in documents not plainly numbered) only a label equal to the
+        page's own viewer number, which a page map can give a page whose
+        printed number it did not read."""
         lab = labels()
         if not lab:
             return False
         wanted = {str(n) for n in c.numbers} | set(c.all_labels())
+        plain = numbering() == "plain"
         for n in d.numbers:
-            known = [ls for ls in (rows.get(n - 1) for rows in lab.values())
-                     if ls]
+            # where the documents are not plainly numbered, a label that is
+            # only the page's own viewer number is no evidence that it
+            # prints another number
+            known = [ls if plain else ls - {str(n)} for ls in
+                     (rows.get(n - 1) for rows in lab.values()) if ls]
+            known = [ls for ls in known if ls]
             if not known or any(ls & wanted for ls in known):
                 return False
         return bool(d.numbers)
