@@ -312,7 +312,11 @@ round is the owner's call):
   sheet index read from the title blocks, every callout checked against the
   sheet it names, and (planlens 0.16.0) the set's schedules checked against
   the marks on its sheets, with `open_document` bringing the sheet index and
-  the schedule check. Not measured on a model yet.
+  the schedule check. With a planlens after 0.16.0 each document tool that
+  takes `pages` also takes `sheets` (printed sheet numbers) and each that
+  takes `page` also takes `sheet`; a number the index does not hold, or
+  holds on more than one page, is refused with the reason. Not measured on
+  a model yet (BACKLOG PL-37).
 - `GEOTECH_REVIEW_TODOS_WITH_CALLS`: one sentence asking the agent to update
   its to-do list in the same step as its next tool call. Not measured yet.
 - `GEOTECH_VISION_SHOW_ME`: the agent may have a page or region shown to
@@ -368,6 +372,20 @@ round is the owner's call):
   them to page points itself; page coordinates a reading writes into its
   prose are named as the model's own estimate. Not measured on a model yet
   (BACKLOG VIS-24).
+- `GEOTECH_REVIEW_DRAWING_TOOLS`: planlens' drawing tool on the page and
+  its reading helper, with a planlens after 0.16.0: `drawing_geometry`,
+  one page's dimensions and leaders read from its drawn geometry, for a
+  CAD sheet whose lettering is drawn in strokes and that reading the text
+  and looking have not settled. It reads vector sheets only; a scan has no
+  lines to read. Not measured on a model yet (BACKLOG DR-44).
+- `GEOTECH_REVIEW_DXF_PLOTS`: with a planlens after 0.16.0, an uploaded
+  DXF is also opened as a one-page PDF plot of its model space, so the
+  page can look at it and write a marked copy of the plot; reading and
+  searching still read the DXF's own text. It needs ezdxf and Pillow in
+  the page's environment (`pip show pillow`); where either is missing the
+  page is the build it was. A large drawing is not plotted (16 MB, 50,000
+  entities, 30 s) and the result says so. Not measured on a model yet
+  (BACKLOG DR-19).
 
 ## The owner's first round on the test machine (paste-ready checklist)
 
