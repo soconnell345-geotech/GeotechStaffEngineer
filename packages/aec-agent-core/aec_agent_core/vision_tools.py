@@ -3145,6 +3145,116 @@ def _codes(label: str) -> set:
             if len(c.strip("-")) >= 2}
 
 
+#: A word that may be a tag (509, D-509, 509A, B-14): letters, digits and
+#: hyphens, not part of a decimal number.
+_TAG_WORD = re.compile(r"(?<![\w.])[A-Za-z0-9][A-Za-z0-9-]*(?![\w.])")
+
+
+def _tags(label: str) -> set:
+    """The tag-like words of a label, upper case: those of two characters
+    or more with a digit in them (509, D-509, A-302) — what names ONE
+    numbered thing; empty when it carries none (BACKLOG VIS-32)."""
+    out = set()
+    for w in _TAG_WORD.findall(str(label or "")):
+        w = w.strip("-").upper()
+        if len(w) >= 2 and any(c.isdigit() for c in w):
+            out.add(w)
+    return out
+
+
+def _same_tag(a: str, b: str) -> bool:
+    """Two tags that may be one written two ways (D-509 and 509)."""
+    a, b = a.replace("-", ""), b.replace("-", "")
+    return a in b or b in a
+
+
+def _one_series(a: str, b: str) -> bool:
+    """Two different tags of one series: the same letters and as many
+    digits (508 and 509, D-508 and D-509; not A-501 and 508)."""
+    def letters(t):
+        return re.sub(r"[^A-Z]", "", t)
+
+    def digits(t):
+        return len(re.sub(r"\D", "", t))
+    return (not _same_tag(a, b) and letters(a) == letters(b)
+            and digits(a) == digits(b))
+
+
+#: Most disagreements named in one ``found_note``.
+MAX_DISAGREEMENTS_NAMED = 6
+
+
+def _place_disagreements(entries, whole: str, near) -> list:
+    """The places where the whole-page answer and the tiles read different
+    tags (BACKLOG VIS-32): a tag the page answer placed that no tile reads
+    anywhere, where a tile reads, within the merge's reach, a tag of the
+    same series that the page answer never names. Each as ``(page label,
+    page box, tile label, tile box, tiles)``, the nearest tile reading for
+    each page tag, each pair once. ``entries`` are :func:`_merge_found`'s
+    ``(source, label, box, view area)``; a pair this does not find plainly
+    is left out."""
+    page = [(lab, box, _tags(lab)) for src, lab, box, _a in entries
+            if src == whole]
+    tiles = [(src, lab, box, area, _tags(lab))
+             for src, lab, box, area in entries if src != whole]
+    page_tags = set().union(*(t for _l, _b, t in page))
+    tile_tags = set().union(*(t[-1] for t in tiles))
+
+    def unseen(tags, others):
+        return {a for a in tags
+                if not any(_same_tag(a, b) for b in others)}
+
+    def centre_gap(a, b):
+        return (abs((a[0] + a[2]) - (b[0] + b[2]))
+                + abs((a[1] + a[3]) - (b[1] + b[3])))
+
+    pairs, named = [], set()
+    for p_label, p_box, p_tags in page:
+        mine = unseen(p_tags, tile_tags)
+        if not mine:
+            continue
+        cands = []
+        for src, t_label, t_box, area, t_tags in tiles:
+            if not near(p_box, t_box):
+                continue
+            for b in sorted(unseen(t_tags, page_tags)):
+                for a in sorted(mine):
+                    if _one_series(a, b):
+                        cands.append((centre_gap(p_box, t_box), a, b))
+        if not cands:
+            continue
+        _gap, a, b = min(cands)
+        if (a, b) in named:
+            continue
+        named.add((a, b))
+        reading = [(area, src, t_label, t_box)
+                   for src, t_label, t_box, area, t_tags in tiles
+                   if b in t_tags and near(p_box, t_box)]
+        _area, _src, t_label, t_box = min(reading, key=lambda r: r[0])
+        seen = sorted({r[1] for r in reading})
+        pairs.append((p_label, p_box, t_label, t_box, seen))
+    return pairs
+
+
+def _disagreement_line(pairs, whole: str) -> str:
+    """``found_note``'s line naming each place the page answer and the
+    tiles read different tags (BACKLOG VIS-32)."""
+    def box(b):
+        return [round(v, 1) for v in b]
+
+    said = "; ".join(
+        f"'{p_label}' at {box(p_box)} in the {whole} answer, where "
+        f"tile{'s' if len(seen) > 1 else ''} {', '.join(seen)} read "
+        f"'{t_label}' at {box(t_box)}"
+        for p_label, p_box, t_label, t_box, seen
+        in pairs[:MAX_DISAGREEMENTS_NAMED])
+    return (f"The whole-{whole} answer and the tiles DISAGREE at "
+            f"{len(pairs)} place{'s' if len(pairs) > 1 else ''}: {said}"
+            + (" …" if len(pairs) > MAX_DISAGREEMENTS_NAMED else "")
+            + ". The tiles are the closer look (the lettering larger): "
+              "zoom on each such place before relying on either reading.")
+
+
 #: How a merged ``found`` list names, for a page and for an image file: the
 #: whole look's source, each row's box key, and that box in words.
 _FOUND_WORDS = {
@@ -3221,6 +3331,10 @@ def _merge_found(out, what: str = "page") -> None:
     out["found"] = sorted(kept, key=lambda r: (r[key][1], r[key][0]))
     if len(rows) > MAX_MERGED:
         out["found_cut"] = f"{len(rows) - MAX_MERGED} more not listed"
+    # Where the page answer placed a tag the tiles read as another (VIS-32:
+    # one door's tag placed where the tiles read the next door's, and the
+    # item dropped between the two readings): named once, after the rest.
+    pairs = _place_disagreements(entries, whole, near)
     if only:
         named = "; ".join(f"{r['what']} at {r[key]} "
                           f"({', '.join(r['seen_in'])})" for r in only[:12])
@@ -3232,6 +3346,12 @@ def _merge_found(out, what: str = "page") -> None:
               "found, and zoom on each before relying on it. 'found' lists "
               f"every located thing with its {box_words} and where it was "
               f"seen.")
+        if pairs:
+            out["found_note"] += " " + _disagreement_line(pairs, whole)
+    elif pairs:
+        out["found_note"] = (f"'found' lists every located thing with its "
+                             f"{box_words} and where it was seen. "
+                             + _disagreement_line(pairs, whole))
     else:
         out["found_note"] = (f"'found' lists every located thing with its "
                              f"{box_words} and where it was seen (the "
