@@ -460,10 +460,14 @@ _SECRETS = re.compile(
 # :func:`mask_secrets` keeps its own, wider rule (any run of 32 or more
 # token characters) for the places that used it before.
 
-#: A private key in PEM form (a certificate, being public, is kept).
+#: A private key in PEM form (a certificate, being public, is kept). A
+#: block with no END line (an error cut short) is masked to the text's end:
+#: the key is not shown, and the search ends at the first BEGIN (without
+#: that, every BEGIN line searched to the end of the text for its END, and
+#: a long text with many of them took minutes).
 _PEM_KEY = re.compile(
-    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE "
-    r"KEY-----", re.DOTALL)
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE "
+    r"KEY-----|\Z)", re.DOTALL)
 #: Every value below stops at a quote, a backslash, a space or a closing
 #: bracket, so a secret inside JSON text (a tool's error result, where a
 #: quote is written ``\"``) is masked and the JSON stays whole; a full
