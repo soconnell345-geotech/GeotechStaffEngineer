@@ -1288,6 +1288,17 @@ def is_turn_stopped(exc: BaseException) -> bool:
     return isinstance(exc, TurnStopped)
 
 
+def _image_calls_status(shown: list) -> Optional[str]:
+    """``image calls this turn: k of N`` for the running turn's status, when
+    a ceiling is set (``GEOTECH_TURN_MAX_IMAGE_CALLS``, BACKLOG TA-43) and
+    the count moved since it was last shown; ``None`` otherwise."""
+    try:
+        from aec_agent_core.deep.keep_work import image_calls_status
+        return image_calls_status(shown)
+    except Exception:  # noqa: BLE001 - an older core: no line
+        return None
+
+
 def _budget_ended_turn() -> bool:
     """The primary agent's model-call budget forced its last call in this
     turn (``aec_agent_core.deep.limits``, noted on the turn's scope)."""
@@ -1408,6 +1419,7 @@ def stream_turn(agent, messages: list, thread_id: str,
         # and the page check's one pass (GEOTECH_CITED_PAGES=retry).
         nonlocal work_messages, continuations, saw_tool
         page_redo = False
+        images_shown = [0]                 # TA-43: the count last shown
         while True:
             _check_stop()                  # TA-37: before each pass
             pass_parts: List[str] = []
@@ -1464,6 +1476,10 @@ def stream_turn(agent, messages: list, thread_id: str,
                     elif entry["kind"] == "tool_call":
                         saw_tool = True
                     yield entry
+                    if entry["kind"] == "tool_result":
+                        status = _image_calls_status(images_shown)
+                        if status:
+                            yield {"kind": "tool_call", "text": status}
             streamed = "".join(pass_parts)
             pass_text = (final_text if final_text and final_text.strip()
                          else streamed)

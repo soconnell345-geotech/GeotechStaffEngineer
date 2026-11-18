@@ -688,6 +688,15 @@ def make_vision_tools(
     draws: Dict[str, int] = {}
 
     def _dispatch(tool_name: str, arguments: dict) -> str:
+        # The image calls of this one tool call, for its result under a
+        # turn's image ceiling (GEOTECH_TURN_MAX_IMAGE_CALLS, BACKLOG
+        # TA-43); with no ceiling the result is returned as it is.
+        from aec_agent_core.deep import keep_work
+        with keep_work.counting_look() as look:
+            raw = _dispatch_tool(tool_name, arguments)
+        return keep_work.with_image_calls(raw, look)
+
+    def _dispatch_tool(tool_name: str, arguments: dict) -> str:
         if tool_name in document_names:
             # Text-payload reads, budgeted by planlens itself: its limit sits
             # just under the reference cap, so results page through cursors

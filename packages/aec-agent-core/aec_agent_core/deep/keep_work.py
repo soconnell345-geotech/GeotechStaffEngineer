@@ -131,6 +131,50 @@ class TurnStopped(Exception):
         super().__init__(message)
 
 
+#: What a look refused at the turn's image ceiling says, in its tool's
+#: result (BACKLOG TA-43).
+IMAGE_CEILING_ERROR = (
+    "this turn reached its ceiling of {limit} image calls, so this image "
+    "was NOT read. Finish with what you have: answer from what was already "
+    "read, and say what was left unread.")
+
+#: What each look's result says while a ceiling is set (TA-43).
+IMAGE_CALLS_NOTE = ("this look made {calls} image call{s}; this turn has "
+                    "made {used} of its ceiling of {limit}")
+IMAGE_REFUSED_NOTE = "; {refused} more were refused at the ceiling"
+IMAGE_NEAR_NOTE = (". The ceiling is near: past it a look is refused, so "
+                   "look only where it matters and finish with what you "
+                   "have")
+
+#: The running turn's status line while a ceiling is set (TA-43).
+IMAGE_STATUS = "image calls this turn: {used} of {limit}"
+
+#: The line under the answer of a turn whose ceiling refused a look (TA-43).
+IMAGE_CEILING_TOLD = (
+    "_This turn reached its ceiling of {limit} image calls: {refused} "
+    "image call{s} after that {were} not made, so the answer rests on what "
+    "was read before. Ask to continue for more._")
+
+
+class ImageBudgetSpent(Exception):
+    """Raised before an image call past the turn's ceiling
+    (``GEOTECH_TURN_MAX_IMAGE_CALLS``, BACKLOG TA-43): the image is not
+    sent, and the tool reports :data:`IMAGE_CEILING_ERROR`. The turn goes
+    on."""
+
+    def __init__(self, limit: int):
+        self.limit = int(limit)
+        super().__init__(IMAGE_CEILING_ERROR.format(limit=self.limit))
+
+
+def _image_limit() -> int:
+    try:
+        from aec_agent_core.deep.limits import turn_max_image_calls
+        return turn_max_image_calls()
+    except Exception:  # noqa: BLE001 - no ceiling, as before
+        return 0
+
+
 class TurnScope:
     """What one turn shares across its agents (see the module docstring).
 
@@ -170,6 +214,15 @@ class TurnScope:
         # the primary agent's model-call budget forced its last call
         # (note_budget_reached): the turn's answer is final
         self.budget_reached = False
+        # the images sent to the vision model for a separate reading this
+        # turn (the vision engine's analyze_image), every agent and helper
+        # together; those refused at the ceiling; the ceiling
+        # (GEOTECH_TURN_MAX_IMAGE_CALLS, 0 = none) (BACKLOG TA-43). Images
+        # shown inline to the agent's own model (inline images, show_me)
+        # are not counted, and the ceiling does not apply to them.
+        self.image_calls = 0
+        self.image_refused = 0
+        self.image_limit = _image_limit()
         self._lock = threading.Lock()
 
     def note_full_result(self, call_id: Optional[str], text: str) -> None:
@@ -211,6 +264,22 @@ class TurnScope:
             self.busy_events += 1
             return True
 
+    def take_image_call(self, look: Optional[dict] = None) -> None:
+        """Count one image call on the turn (and on ``look``, the tool call
+        it is made for), or raise :class:`ImageBudgetSpent` when the turn's
+        ceiling is reached (TA-43)."""
+        with self._lock:
+            refused = 0 < self.image_limit <= self.image_calls
+            field = "refused" if refused else "calls"
+            if refused:
+                self.image_refused += 1
+            else:
+                self.image_calls += 1
+            if look is not None:
+                look[field] = look.get(field, 0) + 1
+        if refused:
+            raise ImageBudgetSpent(self.image_limit)
+
 
 _TURN: "contextvars.ContextVar[Optional[TurnScope]]" = contextvars.ContextVar(
     "geotech_turn_scope", default=None)
@@ -249,6 +318,117 @@ def check_stop() -> None:
     agent and before each wait."""
     if stop_requested():
         raise TurnStopped()
+
+
+# ---------------------------------------------------------------------------
+# The turn's image calls (BACKLOG TA-43)
+# ---------------------------------------------------------------------------
+
+#: The image calls of the tool call running here (:func:`counting_look`);
+#: the tiles' threads run in copies of its context and share the dict.
+_LOOK: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
+    "geotech_look_calls", default=None)
+
+
+def take_image_call() -> None:
+    """Called once before each image is sent to the vision model for a
+    separate reading (a whole page, a tile, a zoom, a candidate checked):
+    counted on the running turn, or :class:`ImageBudgetSpent` raised past
+    the turn's ceiling. Outside a turn nothing is counted. An image shown
+    inline to the agent's own model does not come here."""
+    scope = _TURN.get()
+    if scope is not None:
+        scope.take_image_call(_LOOK.get())
+
+
+@contextmanager
+def counting_look() -> Iterator[dict]:
+    """``with counting_look() as look:`` -- ``look["calls"]`` and
+    ``look["refused"]``, the image calls one tool call made and had
+    refused."""
+    look = {"calls": 0, "refused": 0}
+    token = _LOOK.set(look)
+    try:
+        yield look
+    finally:
+        try:
+            _LOOK.reset(token)
+        except (ValueError, RuntimeError):
+            pass
+
+
+def _ceiling() -> Optional[TurnScope]:
+    scope = _TURN.get()
+    return scope if scope is not None and scope.image_limit > 0 else None
+
+
+def with_image_calls(raw: str, look: Optional[dict]) -> str:
+    """A tool's result with its image calls against the turn's ceiling, as
+    an ``image_calls`` key first (or a first line, for a result that is not
+    a JSON object), warning from :data:`limits.IMAGE_WARN_SHARE` of the
+    ceiling. ``raw`` itself, unchanged, when no ceiling is set or the call
+    made no image call."""
+    scope = _ceiling()
+    if scope is None or not look or not look.get("calls"):
+        return raw
+    try:
+        from aec_agent_core.deep.limits import IMAGE_WARN_SHARE
+        calls, used, limit = look["calls"], scope.image_calls, \
+            scope.image_limit
+        note = IMAGE_CALLS_NOTE.format(calls=calls,
+                                       s="" if calls == 1 else "s",
+                                       used=used, limit=limit)
+        if look.get("refused"):
+            note += IMAGE_REFUSED_NOTE.format(refused=look["refused"])
+        if used >= IMAGE_WARN_SHARE * limit:
+            note += IMAGE_NEAR_NOTE
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            data = None
+        if isinstance(data, dict):
+            return json.dumps({"image_calls": note, **data})
+        return f"[image calls] {note}.\n\n{raw}"
+    except Exception:  # noqa: BLE001 - a note never fails a tool
+        return raw
+
+
+def image_calls_status(shown: list) -> Optional[str]:
+    """The running turn's status line, ``image calls this turn: k of N``,
+    when a ceiling is set and the count moved since ``shown[0]`` (which is
+    then updated); ``None`` otherwise."""
+    scope = _ceiling()
+    if scope is None or scope.image_calls == shown[0]:
+        return None
+    shown[0] = scope.image_calls
+    return IMAGE_STATUS.format(used=scope.image_calls,
+                               limit=scope.image_limit)
+
+
+def image_ceiling_told(scope) -> Optional[str]:
+    """The line under the answer of a turn whose ceiling refused a look,
+    once; ``None`` for any other turn."""
+    refused = getattr(scope, "image_refused", 0)
+    if not refused or getattr(scope, "image_limit", 0) <= 0:
+        return None
+    return IMAGE_CEILING_TOLD.format(limit=scope.image_limit,
+                                     refused=refused,
+                                     s="" if refused == 1 else "s",
+                                     were="was" if refused == 1 else "were")
+
+
+def image_call_facts(scope) -> dict:
+    """The turn's image calls for its record: ``image_calls`` always (a
+    scope was open), ``image_limit`` when a ceiling was set, and
+    ``image_calls_refused`` when it refused any."""
+    if scope is None:
+        return {}
+    out = {"image_calls": int(getattr(scope, "image_calls", 0))}
+    if getattr(scope, "image_limit", 0) > 0:
+        out["image_limit"] = int(scope.image_limit)
+    if getattr(scope, "image_refused", 0):
+        out["image_calls_refused"] = int(scope.image_refused)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1786,4 +1966,7 @@ __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
            "KEEP_ON_GIVE_UP",
            "KEEP_MIN_READ_CHARS", "SHORT_ANSWER_CHARS",
            "FULL_RESULT_MIN_CHARS", "MAX_HELPERS_ENV", "DEFAULT_MAX_HELPERS",
-           "BUSY_TURN_MAX_ENV", "DEFAULT_BUSY_TURN_MAX_S"]
+           "BUSY_TURN_MAX_ENV", "DEFAULT_BUSY_TURN_MAX_S",
+           "ImageBudgetSpent", "IMAGE_CEILING_ERROR", "take_image_call",
+           "counting_look", "with_image_calls", "image_calls_status",
+           "image_ceiling_told", "image_call_facts"]

@@ -424,6 +424,17 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         except Exception:                              # noqa: BLE001
             final = core.BUDGET_ENDED_LEAD
     final = final or answer or "(no answer text)"
+    # A turn whose image ceiling refused a look says so once, under its
+    # answer (GEOTECH_TURN_MAX_IMAGE_CALLS, BACKLOG TA-43); no line for any
+    # other turn.
+    if not turn_error and record is not None:
+        try:
+            from aec_agent_core.deep.keep_work import image_ceiling_told
+            told = image_ceiling_told(getattr(record, "scope", None))
+        except Exception:                              # noqa: BLE001
+            told = None
+        if told:
+            final = f"{final}\n\n{told}"
     if activity is not None:
         try:
             activity.turn_end(turn_tokens=turn_tokens, error=turn_error,
