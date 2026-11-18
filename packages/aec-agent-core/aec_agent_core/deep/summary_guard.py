@@ -7,14 +7,19 @@ its own. That call sits outside the agents' busy ladder
 (:mod:`aec_agent_core.deep.busy_retry`), and when it fails the two library
 generations go wrong in different ways:
 
-* **langchain before 1.4** (deepagents 0.6.x) catches the error and hands
-  back ``"Error generating summary: <error>"`` AS the summary. deepagents
+* **langchain 1.3.14 and older** catches the error and hands back
+  ``"Error generating summary: <error>"`` AS the summary. deepagents
   puts that line in place of the older history, stores it in the state
   (``_summarization_event``) and hands it to the model at every later call:
   the turn goes on, having silently lost its earlier work.
-* **langchain 1.4** (deepagents 0.7.x) asks again on its own
+* **langchain 1.3.15 and newer** (1.4 with it) asks again on its own
   (``Runnable.with_retry``) and then raises. deepagents does not catch it,
   so the model call, and the turn, end on it.
+
+The deepagents version does not decide which: deepagents 0.6.8 runs on
+either side of that boundary (installed today it resolves langchain 1.3.18,
+and raises), deepagents 0.7.x only on the newer side. The guard reads the
+behaviour, not a version.
 
 The guard gives both the same outcome: **a summary that fails is not
 used.** The library's own wrap is asked again for that one call with its
@@ -43,10 +48,10 @@ exception is the library's own: a call the model refuses as too long is
 summarized regardless, in any call. Outside a turn scope (a library call)
 there is no turn to remember a failure in, and every call tries.
 
-**How a failure is read.** langchain before 1.4 has no constant or code for
-it, only the text of its ``except`` branch: the summary's exact prefix
-:data:`ERROR_PREFIX`. langchain 1.4 by its code path: an exception raised
-from ``_create_summary``.
+**How a failure is read.** langchain 1.3.14 and older has no constant or
+code for it, only the text of its ``except`` branch: the summary's exact
+prefix :data:`ERROR_PREFIX`. langchain 1.3.15 and newer by its code path:
+an exception raised from ``_create_summary``.
 
 **Where it stands.** On the library's class, not in the middleware list:
 the summarizer is built inside ``create_deep_agent``, where no middleware
@@ -67,7 +72,7 @@ from typing import Optional
 
 from aec_agent_core.deep.tool_guards import GraphBubbleUp
 
-#: How langchain before 1.4 hands back a summary whose model call failed
+#: How langchain 1.3.14 and older hands back a summary whose model call failed
 #: (``SummarizationMiddleware._create_summary``: ``f"Error generating
 #: summary: {e!s}"``).
 ERROR_PREFIX = "Error generating summary:"
@@ -90,8 +95,9 @@ _holding: contextvars.ContextVar = contextvars.ContextVar(
 
 
 class SummaryFailed(Exception):
-    """A guarded summary failed. ``error`` is the exception (langchain 1.4)
-    or ``None`` (langchain before 1.4 hands back only its error line);
+    """A guarded summary failed. ``error`` is the exception (langchain
+    1.3.15 and newer) or ``None`` (1.3.14 and older hands back only its
+    error line);
     ``source`` is the summarizer whose summary it was."""
 
     def __init__(self, source, error: Optional[BaseException] = None):
@@ -132,7 +138,7 @@ def _checked(self, make):
         summary = make()
     except GraphBubbleUp:
         raise
-    except Exception as exc:  # noqa: BLE001 - langchain 1.4's failure
+    except Exception as exc:  # noqa: BLE001 - newer langchain raises
         raise SummaryFailed(self, exc) from exc
     if failed_summary(summary):
         raise SummaryFailed(self)
@@ -157,7 +163,7 @@ def _guard_acreate(orig):
             summary = await orig(self, *args, **kwargs)
         except GraphBubbleUp:
             raise
-        except Exception as exc:  # noqa: BLE001 - langchain 1.4's failure
+        except Exception as exc:  # noqa: BLE001 - newer langchain raises
             raise SummaryFailed(self, exc) from exc
         if failed_summary(summary):
             raise SummaryFailed(self)

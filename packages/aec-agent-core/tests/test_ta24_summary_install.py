@@ -135,3 +135,13 @@ def test_a_known_class_says_nothing(warnings_of):
     cls.__class__.__setattr__ = type.__setattr__
     assert summary_guard.install(cls) is True
     assert warnings_of() == []
+
+
+def test_the_docstring_names_langchains_real_boundary():
+    """langchain 1.3.14 and older hands back the error line; 1.3.15 and
+    newer raises (the review read the wheels 1.3.4 to 1.3.18). The boundary
+    is not "1.4"."""
+    doc = " ".join(summary_guard.__doc__.split())
+    assert "langchain 1.3.14 and older" in doc
+    assert "langchain 1.3.15 and newer" in doc
+    assert "before 1.4" not in doc
