@@ -234,15 +234,19 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     prompt is removed from the main agent's system prompt word for word,
     and its to-do and helper sections and the ``write_todos`` and ``task``
     tool descriptions are swapped for the page's short texts (the lean
-    build's, from before BACKLOG DR-39), the lists of helpers kept. All or
-    nothing: where the installed library's text is not found word for word
-    (an upgrade moved it), the prompt goes out as it was and the turn's
-    record says so (``lean_prompt`` on ``turn_end``). Read by the page's
-    build; the ``minimal`` build, the helpers and the geotech page are not
-    touched. Unset, the system prompt, the tool descriptions and the
-    fingerprints are byte for byte as before. BACKLOG DR-29: on deepagents
-    0.6 the base prompt and the two sections were about 5.8 thousand of the
-    page's system prompt characters. Not measured on a model yet: the suite
+    build's, from before BACKLOG DR-39), the lists of helpers kept. Only
+    the texts the installed library defines: deepagents 0.7 writes no base
+    prompt and no helper section, so there the to-do section and the two
+    tool descriptions are cut. All or nothing: where a text the library
+    defines is not found word for word (an upgrade moved it), the prompt
+    goes out as it was and the turn's record says so (``lean_prompt`` on
+    ``turn_end``). Read by the page's build; the ``minimal`` build, the
+    helpers and the geotech page are not touched. Unset, the system prompt,
+    the tool descriptions and the fingerprints are byte for byte as before.
+    BACKLOG DR-29: on deepagents 0.6.8 it takes 5,312 characters off the
+    page's system prompt and 9,968 off the two tool descriptions; on 0.7.24
+    1,056 and 4,471 (counted from the library's source). Not measured on a
+    model yet: the suite
     takes it as the arm ``("lean_prompt", {"GEOTECH_REVIEW_LEAN_PROMPT":
     "1"})``. Kept in :data:`LATER_ENVS` for the reasons given for
     ``GEOTECH_VISION_TILE_ANSWERS``.

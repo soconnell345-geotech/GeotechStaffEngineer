@@ -374,10 +374,6 @@ def build_review_page_agent(
     page_middleware = [*([m] if (m := _show_images(engine)) is not None
                          else []),
                        HideScratchFilesystem()]
-    if _flags.lean_prompt():
-        # deepagents' base prompt out and its to-do and helper texts short,
-        # all or nothing, behind GEOTECH_REVIEW_LEAN_PROMPT (DR-29)
-        page_middleware.append(_lean_prompt())
     page_budget = review_page_budget()
     if page_budget:
         from aec_document_review.review_agent import EXHAUSTED, FINAL_NUDGE
@@ -397,6 +393,14 @@ def build_review_page_agent(
         # every return of the reading helper keeps its record and its open
         # items reach this agent (BACKLOG DR-46)
         keep_readers=(READER_NAME,) if reader is not None else ())
+    if _flags.lean_prompt():
+        # the agent library's generic prompt texts out or short, all or
+        # nothing, behind GEOTECH_REVIEW_LEAN_PROMPT (DR-29). Last of all
+        # (and kept last when the core attaches the to-do middleware on
+        # deepagents 0.7), so it sees the prompt and the tools as the model
+        # gets them; it hands the reply back untouched.
+        create_kwargs["middleware"] = [
+            *(create_kwargs.get("middleware") or []), _lean_prompt()]
     agent = assembly.compile_agent(
         create or assembly.create_deep_agent, model=model, tools=tools,
         system_prompt=system_prompt, subagents=subagents,

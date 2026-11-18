@@ -8,11 +8,12 @@ to-do and helper middleware each add a long section about their tool
 (``write_todos``; ``task``, the helpers), with tool descriptions to match
 whose examples are about code, research and ordering food. A page that hands
 in a prompt of its own (Document Review's) carries all of it: on the review
-page's default build about 5.8 thousand of the system prompt's characters,
-and about 10.4 thousand more in the two tools' descriptions (deepagents
-0.6.8, langchain 1.3; the lean build removed in DR-39 had short texts in
-their place). deepagents 0.7 no longer appends the base prompt or writes
-the helper section; there the texts are not found and nothing is cut.
+page's default build 5,312 of the system prompt's characters, and 9,968 in
+the two tools' descriptions (deepagents 0.6.8, langchain 1.3.4; the lean
+build removed in DR-39 had short texts in their place). deepagents 0.7
+writes no base prompt and no helper section (its ``BASE_AGENT_PROMPT`` is a
+deprecated stand-in that no prompt uses), but langchain's to-do section and
+both long tool descriptions are still handed to the model.
 
 WHAT. :class:`LeanFrameworkPrompt` is a middleware for a page's main agent.
 At each model call it
@@ -26,16 +27,23 @@ At each model call it
   short texts; the ``task`` description keeps deepagents' list of helpers
   (its ``{available_agents}``).
 
-All or nothing. Each of those five texts is read from the installed library
-by its name (:data:`LIBRARY_TEXTS`) and must be found word for word where
-the library puts it. If any is missing (not defined under its name in the
-installed library, or not in the system prompt or the tool description as
-the library wrote it: an upgrade moved or reworded it, or a model profile
-of the library replaced it), the call goes to the model exactly as it came,
+Only the texts the INSTALLED library defines (:data:`LIBRARY_TEXTS`, read
+by name: :func:`library_texts`). A text it does not define (the module
+does not hold the name, as deepagents 0.7 does not hold the base prompt or
+the helper section) is not required and is not cut. Every text it does
+define must be found word for word where the library puts it, or nothing
+is cut: an upgrade that moved or reworded one, or a model profile of the
+library that replaced one, sends the call to the model exactly as it came,
 and the turn's record says which text was not found (``lean_prompt`` on
-``turn_end``: :func:`aec_agent_core.deep.keep_work.note_lean_prompt`). There
-is never a partial cut. A tool the call does not offer has no description
-to swap and is not counted missing.
+``turn_end``: :func:`aec_agent_core.deep.keep_work.note_lean_prompt`).
+There is never a partial cut. A tool the call does not offer has no
+description to swap and is not counted missing.
+
+It must be the main agent's LAST middleware, so that it sees the prompt and
+the tools as the model gets them: on deepagents 0.7 the to-do section is
+written by the to-do middleware the core attaches itself, which
+:func:`aec_agent_core.deep.assembly.compile_agent` puts just ahead of a
+middleware marked ``keep_last``.
 
 The page's texts are handed in; this module holds none of a page's wording.
 """
@@ -72,13 +80,17 @@ LIBRARY_TEXTS: Tuple[Tuple[str, str, str], ...] = (
 AGENTS_SLOT = "{available_agents}"
 
 
-def library_texts() -> Dict[str, Optional[str]]:
+def library_texts(table: Tuple[Tuple[str, str, str], ...] = LIBRARY_TEXTS
+                  ) -> Dict[str, Optional[str]]:
     """The installed library's texts by label; ``None`` for one it does not
-    define under that name."""
+    define: the module is missing or does not hold the name itself. A name
+    a module only serves through its ``__getattr__`` counts as not defined:
+    deepagents 0.7 serves ``BASE_AGENT_PROMPT`` that way, deprecated, and
+    puts it in no prompt."""
     out: Dict[str, Optional[str]] = {}
-    for label, module, name in LIBRARY_TEXTS:
+    for label, module, name in table:
         try:
-            value = getattr(importlib.import_module(module), name)
+            value = vars(importlib.import_module(module)).get(name)
         except Exception:                              # noqa: BLE001
             value = None
         out[label] = value if isinstance(value, str) and value.strip() \
@@ -154,8 +166,12 @@ class LeanFrameworkPrompt(AgentMiddleware):
 
     ``task_tool_description`` holds ``{available_agents}`` where deepagents'
     list of helpers goes. ``texts`` replaces :func:`library_texts` (tests).
-    ``last`` is what the latest call did: ``{"applied": True, ...}`` or
-    ``{"applied": False, "not_found": [labels]}``."""
+    ``last`` is what the latest call did: ``{"applied": True, "cut":
+    [labels], ...}`` or ``{"applied": False, "not_found": [labels]}``."""
+
+    #: kept last by :func:`aec_agent_core.deep.assembly.compile_agent` when
+    #: it attaches the to-do middleware (deepagents 0.7)
+    keep_last = True
 
     def __init__(self, *, todo_prompt: str, todo_tool_description: str,
                  task_prompt: str, task_tool_description: str,
@@ -171,69 +187,76 @@ class LeanFrameworkPrompt(AgentMiddleware):
 
     # -- the swap -----------------------------------------------------------
     def lean(self, system_message, tools) -> Tuple[object, list, dict]:
-        """``(system_message, tools, outcome)``: the lean pair, or the very
-        same pair with ``outcome["applied"]`` False and the labels of the
-        texts not found."""
+        """``(system_message, tools, outcome)``: the lean pair with
+        ``outcome["cut"]`` the labels of the texts cut or swapped, or the
+        very same pair with ``outcome["applied"]`` False and the labels of
+        the texts the library defines that were not found."""
         texts = self.texts
-        missing = [label for label, _, _ in LIBRARY_TEXTS
-                   if not texts.get(label)]
+        order = [label for label, _, _ in LIBRARY_TEXTS]
+        defined = [label for label in order if texts.get(label)]
+        missing: List[str] = []
         frame = _task_frame(texts.get(TASK_TOOL))
-        if frame is None and TASK_TOOL not in missing:
+        if TASK_TOOL in defined and frame is None:
             missing.append(TASK_TOOL)
         content = getattr(system_message, "content", None)
         blocks = _blocks(content) if system_message is not None else None
-        edits = ((BASE, None), (TODO_SECTION, self.todo_prompt),
-                 (TASK_SECTION, self.task_prompt))
-        if blocks is None:
-            missing += [label for label, _ in edits if label not in missing]
-        else:
-            for label, _ in edits:
-                if label not in missing and _find(blocks, texts[label]) is None:
-                    missing.append(label)
+        edits = [(label, new) for label, new in (
+            (BASE, None), (TODO_SECTION, self.todo_prompt),
+            (TASK_SECTION, self.task_prompt)) if label in defined]
+        for label, _ in edits:
+            if blocks is None or _find(blocks, texts[label]) is None:
+                missing.append(label)
         tools = list(tools or [])
+        swaps: Dict[str, str] = {}
         for tool in tools:
             name = _tool_name(tool)
             desc = _tool_description(tool)
-            if name == "write_todos" and TODO_TOOL not in missing \
-                    and desc != texts[TODO_TOOL]:
-                missing.append(TODO_TOOL)
-            if name == "task" and TASK_TOOL not in missing and not (
-                    desc is not None
-                    and len(desc) >= len(frame[0]) + len(frame[1])
-                    and desc.startswith(frame[0])
-                    and desc.endswith(frame[1])):
-                missing.append(TASK_TOOL)
+            if name == "write_todos" and TODO_TOOL in defined:
+                if desc != texts[TODO_TOOL]:
+                    missing.append(TODO_TOOL)
+                swaps[name] = TODO_TOOL
+            if name == "task" and TASK_TOOL in defined \
+                    and TASK_TOOL not in missing:
+                if not (desc is not None
+                        and len(desc) >= len(frame[0]) + len(frame[1])
+                        and desc.startswith(frame[0])
+                        and desc.endswith(frame[1])):
+                    missing.append(TASK_TOOL)
+                swaps[name] = TASK_TOOL
         if missing:
-            order = [label for label, _, _ in LIBRARY_TEXTS]
-            missing = sorted(set(missing), key=order.index)
-            return system_message, tools, {"applied": False,
-                                           "not_found": missing}
+            return system_message, tools, {
+                "applied": False,
+                "not_found": sorted(set(missing), key=order.index)}
 
-        before = sum(len(_block_text(b) or "") for b in blocks)
-        for label, new in edits:
-            old = texts[label]
-            i = _find(blocks, old)
-            body = _block_text(blocks[i])
-            if new is None:                    # the base prompt: cut out
-                cut = ("\n\n" + old) if ("\n\n" + old) in body else old
-                body = body.replace(cut, "", 1)
+        new_content = content
+        before = after = 0
+        if edits:                  # every one found, so ``blocks`` is a list
+            before = sum(len(_block_text(b) or "") for b in blocks)
+            for label, new in edits:
+                old = texts[label]
+                i = _find(blocks, old)
+                body = _block_text(blocks[i])
+                if new is None:                # the base prompt: cut out
+                    cut = ("\n\n" + old) if ("\n\n" + old) in body else old
+                    body = body.replace(cut, "", 1)
+                else:
+                    body = body.replace(old, new, 1)
+                blocks[i] = _set_block_text(blocks[i], body)
+            if isinstance(content, str):
+                new_content = blocks[0]
             else:
-                body = body.replace(old, new, 1)
-            blocks[i] = _set_block_text(blocks[i], body)
-        if isinstance(content, str):
-            new_content = blocks[0]
-        else:
-            new_content = [b for b in blocks
-                           if _block_text(b) is None or _block_text(b).strip()]
-        after = sum(len(_block_text(b) or "") for b in (
-            [new_content] if isinstance(new_content, str) else new_content))
+                new_content = [b for b in blocks if _block_text(b) is None
+                               or _block_text(b).strip()]
+            after = sum(len(_block_text(b) or "") for b in (
+                [new_content] if isinstance(new_content, str)
+                else new_content))
         tool_cut = 0
         out_tools = []
         for tool in tools:
             name = _tool_name(tool)
-            if name == "write_todos":
+            if swaps.get(name) == TODO_TOOL:
                 new = self.todo_tool_description
-            elif name == "task":
+            elif swaps.get(name) == TASK_TOOL:
                 desc = _tool_description(tool)
                 helpers = desc[len(frame[0]):len(desc) - len(frame[1])]
                 new = self.task_tool_description.replace(AGENTS_SLOT, helpers)
@@ -242,10 +265,12 @@ class LeanFrameworkPrompt(AgentMiddleware):
                 continue
             tool_cut += len(_tool_description(tool)) - len(new)
             out_tools.append(_with_description(tool, new))
-        lean_message = system_message.model_copy(
-            update={"content": new_content})
+        cut = [label for label in order
+               if label in dict(edits) or label in swaps.values()]
+        lean_message = system_message if not edits \
+            else system_message.model_copy(update={"content": new_content})
         return lean_message, out_tools, {
-            "applied": True, "system_chars_cut": before - after,
+            "applied": True, "cut": cut, "system_chars_cut": before - after,
             "tool_chars_cut": tool_cut}
 
     def _lean_request(self, request):

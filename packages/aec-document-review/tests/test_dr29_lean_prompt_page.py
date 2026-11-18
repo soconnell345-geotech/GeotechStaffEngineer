@@ -4,16 +4,14 @@ set).
 
 Set, the page's main agent is sent its system prompt without deepagents'
 base prompt, with short to-do and helper sections, and short ``write_todos``
-and ``task`` descriptions (the lean build's texts; ``review_agent.LEAN_*``),
-all or nothing (:mod:`aec_agent_core.deep.lean_prompt`). Unset, what the
-model is sent is what it was. The page is built on a fake model and run one
-step; nothing calls a model or the network.
-
-The cut needs deepagents 0.6's texts: deepagents 0.7 no longer appends a
-base prompt or writes a helper section, so there the page is left as it is
-and the record says which texts were not found (the tests below that need
-the 0.6 texts skip where the installed library lacks them, and the one that
-needs their absence skips where it has them).
+and ``task`` descriptions (the lean build's texts; ``review_agent.LEAN_*``):
+each of those the INSTALLED library defines, all or nothing among them
+(:mod:`aec_agent_core.deep.lean_prompt`). deepagents 0.6 defines all five;
+0.7 writes no base prompt and no helper section, so there the to-do section
+and the two tool descriptions are cut. The tests below run on whichever
+version is installed and check each text it defines. Unset, what the model
+is sent is what it was. The page is built on a fake model and run one step;
+nothing calls a model or the network.
 """
 
 import importlib.metadata
@@ -42,11 +40,11 @@ from tests.test_review_harness_offline import (  # noqa: E402
 
 ENV = review_flags.LEAN_PROMPT_ENV
 LIB = L.library_texts()
-DEFINED = all(LIB.values())
+ORDER = [label for label, _, _ in L.LIBRARY_TEXTS]
 SECTIONS = (L.BASE, L.TODO_SECTION, L.TASK_SECTION)
-
-needs_texts = pytest.mark.skipif(
-    not DEFINED, reason="the installed agent library lacks the 0.6 texts")
+#: The page's short text for each section (None: the base prompt goes).
+SHORT = {L.BASE: None, L.TODO_SECTION: RA.LEAN_TODO_PROMPT,
+         L.TASK_SECTION: RA.LEAN_TASK_PROMPT}
 
 
 def _version(name):
@@ -120,10 +118,38 @@ def _turn(monkeypatch, tmp_path, value):
     return _text(model.seen[0][0]), tools, end
 
 
-def _helpers(task_description):
-    before, after = (part.replace("{{", "{").replace("}}", "}")
-                     for part in LIB[L.TASK_TOOL].split(L.AGENTS_SLOT))
+def _frame(template):
+    return [part.replace("{{", "{").replace("}}", "}")
+            for part in template.split(L.AGENTS_SLOT)]
+
+
+def _helpers(task_description, template=None):
+    before, after = _frame(template or LIB[L.TASK_TOOL])
     return task_description[len(before):len(task_description) - len(after)]
+
+
+def _expected(off, off_tools, texts):
+    """What a call should carry with the switch set, from what it carried
+    unset: each section ``texts`` defines cut or made short, and each tool
+    text it defines swapped; ``(system text, tools, cut)``."""
+    on = off
+    for label in SECTIONS:
+        if texts[label]:
+            assert on.count(texts[label]) == 1, label
+            on = (on.replace("\n\n" + texts[label], "", 1)
+                  if SHORT[label] is None
+                  else on.replace(texts[label], SHORT[label], 1))
+    tools = dict(off_tools)
+    if texts[L.TODO_TOOL] and "write_todos" in tools:
+        tools["write_todos"] = RA.LEAN_TODO_TOOL_DESCRIPTION
+    if texts[L.TASK_TOOL] and "task" in tools:
+        tools["task"] = RA.LEAN_TASK_TOOL_DESCRIPTION.replace(
+            L.AGENTS_SLOT, _helpers(off_tools["task"], texts[L.TASK_TOOL]))
+    cut = [label for label in ORDER if texts[label] and (
+        label in SECTIONS
+        or (label == L.TODO_TOOL and "write_todos" in off_tools)
+        or (label == L.TASK_TOOL and "task" in off_tools))]
+    return on, tools, cut
 
 
 # ---------------------------------------------------------------------------
@@ -169,9 +195,13 @@ def test_the_middleware_is_on_the_main_agent_only_and_only_when_set():
                                     settings={ENV: "1"})
     mains, helpers = middleware(calls)
     assert mains.count("LeanFrameworkPrompt") == 1
-    assert mains.index("LeanFrameworkPrompt") == \
-        mains.index("HideScratchFilesystem") + 1
     assert "LeanFrameworkPrompt" not in helpers
+    # the main agent's last middleware, so it sees what the model gets
+    main = [c for c in calls if c["kind"] == "create_deep_agent"]
+    assert len(main) == 1
+    names = [type(m).__name__ for m in main[0]["kwargs"]["middleware"]]
+    assert names[-1] == "LeanFrameworkPrompt"
+    assert main[0]["kwargs"]["middleware"][-1].keep_last is True
     # the looking-only build is not touched
     _, calls, _ = page_builds.build("review_minimal", capture=True,
                                     settings={ENV: "1"})
@@ -205,48 +235,61 @@ def test_the_switch_is_read_by_the_review_page_s_build_alone():
 # Set: the cut, word for word
 # ---------------------------------------------------------------------------
 
-@needs_texts
-def test_set_the_base_prompt_goes_and_the_sections_are_short(
+def test_set_each_text_the_installed_library_defines_is_cut_or_short(
         monkeypatch, tmp_path):
+    """Runs on whichever library is installed: every text it defines is
+    gone from what the model is handed and the page's short text is there;
+    the rest is as it was."""
+    defined = [label for label in ORDER if LIB[label]]
+    print(f"\nDR-29 texts the installed library defines: {defined}")
+    # both shapes the core allows define the to-do texts and the task text
+    assert {L.TODO_SECTION, L.TODO_TOOL, L.TASK_TOOL} <= set(defined)
     off, off_tools, _ = _turn(monkeypatch, tmp_path, None)
     on, on_tools, end = _turn(monkeypatch, tmp_path, "1")
-    expected = (off.replace("\n\n" + LIB[L.BASE], "", 1)
-                .replace(LIB[L.TODO_SECTION], RA.LEAN_TODO_PROMPT, 1)
-                .replace(LIB[L.TASK_SECTION], RA.LEAN_TASK_PROMPT, 1))
+    expected, expected_tools, cut = _expected(off, off_tools, LIB)
     assert on == expected
+    assert on_tools == expected_tools
     for label in SECTIONS:
-        assert LIB[label] not in on
-    # the page's own prompt and deepagents' list of helpers stay
-    assert build_document_review_prompt() in on
-    assert "Available subagent types:" in on
-    assert "- general-purpose: " + REVIEW_READER_DESCRIPTION in on
-    # the two tools' descriptions are short; the list of helpers is kept
+        if LIB[label]:
+            assert LIB[label] not in on, label
+            if SHORT[label]:
+                assert SHORT[label] in on, label
+    # the to-do tool is offered on every version (the core attaches it where
+    # deepagents does not), and its text is short
     assert on_tools["write_todos"] == RA.LEAN_TODO_TOOL_DESCRIPTION
-    assert on_tools["task"] == RA.LEAN_TASK_TOOL_DESCRIPTION.replace(
-        L.AGENTS_SLOT, _helpers(off_tools["task"]))
-    assert "general-purpose" in on_tools["task"]
+    assert LIB[L.TODO_TOOL] not in on_tools["write_todos"]
+    # the task tool's fixed text is gone; the page's list of helpers stays
+    before, after = _frame(LIB[L.TASK_TOOL])
+    assert before not in on_tools["task"] and after not in on_tools["task"]
+    assert on_tools["task"].startswith(
+        RA.LEAN_TASK_TOOL_DESCRIPTION.split(L.AGENTS_SLOT)[0])
+    assert "- general-purpose: " + REVIEW_READER_DESCRIPTION \
+        in on_tools["task"]
     assert "page_reader" not in on_tools["task"] + on
-    # every other tool is offered word for word as before
-    assert set(on_tools) == set(off_tools)
-    for name in set(off_tools) - {"write_todos", "task"}:
-        assert on_tools[name] == off_tools[name], name
+    # the page's own prompt stays; the helper list after a helper section
+    # stays where the library writes one
+    assert build_document_review_prompt() in on
+    if LIB[L.TASK_SECTION]:
+        assert "Available subagent types:" in on
+        assert "- general-purpose: " + REVIEW_READER_DESCRIPTION in on
     assert end["lean_prompt"] == {
-        "applied": True, "system_chars_cut": len(off) - len(on),
-        "tool_chars_cut": (len(off_tools["write_todos"])
-                           + len(off_tools["task"])
-                           - len(on_tools["write_todos"])
-                           - len(on_tools["task"]))}
+        "applied": True, "cut": cut, "system_chars_cut": len(off) - len(on),
+        "tool_chars_cut": sum(len(off_tools[n]) - len(on_tools[n])
+                              for n in ("write_todos", "task"))}
 
 
-@needs_texts
 def test_the_system_prompt_s_length_off_and_on(monkeypatch, tmp_path):
     off = len(_turn(monkeypatch, tmp_path, None)[0])
     on = len(_turn(monkeypatch, tmp_path, "1")[0])
-    print(f"\nDR-29 system prompt: {off} characters off, {on} on, "
-          f"{off - on} saved")
-    assert off - on == (2 + len(LIB[L.BASE])
-                        + len(LIB[L.TODO_SECTION]) - len(RA.LEAN_TODO_PROMPT)
-                        + len(LIB[L.TASK_SECTION]) - len(RA.LEAN_TASK_PROMPT))
+    print(f"\nDR-29 system prompt on deepagents {_version('deepagents')}, "
+          f"langchain {_version('langchain')}: {off} characters off, {on} "
+          f"on, {off - on} saved")
+    saving = 0
+    for label in SECTIONS:
+        if LIB[label]:
+            saving += (2 + len(LIB[label]) if SHORT[label] is None
+                       else len(LIB[label]) - len(SHORT[label]))
+    assert off - on == saving > 0
     assert (len(RA.LEAN_TODO_PROMPT), len(RA.LEAN_TASK_PROMPT)) == (314, 148)
     if (_version("deepagents"), _version("langchain")) == LAPTOP:
         assert off - on == LAPTOP_SAVING == 5312
@@ -256,29 +299,40 @@ def test_the_system_prompt_s_length_off_and_on(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Set, and a text not found: nothing is cut, and the record says so
+# Set, and fewer texts defined: those are cut, the rest is not required
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("moved", ["gone", "reworded"])
-def test_an_upgrade_that_moved_the_base_prompt_leaves_the_page_as_it_is(
-        monkeypatch, tmp_path, moved):
-    off, off_tools, _ = _turn(monkeypatch, tmp_path, None)
-    base = None if moved == "gone" else "You are a deep agent, reworded."
-    monkeypatch.setattr(L, "library_texts", lambda: {**LIB, L.BASE: base})
-    on, on_tools, end = _turn(monkeypatch, tmp_path, "1")
-    assert (on, on_tools) == (off, off_tools)
-    assert end["lean_prompt"]["applied"] is False
-    assert L.BASE in end["lean_prompt"]["not_found"]
-    assert "system_chars_cut" not in end["lean_prompt"]
-
-
-@pytest.mark.skipif(DEFINED, reason="the installed agent library has the "
-                                    "0.6 texts")
-def test_on_a_library_without_the_texts_the_page_is_left_as_it_is(
+def test_a_library_without_a_base_prompt_or_helper_section_cuts_the_rest(
         monkeypatch, tmp_path):
+    """deepagents 0.7's shape on any installed version: no base prompt and
+    no helper section defined, so the to-do section and the two tool texts
+    are cut and whatever else the prompt holds stays word for word."""
+    fewer = {**LIB, L.BASE: None, L.TASK_SECTION: None}
     off, off_tools, _ = _turn(monkeypatch, tmp_path, None)
+    monkeypatch.setattr(L, "library_texts", lambda: dict(fewer))
+    on, on_tools, end = _turn(monkeypatch, tmp_path, "1")
+    expected, expected_tools, cut = _expected(off, off_tools, fewer)
+    assert cut == [L.TODO_SECTION, L.TODO_TOOL, L.TASK_TOOL]
+    assert (on, on_tools) == (expected, expected_tools)
+    for label in (L.BASE, L.TASK_SECTION):
+        if LIB[label]:
+            assert LIB[label] in on, label
+    assert RA.LEAN_TASK_PROMPT not in on
+    assert end["lean_prompt"]["applied"] is True
+    assert end["lean_prompt"]["cut"] == cut
+
+
+# ---------------------------------------------------------------------------
+# Set, and a text the library defines not found: nothing is cut
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("label", [L.BASE, L.TODO_SECTION, L.TODO_TOOL])
+def test_an_upgrade_that_reworded_a_text_leaves_the_page_as_it_is(
+        monkeypatch, tmp_path, label):
+    off, off_tools, _ = _turn(monkeypatch, tmp_path, None)
+    reworded = "A made-up text an upgrade put in place of the old one."
+    monkeypatch.setattr(L, "library_texts",
+                        lambda: {**LIB, label: reworded})
     on, on_tools, end = _turn(monkeypatch, tmp_path, "1")
     assert (on, on_tools) == (off, off_tools)
-    assert end["lean_prompt"]["applied"] is False
-    assert set(end["lean_prompt"]["not_found"]) >= {
-        label for label, text in LIB.items() if not text}
+    assert end["lean_prompt"] == {"applied": False, "not_found": [label]}

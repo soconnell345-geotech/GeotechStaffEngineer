@@ -142,10 +142,11 @@ records with no ``model_end`` and nothing to say why):
   ``model_end`` with such events before it was waiting on retries.
 
 Since 2026-11-18 (BACKLOG DR-29), with ``GEOTECH_REVIEW_LEAN_PROMPT`` set,
-``turn_end`` carries ``lean_prompt``: ``{"applied": true,
-"system_chars_cut", "tool_chars_cut"}``, or ``{"applied": false,
-"not_found": [...]}`` when a text of the agent library was not found word
-for word and the prompt went out as it was
+``turn_end`` carries ``lean_prompt``: ``{"applied": true, "cut": [...],
+"system_chars_cut", "tool_chars_cut"}`` (``cut``: the agent library's texts
+taken out or made short), or ``{"applied": false, "not_found": [...]}``
+when a text the agent library defines was not found word for word and the
+prompt went out as it was
 (:mod:`aec_agent_core.deep.lean_prompt`). Unset, it is not written.
 
 Hashes and sizes, never file contents, images or keys.
