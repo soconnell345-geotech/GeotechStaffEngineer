@@ -129,3 +129,21 @@ def test_a_revision_block_read_and_found_short():
         "cloud-not-listed",
         "S-501: 12-20M at F3 is clouded; the revision block does not list "
         "it.")
+
+
+# -- "nothing was missed" is an all-clear -----------------------------------
+
+@pytest.mark.parametrize("reply", [
+    "No sheet was left behind: the parapet on A-301 matches A-201.",
+    "A-301 parapet: nothing was missed.",
+    "A-301: the parapet was not overlooked; it reads 109.60.",
+])
+def test_nothing_missed_is_not_a_sheet_left_behind(reply):
+    assert not _passes("parapet-twin", reply)
+
+
+def test_a_sheet_that_was_missed():
+    assert _passes("parapet-twin",
+                   "A-301 was missed: the parapet there is still 109.30.")
+    assert _passes("parapet-twin",
+                   "A-301 was left behind on the parapet level.")

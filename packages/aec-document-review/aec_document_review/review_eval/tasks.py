@@ -1093,6 +1093,12 @@ _NONE_OF = ("no", "not", "n't", "any", "without", "never", "nor", "neither",
             "no apparent", "no further", "no visible", "no real",
             "no sign of", "no sign of a", "no evidence of",
             "no evidence of a")
+#: What before "missed" or "left behind" says nothing was: "nothing was
+#: missed", "no sheet was left behind".
+_NOT_NOTHING = "".join(f"(?<!{w} )" for w in (
+    "nothing", "nothing was", "nothing is", "none", "none was", "none were",
+    "none is", "none are", "not", "n't", "no sheet was", "no sheet is",
+    "no sheets were", "no sheets are", "no sheet", "no sheets", "never"))
 #: A word that says the other sheet was left behind: still showing the old
 #: value, not updated, needing an update, differing. Not "unchanged" alone
 #: (a list of what did not change says it of every sheet it names), not
@@ -1121,9 +1127,11 @@ _LEFT_BEHIND = {"re": (
     r"(?:an?\s+)?(?:updat|revis|chang|renumber|correct|amend|rais|"
     r"coordinat)\w*"
     r"|\bto\s+be\s+(?:updated|revised|changed|renumbered|corrected)\b"
-    r"|\b(?:missed|overlooked|outdated|out[\s-]of[\s-](?:date|step|sync)|"
+    r"|" + _NOT_NOTHING +
+    r"\b(?:missed|overlooked|outdated|out[\s-]of[\s-](?:date|step|sync)|"
     r"stale|obsolete)\b"
-    r"|\bleft\s+(?:at|behind|unchanged|unrevised|as\s+(?:is|was))\b"
+    r"|" + _NOT_NOTHING +
+    r"\bleft\s+(?:at|behind|unchanged|unrevised|as\s+(?:is|was))\b"
     r"|\bno\s+longer\s+(?:match|agree|consistent|correspond|coordinat)\w*"
     r"|\b(?:does|do|did)\s?n[o']t\s+(?:match|agree|correspond|reflect|"
     r"follow)\w*"
