@@ -1433,6 +1433,20 @@ def _feed(st: _LookupState, path: str) -> None:
         _note_call(st, name, args, agent, text, data)
 
 
+def _read_nothing(name: str, data: Any) -> bool:
+    """Whether a reference page read (:data:`REFERENCE_PAGE_READERS`) read
+    none of the pages it sent: every row of ``pages_read`` holds an
+    ``error`` and no ``analysis`` (the table reader's result when the
+    vision reader failed on each page). Such a read returned nothing of the
+    document, so it is no source (BACKLOG EV-23, review)."""
+    if name not in REFERENCE_PAGE_READERS or not isinstance(data, dict):
+        return False
+    rows = data.get("pages_read")
+    return (isinstance(rows, list) and bool(rows)
+            and all(isinstance(r, dict) and r.get("error")
+                    and not r.get("analysis") for r in rows))
+
+
 def _note_call(st: _LookupState, name: str, args: dict, agent: str,
                text: str, data: Any) -> None:
     """One finished tool call into the record."""
@@ -1462,7 +1476,7 @@ def _note_call(st: _LookupState, name: str, args: dict, agent: str,
             elif w:
                 st.app_written.pop(w, None)
     kind = source_kind(name, args, agent)
-    if kind is None:
+    if kind is None or _read_nothing(name, data):
         return
     given: Optional[List[Any]] = None
     if kind == DOCUMENT and _base(_target(args, st)) in st.outputs:
