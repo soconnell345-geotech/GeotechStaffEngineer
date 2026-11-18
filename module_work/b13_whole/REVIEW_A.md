@@ -2,6 +2,8 @@
 
 **Verdict: MERGE AFTER FIXES**, reviewed head `299fb72` (`claude/b13-integration`). The three fixes are on this branch (`claude/rv-b13-whole-a`), so merging this branch is the fixed state. No must-fix finding.
 
+One thing about this branch's own history: fix 1 is in two commits. `591dcb2` holds only its test (the source file fell out of the index), and `7c00b1b` holds the change, so the new test fails on the three commits between them. A rewrite of the pushed branch was refused, so it stays that way; squash the two when merging if the history matters. This report is therefore in two commits as well, the last of them alone.
+
 The question asked: with every new setting unset, is the page what 1.2.0 was, and do the settings notes say what the code does?
 
 - **Unset, the default page is what 1.2.0 was**, apart from the stated repairs and the three things in findings 1, 4 and 5 (one fixed here, two for the release note).
@@ -34,7 +36,7 @@ All switches are read through `review_flags._on`: true values `1`, `true`, `yes`
 
 | # | Severity | Where | What | Shown by | Outcome |
 |---|---|---|---|---|---|
-| 1 | should-fix | `error_text.py:543` `_PREFIXED_KEY` | The new masking of a tool's error line took a document's file name for a key. Unset behaviour, not part of the stated repair: the model was no longer told which file could not be opened. | `no document named 'sk-101-foundation-plan.pdf'` came back as `no document named '….pdf'` | Fixed, `591dcb2`. A name followed by a document extension is kept; keys are masked as before. |
+| 1 | should-fix | `error_text.py:543` `_PREFIXED_KEY` | The new masking of a tool's error line took a document's file name for a key. Unset behaviour, not part of the stated repair: the model was no longer told which file could not be opened. | `no document named 'sk-101-foundation-plan.pdf'` came back as `no document named '….pdf'` | Fixed, `591dcb2` (the test) and `7c00b1b` (the change). A name followed by a document extension is kept; keys are masked as before. |
 | 2 | should-fix | `aec-document-review/tests/test_record_masks_fx11_page.py`, fixture `helper` | The fixture patched `langchain.agents.create_agent`; where deepagents was first imported under the patch it kept the failing stand-in for the whole process. | `pytest tests/test_record_masks_fx11_page.py tests/test_auth_refusal.py`: 3 failed on the reviewed head. The whole folder passes only because of its alphabetical order. | Fixed, `9d484c9` (test file only). |
 | 3 | should-fix | `packages/aec-document-review/README.md`, `tinyapps/TINYAPPS.md`, `tinyapps/wrapper_repo/.env.example` | `GEOTECH_PLOT_CODE_KERNEL_LAYER` was in none of the three notes. | grep on the reviewed head | Fixed, `74e608c` (wording). |
 | 4 | note | `aec_document_review/core.py:1912` `_unique_dest` (TA-10) | Changes with everything unset and is not on the list of stated repairs: a second import of `plot.plotly.json` is now saved as `plot_1.plotly.json`, where 1.2.0 wrote `plot.plotly_1.json` and showed a plain file card. It is a defect repair. | reading | Not changed. Add it to the release note's repairs. |
