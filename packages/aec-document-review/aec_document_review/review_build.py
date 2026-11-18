@@ -125,13 +125,15 @@ def _review_reader_subagent(primary_tools,
         build_document_review_reader_prompt)
     from aec_document_review.review_agent import (
         READER_EXHAUSTED, READER_MAX_MODEL_CALLS, READER_NUDGE, READER_TOOLS)
-    # the sheet tools and the plan tools read and write nothing: the helper
-    # has them where the page does (PL-37, PL-42, PL-27)
+    # the sheet tools, the plan tools and the drawing tool read and write
+    # nothing: the helper has them where the page does (PL-37, PL-42,
+    # PL-27, DR-44)
     from aec_agent_core import document_tools
     wanted = (set(READER_TOOLS) | set(document_tools.SHEET_TOOL_NAMES)
               | set(getattr(document_tools, "OPTIONAL_SHEET_TOOL_NAMES",
                             ()))
-              | set(getattr(document_tools, "PLAN_TOOL_NAMES", ())))
+              | set(getattr(document_tools, "PLAN_TOOL_NAMES", ()))
+              | set(getattr(document_tools, "DRAWING_TOOL_NAMES", ())))
     return {
         "name": READER_NAME,
         "description": REVIEW_READER_DESCRIPTION,
@@ -312,6 +314,10 @@ def build_review_page_agent(
         sheet_tools=_flags.sheet_tools(),
         # planlens' plan symbols and plan grid behind theirs (PL-27)
         plan_tools=_flags.plan_tools(),
+        # planlens' drawing geometry behind its own (DR-44)
+        drawing_tools=_flags.drawing_tools(),
+        # a DXF also as a PDF plot of its model space behind its own (DR-19)
+        dxf_plots=_flags.dxf_plots(),
         # behind the figure switches the main agent's own redraw can retire
         # a figure any helper drew this turn (GM-151)
         plot_data_replaces=_flags.figure_helper() or _flags.plot_code(),

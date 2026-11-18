@@ -435,6 +435,7 @@ _DOCUMENT_TOOL_NOTES = {
     "check_schedule_marks": _PDF_PAGES_NOTE,
     "plan_symbols": _PDF_PAGE_NOTE,
     "plan_grid": _PDF_PAGE_NOTE,
+    "drawing_geometry": _PDF_PAGE_NOTE,
     "render_page_thumbnails": _PDF_PAGES_NOTE,
     "annotate_document": (
         " In this app give output_path a bare file name: it is written into "
@@ -499,9 +500,12 @@ def _document_tool_schemas(name: str) -> Dict[str, Dict[str, Any]]:
     was an array of anything) and ``remove`` as strings; ``search_document``'s
     ``min_score`` with planlens' default, 80, though the function's is
     ``None`` so a score given without ``fuzzy`` can be said; the plan
-    tools' arguments as planlens' own spec shows them (BACKLOG PL-27)."""
+    tools' arguments as planlens' own spec shows them (BACKLOG PL-27), and
+    the drawing tool's (BACKLOG DR-44)."""
     if name in _document_tools.PLAN_TOOL_NAMES:
         return _document_tools.plan_tool_schemas(name)
+    if name in _document_tools.DRAWING_TOOL_NAMES:
+        return _document_tools.drawing_tool_schemas(name)
     if name == "annotate_document":
         shown = {"remove": {"type": "array", "items": {"type": "string"}}}
         item = _document_tools.annotate_markups_schema()
@@ -541,6 +545,118 @@ def _shown_as(tool, shown: Dict[str, Dict[str, Any]]):
     return tool.model_copy(update={"args_schema": model})
 
 
+#: The sheet numbers the document-tool call in progress gave (``sheets`` /
+#: ``sheet``), handed on with its other arguments (BACKLOG PL-37).
+_SHEET_ADDRESS: "contextvars.ContextVar[Optional[dict]]" = \
+    contextvars.ContextVar("aec_agent_core_sheet_address", default=None)
+
+
+def _taking_sheets(tool, sheet_args: Sequence[Tuple[str, Dict[str, Any]]]):
+    """``tool`` (a document tool) that also takes planlens' sheet-number
+    arguments ``sheet_args`` (``[(name, schema)]``, from
+    :func:`aec_agent_core.document_tools.sheet_address_args`): ``sheets``
+    beside ``pages``, ``sheet`` beside ``page``, shown in planlens' own
+    schema and words, after the tool's other arguments. The tool's function
+    is unchanged; what was given is handed on with the call
+    (:data:`_SHEET_ADDRESS`) and planlens turns it into pages, or refuses
+    it. ``tool`` itself where there is nothing to add."""
+    base = tool.args_schema
+    if not (isinstance(base, type) and issubclass(base, BaseModel)):
+        return tool
+    fields = {
+        name: (Annotated[Any, WithJsonSchema(schema)],
+               Field(default_factory=lambda d=schema.get("default"): d))
+        for name, schema in sheet_args if name not in base.model_fields}
+    if not fields:
+        return tool
+    model = create_model(base.__name__, __base__=base,
+                         __module__=base.__module__, **fields)
+    inner = tool.func
+
+    def call(**kwargs) -> str:
+        given = {name: kwargs.pop(name) for name in fields if name in kwargs}
+        given = {name: value for name, value in given.items()
+                 if value not in (None, "", [], ())}
+        token = _SHEET_ADDRESS.set(given or None)
+        try:
+            return inner(**kwargs)
+        finally:
+            _SHEET_ADDRESS.reset(token)
+
+    call.__name__ = getattr(inner, "__name__", tool.name)
+    call.__doc__ = inner.__doc__
+    return StructuredTool(name=tool.name, description=tool.description,
+                          args_schema=model, func=call)
+
+
+#: ``open_document``'s words on the page where a DXF is also opened as a
+#: plot (``GEOTECH_REVIEW_DXF_PLOTS``, BACKLOG DR-19): the app's note says
+#: the page tools do not apply to a DXF, which is then untrue.
+_DXF_PLOT_REWRITE = (
+    "search_document; the page, markup and vision tools do not apply to "
+    "it.",
+    "search_document; the page, markup and vision tools do not apply to a "
+    "Word or Excel file. A DXF is ALSO opened as a plot: one PDF page "
+    "(page 0) drawn here from its model space, which the document tools "
+    "that work on pages take under the DXF's file name as handle "
+    "(document_page_map, document_markups, render_page_thumbnails, "
+    "annotate_document for a marked PDF copy of the plot), and "
+    "analyze_pdf_page and render_region look at under its attachment "
+    "key; the result's `plot` says what the plot is and is not.")
+
+#: The looking tools that take a PDF page, and so a DXF's plot.
+_PLOT_LOOKS = ("analyze_pdf_page", "render_region")
+
+
+def _dxf_plot_for_look(arguments: dict, attachments: dict,
+                       kept: Dict[str, Any]):
+    """``(attachments, note, refusal)`` for a look at a page of
+    ``arguments["attachment_key"]`` where a DXF is also a plot
+    (``GEOTECH_REVIEW_DXF_PLOTS``, BACKLOG DR-19): for a DXF, a COPY of
+    ``attachments`` in which its key stands for planlens' PDF plot of its
+    model space (``planlens.dxf.plot.dxf_to_pdf``, the plot the document
+    tools open, so a box from a look is a box on the same page), with what
+    the plot is as the note; ``attachments`` itself and no note for any
+    other file. A DXF that will not plot is refused in words. ``kept``
+    holds this build's plots by the file's digest (the PDF's bytes, or the
+    reason there is none, as text). The dict handed in is never written
+    to."""
+    import hashlib
+    from planlens.dxf.plot import PLOT_NOTE, dxf_to_pdf, is_dxf
+    from aec_agent_core.vision_tools import _resolve_attachment_or_path
+    key = arguments.get("attachment_key")
+    name = key
+    if key and str(key).startswith("doc_"):
+        try:
+            name = _document_tools.handle_source(str(key)) or key
+        except Exception:  # noqa: BLE001 - not a handle of this conversation
+            name = key
+    if not is_dxf(name):
+        return attachments, None, None
+    try:
+        data, _kind = _resolve_attachment_or_path(key, attachments)
+    except Exception:  # noqa: BLE001 - the look itself says what is missing
+        return attachments, None, None
+    shown = os.path.basename(str(name).replace("\\", "/")) or str(name)
+    digest = hashlib.sha256(bytes(data)).hexdigest()
+    if digest not in kept:
+        try:
+            kept[digest] = dxf_to_pdf(content=bytes(data))
+        except Exception as exc:  # noqa: BLE001 - said, never raised
+            # why there is no plot is kept too (as text): a file past a
+            # bound of the plot is found so after up to planlens'
+            # MAX_SECONDS, once per build, not again at every look
+            kept[digest] = f"{type(exc).__name__}: {exc}"
+    plot = kept[digest]
+    if isinstance(plot, str):
+        return attachments, None, json.dumps({
+            "error": (f"could not plot '{shown}' to look at it: "
+                      f"{plot}")[:300],
+            "hint": f"read_document(handle='{shown}') reads the DXF's own "
+                    f"text and geometry"})
+    return {**attachments, key: plot}, PLOT_NOTE, None
+
+
 def make_vision_tools(
     engine=None,
     attachments: Optional[Dict[str, bytes]] = None,
@@ -555,6 +671,8 @@ def make_vision_tools(
     show_choice: bool = False,
     sheet_tools: bool = False,
     plan_tools: bool = False,
+    drawing_tools: bool = False,
+    dxf_plots: bool = False,
     plot_data_replaces: bool = False,
     description_rewrites: Optional[
         Dict[str, Sequence[Tuple[str, str]]]] = None,
@@ -595,6 +713,15 @@ def make_vision_tools(
     ``plan_tools`` adds planlens' ``plan_symbols`` and ``plan_grid`` where
     the installed planlens publishes them (nothing is added otherwise),
     behind ``GEOTECH_REVIEW_PLAN_TOOLS`` (BACKLOG PL-27).
+    ``drawing_tools`` adds planlens' ``drawing_geometry`` where the
+    installed planlens has it (nothing is added otherwise), behind
+    ``GEOTECH_REVIEW_DRAWING_TOOLS`` (BACKLOG DR-44). ``dxf_plots`` asks
+    planlens to open a DXF also as a PDF plot of its model space, where it
+    can (nothing changes otherwise), behind ``GEOTECH_REVIEW_DXF_PLOTS``
+    (BACKLOG DR-19). With the sheet tools, and where the installed planlens
+    offers it, each document tool that takes ``pages`` also takes
+    ``sheets`` and each that takes ``page`` also takes ``sheet`` (printed
+    sheet numbers; BACKLOG PL-37).
 
     ``added_tools`` are tools another app adds to the kit, ``{name:
     builder}``: ``builder(dispatch)`` returns ``(function, description)``,
@@ -655,6 +782,14 @@ def make_vision_tools(
     plan_names = (set(_document_tools.PLAN_TOOL_NAMES)
                   if plan_tools and _document_tools.available()
                   and _document_tools.plan_tools_available() else set())
+    # The drawing tools: asked for AND in the installed planlens.
+    drawing_names = (set(_document_tools.DRAWING_TOOL_NAMES)
+                     if drawing_tools and _document_tools.available()
+                     and _document_tools.drawing_tools_available()
+                     else set())
+    # A DXF also as a plot: asked for AND the installed planlens can.
+    plots = bool(dxf_plots and _document_tools.available()
+                 and _document_tools.dxf_plots_available())
     default_include = include is None
     if include is None:
         include = {
@@ -687,20 +822,24 @@ def make_vision_tools(
         if _find_like_available():
             include |= {"find_like"}
     if default_include:
-        include |= sheet_names | plan_names
+        include |= sheet_names | plan_names | drawing_names
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
     # Resolved once per build: the newer tools depend on the installed planlens.
     document_names = (set(_document_tools.document_tool_names())
-                      | sheet_names | plan_names)
+                      | sheet_names | plan_names | drawing_names)
     # This build's host for planlens.review (BACKLOG PL-29 (b)): its look is
     # this build's engine and its signer this build's markup_author, passed
     # on every document call, so two conversations never share either.
     review_host = _document_tools.host_for(engine, markup_author,
                                            sheet_tools=bool(sheet_names),
-                                           plan_tools=bool(plan_names))
+                                           plan_tools=bool(plan_names),
+                                           drawing_tools=bool(drawing_names),
+                                           dxf_plots=plots)
     # plot_data draws per figure name, for the redraw note.
     draws: Dict[str, int] = {}
+    # this build's DXF plots, by the file's digest (DR-19)
+    dxf_plots_kept: Dict[str, Any] = {}
 
     def _dispatch(tool_name: str, arguments: dict) -> str:
         # The image calls of this one tool call, for its result under a
@@ -713,6 +852,11 @@ def make_vision_tools(
 
     def _dispatch_tool(tool_name: str, arguments: dict) -> str:
         if tool_name in document_names:
+            # the sheet numbers this call gave, handed on with the rest
+            # (planlens turns them into pages, or refuses them; PL-37)
+            sheets_given = _SHEET_ADDRESS.get()
+            if sheets_given:
+                arguments = {**arguments, **sheets_given}
             # Text-payload reads, budgeted by planlens itself: its limit sits
             # just under the reference cap, so results page through cursors
             # as valid JSON instead of being string-truncated here.
@@ -747,13 +891,22 @@ def make_vision_tools(
             cap = reference_cap
         else:
             cap = max_result_chars
+        seen, plot_note = attachments, None
+        if plots and tool_name in _PLOT_LOOKS:
+            # a look at a DXF looks at its plot (DR-19)
+            seen, plot_note, refused = _dxf_plot_for_look(
+                arguments, attachments, dxf_plots_kept)
+            if refused is not None:
+                return refused
         raw = _dispatch_extended_tool(
             tool_name=tool_name,
             arguments=arguments,
             engine=engine,
-            attachments=attachments,
+            attachments=seen,
             save_fn=save_fn,
         )
+        if plot_note:
+            raw = _json_with(raw, plot=plot_note)
         if tool_name in ("analyze_image", "analyze_pdf_page") \
                 and "render_region" not in include:
             raw = _without_zoom_tool(raw)
@@ -1233,6 +1386,18 @@ def make_vision_tools(
         return _dispatch("plan_grid", {k: v for k, v in args.items()
                                        if v not in (None, "")})
 
+    def drawing_geometry(handle: str, page: Optional[int] = None,
+                         find: Optional[list] = None,
+                         bbox: Optional[list] = None,
+                         pdf_page: Optional[int] = None) -> str:
+        """One page's drafting constructs read from its drawn geometry
+        (planlens' own words describe it)."""
+        args = {"handle": handle, "page": page, "find": find, "bbox": bbox,
+                "pdf_page": pdf_page}
+        # what was given, no more: planlens' defaults apply to the rest
+        return _dispatch("drawing_geometry", {k: v for k, v in args.items()
+                                              if v not in (None, "")})
+
     def annotate_document(handle: str, markups: Optional[list] = None,
                           output_path: str = "",
                           append: bool = True, check: bool = True,
@@ -1513,6 +1678,9 @@ def make_vision_tools(
     if plan_names:
         document_review_builders += [("plan_symbols", plan_symbols),
                                      ("plan_grid", plan_grid)]
+    if drawing_names:
+        document_review_builders.append(
+            ("drawing_geometry", drawing_geometry))
     if _document_tools.has_tool("annotate_document"):
         document_review_builders.append(("annotate_document", annotate_document))
     # Visual scales (planlens' find_scales behind both): described in the
@@ -1644,6 +1812,8 @@ def make_vision_tools(
     for name, (fn, desc) in _builders.items():
         if name in include:
             text = overrides.get(name, desc)
+            if plots and name == "open_document":
+                text = text.replace(*_DXF_PLOT_REWRITE)
             for old, new in rewrites.get(name, ()):
                 text = text.replace(old, new)
             tool = StructuredTool.from_function(
@@ -1657,6 +1827,11 @@ def make_vision_tools(
                 tool = _plot_data_retiring(tool)
             if name in document_names:
                 tool = _shown_as(tool, _document_tool_schemas(name))
+                if sheet_names:
+                    # sheet numbers where the tool takes pages, where the
+                    # installed planlens offers them (PL-37)
+                    tool = _taking_sheets(
+                        tool, _document_tools.sheet_address_args(name))
             if show_choice and name in SHOW_ME_NOTES:
                 tool = _showing(tool, SHOW_ME_NOTES[name])
             # An unknown argument (analyze_pdf_page(pages=12)) is refused by

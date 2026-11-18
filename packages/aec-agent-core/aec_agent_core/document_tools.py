@@ -123,6 +123,13 @@ OPTIONAL_SHEET_TOOL_NAMES = ("check_schedule_marks",)
 #: measured yet, so not on by default.
 PLAN_TOOL_NAMES = ("plan_symbols", "plan_grid")
 
+#: planlens' drawing tool (one page's dimensions, leaders, callouts,
+#: revision clouds and title block read from its drawn geometry; BACKLOG
+#: DR-44, PL-13; planlens after 0.16.0). A page offers it only where it was
+#: built with it (``GEOTECH_REVIEW_DRAWING_TOOLS``) and the installed
+#: planlens has it.
+DRAWING_TOOL_NAMES = ("drawing_geometry",)
+
 #: Who a comment this app writes onto a PDF is signed by. A reviewer opening
 #: the marked-up file has to be able to tell a drafted comment from a person's
 #: without asking, so the default says so in the name; a deployment that signs
@@ -209,8 +216,10 @@ def _spec(name: str) -> Optional[Dict[str, Any]]:
         return None
     # The sheet tools' specs are kept in a list of their own (a host that
     # reads TOOL_SPECS gets no tool it did not ask for).
+    # ... and so are the drawing tools' (planlens after 0.16.0).
     for spec in list(_specs.TOOL_SPECS) + list(
-            getattr(_specs, "SHEET_TOOL_SPECS", ())):
+            getattr(_specs, "SHEET_TOOL_SPECS", ())) + list(
+            getattr(_specs, "DRAWING_TOOL_SPECS", ())):
         if spec.get("name") == name:
             return spec
     return None
@@ -287,6 +296,83 @@ def plan_tool_schemas(name: str) -> Dict[str, Dict[str, Any]]:
     return {arg: copy.deepcopy(props[arg])
             for arg in PLAN_SHOWN_FROM_PLANLENS.get(name, ())
             if isinstance(props.get(arg), dict)}
+
+
+def _host_takes_options() -> bool:
+    """Whether a host can ask planlens.review for anything
+    (``ReviewHost.toolkit_options``)."""
+    return "toolkit_options" in {
+        f.name for f in dataclasses.fields(_review.ReviewHost)}
+
+
+def sheet_address_args(name: str) -> list:
+    """``[(argument, schema)]``: the sheet-number arguments document tool
+    ``name`` takes for a host that asked for the sheet tools (``sheets``
+    where it takes ``pages``, ``sheet`` where it takes ``page``; BACKLOG
+    PL-37), each with planlens' own schema and words
+    (``planlens.review.specs.sheet_args``). Empty where the installed
+    planlens does not offer them (0.16.0 and before), and for a tool that
+    takes no page. Read from planlens' own specs, never from its version."""
+    offered = getattr(_rspecs, "sheet_args", None)
+    if not callable(offered):
+        return []
+    import copy
+    try:
+        return [(str(arg), copy.deepcopy(schema))
+                for arg, schema in offered(name, True)
+                if isinstance(schema, dict)]
+    except Exception:  # noqa: BLE001 - an unreadable spec offers nothing
+        return []
+
+
+def drawing_tools_available() -> bool:
+    """Whether the installed planlens has the drawing tools
+    (:data:`DRAWING_TOOL_NAMES`) and its host layer offers them to a host
+    that asks (``planlens.review.specs.DRAWING_TOOLS``)."""
+    offered = set(getattr(_rspecs, "DRAWING_TOOLS", ()) or ())
+    return (_host_takes_options()
+            and all(name in offered and has_tool(name)
+                    for name in DRAWING_TOOL_NAMES))
+
+
+def drawing_tool_schemas(name: str) -> Dict[str, Dict[str, Any]]:
+    """``{argument: schema}`` for drawing tool ``name``: each argument
+    planlens' host layer shows with the toolkit's own schema
+    (``planlens.review.specs.DRAWING_SHOWN_FROM_TOOLKIT``), as the
+    installed planlens' spec shows it (a copy). Empty for any other tool."""
+    import copy
+    shown = (getattr(_rspecs, "DRAWING_SHOWN_FROM_TOOLKIT", None) or {})
+    spec = _spec(name) or {}
+    props = (spec.get("parameters") or {}).get("properties") or {}
+    return {arg: copy.deepcopy(props[arg])
+            for arg in shown.get(name, ())
+            if isinstance(props.get(arg), dict)}
+
+
+def dxf_plots_available() -> bool:
+    """Whether the installed planlens can open a DXF as a PDF plot of its
+    model space for a host that asks (BACKLOG DR-19; planlens after
+    0.16.0): its toolkit takes ``dxf_plots`` and it has the plot itself
+    (``planlens.dxf.plot``, which needs ezdxf, and Pillow for ezdxf's
+    drawing add-on: without Pillow planlens refuses every plot,
+    ``PlotUnavailable``, so the page must not say a DXF is a plot).
+    planlens publishes no list of the options a host may ask with, so the
+    toolkit's own signature is read; an older toolkit would refuse the
+    option."""
+    if not _host_takes_options():
+        return False
+    import importlib.util
+    import inspect
+    try:
+        from planlens.tools import ReviewToolkit
+        takes = "dxf_plots" in inspect.signature(
+            ReviewToolkit.__init__).parameters
+        return bool(takes
+                    and importlib.util.find_spec("planlens.dxf.plot")
+                    and importlib.util.find_spec("ezdxf")
+                    and importlib.util.find_spec("PIL"))
+    except Exception:  # noqa: BLE001 - not there is not offered
+        return False
 
 
 def search_supports_fuzzy() -> bool:
@@ -478,7 +564,9 @@ def app_host() -> "_review.ReviewHost":
 
 def host_for(engine=None, markup_author: Optional[str] = None,
              sheet_tools: bool = False,
-             plan_tools: bool = False) -> "_review.ReviewHost":
+             plan_tools: bool = False,
+             drawing_tools: bool = False,
+             dxf_plots: bool = False) -> "_review.ReviewHost":
     """One agent build's host: the process's (:func:`app_host`, as
     installed) with that build's look, signer and crop render.
 
@@ -491,7 +579,12 @@ def host_for(engine=None, markup_author: Optional[str] = None,
     sheet tools on this build's conversations (:data:`SHEET_TOOL_NAMES`);
     ``plan_tools`` for the plan tools (:data:`PLAN_TOOL_NAMES`), where the
     installed planlens serves them only to a host that asks
-    (:func:`plan_tools_need_asking`; an older one serves them unasked)."""
+    (:func:`plan_tools_need_asking`; an older one serves them unasked);
+    ``drawing_tools`` for the drawing tools (:data:`DRAWING_TOOL_NAMES`)
+    and ``dxf_plots`` for a DXF opened also as a plot, each only where the
+    installed planlens has it (:func:`drawing_tools_available`,
+    :func:`dxf_plots_available`): an older one is not handed an option its
+    toolkit would refuse."""
     who = markup_author
 
     def signer() -> str:
@@ -516,6 +609,12 @@ def host_for(engine=None, markup_author: Optional[str] = None,
     if plan_tools and plan_tools_need_asking():
         host = dataclasses.replace(host, toolkit_options={
             **(host.toolkit_options or {}), "plan_tools": True})
+    if drawing_tools and drawing_tools_available():
+        host = dataclasses.replace(host, toolkit_options={
+            **(host.toolkit_options or {}), "drawing_tools": True})
+    if dxf_plots and dxf_plots_available():
+        host = dataclasses.replace(host, toolkit_options={
+            **(host.toolkit_options or {}), "dxf_plots": True})
     return host
 
 

@@ -186,7 +186,15 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     sheet index and that check with the document's map (BACKLOG PL-42).
     Code does the looking-up that is the same on every set; the agent
     views what the check flags and judges it. BACKLOG PL-37, DR-07. Not
-    measured; the ``sheet_tools`` arm does (EV-40).
+    measured; the ``sheet_tools`` arm does (EV-40). Where the installed
+    planlens offers sheet numbers as addresses (after 0.16.0; read from its
+    own ``planlens.review.specs.sheet_args``), each of the page's document
+    tools that takes ``pages`` then also takes ``sheets`` ("S-201, A-101")
+    and each that takes ``page`` also takes ``sheet``, in planlens' own
+    schema and words: planlens finds the pages its sheet index reads those
+    numbers on, the result says which (``sheet_pages``), and a number the
+    index does not hold, or holds on more than one page, is refused, never
+    guessed. On planlens 0.16.0 the switch gives what it gave.
 
 ``GEOTECH_VISION_TILE_ANSWERS`` (default off)
     ``1`` gives each tile of a tiled read (``analyze_pdf_page`` and
@@ -243,6 +251,39 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     PL-27 (from PL-25). Not measured on a model yet: the suite takes it as
     the arm ``("plan_tools", {"GEOTECH_REVIEW_PLAN_TOOLS": "1"})``. Kept in
     :data:`LATER_ENVS` for the reasons given for
+    ``GEOTECH_VISION_TILE_ANSWERS``.
+
+``GEOTECH_REVIEW_DRAWING_TOOLS`` (default off)
+    ``1`` gives the Document Review page (and its reading helper) planlens'
+    drawing tool, where the installed planlens has it (after 0.16.0;
+    otherwise the page is the default build): ``drawing_geometry``, one
+    page's drafting constructs read from its drawn geometry (dimensions
+    with their value and the two points they span, leaders with their note
+    and where the arrow touches, callout bubbles, revision clouds, the
+    title block), each with the finder's confidence, in the frame the
+    other tools use. A fallback for a CAD sheet the text and the look have
+    not settled; a scan is refused in plain words. Read when the page is
+    built; the page asks planlens with ``toolkit_options={"drawing_tools":
+    True}``. Unset, the tool lists, descriptions and schemas are byte for
+    byte as before. BACKLOG DR-44, PL-13. Not measured on a model yet: the
+    suite takes it as the arm ``("drawing_tools",
+    {"GEOTECH_REVIEW_DRAWING_TOOLS": "1"})``. Kept in :data:`LATER_ENVS`
+    for the reasons given for ``GEOTECH_VISION_TILE_ANSWERS``.
+
+``GEOTECH_REVIEW_DXF_PLOTS`` (default off)
+    ``1`` asks planlens (``toolkit_options={"dxf_plots": True}``), where
+    the installed planlens can (after 0.16.0; otherwise nothing changes),
+    to open an uploaded DXF also as a one-page PDF plot of its model
+    space: the page's document tools that work on pages (the contact
+    sheet, the page map, the markups, the marked copy and, behind their
+    own switches, the plan and drawing tools) then take the DXF's file
+    name instead of refusing it, ``open_document`` says what the plot is
+    (``plot``), and its description on the page says so too. Reading and
+    searching a DXF still read its own text. Read when the page is built.
+    Unset, every description, schema and result is byte for byte as
+    before. BACKLOG DR-19. Not measured on a model yet: the suite takes it
+    as the arm ``("dxf_plots", {"GEOTECH_REVIEW_DXF_PLOTS": "1"})``. Kept
+    in :data:`LATER_ENVS` for the reasons given for
     ``GEOTECH_VISION_TILE_ANSWERS``.
 
 ``GEOTECH_REVIEW_FIGURE_EXAMPLES`` (default off)
@@ -359,6 +400,8 @@ FIGURE_EXAMPLES_ENV = "GEOTECH_REVIEW_FIGURE_EXAMPLES"
 LEAN_PROMPT_ENV = "GEOTECH_REVIEW_LEAN_PROMPT"
 SHOW_UPLOADS_ENV = "GEOTECH_VISION_SHOW_UPLOADS"
 PIXEL_REQUESTS_ENV = "GEOTECH_VISION_PIXEL_REQUESTS"
+DRAWING_TOOLS_ENV = "GEOTECH_REVIEW_DRAWING_TOOLS"
+DXF_PLOTS_ENV = "GEOTECH_REVIEW_DXF_PLOTS"
 
 #: Switches added after the geotech app's copy went quiet (5.36.0), whose
 #: tests pin :data:`ALL_ENVS` and :data:`ARMS` whole. They are switches like
@@ -370,7 +413,8 @@ PIXEL_REQUESTS_ENV = "GEOTECH_VISION_PIXEL_REQUESTS"
 #: (and give each its arm) when the app's tests are next renewed.
 LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV,
               PLAN_TOOLS_ENV, FIGURE_EXAMPLES_ENV, LEAN_PROMPT_ENV,
-              SHOW_UPLOADS_ENV, PIXEL_REQUESTS_ENV)
+              SHOW_UPLOADS_ENV, PIXEL_REQUESTS_ENV, DRAWING_TOOLS_ENV,
+              DXF_PLOTS_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -438,6 +482,19 @@ def show_uploads() -> bool:
     """Whether the review page shows an uploaded image file to its main
     model itself instead of a vision call's reading."""
     return _on(SHOW_UPLOADS_ENV)
+
+
+def drawing_tools() -> bool:
+    """Whether the review page asks planlens for its drawing tool (one
+    page's dimensions, leaders, callouts, revision clouds and title block
+    read from its drawn geometry)."""
+    return _on(DRAWING_TOOLS_ENV)
+
+
+def dxf_plots() -> bool:
+    """Whether the review page asks planlens to open a DXF also as a PDF
+    plot of its model space, so the page tools take it."""
+    return _on(DXF_PLOTS_ENV)
 
 
 def tile_answers() -> bool:
@@ -662,6 +719,8 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "PHOTO_PAGE_ONE_LOOK_ENV", "photo_page_one_look",
            "PHOTO_PAGES_ENV", "photo_pages",
            "PLAN_TOOLS_ENV", "plan_tools",
+           "DRAWING_TOOLS_ENV", "drawing_tools",
+           "DXF_PLOTS_ENV", "dxf_plots",
            "FIGURE_EXAMPLES_ENV", "review_figure_examples",
            "LEAN_PROMPT_ENV", "lean_prompt",
            "SHOW_UPLOADS_ENV", "show_uploads",
