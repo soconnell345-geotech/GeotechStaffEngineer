@@ -55,6 +55,12 @@ MONO_FONT = "Consolas"
 #: Indent applied to a block quote, in inches.
 QUOTE_INDENT_IN = 0.4
 
+#: A photograph is stored in the .docx as JPEG at this quality (DR-47) ...
+PHOTO_JPEG_QUALITY = 85
+#: ... with no more pixels than this many per inch of the size it is
+#: printed at (it is never printed wider than the text).
+PHOTO_MAX_DPI = 200
+
 # DEFAULT_AUTHOR: the author written into File > Info when the caller names
 # nobody (python-docx's template otherwise says "python-docx"): the name of
 # the application the page handed in (aec_agent_core.app_details; INF-33
@@ -508,7 +514,11 @@ def _mark(run, strike, script):
 
 
 def _picture(par, token, ctx, block=False):
-    """Place an image, scaled down to the text width, or say why it is not there."""
+    """Place an image, scaled down to the text width, or say why it is not there.
+
+    A photograph goes in as JPEG at print size (:func:`_photo_as_jpeg`,
+    DR-47); every other picture goes in as its file, as before.
+    """
     attrs = dict(token.attrs or {})
     src = attrs.get("src", "")
     alt = (token.content or attrs.get("alt") or "").strip()
@@ -519,8 +529,16 @@ def _picture(par, token, ctx, block=False):
         return
     if not os.path.isabs(path) and ctx.base_dir:
         path = os.path.join(ctx.base_dir, path)
+    photo = _photo_as_jpeg(path, ctx)
     try:
-        shape = par.add_run().add_picture(path)
+        if photo is None:
+            shape = par.add_run().add_picture(path)
+        else:
+            import io
+            data, (cx, cy) = photo
+            # Printed at the size the file itself would have been.
+            shape = par.add_run().add_picture(io.BytesIO(data), width=cx,
+                                              height=cy)
     except Exception as exc:
         ctx.warnings.append(
             f"image not found or unreadable, left as a note: {src} "
@@ -542,6 +560,118 @@ def _picture(par, token, ctx, block=False):
         ctx.style(caption, "Caption")
         run = caption.add_run(alt)
         run.italic = True
+
+
+#: The photograph test (DR-47) looks at a sample of at most this many pixels
+#: along the longer side.
+_PHOTO_SAMPLE = 256
+
+
+def _is_photograph(rgb) -> bool:
+    """Whether an RGB picture is a photograph, judged by its pixels alone.
+
+    Measured on a sample of at most ``_PHOTO_SAMPLE`` pixels a side, taken
+    nearest-pixel so that no colour is made up by the sampling. Both must
+    hold, and every doubt answers "no", which leaves the picture as it is:
+
+    - Continuous tone: the sample holds at least one distinct colour for
+      every five pixels. Line work, lettering, charts and drawings are a
+      few flat colours and their anti-aliased edges (about one in ten or
+      fewer even for a dense scatter chart); a photograph's colours vary
+      from pixel to pixel.
+    - No paper: fewer than half of the sampled pixels lie within 32 levels,
+      in every channel, of the picture's most common tone. A drawing, a
+      chart, a scan or a page of text is mostly its background, even when
+      the paper is off-white and noisy; a photograph has no one tone that
+      covers half of it. (A photograph that is half sky fails this and
+      stays as it is.)
+    """
+    import numpy as np
+    from PIL import Image
+    w, h = rgb.size
+    k = min(1.0, _PHOTO_SAMPLE / max(w, h))
+    sample = rgb if k >= 1.0 else rgb.resize(
+        (max(1, round(w * k)), max(1, round(h * k))), Image.NEAREST)
+    n = sample.size[0] * sample.size[1]
+    if len(sample.getcolors(maxcolors=n)) * 5 < n:
+        return False
+    px = np.asarray(sample, dtype=np.int16).reshape(-1, 3)
+    coarse = (px >> 5) @ np.array([64, 8, 1], dtype=np.int16)
+    centre = px[coarse == np.bincount(coarse).argmax()].mean(axis=0)
+    return float((np.abs(px - centre).max(axis=1) <= 32).mean()) < 0.5
+
+
+def _photo_as_jpeg(path, ctx):
+    """A photograph's bytes for the .docx, or ``None`` to place the file as
+    it is (DR-47).
+
+    Photo crops arrived as PNG at 200 to 300 dpi and were embedded
+    unchanged, about 1 MB each: a 20-photo report passed a common 20 MB
+    mail limit, and the agent dropped evidence photos to get under it. A
+    photograph (:func:`_is_photograph`) is now stored as JPEG at
+    ``PHOTO_JPEG_QUALITY``, with no more than ``PHOTO_MAX_DPI`` pixels per
+    inch of the size it is printed at; it prints at the same size as
+    before. Line work, lettering, charts and drawing crops are not
+    photographs and stay as they are: JPEG blurs edges and lettering, and
+    PNG already stores them small.
+
+    Left as it is, always: a picture that is not RGB (a grey one: scans of
+    drawings and text are grey; a palette, CMYK), one with any transparent
+    pixel or an EXIF rotation, a JPEG already within the size, and any
+    picture whose JPEG would not be smaller than its file. The source file
+    is only read. Any failure returns ``None``, so a picture Pillow cannot
+    open is placed exactly as before.
+
+    Returns ``(jpeg bytes, (width, height))``, the size in EMU at which the
+    file itself would have been placed (python-docx's own reading of it).
+    """
+    try:
+        import io
+        from PIL import Image
+        from docx.image.image import Image as DocxImage
+        with Image.open(path) as img:
+            if img.mode not in ("RGB", "RGBA") \
+                    or img.info.get("transparency") is not None \
+                    or img.getexif().get(0x0112, 1) != 1:
+                return None
+            img.load()
+            if img.mode == "RGBA":
+                if img.getchannel("A").getextrema()[0] < 255:
+                    return None
+                rgb = img.convert("RGB")
+            else:
+                rgb = img
+            if not _is_photograph(rgb):
+                return None
+            native = DocxImage.from_file(path)
+            cx, cy = int(native.width), int(native.height)
+            fit = min(1.0, ctx.text_width / cx)
+            if ctx.text_height:
+                fit = min(fit, ctx.text_height / cy)
+            wide_in, high_in = cx * fit / 914400, cy * fit / 914400
+            w, h = rgb.size
+            k = min(1.0, wide_in * PHOTO_MAX_DPI / w,
+                    high_in * PHOTO_MAX_DPI / h)
+            if k >= 1.0 and img.format in ("JPEG", "MPO"):
+                return None
+            if k < 1.0:
+                rgb = rgb.resize((max(1, round(w * k)), max(1, round(h * k))),
+                                 Image.LANCZOS)
+            # The JPEG's own dpi is its printed size, so reading the file
+            # back and writing it again prints it at the same size.
+            dpi = max(1, round(rgb.size[0] / wide_in))
+            extra = {}
+            if img.info.get("icc_profile"):
+                extra["icc_profile"] = img.info["icc_profile"]
+            buf = io.BytesIO()
+            rgb.save(buf, "JPEG", quality=PHOTO_JPEG_QUALITY, dpi=(dpi, dpi),
+                     **extra)
+        data = buf.getvalue()
+        if len(data) >= os.path.getsize(path):
+            return None
+        return data, (cx, cy)
+    except Exception:  # noqa: BLE001 - never costs the picture its place
+        return None
 
 
 def _matching(tokens, start, open_type, close_type):
