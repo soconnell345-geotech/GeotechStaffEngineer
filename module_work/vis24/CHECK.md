@@ -88,7 +88,10 @@ All in `packages/aec-agent-core/aec_agent_core/`.
   Pixel boxes are excluded unless a page unit follows them ("px=[..] pt":
   then no pixel box is taken from it either). Also excluded: sizes ("(8,
   10) pt lettering", "text heights 8, 10 pt"), dimensions ("1224 x 792
-  pt", "12 ft"), the verb ("(..) points to the valve"), stations,
+  pt", "12 ft"), the verb (a bare "points" is a unit only before
+  punctuation or the end of a line, so "(..) points right to the boring"
+  is not one; "pt", "pts", "PDF points", "page points" and "in points"
+  always are), stations,
   elevations, sheet numbers, printed survey coordinates and boxes with no
   unit. When the answer (or any tile of a tiled read) states page
   coordinates, the result carries `coordinates_note` (`COORDINATES_NOTE`)
@@ -184,6 +187,13 @@ image it is sent and answers with its pixel box):
   sizes in points (in brackets, bare, with a unit on each number, "8 pt
   text"), printed survey coordinates, pixel boxes alone, boxes with no
   unit, points on a chart, the verb "points to").
+- `test_the_verb_points_is_not_a_page_unit` (six made-up sentences:
+  "points right to the boring.", "points at", "points upward", "points
+  northeast", "points left", "points roughly north"): the pixel box is
+  converted, is in a tiled read's `found` and `page_points`, and raises no
+  note, with either planlens. `test_a_page_unit_after_a_box_still_holds`
+  ("points." / "points," / "points" at the end of a line, pt, pts, "PDF
+  points", "in points"): still a statement, and no page point.
 - `test_off_every_prompt_and_result_is_as_before` (zoom, page whole, page
   in 2x2 tiles; switch unset, empty and `0`): a request for page points
   whose answer states page coordinates is run twice. The second run puts

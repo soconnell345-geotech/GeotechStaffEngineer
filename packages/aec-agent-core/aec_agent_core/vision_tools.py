@@ -3666,14 +3666,18 @@ _COORDS = re.compile(
 
 #: A page unit right after the numbers: "(612, 396) pt", "[..] in PDF
 #: points", "(..) page coordinates", "(..) PDF-view pt", "(x=.., y=..) pt"
-#: — not "(8, 10) pt lettering", two sizes, nor "points to", a verb.
+#: — not "(8, 10) pt lettering", two sizes. A bare "points" is the unit
+#: only before punctuation or the end of a line: "points right to the
+#: boring" is the verb.
 _PAGE_UNIT_AFTER = re.compile(
-    r"\s*[)\]}]?\s*\(?\s*(?:in\s+)?"
-    r"(?:(?:(?:pdf|page)(?:[\s-]+[a-z]+)?[\s-]+)?(?:pt|pts|points)\b"
-    r"|(?:pdf|page)[\s-]+(?:units|co-?ordinates|coords|space)\b)"
-    r"(?!\s*(?:font|type|text|letter|lettering|tall|high|size|thick|line|"
-    r"to|towards?|into|away|up|down|north|south|east|west)\b)",
-    re.IGNORECASE)
+    r"\s*[)\]}]?\s*\(?\s*"
+    r"(?:(?:in\s+)?(?:(?:pdf|page)(?:[\s-]+[a-z]+)?[\s-]+)?(?:pt|pts)\b"
+    r"|(?:in\s+)?(?:pdf|page)(?:[\s-]+[a-z]+)?[\s-]+points\b"
+    r"|in\s+points\b"
+    r"|points(?=[ \t]*(?:[^\w\s]|\r?\n|$))"
+    r"|(?:in\s+)?(?:pdf|page)[\s-]+(?:units|co-?ordinates|coords|space)\b)"
+    r"(?!\s*(?:font|type|text|letter|lettering|tall|high|size|thick|"
+    r"line)\b)", re.IGNORECASE)
 
 #: Pixels right after the numbers: a pixel box, which the tool converts.
 _PIXELS_AFTER = re.compile(r"\s*(?:px|pixels?)\b", re.IGNORECASE)

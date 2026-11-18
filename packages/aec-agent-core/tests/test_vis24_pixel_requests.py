@@ -74,12 +74,12 @@ class Finder:
     ``None``)."""
 
     def __init__(self, extra="", extra_in=None, boxes=True,
-                 label="Black square"):
+                 label="Black square", tail=""):
         self.lock = threading.Lock()
         self.prompts = {}
         self.seen = []
         self.extra, self.extra_in, self.boxes = extra, extra_in, boxes
-        self.label = label
+        self.label, self.tail = label, tail
 
     def analyze_image(self, image, prompt=""):
         m = TILE.search(prompt)
@@ -91,7 +91,8 @@ class Finder:
         dark = img.point(lambda v: 255 if v < 100 else 0).getbbox()
         lines = []
         if dark and self.boxes:
-            lines.append("{} px=[{}, {}, {}, {}]".format(self.label, *dark))
+            lines.append("{} px=[{}, {}, {}, {}]{}".format(self.label, *dark,
+                                                         self.tail))
         elif not dark:
             lines.append("No square in this view.")
         if self.extra and (self.extra_in is None or who in self.extra_in):
@@ -417,6 +418,42 @@ def test_on_a_box_in_page_units_never_becomes_a_page_point(monkeypatch,
     else:                                          # 0.16.0: rewritten
         assert "[300, 200, 320, 220] pt" not in out["analysis"]
         assert re.search(r"\[\d+, \d+, \d+, \d+\] pt", out["analysis"])
+
+
+#: The verb "points" after a pixel box (made-up answers).
+VERBS = ["points right to the boring.", "points at the pump.",
+         "points upward.", "points northeast.", "points left.",
+         "points roughly north."]
+#: A pixel box's frame for the rules read alone: 100 pt shown at 200 px.
+INFO = {"clip": [0.0, 0.0, 100.0, 100.0], "width_px": 200, "height_px": 200}
+
+
+@pytest.mark.parametrize("verb", VERBS)
+def test_the_verb_points_is_not_a_page_unit(monkeypatch, verb):
+    """A pixel box the verb follows is a pixel box: it is converted, listed
+    in 'found' and 'page_points', and raises no note (with either
+    planlens)."""
+    line = f"Leader px=[10, 20, 60, 70] {verb}"
+    assert not vision_tools.states_page_coordinates(line)
+    (row,) = vision_tools._px_page_boxes(line, INFO)
+    assert row[1] == pytest.approx((5.0, 10.0, 30.0, 35.0))
+    monkeypatch.setenv(ENV, "1")
+    out = json.loads(_tiled(Finder(tail=f" {verb}"), ASK_POINTS))
+    assert any(_near(r["page_bbox"], SQUARE) for r in out["found"])
+    (point,) = out["page_points"]
+    assert _near(point["page_bbox"], SQUARE), point
+    assert "coordinates_note" not in out
+    assert "page unit" not in out.get("boxes", "")
+
+
+@pytest.mark.parametrize("unit", [" points.", " points,", " points",
+                                  " pt", " pts", " PDF points",
+                                  " in points"])
+def test_a_page_unit_after_a_box_still_holds(unit):
+    assert vision_tools.states_page_coordinates(
+        f"Tag [300, 200, 320, 220]{unit}")
+    assert vision_tools._px_page_boxes(
+        f"Tag px=[10, 20, 60, 70]{unit}", INFO) == []
 
 
 def test_on_a_tiled_read_a_bare_box_is_not_a_page_point(monkeypatch):
