@@ -17,6 +17,7 @@ Terms. Wherever a check takes ``terms``, each term is one of:
 from __future__ import annotations
 
 import functools
+import json
 import os
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -1011,10 +1012,203 @@ def delivered_text(files: Sequence[str] = ()) -> Tuple[str, List[str]]:
     return _files_text(f for f in files or () if not is_working_file(f))
 
 
+# -- What the run's working notes SAID (BACKLOG EV-48) ------------------------
+#
+# The trace review of the suite's brief 8 on the hosted platform
+# (2026-11-14): read whole as text, the working files passed a mark number
+# that stood only in a box's coordinates ("[648, 189, 755, 204]"), in the
+# prompt a reading was asked with, or in a copied schedule row, so the "found only in the run's working notes" line
+# said a run had seen problems it never stated. The notes are now read only
+# where they hold what a reading or a helper SAID. The fields come from the
+# writers (``aec_agent_core.vision_tools._keep_reading`` and ``_note_read``;
+# ``aec_agent_core.deep.keep_work.helper_file_text``) and are named here,
+# not imported: this module loads without the agent stack, and a test keeps
+# them in step. Anything not named here -- a field added later, a JSON file
+# of another writer -- is not read: a missed note is cheaper than a false
+# one. The line is information only: no score reads it (:func:`score`).
+
+#: The fields of a reading -- a vision tool's result (``analyze_pdf_page``,
+#: ``render_region``, ``analyze_image``) -- that hold what it said: the
+#: whole-page or zoom answer. Not its view, boxes, page, image size, the
+#: tool's own notes, or the ``found`` list copied from the answer.
+SAID_FIELDS = ("analysis",)
+#: Lists of a reading whose items are readings too: a page read in tiles.
+SAID_PART_LISTS = ("tiles",)
+#: The vision tools' kept readings, ``{"readings": [{..., "result": <the
+#: tool's result as JSON text>}]}``. An entry's other fields (document,
+#: file, page, view, region, when, the prompt it was asked) are not read.
+KEPT_READINGS_FILE = "page_readings.json"
+KEPT_READING_RESULT = "result"
+#: The vision tools' read record (which page was looked at, how, and the
+#: prompt): it holds no reading's words, so nothing in it is read.
+READ_RECORD_FILE = "reads.json"
+#: A helper's kept record (``kept/*.md``): its answer and the words of each
+#: of its steps are read, and :data:`SAID_FIELDS` of each tool result; the
+#: brief it was given, the summary made in code, the open items its tools
+#: flagged, the index and its calls' arguments are not.
+KEPT_ANSWER_HEADING = "## Its answer"
+KEPT_OPEN_ITEMS_HEADING = "## Open items its tools flagged"
+KEPT_INDEX_HEADING = "## Index (character offsets"
+KEPT_OWN_WORDS_HEADING = "### Its own words"
+_KEPT_STEP = re.compile(
+    r"^(?:## Step \d+|### Its own words|### Call \d+\.\d+: .*"
+    r"|### Result of .*: (?P<n>[\d,]+) characters)$", re.MULTILINE)
+#: What follows a tool result's text in a kept record: the next step, the
+#: next result, or the end.
+_KEPT_AFTER_RESULT = re.compile(r"\n(?:\n\n## Step \d|\n### Result of |\s*\Z)")
+#: Working files of these kinds are prose, read whole (box notation aside);
+#: a working file of another kind is read only in a shape named above.
+NOTE_TEXT_EXTS = (".md", ".txt", ".csv", ".tsv", ".docx", ".xlsx")
+
+_NUMBER = r"-?\d+(?:\.\d+)?"
+_FOUR = rf"{_NUMBER}\s*,\s*{_NUMBER}\s*,\s*{_NUMBER}\s*,\s*{_NUMBER}"
+#: A box as a vision answer writes one (planlens' ``frames._BOX``): four
+#: numbers in square brackets, or in brackets tagged ``px`` / ``pixels``.
+BOX_IN_TEXT = re.compile(
+    rf"(?:\bpx\s*[=:]?\s*)?\[\s*{_FOUR}\s*\](?:\s*(?:px|pixels?)\b)?"
+    rf"|\bpx\s*[=:]?\s*\(\s*{_FOUR}\s*\)"
+    rf"|\(\s*{_FOUR}\s*\)\s*(?:px|pixels?)\b", re.IGNORECASE)
+
+
+def _without_boxes(text: str) -> str:
+    return BOX_IN_TEXT.sub(" ", text)
+
+
+def reading_said(reading: Any) -> str:
+    """What one reading said: :data:`SAID_FIELDS` of it, of its result
+    (:data:`KEPT_READING_RESULT`, a dict or JSON text) and of each of its
+    tiles, with box notation taken out. A reading kept as plain text (an
+    older or hand-made record) is its own text. Never raises on a shape."""
+    if isinstance(reading, str):
+        try:
+            parsed = json.loads(reading)
+        except ValueError:
+            return _without_boxes(reading)
+        return reading_said(parsed) if isinstance(parsed, dict) else ""
+    if not isinstance(reading, dict):
+        return ""
+    said = [_without_boxes(reading[k]) for k in SAID_FIELDS
+            if isinstance(reading.get(k), str)]
+    for k in SAID_PART_LISTS:
+        parts = reading.get(k)
+        if isinstance(parts, list):
+            said += [reading_said(p) for p in parts if isinstance(p, dict)]
+    if KEPT_READING_RESULT in reading:
+        said.append(reading_said(reading[KEPT_READING_RESULT]))
+    return "\n".join(s for s in said if s.strip())
+
+
+def _result_said(raw: str) -> str:
+    """:data:`SAID_FIELDS` of one tool result in a helper's kept record; a
+    result that is not a JSON object (a document's text, a file list) is
+    not what the helper said."""
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return ""
+    return reading_said(parsed) if isinstance(parsed, dict) else ""
+
+
+def _kept_record_said(text: str) -> Optional[str]:
+    """What a helper's kept record said (see :data:`KEPT_ANSWER_HEADING`),
+    or ``None`` when ``text`` is not in that shape."""
+    index = re.search(rf"^{re.escape(KEPT_INDEX_HEADING)}.*$", text,
+                      re.MULTILINE)
+    if index is None:
+        return None
+    head, body = text[:index.start()], text[index.end():]
+    said: List[str] = []
+    answer = re.search(rf"^{re.escape(KEPT_ANSWER_HEADING)}$", head,
+                       re.MULTILINE)
+    if answer:
+        rest = head[answer.end():]
+        stop = re.search(rf"^{re.escape(KEPT_OPEN_ITEMS_HEADING)}$", rest,
+                         re.MULTILINE)
+        said.append(_without_boxes(rest[:stop.start()] if stop else rest))
+    pos, words = 0, False
+    while True:
+        step = _KEPT_STEP.search(body, pos)
+        if words:
+            said.append(_without_boxes(
+                body[pos:step.start() if step else len(body)]))
+        if step is None:
+            break
+        words, pos = step.group(0) == KEPT_OWN_WORDS_HEADING, step.end()
+        if step.group("n"):
+            # The result's text is exactly as long as its heading says (a
+            # result may hold headings of its own); where the count does not
+            # land on the next heading (newlines changed on another
+            # system), the text runs to the next heading.
+            start = pos + 1
+            end = start + int(step.group("n").replace(",", ""))
+            if not _KEPT_AFTER_RESULT.match(body, end):
+                nxt = _KEPT_STEP.search(body, start)
+                end = nxt.start() if nxt else len(body)
+            said.append(_result_said(body[start:end]))
+            pos = end
+    return "\n".join(s for s in said if s.strip())
+
+
+def working_file_said(path: str) -> str:
+    """What one working file of a run said: the answers of its kept page
+    readings (:data:`KEPT_READINGS_FILE`), nothing of the read record
+    (:data:`READ_RECORD_FILE`), a helper's own words in its kept record, and
+    any other prose note whole; box notation is taken out of each. Another
+    kind of file says nothing here. May raise on a file it cannot read."""
+    name = os.path.basename(str(path))
+    ext = os.path.splitext(name)[1].lower()
+    if name == READ_RECORD_FILE:
+        return ""
+    if name == KEPT_READINGS_FILE:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            data = json.load(fh)
+        readings = data.get("readings") if isinstance(data, dict) else data
+        if not isinstance(readings, list):
+            return ""
+        return "\n".join(s for s in map(reading_said, readings) if s.strip())
+    if ext not in NOTE_TEXT_EXTS:
+        return ""
+    text = _file_text(path, ext)
+    if ext == ".md":
+        kept = _kept_record_said(text)
+        if kept is not None:
+            return kept
+    return _without_boxes(text)
+
+
 def working_text(files: Sequence[str] = ()) -> Tuple[str, List[str]]:
-    """``(text, names)`` of the run's working files only (its page readings
-    and kept helper work): what the run saw or wrote down for itself."""
-    return _files_text(f for f in files or () if is_working_file(f))
+    """``(text, names)``: what the run's working files
+    (:func:`is_working_file`) SAID -- its page readings' answers and its
+    helpers' own words (:func:`working_file_said`) -- and the names of the
+    files that said anything. A file that cannot be read, or holds another
+    shape, gives what can be read of it, never an error."""
+    texts: List[str] = []
+    names: List[str] = []
+    for path in files or ():
+        if not is_working_file(path) or not os.path.isfile(path):
+            continue
+        try:
+            text = working_file_said(path)
+        except Exception:                             # noqa: BLE001
+            continue
+        if text.strip():
+            texts.append(text[:DELIVERED_MAX_CHARS])
+            names.append(os.path.basename(str(path)))
+    return FILE_BREAK.join(texts), names
+
+
+def _file_text(path: str, ext: str) -> str:
+    """A text file's, table's or document's text (at most
+    :data:`DELIVERED_MAX_CHARS` of a plain file read)."""
+    if ext == ".docx":
+        return _docx_text(path)
+    if ext == ".xlsx":
+        return _xlsx_text(path)
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        text = fh.read(DELIVERED_MAX_CHARS)
+    if ext in (".csv", ".tsv"):
+        text = _cells_as_words(text, "\t" if ext == ".tsv" else ",")
+    return text
 
 
 def _files_text(files: Iterable[str]) -> Tuple[str, List[str]]:
@@ -1025,16 +1219,7 @@ def _files_text(files: Iterable[str]) -> Tuple[str, List[str]]:
         if ext not in DELIVERED_TEXT_EXTS or not os.path.isfile(path):
             continue
         try:
-            if ext == ".docx":
-                text = _docx_text(path)
-            elif ext == ".xlsx":
-                text = _xlsx_text(path)
-            else:
-                with open(path, encoding="utf-8", errors="replace") as fh:
-                    text = fh.read(DELIVERED_MAX_CHARS)
-                if ext in (".csv", ".tsv"):
-                    text = _cells_as_words(text, "\t" if ext == ".tsv"
-                                           else ",")
+            text = _file_text(path, ext)
         except Exception:                             # noqa: BLE001
             continue
         texts.append(text[:DELIVERED_MAX_CHARS])

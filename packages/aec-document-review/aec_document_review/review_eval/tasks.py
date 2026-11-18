@@ -1022,7 +1022,10 @@ def _qty(n: str, unit: str) -> Dict[str, str]:
 _CLEAR_NOUN = (r"(?:discrepanc\w*|issues?|problems?|conflicts?|errors?|"
                r"mismatch\w*|findings?|deviations?|inconsisten\w*|"
                r"omissions?|exceptions?|other|further|additional)")
-_NO_WORD = rf"no(?!\s+{_CLEAR_NOUN})"
+#: "No." before a number, "of" or a table cell's edge is the abbreviation
+#: of "number" (a schedule's column headed "NO.", "No. 4"), not the word
+#: "no": a schedule written out as a table says nothing is absent.
+_NO_WORD = rf"no(?!\.\s*(?:\d|\||of\b))(?!\s+{_CLEAR_NOUN})"
 #: What follows "did not find" in an all-clear ("did not find any
 #: problems", "did not see anything", "did not find a conflict"); "door 509
 #: was not found on the fifth-floor plan" is a finding (Foundry brief 8).

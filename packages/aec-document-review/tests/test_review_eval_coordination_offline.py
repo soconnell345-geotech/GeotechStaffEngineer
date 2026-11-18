@@ -444,6 +444,28 @@ def test_a_door_number_is_not_the_front_of_a_decimal():
         assert "door-not-scheduled" in _passes("coord-schedules", said), said
 
 
+def test_a_number_column_headed_no_is_not_the_word_no():
+    # BACKLOG EV-48: a schedule written out as a table, its number column
+    # headed "NO.", names every door and says nothing is absent; a comment
+    # log numbered under "No." is no finding either
+    table = ("| NO. | ROOM | WIDTH | HEIGHT | TYPE |\n"
+             "|---|---|---|---|---|\n"
+             "| 201 | CORRIDOR | 915 | 2135 | A |\n"
+             "| 204 | OFFICE | 915 | 2135 | A |\n")
+    assert "door-not-on-plan" not in _passes("coord-schedules", table)
+    log = ("| No. | Sheet | Comment |\n"
+           "|---|---|---|\n"
+           "| 1 | A-601 | Door 204 hardware set HW-2 differs from A-601. |\n")
+    assert "door-not-on-plan" not in _passes("coord-schedules", log)
+    assert "door-not-on-plan" not in _passes(
+        "coord-schedules", "Door No. 204 is on the schedule, sheet A-601.")
+    # the word itself still counts, at a sentence's end and in a table cell
+    for said in ("Door 204 tagged on the second-floor plan: no. It is on "
+                 "the schedule, sheet A-601.",
+                 "| Door | On the plan |\n|---|---|\n| 204 | No |\n"):
+        assert "door-not-on-plan" in _passes("coord-schedules", said), said
+
+
 def test_the_index_title_wants_both_titles_in_one_line_or_item():
     built = F.build_drawing_set(2, 1)
     listing = ("The sheet index matches the set.\n\nSheets in the set:\n"
