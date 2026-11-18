@@ -19,11 +19,13 @@ diagnosis.
 
 On a slow day (BACKLOG TA-41) the live checks, which run in the page while
 the tester waits, are bounded: each waits at most :data:`CALL_LIMIT_S` for
-the model (:data:`VISION_LIMIT_S` for the vision probe's few calls), all of
-them together at most :data:`BUDGET_S`, and the battery stops at the first
+the model (:data:`VISION_LIMIT_S` for the vision probe's few calls), always
+its whole limit once started; no check is started once :data:`BUDGET_S`
+have passed since the first, and a check not started for that reason is
+listed as not run (skipped, never failed). The battery stops at the first
 live check that fails, naming it, with every check after it listed as not
 run. A request left waiting finishes on its own in the background. A run
-where every check passes in time shows what it showed before.
+where every check passes shows what it showed before.
 """
 
 from __future__ import annotations
@@ -49,9 +51,14 @@ _ICON = {PASS: "✅", FAIL: "❌", WARN: "⚠️", SKIP: "⏭️"}
 CALL_LIMIT_S = 30.0
 #: The vision check: the probe's four small image requests, once a process.
 VISION_LIMIT_S = 60.0
-#: Seconds all the live checks may take together, so the page is never held
-#: for minutes.
-BUDGET_S = 60.0
+#: Seconds after the first live check within which a check may still be
+#: started. An ordinary passing run (three small calls, the vision probe,
+#: two calls for each of two helper models) takes about a minute on a slow
+#: day, so this leaves it room to spare; the page is held at most this plus
+#: one check's own limit, and less when a check fails (the battery stops).
+BUDGET_S = 180.0
+#: The clock the live checks are timed by (tests replace it).
+_clock = time.monotonic
 
 
 def _check(name: str, status: str, detail: str) -> dict:
@@ -584,20 +591,23 @@ def _limited(name: str, fn: Callable[[], dict], limit_s: float) -> dict:
     return check
 
 
+#: The detail of a live check not started because :data:`BUDGET_S` passed.
+TIME_USED_UP = "not run: the time allowed for the checks was used up"
+
+
 def _live_checks(steps: List[_Step], budget_s: float) -> List[dict]:
-    """The live checks one after another, each under its limit and all
-    within ``budget_s``; the battery stops at the first that fails, or when
-    the time is spent, and lists the rest as not run."""
+    """The live checks one after another, each given its whole own limit;
+    none is started once ``budget_s`` have passed since the first. The
+    battery stops at the first that fails, or when that time is used up,
+    and lists the rest as not run (skipped, never failed)."""
     out: List[dict] = []
-    deadline = time.monotonic() + max(0.0, budget_s)
+    deadline = _clock() + max(0.0, budget_s)
     for i, (name, fn, limit_s, note) in enumerate(steps):
-        left = deadline - time.monotonic()
-        if left <= 0:
-            out.extend(_check(n, SKIP, f"not run: the {budget_s:.0f} s the "
-                                       "connection tests may take were spent")
+        if _clock() >= deadline:
+            out.extend(_check(n, SKIP, TIME_USED_UP)
                        for n, _f, _l, _n in steps[i:])
             break
-        check = _limited(name, fn, min(limit_s, left))
+        check = _limited(name, fn, limit_s)
         if check["status"] != PASS and note:
             check["detail"] += note
         out.append(check)
