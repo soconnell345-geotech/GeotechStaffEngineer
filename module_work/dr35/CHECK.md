@@ -40,10 +40,10 @@ keeps its examples whatever the switch says.
     labelled, axis from zero);
   - `comments_by_sheet`: review comments by sheet in the sheet index's
     order, one colour and shape per discipline (quantities by sheet);
-  - `values_against_limit`: the 28-day strength of each mix in a concrete
-    submittal against the specified strength (the limit a named reference
-    line, the one value below it labelled, axis from zero);
-  - `level_by_sheet`: one value as each sheet gives it, the Level 2 floor
+  - `strength`: values against a stated limit, the strength of each mix in
+    a concrete submittal against the specified strength (the limit a named
+    reference line, the one value below it labelled, axis from zero);
+  - `floor_level_by_sheet`: one value as each sheet gives it, the Level 2 floor
     level on the elevations and sections against the floor plans (an axis
     that does not start at zero, and the footnote says so);
   - `submittal_timeline` (a `plot_code` script): a submittal log as bars on
@@ -83,10 +83,30 @@ keeps its examples whatever the switch says.
   `plot_data` does not draw. The script letters a day-count axis with dates
   itself instead of using `matplotlib.dates`: on Windows the date locator
   reads the registry for the time zone, which the plotting box refuses.
-- **Five plot_data examples, not nine.** Chosen by the kinds of task, kept
-  apart from each other (a drawing, a two-group count, a grouped quantity,
-  a limit check from zero, a consistency check not from zero), so that the
-  text handed over is smaller, not larger.
+- **Five plot_data examples, not the core's ten.** Chosen by the kinds of
+  task, kept apart from each other (a drawing, a two-group count, a grouped
+  quantity, a limit check from zero, a consistency check not from zero), so
+  that the text handed over is smaller, not larger.
+- **Names a plain brief reaches** (the review of this branch).
+  `nearest_example` attaches an example only when the brief has every word
+  of its name (and, for a one-word name, two words of what it shows). The
+  limit example was `values_against_limit` and no plain brief reached it;
+  the reviewer's `against_specified` reached one of the three plain briefs
+  tried ("plot the concrete strengths against the specified strength", not
+  "compare the cylinder breaks with the specified compressive strength" or
+  "the concrete strengths against the minimum the specification
+  requires"). `strength`, with what it shows naming the cylinder breaks,
+  the specified strength and what the specification requires, reaches all
+  three; nine briefs of other kinds (rock core strength against depth,
+  twice; undrained and direct shear strength; strength gain over 28 days;
+  factor of safety; settlement; SPT; bearing capacity) reach no example of
+  this set. "compressive" is kept out of what it shows: with it,
+  "unconfined compressive strength of the rock cores against depth"
+  reached it. "28-day" and "test" are kept out for the same reason (they
+  would count for a strength-gain brief and a strength-test profile).
+- **`floor_level_by_sheet`, not `level_by_sheet`**: "show the revision level
+  of each sheet" reached the floor-level example and its truncated-axis
+  reasons. With "floor" in the name it reaches nothing.
 - **The level example names its reference line with a note under it**, not
   on the line: the points sit on the line, and `plot_data` warns that the
   line's own name is crossed by them.
@@ -99,9 +119,9 @@ Measured by `test_the_text_stays_near_the_core_sets_size` (printed with
 | | description | listing | every example in full | examples |
 |---|---|---|---|---|
 | core set, no plot_code | 466 | 2,393 | 28,384 | 10 |
-| Document Review's, no plot_code | 424 | 1,354 | 10,076 | 5 |
+| Document Review's, no plot_code | 424 | 1,400 | 10,143 | 5 |
 | core set, with plot_code | 640 | 3,369 | 55,880 | 13 |
-| Document Review's, with plot_code | 598 | 1,702 | about 15,100 | 6 |
+| Document Review's, with plot_code | 598 | 1,748 | 15,164 | 6 |
 
 The description is 42 characters shorter; the listing about half; the
 worked example attached to a brief is one example's `shows` and `why`, of
@@ -147,6 +167,9 @@ the same length as before.
   the two points; case axes are markers only; counts and the limit check
   start at zero, the one axis that does not says so; each reference line is
   named with its value; the comment counts add up to the footnote's total.
+- `test_briefs_of_another_kind_get_no_example_of_this_set`: a sheet's
+  revision level and the nine briefs of other kinds above get no example
+  of this set, with and without plot_code.
 - `test_a_brief_finds_its_example`: plain briefs find the right example
   (`nearest_example` with the set), the timeline with plot_code.
 - `test_the_text_stays_near_the_core_sets_size`: listing and full text no

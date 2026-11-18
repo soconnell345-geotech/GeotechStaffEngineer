@@ -15,7 +15,8 @@ complete scripts for ``plot_code``'s locked box with the ``data`` each
 reads, each with what it shows and why it is drawn that way, following the
 figure checklist in ``aec_agent_core.deep.figure_helper``. The page hands
 them to its figure helper only behind ``GEOTECH_REVIEW_FIGURE_EXAMPLES``
-(``review_build.build_review_agent``); unset, the helper gets the core's.
+(``review_build.build_review_page_agent``); unset, the helper gets the
+core's.
 
 Every number, sheet and name here is invented. Nothing in this file
 describes a real project.
@@ -108,9 +109,9 @@ EXAMPLES: Dict[str, dict] = {
                  "color": _RED, "halo": True},
             ],
             "footnote": "Grid dimensions as written on the Level 1 plan; "
-                        "stair points at the centres of the stair "
-                        "enclosures. Distance calculated from the "
-                        "dimensions, not scaled off the print.",
+                        "stair centres as dimensioned from grid A/1 (x "
+                        "and y in the hover text). Distance calculated "
+                        "from those dimensions, not scaled off the print.",
         },
     },
     "schedule_count": {
@@ -197,11 +198,15 @@ EXAMPLES: Dict[str, dict] = {
                         "in all.",
         },
     },
-    "values_against_limit": {
+    # named for the quantity a plain brief names ("the concrete strengths
+    # against the specified strength"); nearest_example needs every word
+    # of a name in the brief (DR-35 review)
+    "strength": {
         "shows": "Values from a table against the limit a document "
-                 "states: the 28-day strength of each mix in a concrete "
-                 "submittal against the strength the specification "
-                 "requires, the one below it labelled.",
+                 "states: the strength of each mix in a concrete "
+                 "submittal (the mean of its cylinder breaks) against the "
+                 "strength the specification requires (the specified "
+                 "strength), the one below it labelled.",
         "why": [
             "The limit is a reference line (hlines) named on the line with "
             "its value and the document that states it, drawn from the "
@@ -235,7 +240,8 @@ EXAMPLES: Dict[str, dict] = {
                         "batches at 28 days.",
         },
     },
-    "level_by_sheet": {
+    # "floor" in the name: a brief on a sheet's revision level is not one
+    "floor_level_by_sheet": {
         "shows": "One value as each sheet gives it: the Level 2 floor "
                  "level read off the elevations and sections of a set "
                  "against the level on the floor plans, the sheet that "

@@ -98,7 +98,7 @@ def test_the_examples_follow_the_figure_checklist():
                    if a.get("color"))
     assert written == f"{((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5:.2f} m"
     for name in ("schedule_count", "comments_by_sheet",
-                 "values_against_limit", "level_by_sheet"):
+                 "strength", "floor_level_by_sheet"):
         p = dr_set.EXAMPLES[name]["params"]
         assert p["title"] and p["xlabel"] and p["ylabel"], name
         # separate things on a case axis are markers, never joined
@@ -107,13 +107,13 @@ def test_the_examples_follow_the_figure_checklist():
             assert all(isinstance(v, str) for v in s["x"]), name
         # counts and values against a limit start at zero; the one axis
         # that does not says so
-        if name == "level_by_sheet":
+        if name == "floor_level_by_sheet":
             assert p["ylim"][0] > 0 and "spans" in p["footnote"]
         else:
             assert p["ylim"][0] == 0, name
     # a limit or a reference is a line, named on it or, where the points
     # sit on it, by a note giving its value
-    for name in ("values_against_limit", "level_by_sheet"):
+    for name in ("strength", "floor_level_by_sheet"):
         p = dr_set.EXAMPLES[name]["params"]
         (line,) = p["hlines"]
         named = line.get("label") or next(
@@ -134,13 +134,46 @@ def test_a_brief_finds_its_example():
         "Plot the door schedule against the count of door tags on the "
         "floor plans": "schedule_count",
         "Show the review comments on each sheet": "comments_by_sheet",
-        "The floor level each sheet gives for Level 2": "level_by_sheet",
+        "The floor level each sheet gives for Level 2":
+            "floor_level_by_sheet",
+        "Check the floor levels agree from sheet to sheet":
+            "floor_level_by_sheet",
+        "Plot the concrete strengths against the specified strength":
+            "strength",
+        "Compare the cylinder breaks with the specified compressive "
+        "strength": "strength",
+        "Plot the concrete strengths against the minimum the "
+        "specification requires": "strength",
     }
     for brief, name in briefs.items():
         assert nearest_example(brief, examples=dr_set) == name, brief
     assert nearest_example("A timeline of the submittal reviews",
                            with_code=True,
                            examples=dr_set) == "submittal_timeline"
+
+
+def test_briefs_of_another_kind_get_no_example_of_this_set():
+    """A brief no example here is like gets none (DR-35 review): a sheet's
+    revision level is not a floor level, and figures of a geotechnical
+    report sent to this page with the switch on find nothing to adapt."""
+    for brief in (
+            "Show the revision level of each sheet",
+            "Plot the unconfined compressive strength of the rock cores "
+            "against depth",
+            "Unconfined compressive strength test results against depth",
+            "Undrained shear strength profile against elevation for B-1 "
+            "to B-3",
+            "Plot the shear strength from the direct shear tests against "
+            "normal stress",
+            "Plot the strength gain of the mix over 28 days",
+            "Factor of safety for the five cases against the required 1.5",
+            "Settlement against time for the three plates",
+            "SPT N60 against elevation for B-1 to B-3",
+            "Bearing capacity against footing width, with the allowable "
+            "bearing pressure marked"):
+        for with_code in (False, True):
+            assert nearest_example(brief, with_code=with_code,
+                                   examples=dr_set) is None, brief
 
 
 def test_the_text_stays_near_the_core_sets_size(capsys):
