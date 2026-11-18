@@ -176,6 +176,46 @@ READER_EXHAUSTED = (
     "The reading helper ran out of steps before it could report. Hand it a "
     "narrower job (fewer pages, one question).")
 
+# ---------------------------------------------------------------------------
+# The agent library's to-do and helper texts, short (BACKLOG DR-29), behind
+# GEOTECH_REVIEW_LEAN_PROMPT (aec_agent_core.deep.lean_prompt)
+# ---------------------------------------------------------------------------
+# The lean build's texts (git 3b30181, funhouse_agent/deep/review_agent.py:
+# TODO_PROMPT, TODO_TOOL_DESCRIPTION, TASK_DESCRIPTION; removed with that
+# build in DR-39). The to-do texts are as they were. The task text named one
+# helper, 'page_reader', which this build does not have: here the helpers
+# are deepagents' list (the reading helper, 'general-purpose', and the
+# figure helper where its switches are on), each with its own description,
+# so the text keeps what is true of every helper and the list follows.
+
+#: Takes the place of the to-do section of the system prompt.
+LEAN_TODO_PROMPT = (
+    "## `write_todos`\n\n"
+    "For a job with several parts - a full-set review, a specification-versus-"
+    "submittal check, a comment-response round - list the parts with "
+    "`write_todos` first and mark each done as you finish it; skip it for a "
+    "single question. Give your final answer in a message after your last "
+    "`write_todos` call.")
+#: Takes the place of the ``write_todos`` tool description.
+LEAN_TODO_TOOL_DESCRIPTION = (
+    "Write or update your to-do list for a multi-part job: send the whole "
+    "list each time, each item with its content and a status (pending, "
+    "in_progress or completed).")
+#: Takes the place of the helper section of the system prompt; deepagents'
+#: list of helpers follows it.
+LEAN_TASK_PROMPT = (
+    "## `task`\n\n"
+    "Hand a self-contained job to one of the helpers below with `task`; its "
+    "description says what the job must carry. Several can run at once.")
+#: Takes the place of the ``task`` tool description; deepagents' list of
+#: helpers goes where ``{available_agents}`` is.
+LEAN_TASK_TOOL_DESCRIPTION = (
+    "Hand a self-contained job to one of the helpers below and get back its "
+    "result. The helper sees NOTHING of this conversation: put everything it "
+    "needs in description (the source name or handle, the pages, what to "
+    "find, what to return). Several can run at once. subagent_type is the "
+    "helper's name:\n{available_agents}")
+
 def max_model_calls() -> int:
     """The request budget (``GEOTECH_REVIEW_MAX_MODEL_CALLS``, default 40)."""
     try:
@@ -230,4 +270,6 @@ __all__ = ["REVIEW_TOOLS",
            "READER_TOOLS", "REVIEW_DESCRIPTIONS", "REVIEW_REWRITES",
            "REVIEW_HELPER_REWRITES",
            "max_model_calls",
-           "DEFAULT_MAX_MODEL_CALLS", "MAX_MODEL_CALLS_ENV"]
+           "DEFAULT_MAX_MODEL_CALLS", "MAX_MODEL_CALLS_ENV",
+           "LEAN_TODO_PROMPT", "LEAN_TODO_TOOL_DESCRIPTION",
+           "LEAN_TASK_PROMPT", "LEAN_TASK_TOOL_DESCRIPTION"]

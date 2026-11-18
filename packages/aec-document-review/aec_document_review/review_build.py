@@ -5,7 +5,9 @@ behind ``GEOTECH_REVIEW_AGENT=minimal`` (:mod:`funhouse_agent.deep.
 minimal_agent`), and otherwise today's build: the vision kit with the
 page's own descriptions, ``calculate``, the figure helper, the page's
 reading helper in place of deepagents' stock one, a model-call budget
-whose last call answers, and the scratch filesystem hidden. Extracted from
+whose last call answers, and the scratch filesystem hidden; behind
+``GEOTECH_REVIEW_LEAN_PROMPT``, deepagents' generic base prompt out and its
+to-do and helper texts short (BACKLOG DR-29). Extracted from
 ``build_deep_agent`` (whose ``review_page=True`` hands its callers here
 until step 15); what both builds do the same way is
 :mod:`aec_agent_core.deep.assembly`. This file goes to Document Review at
@@ -152,6 +154,21 @@ def _show_images(engine):
         return None
     from aec_agent_core.deep.inline_images import InlineImageMiddleware
     return InlineImageMiddleware(engine=engine)
+
+
+def _lean_prompt():
+    """The middleware that takes the agent library's generic prompt off the
+    page's main agent (``GEOTECH_REVIEW_LEAN_PROMPT``, BACKLOG DR-29), with
+    the page's short to-do and helper texts."""
+    from aec_agent_core.deep.lean_prompt import LeanFrameworkPrompt
+    from aec_document_review.review_agent import (
+        LEAN_TASK_PROMPT, LEAN_TASK_TOOL_DESCRIPTION, LEAN_TODO_PROMPT,
+        LEAN_TODO_TOOL_DESCRIPTION)
+    return LeanFrameworkPrompt(
+        todo_prompt=LEAN_TODO_PROMPT,
+        todo_tool_description=LEAN_TODO_TOOL_DESCRIPTION,
+        task_prompt=LEAN_TASK_PROMPT,
+        task_tool_description=LEAN_TASK_TOOL_DESCRIPTION)
 
 
 def review_page_budget() -> Optional[int]:
@@ -357,6 +374,10 @@ def build_review_page_agent(
     page_middleware = [*([m] if (m := _show_images(engine)) is not None
                          else []),
                        HideScratchFilesystem()]
+    if _flags.lean_prompt():
+        # deepagents' base prompt out and its to-do and helper texts short,
+        # all or nothing, behind GEOTECH_REVIEW_LEAN_PROMPT (DR-29)
+        page_middleware.append(_lean_prompt())
     page_budget = review_page_budget()
     if page_budget:
         from aec_document_review.review_agent import EXHAUSTED, FINAL_NUDGE

@@ -227,6 +227,25 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     ``("photo_one_look", {"GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK": "1"})``.
     Kept in :data:`LATER_ENVS` for the reasons given for
     ``GEOTECH_VISION_TILE_ANSWERS``.
+
+``GEOTECH_REVIEW_LEAN_PROMPT`` (default off)
+    ``1`` takes the agent library's generic prompt off the Document Review
+    page's default build (:mod:`aec_agent_core.deep.lean_prompt`): its base
+    prompt is removed from the main agent's system prompt word for word,
+    and its to-do and helper sections and the ``write_todos`` and ``task``
+    tool descriptions are swapped for the page's short texts (the lean
+    build's, from before BACKLOG DR-39), the lists of helpers kept. All or
+    nothing: where the installed library's text is not found word for word
+    (an upgrade moved it), the prompt goes out as it was and the turn's
+    record says so (``lean_prompt`` on ``turn_end``). Read by the page's
+    build; the ``minimal`` build, the helpers and the geotech page are not
+    touched. Unset, the system prompt, the tool descriptions and the
+    fingerprints are byte for byte as before. BACKLOG DR-29: on deepagents
+    0.6 the base prompt and the two sections were about 5.8 thousand of the
+    page's system prompt characters. Not measured on a model yet: the suite
+    takes it as the arm ``("lean_prompt", {"GEOTECH_REVIEW_LEAN_PROMPT":
+    "1"})``. Kept in :data:`LATER_ENVS` for the reasons given for
+    ``GEOTECH_VISION_TILE_ANSWERS``.
 """
 
 from __future__ import annotations
@@ -256,15 +275,17 @@ ALL_ENVS = (AGENT_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
 
 TILE_ANSWERS_ENV = "GEOTECH_VISION_TILE_ANSWERS"
 PHOTO_PAGE_ONE_LOOK_ENV = "GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK"
+LEAN_PROMPT_ENV = "GEOTECH_REVIEW_LEAN_PROMPT"
 
 #: Switches added after the geotech app's copy went quiet (5.36.0), whose
 #: tests pin :data:`ALL_ENVS` and :data:`ARMS` whole. They are switches like
 #: the rest: :func:`switches` clears them unless an arm names them and
 #: :func:`describe` names them when set. The first two are read by the
 #: vision tools as they look (the build is unchanged); the third at turn
-#: end. Fold them into ``ALL_ENVS`` (and give each its arm) when the app's
-#: tests are next renewed.
-LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV)
+#: end; the fourth by the review page's build. Fold them into ``ALL_ENVS``
+#: (and give each its arm) when the app's tests are next renewed.
+LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV,
+              LEAN_PROMPT_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -331,6 +352,12 @@ def photo_page_one_look() -> bool:
     """Whether a page of photographs read with ``tiles='auto'`` takes one
     look instead of tiles."""
     return _on(PHOTO_PAGE_ONE_LOOK_ENV)
+
+
+def lean_prompt() -> bool:
+    """Whether the review page's default build takes the agent library's
+    base prompt out and swaps its to-do and helper texts for short ones."""
+    return _on(LEAN_PROMPT_ENV)
 
 
 def checklist() -> bool:
@@ -522,7 +549,8 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "TODOS_WITH_CALLS_ENV", "todos_with_calls",
            "TILE_ANSWERS_ENV", "tile_answers",
            "PHOTO_PAGE_ONE_LOOK_ENV", "photo_page_one_look",
-           "PHOTO_PAGES_ENV", "photo_pages", "LATER_ENVS",
+           "PHOTO_PAGES_ENV", "photo_pages",
+           "LEAN_PROMPT_ENV", "lean_prompt", "LATER_ENVS",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",
