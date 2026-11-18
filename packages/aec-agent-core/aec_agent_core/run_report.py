@@ -26,9 +26,11 @@ drawn behind the boxes when the document's PDF is in the run folder or under
 WHAT IT SHOWS
 
 1. The run: what was asked, the model, when; totals (model calls, tokens in
-   and out where recorded, vision calls, helpers started, wall time); the
+   and out where recorded, vision calls, helpers started, wall time, and
+   the turns' own count of image calls where their records keep it); the
    files the run delivered; the notes the record itself carries (an error, a
-   step cap reached, a page-citation check, a helper's work kept, waits).
+   step cap reached, a turn's image calls against its ceiling, a
+   page-citation check, a helper's work kept, waits).
 2. Step by step: every step in order, who took it (the main agent, or which
    helper, under the brief it was given), the model's own words, and each
    tool call with its arguments and its result (a long result folded, with
@@ -191,6 +193,15 @@ _PLACE_KEYS = frozenset({"turn", "ts", "t", "agent", "event", "task_id",
                          "helper", "run_id", "parent_run_id"})
 #: Fields whose seconds a counted event's line adds up.
 _WAIT_KEYS = ("wait_s", "waited_s", "queued_s", "held_s")
+#: Under the totals, where a turn's record keeps its own count of image
+#: calls (``turn_end``'s ``image_calls``, from 1.2.0): what each count is.
+IMAGE_COUNTS_NOTE = (
+    "Vision calls counts the vision model's answers that the activity log "
+    "holds, the vision probe's included; image calls counts the images the "
+    "turn itself counted as sent for a separate reading, each image once "
+    "however often it was asked and not those its ceiling refused; so the "
+    "two can differ when a call failed or was given up, when one image was "
+    "asked more than once, or when the probe ran.")
 
 
 # ---------------------------------------------------------------------------
@@ -2151,10 +2162,37 @@ class Report:
                          _n(unended_agent + unended_vision),
                          f"agents {_n(unended_agent)}, vision "
                          f"{_n(unended_vision)}"))
+        images = self._image_total()
+        if images is not None:
+            rows.insert(3, images)
         return "<table>" + "".join(
             f'<tr data-total="{k}"><th>{_e(lab)}</th><td class="r">'
             f'{_e(v)}</td><td class="muted">{_e(more)}</td></tr>'
-            for k, lab, v, more in rows) + "</table>"
+            for k, lab, v, more in rows) + "</table>" + (
+            f"<p class='note'>{_e(IMAGE_COUNTS_NOTE)}</p>"
+            if images is not None else "")
+
+    def _image_total(self) -> Optional[tuple]:
+        """The totals row of the turns' own image calls, or ``None`` when no
+        turn's record keeps them (a record written before 1.2.0)."""
+        kept = [f for f in (_image_facts(t.end) for t in self.turns)
+                if f is not None]
+        if not kept:
+            return None
+        more = ["images sent to the vision model for a separate reading, as "
+                "the turns counted them"]
+        limits = sorted({f[1] for f in kept if f[1]})
+        if limits:
+            more.append("ceiling " + ", ".join(_n(x) for x in limits)
+                        + " a turn")
+        refused = sum(f[2] or 0 for f in kept)
+        if refused:
+            more.append(f"{_n(refused)} more refused at the ceiling")
+        if len(kept) < len(self.turns):
+            more.append(f"counted in {len(kept)} of {len(self.turns)} "
+                        "turns' records")
+        return ("image_calls", "Image calls", _n(sum(f[0] for f in kept)),
+                "; ".join(more))
 
     def _files(self) -> str:
         rows: List[dict] = []
@@ -2192,6 +2230,14 @@ class Report:
             if cap and steps is not None and steps >= cap:
                 lines.append(f"{pre}the main agent reached its step cap "
                              f"({steps} of {cap})")
+            images = _image_facts(end)
+            if images is not None:
+                calls, limit, refused = images
+                lines.append(f"{pre}image calls: {_n(calls)}" + (
+                    f" of a ceiling of {_n(limit)}" if limit
+                    else ", no ceiling set") + (
+                    f"; {_n(refused)} more refused at the ceiling"
+                    if refused else ""))
             if self.record.has_activity and t.end is None:
                 lines.append(f"{pre}no turn_end in the record: the turn did "
                              f"not finish, or its end was not written")
@@ -2740,6 +2786,22 @@ class Report:
         if any(t.loose_side for t in self.turns) and not out:
             out.append("Some vision calls are not tied to a tool call.")
         return out
+
+
+def _image_facts(end: Optional[dict]
+                 ) -> Optional[Tuple[int, Optional[int], Optional[int]]]:
+    """A turn's own count of its image calls, its ceiling and the calls the
+    ceiling refused (``turn_end``'s ``image_calls``, ``image_limit`` and
+    ``image_calls_refused``, written by
+    :func:`aec_agent_core.deep.keep_work.image_call_facts`); ``None`` when
+    the record keeps no count."""
+    if not isinstance(end, dict):
+        return None
+    calls = _int(end.get("image_calls"))
+    if calls is None:
+        return None
+    return calls, _int(end.get("image_limit")), \
+        _int(end.get("image_calls_refused"))
 
 
 def _start_prompt(t: Turn) -> str:

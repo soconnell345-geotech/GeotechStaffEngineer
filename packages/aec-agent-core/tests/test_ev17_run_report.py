@@ -512,3 +512,93 @@ def test_command_line_writes_only_where_asked(tmp_path, capsys):
     assert run_report.main([str(tmp_path / "missing")]) == 2
     err = capsys.readouterr().err
     assert "No such run folder" in err and "Traceback" not in err
+
+
+# ---------------------------------------------------------------------------
+# The turn's own count of its image calls (turn_end, from 1.2.0)
+
+def _turn_end(folder) -> dict:
+    lines = (folder / "activity.jsonl").read_text(encoding="utf-8")
+    return [json.loads(x) for x in lines.splitlines()
+            if '"turn_end"' in x][-1]
+
+
+def _with_turn_end(folder, **fields) -> None:
+    """The record's turn_end with ``fields`` added (``None`` removes one)."""
+    path = folder / "activity.jsonl"
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        rec = json.loads(line)
+        if rec.get("event") == "turn_end":
+            rec.update(fields)
+            rec = {k: v for k, v in rec.items() if v is not None}
+        out.append(json.dumps(rec))
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def _page(folder) -> str:
+    """The report with its "Made <time>" line held still."""
+    return re.sub(r"<p class='muted'>Made [^<]* from the record",
+                  "<p class='muted'>Made (time) from the record",
+                  run_report.build_report(str(folder)))
+
+
+def test_image_calls_beside_the_step_cap_and_what_each_count_counts(
+        tmp_path):
+    """The real writer under a turn with a ceiling: four images counted,
+    two refused at the ceiling; the record's three vision answers and its
+    four image calls are both shown, with what each counts."""
+    scope = keep_work.TurnScope()
+    scope.image_limit, scope.image_calls, scope.image_refused = 4, 4, 2
+    with keep_work.turn_scope(scope):
+        made_up_run(tmp_path)
+    end = _turn_end(tmp_path)
+    assert (end["image_calls"], end["image_limit"],
+            end["image_calls_refused"]) == (4, 4, 2)
+    _with_turn_end(tmp_path, step_cap=12, graph_steps=12)
+    page = run_report.build_report(str(tmp_path))
+    assert _total(page, "vision_calls") == "3"
+    assert _total(page, "image_calls") == "4"
+    rows = re.findall(r'<tr data-total="(\w+)">', page)
+    assert rows[rows.index("vision_calls") + 1] == "image_calls"
+    assert html.escape("images sent to the vision model for a separate "
+                       "reading, as the turns counted them; ceiling 4 a "
+                       "turn; 2 more refused at the ceiling") in page
+    note = f"<p class='note'>{html.escape(run_report.IMAGE_COUNTS_NOTE)}</p>"
+    assert page.count(note) == 1
+    assert page.index('data-total="vision_calls"') < page.index(note) \
+        < page.index("<h3>Files the run delivered</h3>")
+    assert ("<li>the main agent reached its step cap (12 of 12)</li>"
+            "<li>image calls: 4 of a ceiling of 4; 2 more refused at the "
+            "ceiling</li>") in page
+
+
+def test_a_record_without_image_calls_shows_what_it_showed(tmp_path):
+    """A record written before 1.2.0 (no image_calls on its turn_end) gives
+    the page it gave: the same record with the count added differs only by
+    the totals row, the sentence under the totals and the notes line, and a
+    count the report cannot read changes nothing."""
+    made_up_run(tmp_path)
+    assert "image_calls" not in _turn_end(tmp_path)
+    _with_turn_end(tmp_path, step_cap=12, graph_steps=12)
+    before = _page(tmp_path)
+    for text in ('data-total="image_calls"', "Image calls", "image calls:",
+                 html.escape(run_report.IMAGE_COUNTS_NOTE)):
+        assert text not in before
+    assert "<li>the main agent reached its step cap (12 of 12)</li></ul>" \
+        in before
+
+    _with_turn_end(tmp_path, image_calls=5)
+    after = _page(tmp_path)
+    row = re.search(r'<tr data-total="image_calls">.*?</tr>', after).group(0)
+    assert ">5</td>" in row and "ceiling" not in row
+    note = f"<p class='note'>{html.escape(run_report.IMAGE_COUNTS_NOTE)}</p>"
+    line = "<li>image calls: 5, no ceiling set</li>"
+    assert after.count(row) == after.count(note) == after.count(line) == 1
+    assert after.replace(row, "").replace(note, "").replace(line, "") \
+        == before
+
+    for broken in ("many", None, True):
+        _with_turn_end(tmp_path, image_calls=broken, image_limit=40,
+                       image_calls_refused=2)
+        assert _page(tmp_path) == before

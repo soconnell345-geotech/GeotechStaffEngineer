@@ -221,6 +221,17 @@ about 17.5 MB, built in 11 to 17 s; one page in five looked at about
 10.5 MB. A record with a transcript and no `activity.jsonl` now lists each
 turn's question and its answer (and the files shown with it).
 
+Image calls: where a turn's record keeps its own count (`image_calls` on
+its `turn_end`, from 1.2.0; with `image_limit` when a ceiling was set and
+`image_calls_refused` when the ceiling refused any), the totals add an
+"Image calls" row under "Vision calls" with one sentence saying what each
+counts, and the notes list each turn's image calls against its ceiling,
+beside a step cap reached. The two can differ: vision calls are the vision
+model's answers in the activity log, the vision probe's included; image
+calls are the images the turn counted as sent, each once however often it
+was asked, refused ones not included. A record without the count gives the
+page it gave before.
+
 ## Licence
 
 MIT, as GeotechStaffEngineer. See `LICENSE`.
