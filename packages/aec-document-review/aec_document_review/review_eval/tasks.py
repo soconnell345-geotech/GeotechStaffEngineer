@@ -1225,13 +1225,19 @@ _WATER_TEST = {"re": (
 _NOT_GIVEN = {"re": (
     r"\b(?:not\s+(?:been\s+|yet\s+|also\s+)*(?:submitted|reported|included|"
     r"provided|supplied|furnished|attached|enclosed|given|tested|shown|"
-    r"covered|performed|addressed|documented|in\s+(?:the\s+)?(?:\w+\s+)?"
+    r"covered|performed|addressed|documented|found|located|"
+    r"in\s+(?:the\s+)?(?:\w+\s+)?"
     r"(?:report|submittal|package|data))"
     r"|(?:is|are|was|were|has|have|does|do|did)\s?n[o']t\s+(?:been\s+|"
     r"yet\s+|also\s+)*(?:submitted|reported|included|provided|supplied|"
     r"attached|given|tested|shown|covered|performed|report|include|submit|"
     r"cover|show|provide|contain|address|document)\w*"
     r"|fails?\s+to\s+(?:report|include|show|cover|provide|submit|address)"
+    # looked for and not found: "could not find", "cannot be found"
+    r"|(?:could\s?n[o']t|can\s?not|can't|unable\s+to)\s+(?:be\s+)?"
+    r"(?:find|found|locate|located)"
+    r"|leaves?\s+out|leaving\s+out|nothing\s+(?:for|under|submitted|"
+    r"provided)"
     r"|(?<!nothing is )(?<!nothing )(?<!none )missing|omit(?:s|ted|ting)?|"
     r"omission|absent\s+from|lacks?|lacking|left\s+out|nowhere"
     r"|none\s+(?:submitted|reported|provided|included|given|attached|"
@@ -1255,7 +1261,9 @@ _NOT_REPORTED = {"re": (r"(?:^|(?<=[.;:|!?,(]))(?:(?!\b" + _ON_SITE +
 #: contents". Not a "not" about something else beside it ("add up to
 #: 174,500, not the 178,500").
 _NOT_A_SECTION = {"re": (
-    r"\b(?:(?:does|do|did)\s?n[o']t\s+(?:exist|appear|belong)"
+    r"\b(?:(?:does|do|did)\s?n[o']t\s+(?:exist|appear|belong|resolve)"
+    r"|(?:could\s?n[o']t|can\s?not|can't|unable\s+to)\s+(?:be\s+)?"
+    r"(?:find|found|locate|located)|unresolved|dangling"
     r"|non[\s-]?existent|undefined|unknown\s+section"
     r"|no\s+(?:such\s+)?(?:spec(?:ification)?\s+)?(?:section|division|spec)"
     r"|not\s+a\s+(?:valid\s+|real\s+)?(?:spec(?:ification)?\s+)?section"

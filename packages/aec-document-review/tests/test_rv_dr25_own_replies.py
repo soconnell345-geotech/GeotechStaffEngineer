@@ -53,3 +53,41 @@ def test_a_tag_that_was_renumbered_too():
         "door-renumbered",
         "Door 106 became 110 on the first floor plan A-101 and in the "
         "schedule; the two agree.")
+
+
+# -- looked for and not found ----------------------------------------------
+
+@pytest.mark.parametrize("key, reply", [
+    ("window-anchorage",
+     "I could not find the anchorage calculations anywhere in the package."),
+    ("window-anchorage", "The submittal has nothing for SD-05 Design Data."),
+    ("window-anchorage",
+     "Anchorage calculations: not found in the submittal."),
+    ("window-section-missing",
+     "Section 08 80 00 cannot be found in the manual's table of contents."),
+    ("window-section-missing",
+     "The reference to Section 08 80 00 does not resolve."),
+    ("window-section-missing",
+     "I could not find a Section 08 80 00 in the project manual."),
+    ("window-water-test",
+     "- Finish: complies.\n"
+     "- The laboratory report leaves out the water penetration test.\n"
+     "- Field water test of 3.3: after installation, not due yet."),
+])
+def test_looked_for_and_not_found(key, reply):
+    assert _passes(key, reply)
+
+
+@pytest.mark.parametrize("key, reply", [
+    ("window-anchorage",
+     "I found the anchorage calculations on page 4 of the package."),
+    ("window-section-missing",
+     "Does Section 08 80 00 resolve to a section in the manual?"),
+    ("window-section-missing",
+     "Section 08 80 00 can be found in the manual's contents."),
+    ("window-water-test",
+     "The field water test of 3.3 could not be found, which is expected "
+     "before installation."),
+])
+def test_found_is_not_missing(key, reply):
+    assert not _passes(key, reply)
