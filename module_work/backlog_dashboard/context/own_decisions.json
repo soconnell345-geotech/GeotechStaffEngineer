@@ -4924,5 +4924,72 @@
       "BACKLOG GM-350",
       "module_work/inf77/CHECK.md"
     ]
+  },
+  "OWN-156": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Brief 9 opens with a box of eight blanks. Which can you fill before it goes to the maintainer?",
+    "why": "The brief measures the released Document Review 1.2.0 on the testers' model and, later, the settings built since. The maintainer reads the eight answers as given. A blank skips only its own part.",
+    "background": "The eight: (O1) a real drawing set with door or window schedules and detail callouts, to check the sheet tools with no model; (O2) a report with five or more pages of photographs, a public one if possible; (O3) a second document of the same job as that report; (O4) may the whole outputs on those documents come back to the developer, or counts only; (O5) may the measurement read the saved Document Review conversations, with only counts coming back; (O6) the total of input tokens for Parts A to C (blank means 180 million); (O7) the total for Part D, run later on the next release (blank means 100 million); (O8) a real drawing in DXF form with lettering large enough to read when plotted. Without O1 the real-set check is skipped, without O2 or O3 the photograph-page runs on your documents, without O8 the DXF item. A blank O4 or O5 is read as no. Part D does not start until the release after 1.2.0 has reached the maintainer with its note.",
+    "options": [
+      {
+        "label": "Fill what is at hand, then send",
+        "effect": "Each document you name adds its part. Everything else runs on made-up and public documents."
+      },
+      {
+        "label": "Send it with every blank left",
+        "effect": "The parts on made-up and public documents run within 180 and 100 million input tokens. The real-set check, the photograph-page runs on a real report and the DXF item are skipped."
+      },
+      {
+        "label": "Hold the brief until all eight are filled",
+        "effect": "Nothing of 1.2.0 is measured on the testers' model until then."
+      }
+    ],
+    "recommendation": "Fill what is at hand, then send: O5 yes, O4 no unless the documents are public, O6 and O7 blank. Do not hold the brief for a document you would have to look for.",
+    "if_no_answer": "The brief is not sent, and no setting can be decided for testers.",
+    "message_to_send": null,
+    "steps": [
+      "Open BRIEF.md in the brief's zip, which the developer sent you on 2026-11-18.",
+      "Fill the box at its top, O1 to O8.",
+      "Pass the zip to the maintainer.",
+      "Leave Part D until the release after 1.2.0 has gone to the maintainer with its note."
+    ],
+    "unblocks": [
+      "EV-45"
+    ],
+    "sources": [
+      "BACKLOG OWN-156",
+      "BACKLOG EV-45"
+    ]
+  },
+  "OWN-157": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Is a list of refused operations enough for a first trial of the kernel layer under the plotting box?",
+    "why": "The layer puts the operating system's own refusals under the box that runs model-written plotting code. Its filter refuses what it names and allows everything else.",
+    "background": "The layer is off unless GEOTECH_PLOT_CODE_KERNEL_LAYER is set. With it up, the kernel refuses files outside the named read and write folders, sockets and new processes. Because the filter is a deny list, what it does not name is allowed. The review confirmed one case on a made-up file: code that had got past the Python-level guard could still change the mode or owner of a file it owns outside its folder (it could not read or write it) and, on an older kernel, send a signal to another process of the same user. The alternative is a filter that names what plotting needs and refuses the rest. This goes with OWN-133, the decision whether model-written plotting code runs on the testers' host at all.",
+    "options": [
+      {
+        "label": "Enough for a first trial",
+        "effect": "A trial may use the layer with the setting at `require`, after the probe has run on that host and a person has read its list of readable folders. When the trial happens stays your decision (OWN-133)."
+      },
+      {
+        "label": "Wait for an allow list",
+        "effect": "The developer builds a filter that names what plotting needs. Tighter, but it is worked out for each Python and library version, and a host upgrade can then break a plot."
+      }
+    ],
+    "recommendation": "Enough for a first trial at `require`. File an allow list only if the trial or the host's security team asks for one.",
+    "if_no_answer": "Nothing changes: the setting is off everywhere, and plotting code stays off on the testers' host as OWN-133 has it.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "INF-16"
+    ],
+    "sources": [
+      "BACKLOG OWN-157",
+      "BACKLOG OWN-133",
+      "BACKLOG INF-16",
+      "module_work/inf16/CHECK.md"
+    ]
   }
 }
