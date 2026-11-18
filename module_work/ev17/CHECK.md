@@ -394,3 +394,89 @@ and check each box against the zoom and tile views in part 2; step through
 the pages looked at with Shift and the right arrow and see the count in
 the bar go up by one; and note the size and the time to build for a
 40-sheet run, against the table above.
+
+# EV-17: the turn's image calls in the report (asked in the review of 1.2.0)
+
+## What was asked
+
+The report neither read nor explained the turn's image-call record. From
+1.2.0, `keep_work.image_call_facts` puts `image_calls` on every
+`turn_end`, `image_limit` when a ceiling was set
+(`GEOTECH_TURN_MAX_IMAGE_CALLS`) and `image_calls_refused` when the
+ceiling refused any. The report's "Vision calls" counts the side calls that
+answered (`model_end`), so the two numbers differ and nothing said why.
+Wanted: the turn's image calls, its ceiling and the refused calls beside
+the step cap the report already lists; one plain sentence where "Vision
+calls" is shown saying what each number counts; a record without the keys
+(a 1.1.0 run) shows what it showed, byte for byte.
+
+## What was built, and where
+
+`packages/aec-agent-core/aec_agent_core/run_report.py`:
+
+- `_image_facts(turn_end)`: `(image_calls, image_limit,
+  image_calls_refused)`, or `None` when the record keeps no count (or a
+  count that is not a number); a ceiling or refused count without a count
+  is ignored.
+- `Report._image_total` and `_totals`: where any turn keeps the count, an
+  "Image calls" row right under "Vision calls" (`data-total="image_calls"`):
+  the sum, "images sent to the vision model for a separate reading, as the
+  turns counted them", the ceiling or ceilings, the refused calls, and
+  "counted in k of n turns' records" when some turns lack it; under the
+  table, `IMAGE_COUNTS_NOTE`, the one sentence on what each count counts.
+- `_notes`: per turn that keeps the count, after the step-cap line, "image
+  calls: 12 of a ceiling of 40; 3 more refused at the ceiling", or "image
+  calls: 5, no ceiling set".
+- README, "Reading a saved run": one paragraph.
+
+## Calls made
+
+- **What the sentence says, from the code.** `TurnScope.take_image_call`
+  counts each image once before it is sent (`vision_engine.analyze_image`;
+  a retry of that image is not counted again) and counts a refused one
+  apart. The report counts every side call with a `model_end`: the vision
+  probe's calls (`vision_probe`, labelled `kind: probe`, not counted on the
+  turn) are in it, a failed or given-up image is not, and an ask given up
+  at its time limit that answered after all is a second answer for one
+  image. The sentence names those three cases.
+- **Always shown where the record has it**, also at 0 and with no ceiling:
+  the count is kept "so a sensible number can be chosen from real turns"
+  (the 1.2.0 release note), and a 0 on a turn that looked at pages is
+  itself worth seeing.
+- **Gated on the key, not on a version.** Nothing is added unless a turn's
+  `turn_end` holds a number under `image_calls`.
+
+## Tests (`packages/aec-agent-core/tests/test_ev17_run_report.py`)
+
+Both fail on the base (no row, no line) and pass here.
+
+- `test_image_calls_beside_the_step_cap_and_what_each_count_counts`: the
+  made-up run written by the real writer inside a `TurnScope` with a
+  ceiling of 4, 4 images counted and 2 refused: the record's `turn_end`
+  holds the three keys; the totals show 3 vision calls and 4 image calls,
+  the row right under "Vision calls" with its ceiling and refused count, the
+  sentence once, under the table; the notes hold the step-cap line and then
+  the image-call line.
+- `test_a_record_without_image_calls_shows_what_it_showed`: the made-up run
+  with no scope (no `image_calls`, as a 1.1.0 record) shows no row, no
+  sentence, no line; the same record with `image_calls: 5` added differs
+  from it only by the row, the sentence and the notes line (removing those
+  three gives the first page byte for byte); a count that is not a number
+  (`"many"`, `true`) or missing beside a ceiling and a refused count gives
+  the first page byte for byte.
+
+Checked by hand (not in the suite): the module before this change and
+after it, on the fourteen saved suite runs of part (b)'s hand check (none
+keeps `image_calls`) and on two made-up runs, one with its PDF: every page
+the same, byte for byte, with the "Made" time held still.
+
+## Noted, not fixed
+
+- None.
+
+## For the lead: what a run on the hosted platform should compare
+
+On one 1.2.0 turn with `GEOTECH_TURN_MAX_IMAGE_CALLS` set low enough to
+refuse: the totals' image calls against the "image calls this turn: k of N"
+status the page showed, and the refused count against the line under the
+answer.
