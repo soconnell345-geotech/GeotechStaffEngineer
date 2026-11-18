@@ -373,10 +373,9 @@ Chrome on a made-up report (open from a grid square and from part 4, choose
 a box, a listed look and a call number, arrow keys, Shift-arrows, the
 disabled buttons at the ends, Esc, Close, Back, the jump to part 2) and
 screenshots at 1400 and 512 pixels wide (the zoom box sits on the PDF's own
-rectangle at the same place). Fourteen saved review-suite task runs
-(private, not in the repository; the suite's documents rebuilt from its
-fixture code): every report built with its viewer, every look with its box, every
-call with its agent and step, 0.3 to 1.5 MB, in 0.2 to 2 s.
+rectangle at the same place). Also built over saved runs kept outside the
+repository: every report built with its viewer, every look with its box,
+every call with its agent and step.
 
 ## Noted, not fixed
 
@@ -466,9 +465,10 @@ Both fail on the base (no row, no line) and pass here.
   the first page byte for byte.
 
 Checked by hand (not in the suite): the module before this change and
-after it, on the fourteen saved suite runs of part (b)'s hand check (none
-keeps `image_calls`) and on two made-up runs, one with its PDF: every page
-the same, byte for byte, with the "Made" time held still.
+after it, on two made-up runs, one with its PDF: every page the same, byte
+for byte, with the "Made" time held still. Also rendered with the old
+module and the new one over saved runs kept outside the repository: every
+page the same.
 
 ## Noted, not fixed
 
