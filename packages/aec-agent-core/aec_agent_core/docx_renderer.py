@@ -832,11 +832,12 @@ _SYMBOL_RUN = ("run set in a symbol font (the letters shown are not the "
 
 def _symbol_char(ch):
     """A character of a Symbol-font run as the character printed, or
-    ``None`` when the table has none. A space stays a space; a character
-    beyond Latin-1 and outside 0xF000-0xF0FF is already a real character
-    (Unicode text with the font applied) and stays as it is."""
+    ``None`` when the table has none. White space (a space, a non-breaking
+    space) stays as it is; a character beyond Latin-1 and outside
+    0xF000-0xF0FF is already a real character (Unicode text with the font
+    applied) and stays as it is."""
     code = ord(ch)
-    if ch == " ":
+    if ch.isspace():
         return ch
     if 0xF000 <= code <= 0xF0FF:
         code -= 0xF000
@@ -852,6 +853,14 @@ def _symbol_text(text):
 #: The heading of the tracked-changes section :func:`docx_to_markdown`
 #: returns apart from the body, as ``tracked_changes`` (DR-45).
 TRACKED_CHANGES_HEADING = "Tracked changes in the Word file"
+
+#: A deleted passage longer than this is given in that section by its start
+#: and its end, with the number of characters left out said between them
+#: (DR-45; a whole deleted page went to the model) ...
+_DELETION_MAX_CHARS = 300
+#: ... and the section's deletion lines stop at this many characters; one
+#: line then says how many more deletions the file holds.
+_DELETIONS_MAX_CHARS = 4000
 
 #: The Symbol font's characters, code -> Unicode, for a ``w:sym`` (DR-45).
 #: From the Unicode Consortium's published table "Adobe Symbol Encoding to
@@ -1294,8 +1303,22 @@ class _DocxReader:
                   "current text:" if self.deletions else ".")
         parts = [f"## {TRACKED_CHANGES_HEADING}", intro]
         if self.deletions:
-            parts.append("\n".join(self._deletion_line(d)
-                                   for d in self.deletions))
+            # Bounded (_DELETIONS_MAX_CHARS); the count stays exact.
+            lines, used = [], 0
+            for d in self.deletions:
+                line = self._deletion_line(d)
+                if lines and used + len(line) + 1 > _DELETIONS_MAX_CHARS:
+                    break
+                lines.append(line)
+                used += len(line) + 1
+            left = len(self.deletions) - len(lines)
+            if left:
+                lines.append(
+                    f"({left} more deletion"
+                    f"{'s are' if left > 1 else ' is'} not shown here: this "
+                    f"list stops at about {_DELETIONS_MAX_CHARS:,} "
+                    f"characters.)")
+            parts.append("\n".join(lines))
         return "\n\n".join(parts) + "\n"
 
     @staticmethod
@@ -1316,7 +1339,16 @@ class _DocxReader:
         else:
             where = " (its paragraph has no other text)"
         head = d["who"] + (f", {d['when']}" if d["when"] else "")
-        return f'- {head}: deleted "{" ".join(d["text"].split())}"{where}'
+        text = " ".join(d["text"].split())
+        if len(text) > _DELETION_MAX_CHARS:
+            # Its start and its end, at word breaks; the count of the
+            # characters between them is exact.
+            keep = _DELETION_MAX_CHARS // 2
+            start = text[:keep].rsplit(" ", 1)[0]
+            end = text[-keep:].split(" ", 1)[-1]
+            text = (f"{start} [... {len(text) - len(start) - len(end):,} "
+                    f"characters not shown ...] {end}")
+        return f'- {head}: deleted "{text}"{where}'
 
     def _paragraphs_text(self, container, sep=" / "):
         """The text of every paragraph under ``container``, joined."""

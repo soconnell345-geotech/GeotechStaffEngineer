@@ -100,11 +100,15 @@ def test_text_set_in_the_symbol_font_reads_as_printed(tmp_path):
     p.add_run(" = 50 kPa, ")
     p._p.append(_font_run("f", "Times New Roman"))         # an ordinary f
     p.add_run(" = 2.")
+    q = d.add_paragraph("Check: ")
+    q._p.append(_font_run("f =", "Symbol"))   # a non-breaking space
+    q.add_run(" 1.")
     path = tmp_path / "f.docx"
     d.save(str(path))
     r = docx_to_markdown(str(path))
     assert (f"Friction angle {PHI} = 30, {GAMMA} = 18 kN/m3, "
             f"{chr(0x3C3)} = 50 kPa, f = 2.") in r["markdown"]
+    assert f"Check: {PHI} = 1." in r["markdown"]       # white space
     assert "Not read in the Word file" not in r["markdown"]
 
 
@@ -183,6 +187,85 @@ def test_insertions_only_are_said_and_the_body_is_as_before(tmp_path):
     md, fields = read_office(tracked_path)
     assert md == plain["markdown"] + "\n" + tracked["tracked_changes"]
     assert "Tracked changes in the Word file" in fields["note"]
+
+
+def test_a_few_short_deletions_read_exactly_as_before_the_bounds(tmp_path):
+    d = docx.Document()
+    p = d.add_paragraph("The footing bears on ")
+    p._p.append(_tracked("del", "so", 1))
+    p._p.append(_tracked("del", "ft ", 2))
+    p._p.append(_tracked("ins", "stiff ", 3))
+    p.add_run("clay at 2 m.")
+    gone = d.add_paragraph()
+    gone._p.append(_tracked("del", "Option B was rejected.", 4, "A. Roe"))
+    q = d.add_paragraph()
+    q._p.append(_tracked("del", "Early ", 5))
+    q.add_run("results are given in Table 2.")
+    path = tmp_path / "few.docx"
+    d.save(str(path))
+    assert docx_to_markdown(str(path))["tracked_changes"] == (
+        "## Tracked changes in the Word file\n\n"
+        "The file holds tracked changes. The text above reads them as "
+        "accepted: insertions in, deletions out. The deleted text, which is "
+        "not part of the document's current text:\n\n"
+        '- J. Doe, 2026-05-01: deleted "soft" after "The footing bears on"\n'
+        '- A. Roe, 2026-05-01: deleted "Option B was rejected." (its '
+        "paragraph has no other text)\n"
+        '- J. Doe, 2026-05-01: deleted "Early" before "results are given in '
+        'Table 2."\n')
+
+
+def test_a_long_deletion_is_clipped_with_its_place_kept(tmp_path):
+    from aec_agent_core.docx_renderer import _DELETION_MAX_CHARS
+    words = " ".join(f"clause{k}" for k in range(1500))   # 15,389 chars
+    d = docx.Document()
+    p = d.add_paragraph("The design basis is ")
+    p._p.append(_tracked("del", words + " ", 1))
+    p.add_run("as stated in section 3.")
+    path = tmp_path / "long.docx"
+    d.save(str(path))
+    md, _fields = read_office(path)
+    body, _, section = md.partition("## Tracked changes in the Word file")
+    assert "clause" not in body
+    (line,) = [x for x in section.splitlines() if 'deleted "' in x]
+    assert line.startswith('- J. Doe, 2026-05-01: deleted "clause0 clause1 ')
+    assert line.endswith(' clause1498 clause1499" after "The design basis '
+                         'is"')
+    quoted = line.split('deleted "', 1)[1].rsplit('" after', 1)[0]
+    head, marker, tail = quoted.partition(" [... ")
+    left = int(tail.split(" characters not shown ...] ", 1)[0]
+               .replace(",", ""))
+    shown = tail.split(" characters not shown ...] ", 1)[1]
+    assert len(head) + left + len(shown) == len(words)       # exact count
+    assert words.startswith(head) and words.endswith(shown)
+    assert len(head) + len(shown) <= _DELETION_MAX_CHARS
+    assert len(line) < _DELETION_MAX_CHARS + 150
+
+
+def test_many_deletions_are_bounded_and_the_rest_counted(tmp_path):
+    import re
+    from aec_agent_core.docx_renderer import _DELETIONS_MAX_CHARS
+    d = docx.Document()
+    for k in range(200):
+        p = d.add_paragraph(f"Boring B-{k} log, sheet {k}: ")
+        p._p.append(_tracked("del", f"sample {k} was lost in transit ", k))
+        p.add_run(f"refusal at {k}.5 m.")
+    path = tmp_path / "many.docx"
+    d.save(str(path))
+    section = docx_to_markdown(str(path))["tracked_changes"]
+    lines = [x for x in section.splitlines() if 'deleted "' in x]
+    assert 20 < len(lines) < 200
+    assert sum(len(x) + 1 for x in lines) <= _DELETIONS_MAX_CHARS
+    for k, line in enumerate(lines):          # in order, each in its place
+        assert line == (f'- J. Doe, 2026-05-01: deleted "sample {k} was '
+                        f'lost in transit" after "Boring B-{k} log, sheet '
+                        f'{k}:"')
+    more = re.findall(r"^\((\d+) more deletions are not shown", section,
+                      re.M)
+    assert [int(n) for n in more] == [200 - len(lines)]
+    assert section.endswith(" more deletions are not shown here: this "
+                            "list stops at about "
+                            f"{_DELETIONS_MAX_CHARS:,} characters.)\n")
 
 
 def test_a_file_with_none_of_these_reads_exactly_as_before(tmp_path):
