@@ -13,6 +13,10 @@ the same text would show ``/home/data/geotech_webapp/users/<domain>__<user>/``.
   UNC or POSIX, quoted or not -- becomes its file name. URLs are left alone.
 * :func:`tool_error` is the JSON a tool returns instead of raising: what
   failed, said plainly, and that the turn goes on.
+* :func:`error_line` (the line :func:`tool_error` is built on) masks a
+  secret the exception's text names or plainly holds
+  (:func:`mask_error_secrets`): a failed download names its signed URL, and
+  the model can quote the error into an answer that is saved.
 * :func:`budget_exhausted` tells an AI budget or quota that is USED UP
   apart from a model that is merely busy (live smoke wave 2c, D2): asking
   again in a minute fixes a rate limit, never a spent budget, so the two
@@ -78,14 +82,17 @@ def scrub_paths(text: Any) -> str:
 
 
 def error_line(exc: BaseException, limit: int = 300) -> str:
-    """``"<Type>: <message>"`` on one line, paths scrubbed, at most
-    ``limit`` characters of message. An AI budget that is used up is said in
-    plain words instead (:func:`budget_exhausted`): its raw text is provider
-    JSON with a request id in it, which a tester should never be shown."""
+    """``"<Type>: <message>"`` on one line, paths scrubbed, secrets masked
+    (:func:`mask_error_secrets`, before the cut), at most ``limit``
+    characters of message. An AI budget that is used up is said in plain
+    words instead (:func:`budget_exhausted`): its raw text is provider JSON
+    with a request id in it, which a tester should never be shown. A message
+    with no secret in it comes back as it did before the masking, character
+    for character; if masking itself failed, only the type's name."""
     stop = budget_exhausted(exc)
     if stop is not None:
         return budget_tool_note(stop)
-    msg = " ".join(scrub_paths(str(exc)).split())
+    msg = mask_error_secrets(" ".join(scrub_paths(str(exc)).split()))
     if len(msg) > limit:
         msg = msg[:limit] + " …"
     name = type(exc).__name__
@@ -435,6 +442,149 @@ _HTML_PAGE = re.compile(r"<(?:!doctype|html|head|body|title)\b", re.IGNORECASE)
 _SECRETS = re.compile(
     r"\b(?:sk|pk|rk)-[A-Za-z0-9_*\-]{6,}|\bBearer\s+\S+|\b[A-Za-z0-9_\-]{32,}\b")
 
+# ---------------------------------------------------------------------------
+# Masking the text of an error before it is kept (the run record)
+# ---------------------------------------------------------------------------
+# An exception from a model client or an HTTP library can carry a key, a
+# bearer token or a signed URL (``requests`` names the URL it was refused:
+# "403 Client Error: Forbidden for url: https://...?...&tempauth=..."), and
+# the run record is what a tester downloads and sends on. The rules below
+# (:func:`mask_error_secrets`) are general shapes, not one vendor's: a
+# secret is masked where it is NAMED (a header, a query parameter, a
+# ``name=value`` or ``"name": value`` pair, a URL's password) or where its
+# form says it (a private-key block, a JSON web token, an ``sk-`` /
+# ``pk-`` / ``rk-`` key, a bearer token). A run of characters with no name
+# beside it is kept, however long: a request id, a run id or a hash is
+# what someone needs to trace a failure, and an unnamed key cannot be told
+# from one. So an error with no secret in it is kept as it was.
+# :func:`mask_secrets` keeps its own, wider rule (any run of 32 or more
+# token characters) for the places that used it before.
+
+#: A private key in PEM form (a certificate, being public, is kept). A
+#: block with no END line (an error cut short) is masked to the text's end:
+#: the key is not shown, and the search ends at the first BEGIN (without
+#: that, every BEGIN line searched to the end of the text for its END, and
+#: a long text with many of them took minutes).
+_PEM_KEY = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE "
+    r"KEY-----|\Z)", re.DOTALL)
+#: Every value below stops at a quote, a backslash, a space or a closing
+#: bracket, so a secret inside JSON text (a tool's error result, where a
+#: quote is written ``\"``) is masked and the JSON stays whole; a full
+#: stop at a value's end ends the sentence, and is kept.
+#: A password in a URL (``scheme://user:password@host``): the user is kept.
+#: The password runs to the LAST ``@`` before the host (one written with an
+#: ``@`` in it, unencoded, was shown from that ``@`` on).
+_URL_PASSWORD = re.compile(
+    r"(?<=://)([^\s/:@'\"<>\\]+):[^\s/'\"<>\\]+@")
+#: Between a name and its value: ``=``, ``: ``, ``": "``, ``\": \"``.
+_SEP = r"(\\?[\"']?\s*[:=]\s*\\?[\"']?)"
+#: An ``Authorization`` header's value, with its scheme.
+_AUTH_HEADER = re.compile(
+    r"(?i)\b((?:proxy-)?authorization)" + _SEP +
+    r"(?!\[removed\])(?:(?:bearer|basic|token|sharedkey|negotiate)\s+)?"
+    r"([^\s\"',;})\]\\]+)(?<!\.)")
+#: A JSON web token (an access token, a signed link's ``tempauth``).
+_JWT = re.compile(
+    r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]*)?")
+#: Names that say their value is a secret wherever they stand: a query
+#: parameter, a form field, ``name=value``, ``name: value``, a quoted key.
+_SECRET_NAMES = (
+    r"api[-_ ]?key(?: provided)?|x-api-key|subscription[-_]?key|"
+    r"ocp-apim-subscription-key|"
+    r"access[-_]?token|refresh[-_]?token|id[-_]?token|auth[-_]?token|"
+    r"session[-_]?token|security[-_]?token|client[-_]?secret|"
+    r"client[-_]?assertion|password|passwd|tempauth|x-amz-signature|"
+    r"x-amz-credential|x-amz-security-token|x-goog-signature|"
+    r"x-goog-credential|account[-_]?key|shared[-_]?access[-_]?key|"
+    r"shared[-_]?access[-_]?signature|secret[-_]?access[-_]?key|"
+    r"secret[-_]?key|private[-_]?key|passphrase|x-auth-token")
+#: The name may be the end of a longer one joined by ``_`` or ``-``, as a
+#: setting is written (``GRAPH_CLIENT_SECRET=``, ``PROMPTER_API_KEY=``,
+#: ``aws_secret_access_key=``), and may carry a per-user suffix after
+#: ``--`` (``PROMPTER-API-KEY--<NAME>=``).
+_NAMED_SECRET = re.compile(
+    r"(?i)(?<![A-Za-z0-9])((?:" + _SECRET_NAMES + r")(?:--[\w.]+)?)" + _SEP +
+    r"(?!\[removed\])([^\s&\"',;}\])#<>\\]+)(?<!\.)")
+#: Names that are a secret only as a URL's query parameter (``?sig=``,
+#: ``&token=``, ``?code=``, ``?key=``): in prose they are ordinary words.
+_QUERY_SECRET = re.compile(
+    r"(?i)([?&](?:sig|signature|token|secret|code|key)=)"
+    r"([^&\s\"'#<>)\\]+)(?<!\.)")
+#: ``key``, ``token``, ``secret``, ``signature``, ``sig`` and ``code``
+#: outside a URL's query (a JSON body's ``"token": "..."``, a dict's
+#: ``'key': '...'``, a form body that starts ``token=...``): masked only
+#: when the value has the form of a generated one (:func:`_generated`),
+#: because these names also head ordinary values (``"key": "sheet_index"``,
+#: ``code=context_length_exceeded``).
+_LOOSE_SECRET = re.compile(
+    r"(?i)(?<![A-Za-z0-9?&])(key|token|secret|signature|sig|code)" + _SEP +
+    r"([^\s&\"',;}\])#<>\\]+)(?<!\.)")
+#: A cookie header's pairs (``Cookie: a=1; b=2``, ``Set-Cookie: a=1``).
+_COOKIE = re.compile(
+    r"(?i)\b((?:set-)?cookie)" + _SEP +
+    r"(?!…)[^\s;=\"'\\]+=[^\s;\"'\\]*"
+    r"(?:;\s*[^\s;=\"'\\]+=[^\s;\"'\\]*)*")
+#: The same names inside a URL that is itself a parameter's value, where
+#: ``?``, ``&`` and ``=`` are written ``%3F``, ``%26`` and ``%3D`` (a
+#: sign-in's ``redirect_uri=https%3A%2F%2F...%3Faccess_token%3D...``).
+#: The value ends at the next encoded ``&`` or ``#``.
+_ENCODED_SECRET = re.compile(
+    r"(?i)((?:(?:(?<![A-Za-z0-9])|(?<=%[0-9a-f]{2}))"
+    r"(?:" + _SECRET_NAMES + r")"
+    r"|%(?:3F|26)(?:sig|signature|token|secret|code|key))"
+    r"%3D)((?:(?!%2[36])[^\s&\"'#<>)\\])+)")
+#: A value that says nothing secret: a missing or already-masked one.
+_PLACEHOLDERS = frozenset({"none", "null", "nil", "true", "false", "unset",
+                           "undefined", "empty", "missing", "required",
+                           "redacted", "hidden", "[removed]"})
+#: ``sk-`` / ``pk-`` / ``rk-`` keys (a provider's own refusal quotes one
+#: part-starred: "Incorrect API key provided: sk-...****abcd").
+_PREFIXED_KEY = re.compile(r"\b(?:sk|pk|rk)-[A-Za-z0-9_*\-]{6,}")
+_BEARER = re.compile(r"\bBearer\s+[^\s\"',;})\]<>\\]+")
+
+
+def _keeps(value: str) -> bool:
+    """Whether a named value is no secret: a placeholder, stars or dots, or
+    under four characters."""
+    v = value.strip("\"'")
+    return (len(v) < 4 or v.lower() in _PLACEHOLDERS
+            or set(v) <= set("*.…xX"))
+
+
+def _generated(value: str) -> bool:
+    """Whether a value has the form of a generated secret: 16 characters or
+    more with a letter and a digit among them (``sheet_index`` and
+    ``context_length_exceeded`` have not)."""
+    return (len(value) >= 16 and any(c.isdigit() for c in value)
+            and any(c.isalpha() for c in value))
+
+
+def _mask(text: str) -> str:
+    s = _PEM_KEY.sub("…", text)
+    s = _URL_PASSWORD.sub(lambda m: f"{m.group(1)}:…@", s)
+    s = _AUTH_HEADER.sub(
+        lambda m: m.group(0) if _keeps(m.group(3))
+        else f"{m.group(1)}{m.group(2)}…", s)
+    s = _JWT.sub("…", s)
+    s = _NAMED_SECRET.sub(
+        lambda m: m.group(0) if _keeps(m.group(3))
+        else f"{m.group(1)}{m.group(2)}…", s)
+    s = _QUERY_SECRET.sub(
+        lambda m: m.group(0) if _keeps(m.group(2)) else f"{m.group(1)}…", s)
+    low = s.lower()
+    if "%3d" in low:
+        s = _ENCODED_SECRET.sub(
+            lambda m: m.group(0) if _keeps(m.group(2))
+            else f"{m.group(1)}…", s)
+    s = _LOOSE_SECRET.sub(
+        lambda m: f"{m.group(1)}{m.group(2)}…" if _generated(m.group(3))
+        else m.group(0), s)
+    if "cookie" in low:
+        s = _COOKIE.sub(lambda m: f"{m.group(1)}{m.group(2)}…", s)
+    s = _PREFIXED_KEY.sub("…", s)
+    return _BEARER.sub("…", s)
+
 
 def mask_secrets(text: Any) -> str:
     """``text`` with anything shaped like a key or a bearer token replaced
@@ -443,6 +593,44 @@ def mask_secrets(text: Any) -> str:
         return _SECRETS.sub("…", "" if text is None else str(text))
     except Exception:  # noqa: BLE001
         return ""
+
+
+def mask_error_secrets(text: Any) -> str:
+    """``text`` -- the text of an error that is kept or shown -- with each
+    secret replaced by an ellipsis where its NAME or its FORM says it is
+    one: a private-key block, a URL's password, an ``Authorization``
+    header's value, a JSON web token, the value of a parameter, header or
+    field whose name says it is a secret (``api_key``, ``x-api-key``,
+    ``access_token``, ``client_secret``, ``password``,
+    ``x-amz-signature``, ...; ``sig``, ``token``, ``code``, ``key`` as a
+    URL's query parameter), an ``sk-`` / ``pk-`` / ``rk-`` key, and a
+    bearer token. Narrower than :func:`mask_secrets`: a run of characters
+    with no name beside it (a request id, a run id, a hash, a UUID) is
+    kept, however long, so the error can still be traced. Text with none
+    of these comes back unchanged, character for character. Never raises
+    (``""`` if masking itself failed)."""
+    try:
+        return _mask("" if text is None else str(text))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def mask_error_result(text: Any) -> Any:
+    """A tool's result with :func:`mask_error_secrets` applied when the
+    result is the tool's ERROR -- a JSON object with an ``"error"`` string
+    at its top, the shape :func:`tool_error` and the tools' own error
+    results take -- and unchanged otherwise (a tool's ordinary output is
+    kept as the model got it). Never raises."""
+    if not isinstance(text, str) or '"error"' not in text \
+            or not text.lstrip().startswith("{"):
+        return text
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return text
+    if isinstance(data, dict) and isinstance(data.get("error"), str):
+        return mask_error_secrets(text)
+    return text
 
 
 def auth_refused(exc) -> bool:
@@ -513,5 +701,6 @@ __all__ = ["scrub_paths", "error_line", "tool_error", "tool_error_json",
            "BudgetStop", "budget_signal", "budget_exhausted",
            "budget_message", "budget_tool_note", "BUDGET_HINT",
            "BUDGET_CODES", "BUDGET_PHRASES", "auth_refused", "auth_message",
-           "html_gist", "mask_secrets", "rate_limit_named",
+           "html_gist", "mask_secrets", "mask_error_secrets",
+           "mask_error_result", "rate_limit_named",
            "RATE_LIMIT_NAMES"]

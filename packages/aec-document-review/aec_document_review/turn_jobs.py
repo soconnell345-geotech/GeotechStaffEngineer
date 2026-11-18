@@ -367,6 +367,16 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                     exc, kept=kept.line() if kept is not None else None)
             except Exception:
                 turn_error = f"{type(exc).__name__}: {exc}"
+            # Shown, kept in the transcript, the trace, the history note and
+            # the activity log: a secret the error's text names (a key, a
+            # token, a signed URL's signature) is masked first, as the run
+            # record masks it; a request id is kept to trace the failure.
+            try:
+                from aec_agent_core.error_text import mask_error_secrets
+                turn_error = mask_error_secrets(turn_error) or \
+                    type(exc).__name__
+            except Exception:                          # noqa: BLE001
+                pass
             if stop_asked:
                 turn_error = f"{turn_error}\n\n{STOP_ASKED_NOTE}"
             # An AI budget that is used up (live smoke wave 2c, D2): the tester

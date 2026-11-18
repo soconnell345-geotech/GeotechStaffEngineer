@@ -58,16 +58,54 @@ def _error_message(request, exc: BaseException) -> ToolMessage:
         name=name, tool_call_id=call.get("id") or "", status="error")
 
 
+#: What stands for a tool's own error text that could not be checked.
+ERROR_NOT_CHECKED = ("the tool reported an error (its text could not be "
+                     "checked for secrets, so it is not shown)")
+
+
+def _masked_error_result(result):
+    """``result`` with the secrets masked in a tool's OWN error text: a
+    tool that catches its exception and returns ``{"error": str(exc)}``
+    never passes :func:`aec_agent_core.error_text.error_line`, so a signed
+    link or a key in that text reached the model as it came. Only the
+    top-level ``"error"`` string of a JSON object is read, with
+    ``error_text.mask_error_secrets``; the other keys (a link the tool
+    returns beside its error) are left alone. A result that is no such
+    error, and an error with no secret in it, come back as the SAME object,
+    byte for byte. Never raises."""
+    try:
+        content = getattr(result, "content", None)
+        if not isinstance(result, ToolMessage) \
+                or not isinstance(content, str) \
+                or '"error"' not in content \
+                or not content.lstrip().startswith("{"):
+            return result
+        data = json.loads(content)
+        error = data.get("error") if isinstance(data, dict) else None
+        if not isinstance(error, str) or not error:
+            return result
+    except Exception:  # noqa: BLE001 - not a JSON error result
+        return result
+    from aec_agent_core.error_text import mask_error_secrets
+    masked = mask_error_secrets(error)
+    if masked == error:
+        return result
+    data["error"] = masked or ERROR_NOT_CHECKED
+    return result.model_copy(
+        update={"content": json.dumps(data, ensure_ascii=False)})
+
+
 class ToolErrorGuard(AgentMiddleware):
     """Turn an exception out of any tool into a tool error the model reads
-    (see the module docstring). Put it just inside
-    :class:`~funhouse_agent.deep.delivered_log.DeliveredToolResults`, so the
-    log records what the model was told, and outside the other tool guards,
-    so their own failures are caught too."""
+    (see the module docstring), and mask the secrets in an error text a
+    tool returns of its own (:func:`_masked_error_result`). Put it just
+    inside :class:`~funhouse_agent.deep.delivered_log.DeliveredToolResults`,
+    so the log records what the model was told, and outside the other tool
+    guards, so their own failures are caught too."""
 
     def wrap_tool_call(self, request, handler):
         try:
-            return handler(request)
+            return _masked_error_result(handler(request))
         except GraphBubbleUp:
             raise
         except Exception as exc:  # noqa: BLE001 - reported to the model
@@ -75,7 +113,7 @@ class ToolErrorGuard(AgentMiddleware):
 
     async def awrap_tool_call(self, request, handler):
         try:
-            return await handler(request)
+            return _masked_error_result(await handler(request))
         except GraphBubbleUp:
             raise
         except Exception as exc:  # noqa: BLE001 - reported to the model

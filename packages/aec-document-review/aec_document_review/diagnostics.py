@@ -93,7 +93,15 @@ def format_report(checks: List[dict]) -> str:
     # names of settings, which the report is for, stay).
     try:
         from aec_document_review.sharepoint_log import scrub
-        return scrub(text)
+        text = scrub(text)
+    except Exception:                            # noqa: BLE001
+        pass
+    # ...and the secrets the run record masks (a named key or token, a
+    # signed link's signature, a URL's password, a bearer token); a request
+    # id the owner may need to trace a failure is kept.
+    try:
+        from aec_agent_core.error_text import mask_error_secrets
+        return mask_error_secrets(text) or text
     except Exception:                            # noqa: BLE001
         return text
 
