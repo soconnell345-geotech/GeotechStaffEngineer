@@ -191,9 +191,11 @@ exist there):
   to-do section or the `write_todos` text leaves prompt and tools as they
   are, with `not_found` in the record.
 
-The applied-path tests have run on deepagents 0.6.8 only (the laptop). On
-deepagents 0.7.24 they have NOT run: that path was written from the wheel's
-source and runs only on GitHub.
+The applied-path tests ran on deepagents 0.6.8 on the laptop. On deepagents
+0.7.24 they ran on GitHub: run 44396567478 on f7131ff passed the
+document-review jobs (Python 3.11 and 3.12) and the core-only jobs, where the
+pins resolve to deepagents 0.7.24 and langchain 1.4.5 (the versions are read
+from the pins, not from the job log).
 
 Unchanged and passing: `tests/test_review_fingerprints.py` (the fingerprints
 did not move), `test_dr43_todos_with_calls.py`, `test_review_switches_offline.py`,
