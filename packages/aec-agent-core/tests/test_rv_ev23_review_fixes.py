@@ -99,3 +99,28 @@ def test_a_table_read_with_one_page_read_is_still_a_source(tmp_path):
     res = _check(conv, TABLE_ANSWER)
     assert _flagged(res) == []
     assert [r["cited"] for r in res["looked_up"]] == ["GEC-11"]
+
+
+# ---------------------------------------------------------------------------
+# "X, whose ..." says what the document holds, as "X, which ..." does
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("answer", [
+    "Consult GEC-15, whose Table 4-1 gives this spacing.",
+    "I have not found any conflict with GEC-15, whose Table 4-1 gives this "
+    "spacing.",
+    "Confirm the cover against UFC 3-999-01, which asks for more near the "
+    "sea.",
+])
+def test_a_document_whose_content_is_stated_is_cited(tmp_path, answer):
+    res = _check(_conv(tmp_path, []), answer)
+    assert len(_flagged(res)) == 1
+    assert not res.get(cd.MENTIONED)
+
+
+def test_a_plain_pointer_is_still_a_mention(tmp_path):
+    res = _check(_conv(tmp_path, []), "Consult GEC-15 before the design is "
+                                      "issued.")
+    assert _flagged(res) == []
+    assert [(r["mentioned"], r["as"]) for r in res[cd.MENTIONED]] == [
+        ("GEC-15", cd.POINTER)]

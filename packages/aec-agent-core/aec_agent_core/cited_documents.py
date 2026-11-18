@@ -892,8 +892,9 @@ _DENIAL_AFTER = re.compile(
     r"(?i)^[ \t)\]]*(?:[A-Za-z'’/-]+[ \t]+){0,3}?(?:is|was|were|are|"
     rf"has[ \t]+been|have[ \t]+been)[ \t]+(?:not|never)[ \t]+{_DENIED}\b")
 _CONDITION = re.compile(r"(?i)\b(?:if|unless|whether)\b")
-#: "..., GEC-15, which sets ...": what follows says what the document holds.
-_SAYS = re.compile(r"[ \t)\]]*,?[ \t]*which\b", re.IGNORECASE)
+#: "..., GEC-15, which sets ...", "GEC-15, whose Table 4-1 gives ...": what
+#: follows says what the document holds.
+_SAYS = re.compile(r"[ \t)\]]*,?[ \t]*(?:which|whose)\b", re.IGNORECASE)
 _LIST_MARK = re.compile(r"(?:^|[ \t])(?:\d{1,2}[.)]|[-*+•>#]+)[ \t]*$")
 
 
@@ -979,8 +980,8 @@ def mention_kind(t: str, c: DocCited, spans: Sequence[Tuple[int, int]],
     Whatever the words, a clause that states a value (a sign such as "=",
     a number with a unit, a decimal) keeps the mention a citation: "Use
     0.29 from GEC-15" and "per GEC-15, the factor is 1.7" are citations,
-    as are "X gives ...", "(see X)", "X, which ..." and every mention no
-    rule above takes.
+    as are "X gives ...", "(see X)", "X, which ...", "X, whose ..." and
+    every mention no rule above takes.
     A clause runs between line ends, ";", "!", "?", a colon and a full stop
     followed by a capital."""
     if ends is None:
