@@ -1,9 +1,11 @@
 # The run record masks secrets in the text of an error: check notes
 
-A repair, on, no switch (the lead's ruling). Commits `fd7d3df` and
-`5e16c0c` (the record's own, narrower masker, on the lead's later rule that
-an unlabelled id or hash is kept and `mask_secrets` stays as it was) on
-`claude/record-masks-secrets`.
+A repair, on, no switch (the lead's ruling). On
+`claude/record-masks-secrets`: `fd7d3df` (the record masked); `5e16c0c`
+(the record's own, narrower masker, on the lead's later rule that an
+unlabelled id or hash is kept and `mask_secrets` stays as it was);
+`bdfe0ad` (a tool's error masked in what the model is handed, on the
+lead's ruling).
 
 ## What the item asked
 
@@ -26,7 +28,20 @@ secret by its form or its place, keep an unlabelled id or hash; if that
 needs a second, narrower function, build it and keep `mask_secrets` byte
 for byte for the places that use it today, including `_side_prompt`.
 
+Then the lead's ruling on the model's side: a tool error handed to the
+model is masked too, at `error_text.error_line` / `tool_error`, as a
+repair with no switch (a failed download's exception can carry a signed
+URL or a header's value, and the model can quote it into an answer that is
+saved and mirrored). An error with no secret is handed byte for byte as
+today; no fingerprint moves; only error text, never a tool's successful
+result; every caller listed.
+
 ## What was built, and where
+
+- `aec_agent_core/error_text.py` `error_line`: the message masked with
+  `mask_error_secrets` after its paths are scrubbed and before its cut.
+  `tool_error` and `tool_error_json` are built on it, so every caller
+  below hands the model masked text.
 
 - `aec_agent_core/error_text.py`: `mask_error_secrets`, the record's
   masker (below): a secret masked where its name or its form says it is
@@ -56,6 +71,7 @@ for byte for the places that use it today, including `_side_prompt`.
 | Writer | Masker | Why |
 |---|---|---|
 | core `activity_log.mask_payload`: every error field, `tool_refused`, a tool's error result, app events; so `tool_error`, `model_error`, `turn_end`, `append_event` | `mask_error_secrets` | the record: a request id, a run id or a hash is what someone needs to trace the failure |
+| core `error_text.error_line` (so `tool_error`, `tool_error_json`): what the model is handed for a tool that raised | `mask_error_secrets` | an error with no secret must reach the model byte for byte; `mask_secrets` would cut a long file name or a request id out of it |
 | core `run_report` (`RunRecord`, `_whole_text`) | `mask_error_secrets`, through `mask_payload` | it prints the record |
 | core `review_eval/runner._masked_errors` | `mask_error_secrets` | the suite's records |
 | Document Review `turn_jobs._run_turn_job` (the failed turn's error) | `mask_error_secrets` | shown and kept; a tester quotes its request id |
@@ -82,7 +98,39 @@ for byte for the places that use it today, including `_side_prompt`.
 | `activity.jsonl` `page_error.error` / `.traceback` | Document Review `page_errors.error_facts` (and the geotech page's `webapp/page_errors.py`, same masker), then `activity_log.append_event` | yes (URLs cut to their host, `mask_secrets`) | yes (`mask_secrets` as before, then `append_event` with `mask_error_secrets`) |
 | `activity.jsonl` `turn_stop_requested`, `turn_stopped`, `restored`, `process_start`, `turn_files` | various | no error text | n/a |
 | Document Review: the error shown under a failed turn, `transcript.jsonl` `error`, `trace.jsonl` `error`, the history note in `messages.json`, the job's result | `turn_jobs._run_turn_job` (`turn_error`) | paths only | yes |
-| `messages.json`: a stopped turn's kept tool results (TA-19) | `turn_record` | as the model got them | unchanged (noted below) |
+| `messages.json`: a stopped turn's kept tool results (TA-19) | `turn_record` | as the model got them | as the model got them: a tool's error built on `error_line` is now masked there too |
+| What the model is handed for a tool that raised (and so `messages.json`, the model's answer, the transcript) | core `error_text.error_line`, through the callers listed below | paths only | yes |
+
+## Who calls `error_line` / `tool_error` (what the model is handed)
+
+Found by a grep of the whole working copy (`packages/`, `webapp/`,
+`funhouse_agent/`, `report_ingest/`, `calc_package/`, `tinyapps/`,
+`geotech_common/`, `docs/`) for `error_line`, `tool_error` and
+`tool_error_json`. Each now hands the model masked text:
+- core `error_text.tool_error` / `tool_error_json`: built on `error_line`.
+- core `deep/tool_guards._error_message` (`ToolErrorGuard`): the tool error
+  for ANY tool that raises, on both pages (Document Review through the
+  core's `deep/assembly`; the geotech page through
+  `funhouse_agent/deep/agent.py`, which imports `ToolErrorGuard` under its
+  old name, an alias of the core's module).
+- core `document_tools._error_json`: the document tools' own errors, on
+  both pages.
+- core `deep/keep_work.KeepWork._stopped`: a helper that raised; the tool
+  error the primary reads, the kept helper file's reason and summary, and
+  the `helper_kept.why` event.
+- `webapp/`, `funhouse_agent/`, `report_ingest/`, `calc_package/`: no
+  caller of their own. The geotech page reaches the three core callers
+  above through the core, so it hands its model masked text once its core
+  pin moves to a release that carries this change (the maintainer's copy
+  pins 1.1.0 today).
+
+Not through `error_line`, so not masked on the way to the model (the
+record masks them): 46 places where a tool builds its own error text from
+an exception (`{"error": str(exc)}` and the like; 30 in
+`vision_tools.py`, the rest in `_fileio.py`, `deep/calculate_tool.py`,
+`plot_box`, `method_call.py`, `deep/vision_kit.py`, Document Review's
+`minimal_agent.py`). SharePoint's failure messages are masked at
+`_logged` (first commit).
 | Review suite `run.json`, `results.json`, `RESULTS.md`: `error`, `outcome_error`, `traceback`, each turn's `error`, `vision_profile.error` | core `review_eval/runner.run_task` | no | yes |
 | Review suite `turn_end` in the run's `activity.jsonl` | the logger | no | yes |
 | Run report (`run_report.html`): turn notes, a failed model call, a tool's error, the error message the model was given, a tool's error result, app events | core `run_report.RunRecord`, `_whole_text` | no | yes, for records written before this change too |
@@ -143,6 +191,9 @@ whole; a full stop at a value's end is kept as the sentence's. A masked
 text masks to itself.
 
 Still not caught:
+- **an unnamed 32-hex key standing alone is not masked**, in the record or
+  in what the model is handed (the lead's ruling: the rule stays as
+  built).
 - a key standing alone with no name beside it and none of the forms above
   (a bare gateway key, a random token quoted in prose: "refused the key
   ..."), however random it looks: it cannot be told from a request id,
@@ -166,13 +217,15 @@ Still not caught:
    traced and an error with no secret is written as before (the lead's
    rule). The price: a bare key with no name and no known form is not
    masked (it is when named).
-2. **Masked in what is kept, not in what the model is handed.**
-   `error_text.error_line` / `tool_error` (the tool guard's message, the
-   document tools' errors) are unchanged: masking there would change what
-   the geotech page's model is handed, beyond its record. The record masks
-   the same text as `tool_refused` / `tool_end`. The exception is
-   SharePoint's failure messages (`_logged`, Document Review only), plain
-   text the record cannot recognise as an error.
+2. **Masked in what the model is handed, at `error_line`** (the lead's
+   ruling; the first version of this branch left it unmasked). Masked
+   after the paths are scrubbed and before the cut at `limit`, so a secret
+   that straddles the cut is not half shown. With the narrower masker an
+   error with no secret reaches the model byte for byte, so no fingerprint
+   moves. If masking itself fails, the model gets the exception's type
+   name alone. A tool's successful result is never masked; a tool's own
+   error string not built on `error_line` is not masked on its way to the
+   model (listed above).
 3. **`html_gist` keeps its rule**: it builds the sign-in refusal shown on
    both pages, which is not the record.
    A Document Review failed turn's error therefore passes both rules when
@@ -200,7 +253,8 @@ None. A repair, on for every page.
 
 ## Tests
 
-`packages/aec-agent-core/tests/test_record_masks_secrets.py` (31 tests).
+`packages/aec-agent-core/tests/test_record_masks_secrets.py` (40 tests:
+the 31 below, and 9 on what the model is handed, further down).
 On master the file stops at its import (`mask_error_secrets` is new); "on
 master" below means with master's rule (copied into the file as
 `OLD_RULE`) or master's code in its place:
@@ -247,7 +301,7 @@ master" below means with master's rule (copied into the file as
   kept, an ordinary result unchanged. Fails on master.
 
 `packages/aec-document-review/tests/test_record_masks_secrets_page.py`
-(4 tests):
+(5 tests):
 - `test_a_failed_turns_error_is_shown_and_kept_masked`: a model that raises,
   through the page's agent and the turn worker; the shown error, the
   transcript, `turn_end`, `messages.json`, `trace.jsonl` and
@@ -261,24 +315,59 @@ master" below means with master's rule (copied into the file as
 - `test_a_sharepoint_failure_message_is_masked`: a signed link's token
   masked; an ordinary failure identical to its unmasked text. Fails on
   master.
+- `test_the_model_gets_a_tools_error_masked_and_its_result_untouched`:
+  through the page's whole agent, a scripted model calls one tool that
+  returns a signed download link and one that raises with it. The model
+  is handed the link whole in the result, and the error with the token
+  masked and the request id kept. Fails with `error_line` unmasked.
 
-Existing tests run after the second commit, every file that reaches the
-changed code (grep of the test folders for the changed modules):
-- the core's 11 files: 128 passed;
-- Document Review's 39 files, with `tests/test_review_fingerprints.py`:
-  538 passed; 3 failed, the `legacy`, `minimal` and `legacy+switches`
-  cases of `test_review_page_vocabulary_offline.py` (`NoPageHost`), the
-  laptop-only failures the app's CLAUDE.md lists as green on GitHub;
-- the geotech page's 18 files: 332 passed, 5 skipped;
+What the model is handed, in the core file (9 tests):
+- `test_an_error_with_no_secret_is_handed_to_the_model_as_before` (5
+  cases: a file not found with a long path, a timeout naming a host, a 404
+  with a plain URL, a JSON error body with a request id and a hash, a
+  traceback): `error_line` at limits 300 and 60, `tool_error_json`,
+  `document_tools._error_json` and `ToolErrorGuard`'s message equal
+  `error_line` as it was (copied into the test). A guard; passes on both.
+- `test_the_ids_and_names_in_a_plain_error_reach_the_model`: the long file
+  name, the request id and the hash survive. A guard; passes on both.
+- `test_a_tool_error_handed_to_the_model_masks_its_secrets`: a signed URL,
+  a bearer token and an `x-api-key` masked in `error_line`,
+  `tool_error_json` and `ToolErrorGuard`'s message, the request id kept.
+  Fails with `error_line` unmasked.
+- `test_a_secret_across_the_cut_is_masked_before_the_cut`: fails with
+  `error_line` unmasked.
+- `test_a_tools_result_reaches_the_model_untouched`: `ToolErrorGuard`
+  returns a result with a signed link as it came. A guard; passes on both.
+
+With the masking line in `error_line` taken out, 3 of these fail (the
+secret, the cut, the page's whole agent) and the guards pass.
+
+Existing tests run after the third code commit, every file that reaches
+the changed code (grep of the test folders for the changed modules):
+- the core's 18 files: 235 passed;
+- Document Review's 44 files, in three runs: 236 passed; 320 passed (with
+  `tests/test_review_fingerprints.py`); `tests/test_core.py` alone, 86
+  passed. Run after `tests/test_foundry_host.py`, 3 of `test_core.py`'s
+  engine and model-choice tests fail: an order between two files this
+  branch does not touch (it fails with those two files alone), not met on
+  CI, which runs `test_core.py` first. Not run this round:
+  `test_review_page_vocabulary_offline.py`, whose three laptop-only
+  `NoPageHost` failures the app's CLAUDE.md lists;
+- the geotech page's 25 files, with `webapp/tests/test_page_fingerprints.py`:
+  561 passed, 5 skipped;
 - `webapp/tests/test_public_text.py`: 5 passed.
-No existing test was edited.
+No existing test was edited; no fingerprint moved.
 
 ## Noted, not fixed
 
-- What the model is handed for a tool error built by `error_text.tool_error`
-  is unmasked (call 2); the model can quote it in an answer, which is then
-  kept. Masking there changes the geotech page's model input: the lead's
-  call.
+- The 46 tool error strings built from an exception without `error_line`
+  (above) reach the model unmasked; the record masks them. One place would
+  cover them: `ToolErrorGuard` could mask the `"error"` value of a tool's
+  JSON error result (the value only, so a link elsewhere in the result
+  survives). The lead's call.
+- A tool's successful result is kept in the record and handed to the
+  model as it came, a signed download link included (by design: the link
+  must work when the model passes it back).
 - The geotech page's own transcript and shown turn error
   (`webapp/turn_jobs.py`, `webapp/core.py`) are its code, quiet here: a
   request for the maintainer if wanted.
@@ -300,7 +389,8 @@ No existing test was edited.
 
 Nothing behavioural to measure. On one real failing turn (an expired
 SharePoint link, or a wrong key on a test deployment), download the
-conversation and check that `activity.jsonl`, `transcript.jsonl` and the run
-report hold no key, token or signature, and that the error otherwise reads
-as before; a record of an ordinary run is identical in keys and text to one
-from 1.2.0.
+conversation and check that `activity.jsonl`, `transcript.jsonl`,
+`messages.json` (what the model was handed) and the run report hold no
+key, token or signature, and that the error otherwise reads as before; a
+record of an ordinary run is identical in keys and text to one from
+1.2.0.
