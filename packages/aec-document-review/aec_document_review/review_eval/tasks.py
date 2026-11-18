@@ -1103,9 +1103,15 @@ _LEFT_BEHIND = {"re": (
     r"(?:at\s+|as\s+|on\s+|in\s+)?(?:el\.?\s*)?\d|"
     r"(?:at\s+|on\s+|in\s+)?(?:the\s+)?(?:old|previous|original|former|"
     r"superseded|issue[\s-]?1)\b)"
+    # the old value without "still": "A-301 shows the old parapet level"
+    r"|(?<!longer )(?<!not )(?<!n't )\b(?:shows?|reads?|has|carries|gives?|"
+    r"tags?|keeps?|retains?)\s+(?:the\s+|its\s+)?(?:old|previous|former|"
+    r"superseded|issue[\s-]?1)\b"
+    # what it should say instead: "should read 109.60"
+    r"|\bshould\s+(?:now\s+)?(?:read|show|say|be\s+(?:el\.?\s*)?\d)"
     r"|\bnot\s+(?:yet\s+|been\s+|also\s+)*(?:updated|revised|renumbered|"
     r"carried|coordinated|followed|raised|corrected|amended|propagated|"
-    r"reflected|changed\s+to\s+match)\b"
+    r"reflected|picked\s+up|changed\s+to\s+match)\b"
     r"|\b(?:was|were|is|are|has|have|had)\s?n[o']t\s+(?:yet\s+|been\s+|"
     r"also\s+)*(?:updated|revised|renumbered|carried|coordinated|changed|"
     r"raised|corrected|amended|propagated|reflected)\b"
@@ -1122,11 +1128,19 @@ _LEFT_BEHIND = {"re": (
     r"|\b(?:does|do|did)\s?n[o']t\s+(?:match|agree|correspond|reflect|"
     r"follow)\w*"
     r"|" + "".join(f"(?<!{w} )" for w in _NONE_OF) +
-    r"\b(?:disagree\w*|conflict\w*|inconsisten\w*|mismatch\w*|discrepan\w*|"
+    r"\b(?:disagree\w*|conflict\w*|contradict\w*|inconsisten\w*|"
+    r"mismatch\w*|discrepan\w*|"
     r"differ(?:s|ed|ing|ent|ence|ences)?)\b"
     r"|\b(?:carried|propagated|coordinated|updated|match(?:es|ed|ing)?|"
     r"consistent|agrees?|followed)\b" + _FLAG_HEAD + _SAYS_NO +
     r")" + _NOT_NO)}
+#: What a renumbered schedule row leaves on the plan: a tag with no row
+#: ("106 has no row in the door schedule", "106 is no longer scheduled").
+_NO_ROW = {"re": (
+    r"\bno\s+(?:longer\s+)?(?:schedule\s+|matching\s+|corresponding\s+)?"
+    r"(?:row|scheduled|(?:in|on)\s+the\s+(?:door\s+)?schedule)\b"
+    r"|\bnot\s+(?:in|on)\s+the\s+(?:door\s+)?schedule\b"
+    r"|\b(?:unscheduled|orphan\w*)\b")}
 #: What before a cloud says there is none: "not clouded", "no revision 2
 #: cloud", "without a revision cloud", "should have been clouded".
 _CLOUD_NONE = ("no", "not", "without", "without a", "without any",
@@ -1379,7 +1393,7 @@ _PLANTED_CHECKS: Dict[str, Dict[str, Any]] = {
     "door-renumbered": {
         "type": "stated_together",
         "terms": [[_sheet("A-101"), "first floor plan"], _mark("106"),
-                  _LEFT_BEHIND], "scope": "finding"},
+                  [_LEFT_BEHIND, _NO_ROW]], "scope": "finding"},
 }
 
 #: Every planted problem a check is written for.
