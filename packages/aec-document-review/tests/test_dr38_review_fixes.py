@@ -66,3 +66,19 @@ def test_a_batch_that_fits_says_nothing_more(on, gt):
         "first.png": _chart(), "second.png": _chart()})
     _turn(agent)
     assert seen[0][0] == 2 and "NOT shown" not in seen[0][1]
+
+
+def test_a_shown_upload_keeps_the_note_today_s_read_gives(on):
+    """A three-page TIFF: today's read says only its first page was sent,
+    and so does the result of a look that shows it."""
+    Image = pytest.importorskip("PIL.Image")
+    pages = [Image.new("RGB", (120, 80), c) for c in ("white", "red", "blue")]
+    buf = io.BytesIO()
+    pages[0].save(buf, format="TIFF", save_all=True, append_images=pages[1:])
+    tool = _look_tool(FakeEngine("read"), {"scan.tif": buf.getvalue()})
+    today = json.loads(tool.invoke({"attachment_key": "scan.tif"}))
+    assert "page 1 of 3" in today["image_note"]
+    shown = json.loads(_marked(lambda: tool.invoke(
+        {"attachment_key": "scan.tif"})))
+    assert inline_store.get(shown["image_id"]) is not None
+    assert shown["image_note"] == today["image_note"]

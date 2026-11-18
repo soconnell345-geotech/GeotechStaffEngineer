@@ -250,6 +250,11 @@ def show_upload(arguments: dict, engine: Any, attachments: Mapping,
            **image_view.view_payload(info, picture, engine),
            "note": UPLOAD_NOTE.format(in_view=vision_tools._in_view())}
     out.pop("zoom_hint", None)
+    if picture.note:
+        # what today's read says of the file (only the first page of a
+        # TIFF or GIF, a photo turned as its EXIF says) holds for the image
+        # shown as well
+        out["image_note"] = picture.note
     unused = [w for w, given in (
         ("tiles is", arguments.get("tiles") not in (None, "", "auto")),
         ("turn is", bool(arguments.get("turn")))) if given]
