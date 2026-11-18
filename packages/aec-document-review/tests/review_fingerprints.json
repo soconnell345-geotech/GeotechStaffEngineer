@@ -357,8 +357,8 @@
        }
       ],
       "other_arguments": [],
-      "system_prompt": "c45bc8c17d0dfb8d",
-      "system_prompt_chars": 1637,
+      "system_prompt": "ee30c3f1239298d1",
+      "system_prompt_chars": 1749,
       "tool_order": [
        "analyze_pdf_page",
        "render_region",
