@@ -93,6 +93,11 @@ def helper(monkeypatch):
     fails with ``text``."""
     pytest.importorskip("langchain.agents")
     import langchain.agents
+    # Bound before the patch: a library first imported while it stands
+    # (``from langchain.agents import create_agent`` at its top) kept the
+    # failing stand-in for the rest of the process, and every later test
+    # that built an agent failed when this file ran before them.
+    pytest.importorskip("deepagents.graph")
 
     def run(text):
         def boom(*args, **kwargs):
