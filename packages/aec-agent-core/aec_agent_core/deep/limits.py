@@ -279,9 +279,12 @@ def helper_max_model_calls() -> int:
 
 
 #: The most image calls one turn may make, its agents and helpers together
-#: (BACKLOG TA-43). Each image sent to the vision model is one call: a page
-#: read in tiles is up to 17, so a 50-sheet set read sheet by sheet is about
-#: 850, and the model-call budget does not count them. Past the ceiling a
+#: (BACKLOG TA-43). Each image sent to the vision model for a separate
+#: reading is one call: a page read in tiles is up to 17, so a 50-sheet set
+#: read sheet by sheet is about 850, and the model-call budget does not
+#: count them. Images shown inline to the agent's own model (the minimal
+#: build's inline images, show_me) are not counted and the ceiling does not
+#: apply to them: there a count of 0 means "not counted". Past the ceiling a
 #: look is refused with a tool error that says so, and the turn goes on with
 #: what it has read; the running turn shows the count against the ceiling,
 #: and a turn that met it says so under its answer. ``0``, ``off`` or unset

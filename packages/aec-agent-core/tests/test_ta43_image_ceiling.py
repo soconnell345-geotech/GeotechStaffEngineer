@@ -2,8 +2,9 @@
 
 A page look is up to 17 image calls, so a 50-sheet set read sheet by sheet
 is about 850, and the model-call budget counts none of them. Now every
-image sent to the vision model is counted on the turn and the count is on
-the turn's record. With ``GEOTECH_TURN_MAX_IMAGE_CALLS`` set, a look past
+image sent to the vision model for a separate reading is counted on the
+turn (images shown inline to the agent's own model are not) and the count
+is on the turn's record. With ``GEOTECH_TURN_MAX_IMAGE_CALLS`` set, a look past
 the ceiling is refused (the image is not sent) with a tool error that says
 so, and each look's result says its count against the ceiling. Unset (the
 default), nothing is refused and every result is what it was.
@@ -188,6 +189,73 @@ def test_a_look_cut_by_the_ceiling_says_what_was_not_read(monkeypatch):
     assert "2 more were refused at the ceiling" in out["image_calls"]
     rest = json.dumps({k: v for k, v in out.items() if k != "image_calls"})
     assert "ceiling of 3 image calls" in rest      # the parts not read say why
+    # at least one tile was refused; its note invites no look (review fix 3)
+    assert out["tiles_not_read"].endswith(
+        "NOT read: this turn's image ceiling was met")
+    assert "render_region" not in out["tiles_not_read"]
+
+
+CAPPED = "this turn's image ceiling was met"
+
+
+def test_tiles_not_read_at_the_ceiling_invite_no_look():
+    """Review fix 3: a tile refused at the ceiling is named with the reason
+    alone; reading again or zooming would be refused too."""
+    ceiling = kw.IMAGE_CEILING_ERROR.format(limit=3)
+    read = [{"tile": "r1c1", "analysis": "Door 508"},
+            {"tile": "r1c2", "analysis": "Door 509"}]
+    note = vision_tools._tiles_not_read_note
+    notes = [
+        note(read + [{"tile": "r2c1", "error": ceiling}]),
+        note(read + [{"tile": "r2c1", "error": ceiling},
+                     {"tile": "r2c2", "error": ceiling}]),
+        note([{"tile": "r1c1", "error": ceiling},
+              {"tile": "r1c2", "error": ceiling}]),
+        note(read + [{"tile": "r2c1", "error": "the vision model is busy"},
+                     {"tile": "r2c2", "error": ceiling}]),
+    ]
+    assert notes == [
+        f"tile r2c1 was NOT read: {CAPPED}",
+        f"tiles r2c1, r2c2 were NOT read: {CAPPED}",
+        f"tiles r1c1, r1c2 were NOT read: {CAPPED}",
+        f"tile r2c2 was NOT read: {CAPPED}; tile r2c1 failed: the vision "
+        f"model is busy",
+    ]
+    assert not any("render_region" in n or "again" in n for n in notes)
+
+
+def test_tiles_not_read_for_another_reason_say_what_they_said():
+    """Every other reason keeps the text it had before TA-43, byte for
+    byte (the expected strings are that code's)."""
+    why = "the vision model timed out"
+    note = vision_tools._tiles_not_read_note
+    assert note([{"tile": "r1c1", "analysis": "Door 508"},
+                 {"tile": "r2c2", "error": why}]) == (
+        "tile r2c2 failed: the vision model timed out; the rest were read. "
+        "That part of the page was NOT read in close-up: read it with "
+        "render_region(bbox=<the failed tile's view>) before relying on it")
+    assert note([{"tile": "r1c1", "error": why},
+                 {"tile": "r1c2", "error": why}]) == (
+        "NO tile was read (the vision model timed out); only the whole-page "
+        "view above was, and it was asked for the layout only: read the "
+        "page again, or zoom with render_region, before relying on its "
+        "lettering")
+    assert note([{"tile": "r1c1", "analysis": "Door 508"}]) is None
+
+
+def test_unset_a_tiled_read_returns_what_it_returned():
+    """With the setting unset a page read in tiles is the same under a turn
+    as outside one: nothing refused, no note."""
+    pdf = _sheet()
+    engine, _state = _engine()
+    tool = _page_tool(engine, pdf)
+    outside = _read(tool, tiles="2")
+    vision_tools.clear_repeat_reads()
+    with kw.turn_scope(kw.TurnScope()) as scope:
+        inside = _read(tool, tiles="2")
+    assert inside == outside
+    assert "tiles_not_read" not in inside and "ceiling" not in inside
+    assert scope.image_calls == 5
 
 
 def test_from_80_percent_each_look_warns(monkeypatch):
@@ -228,11 +296,12 @@ def test_the_tester_is_told_only_when_a_look_was_refused(monkeypatch):
     assert kw.image_ceiling_told(scope) is None
     scope.image_refused = 1
     assert kw.image_ceiling_told(scope) == (
-        "_This turn reached its ceiling of 4 image calls: 1 look after that "
-        "was not made, so the answer rests on what was read before. Ask to "
-        "continue for more._")
+        "_This turn reached its ceiling of 4 image calls: 1 image call after "
+        "that was not made, so the answer rests on what was read before. "
+        "Ask to continue for more._")
     scope.image_refused = 3
-    assert "3 looks after that were not made" in kw.image_ceiling_told(scope)
+    assert "3 image calls after that were not made" in \
+        kw.image_ceiling_told(scope)
     monkeypatch.delenv(ENV)
     assert kw.image_ceiling_told(kw.TurnScope()) is None
     assert kw.image_ceiling_told(None) is None

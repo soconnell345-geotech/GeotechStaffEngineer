@@ -4098,6 +4098,24 @@ def _photo_page(pdf_bytes, page) -> bool:
         return False
 
 
+def _at_image_ceiling(row) -> bool:
+    """Whether a tile row was not read because the turn's image ceiling was
+    met (``GEOTECH_TURN_MAX_IMAGE_CALLS``, BACKLOG TA-43): its error is the
+    ceiling's own words. Never true with the setting unset."""
+    try:
+        from aec_agent_core.deep.keep_work import IMAGE_CEILING_ERROR
+    except Exception:  # noqa: BLE001 - an older core: no ceiling
+        return False
+    return str(row.get("error", "")).startswith(
+        IMAGE_CEILING_ERROR.split("{limit}")[0])
+
+
+def _tile_names(rows) -> str:
+    """``tile r1c2`` or ``tiles r1c2, r2c2``."""
+    return (f"{'tile' if len(rows) == 1 else 'tiles'} "
+            f"{', '.join(t.get('tile', '?') for t in rows)}")
+
+
 def _tiles_not_read_note(rows) -> Optional[str]:
     """``"tile r2c3 failed: <why>; the rest were read …"`` for the tiles
     that came back with an error, or ``None`` (B7: a failed tile used to be
@@ -4105,6 +4123,17 @@ def _tiles_not_read_note(rows) -> Optional[str]:
     failed = [t for t in rows or () if isinstance(t, dict) and "error" in t]
     if not failed:
         return None
+    capped = [t for t in failed if _at_image_ceiling(t)]
+    if capped:
+        # The turn's image ceiling (TA-43) refuses any further look, so the
+        # note names what was not read and why, and invites no look.
+        note = (f"{_tile_names(capped)} "
+                f"{'was' if len(capped) == 1 else 'were'} NOT read: this "
+                f"turn's image ceiling was met")
+        other = [t for t in failed if t not in capped]
+        if other:
+            note += f"; {_tile_names(other)} failed: {other[0]['error']}"
+        return note
     names = ", ".join(t.get("tile", "?") for t in failed)
     why = failed[0]["error"]
     if len(failed) == len(rows):

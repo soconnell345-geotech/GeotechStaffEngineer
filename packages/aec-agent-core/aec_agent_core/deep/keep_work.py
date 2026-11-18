@@ -152,8 +152,8 @@ IMAGE_STATUS = "image calls this turn: {used} of {limit}"
 #: The line under the answer of a turn whose ceiling refused a look (TA-43).
 IMAGE_CEILING_TOLD = (
     "_This turn reached its ceiling of {limit} image calls: {refused} "
-    "look{s} after that {were} not made, so the answer rests on what was "
-    "read before. Ask to continue for more._")
+    "image call{s} after that {were} not made, so the answer rests on what "
+    "was read before. Ask to continue for more._")
 
 
 class ImageBudgetSpent(Exception):
@@ -214,9 +214,12 @@ class TurnScope:
         # the primary agent's model-call budget forced its last call
         # (note_budget_reached): the turn's answer is final
         self.budget_reached = False
-        # the images sent to the vision model this turn, every agent and
-        # helper together; those refused at the ceiling; the ceiling
-        # (GEOTECH_TURN_MAX_IMAGE_CALLS, 0 = none) (BACKLOG TA-43)
+        # the images sent to the vision model for a separate reading this
+        # turn (the vision engine's analyze_image), every agent and helper
+        # together; those refused at the ceiling; the ceiling
+        # (GEOTECH_TURN_MAX_IMAGE_CALLS, 0 = none) (BACKLOG TA-43). Images
+        # shown inline to the agent's own model (inline images, show_me)
+        # are not counted, and the ceiling does not apply to them.
         self.image_calls = 0
         self.image_refused = 0
         self.image_limit = _image_limit()
@@ -328,10 +331,11 @@ _LOOK: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
 
 
 def take_image_call() -> None:
-    """Called once before each image is sent to the vision model (a whole
-    page, a tile, a zoom, a candidate checked): counted on the running
-    turn, or :class:`ImageBudgetSpent` raised past the turn's ceiling.
-    Outside a turn nothing is counted."""
+    """Called once before each image is sent to the vision model for a
+    separate reading (a whole page, a tile, a zoom, a candidate checked):
+    counted on the running turn, or :class:`ImageBudgetSpent` raised past
+    the turn's ceiling. Outside a turn nothing is counted. An image shown
+    inline to the agent's own model does not come here."""
     scope = _TURN.get()
     if scope is not None:
         scope.take_image_call(_LOOK.get())
