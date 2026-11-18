@@ -350,7 +350,9 @@ def test_the_probe_is_one_line_of_json_and_restricts_nothing():
         return
     assert got["kernel"] == os.uname().release
     assert got["landlock_version"] == ABI
-    assert got["caller_restricted"] is False
+    assert got["caller_changed"] is False
+    assert got["caller_before"] == got["caller_after"]
+    assert set(got["caller_after"]) >= {"NoNewPrivs", "Seccomp"}
     assert got["available"] is bool(ABI) or got["not_available"]
     if not ABI:
         assert got["landlock_why_not"] == WHY_NOT

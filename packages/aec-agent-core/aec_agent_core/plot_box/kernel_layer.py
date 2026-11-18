@@ -566,6 +566,7 @@ def probe() -> dict:
         out.update(available=False,
                    why=f"not available on this system ({sys.platform})")
         return out
+    before = _caller_flags()
     abi, why = landlock_abi()
     out["landlock_version"] = abi
     if why:
@@ -607,26 +608,29 @@ def probe() -> dict:
         landlock_tcp="tcp" in up, landlock_scopes="scopes" in up,
         seccomp_filter="seccomp" in up, not_available=not_up,
         available="files" in up,
-        caller_restricted=_caller_restricted(),
+        # the caller's own kernel flags, read before and after: the probe
+        # must leave them as they were (a container's own seccomp filter
+        # shows here as seccomp 2 both times)
+        caller_before=before, caller_after=_caller_flags(),
         uid_is_root=(os.geteuid() == 0))
+    out["caller_changed"] = out["caller_before"] != out["caller_after"]
     return out
 
 
-def _caller_restricted() -> bool:
-    """Whether THIS process carries no-new-privileges or a seccomp filter
-    (it should not after a probe, unless its own starter put them on)."""
+def _caller_flags() -> dict:
+    """THIS process's ``NoNewPrivs``, ``Seccomp`` and ``Seccomp_filters``
+    lines of ``/proc/self/status`` (empty when it cannot be read)."""
+    flags = {}
     try:
         with open("/proc/self/status", encoding="ascii",
                   errors="replace") as fh:
-            text = fh.read()
+            for line in fh:
+                key, _, value = line.partition(":")
+                if key in ("NoNewPrivs", "Seccomp", "Seccomp_filters"):
+                    flags[key] = value.strip()
     except OSError:
-        return False
-    flags = {}
-    for line in text.splitlines():
-        key, _, value = line.partition(":")
-        flags[key] = value.strip()
-    return flags.get("NoNewPrivs", "0") != "0" or \
-        flags.get("Seccomp", "0") != "0"
+        pass
+    return flags
 
 
 __all__ = ["ENV", "REQUIRE", "REFUSED", "LIBRARIES", "mode", "landlock_abi",

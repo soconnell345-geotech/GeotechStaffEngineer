@@ -11,9 +11,12 @@ rules and a seccomp filter can be put up.
 
 It changes nothing. The Landlock version is a number the kernel is asked
 for. The restrictions are tried in a forked child that does nothing else
-and exits; the process that ran the command is not restricted
-(``caller_restricted`` says so), and no file is read or written but an empty
-temporary folder that is removed again.
+and exits; the process that ran the command is not restricted (its own kernel
+flags are read before and after, ``caller_before`` and ``caller_after``, and
+``caller_changed`` is false), and no file is read or written but an empty
+temporary folder that is removed again. ``uid_is_root`` is there because a
+box run as root keeps root's other powers, which this layer does not take
+away.
 
 ``--paths`` prints instead, one JSON line each, the paths the file layer
 would allow for this interpreter with a stand-in conversation folder (the
