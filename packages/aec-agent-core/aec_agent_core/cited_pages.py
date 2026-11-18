@@ -1772,6 +1772,12 @@ def _statement(masked: str, c: Cited) -> str:
     return masked[lo:hi]
 
 
+#: A number in a statement whose page citations are blanked: a value.
+_VALUE = re.compile(r"\d")
+#: A word that says something (four letters or more).
+_CONTENT = re.compile(r"[A-Za-z]{4}")
+
+
 def _unread_cue(masked: str, c: Cited, cites: Sequence[Cited]
                 ) -> Optional["re.Match"]:
     """A cue in the citation's statement that the answer names its page as
@@ -1785,12 +1791,28 @@ def _unread_cue(masked: str, c: Cited, cites: Sequence[Cited]
     for m in _UNREAD.finditer(masked, lo, hi):
         if m.start() < _grp(c):
             between = (lo, m.start())
+            # A value given after the page is what the page is cited for
+            # ("The contractor did not read the notes: page 34 gives a
+            # ratio of 0.6"); and with another page between the cue and
+            # this one, the cue is said of this one too only in a bare
+            # list ("Not read: PDF page 6, PDF page 9"; not "I did not
+            # open page 9, and page 34 shows the mix").
+            tail = masked[end:hi]
+            if _VALUE.search(tail) or (_CONTENT.search(tail) and any(
+                    _grp(d) != _grp(c) and m.end() <= _grp(d) < _grp(c)
+                    for d in cites)):
+                continue
         else:
             between = (end, m.start())
+            # a value between the page and the cue is what the page is
+            # cited for ("Page 34 says the test was not read at 28 days")
+            if _VALUE.search(masked[end:m.start()]):
+                continue
         if not any(_grp(d) != _grp(c)
                    and between[0] <= _grp(d) < between[1] for d in cites):
             return m
-    return _UNREAD_AFTER.match(masked, end)
+    m = _UNREAD_AFTER.match(masked, end)
+    return None if m and _VALUE.search(m.group(0)) else m
 
 
 #: Short words that turn a title into a finding ("has no drainage details"):

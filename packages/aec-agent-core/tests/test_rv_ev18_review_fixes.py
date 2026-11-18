@@ -154,3 +154,43 @@ def test_a_layout_list_is_still_what_the_page_map_said(tmp_path):
                  "- PDF page 20: slope stability analysis results\n")
     assert _cited(res, "page_map") == ["PDF page 4", "PDF page 20"]
     assert "never_opened" not in res
+
+
+# ---------------------------------------------------------------------------
+# 3. Words that say a page was not opened, said of something else
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text, cited", [
+    # the cue belongs to the page before it
+    ("I did not open page 9, and page 34 shows a water-cement ratio of "
+     "0.6.", "page 34"),
+    ("Pages 34 and 47 (47 not opened) give ratios of 0.6 and 0.5.",
+     "page 34"),
+    # the cue is about something that is not the page
+    ("The contractor did not read the notes: page 34 gives a ratio of 0.6.",
+     "page 34"),
+    ("Page 34 gives 30 MPa for a test that was not read at 28 days.",
+     "page 34"),
+    ("Page 34 gives a ratio of 0.6, which I can read as over the limit.",
+     "page 34"),
+    ("Page 34 (ratio 0.6) was not checked by the contractor.", "page 34"),
+    ("If you want, I can also check the wall: page 15 shows a 300 mm stem.",
+     "page 15"),
+])
+def test_a_cue_said_of_something_else_does_not_excuse_a_page(tmp_path, text,
+                                                             cited):
+    res = _check(tmp_path, text)
+    assert cited in _cited(res, "never_opened")
+    assert cited not in _cited(res, "named_unread")
+
+
+@pytest.mark.parametrize("text, cited", [
+    ("PDF pages 34 and 47 were not viewed.", ["PDF page 34", "PDF page 47"]),
+    ("Not read: PDF page 34, PDF page 47", ["PDF page 34", "PDF page 47"]),
+    ("I did not open page 34 because the turn ended.", ["page 34"]),
+    ("PDF page 34 (the mix submittal) was not needed.", ["PDF page 34"]),
+])
+def test_a_page_named_as_unread_is_still_filed_apart(tmp_path, text, cited):
+    res = _check(tmp_path, text)
+    assert _cited(res, "named_unread") == cited
+    assert "never_opened" not in res
