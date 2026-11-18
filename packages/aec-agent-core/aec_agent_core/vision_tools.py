@@ -3840,8 +3840,10 @@ def _tiled_page_points(raw, info, tile_rows) -> list:
     ``found`` merges by (:data:`MERGE_FRAC` of the page, at least
     :data:`vision_view.MIN_LOCATION_ERROR_PT`), whose names carry no
     different codes, and never two boxes of one look (it named them
-    apart). A row's box is its tiles' boxes joined (a thing a seam cuts is
-    seen in part in each; the tiles are the closer look), or the
+    apart); a box joins the nearest such row (centre to centre), so two
+    like things seen in two tiles stay apart whatever order each tile
+    lists them in. A row's box is its tiles' boxes joined (a thing a seam
+    cuts is seen in part in each; the tiles are the closer look), or the
     whole-page box where no tile gave one. Unlike ``found`` no box is left
     out for its size: a title block asked for is listed. Rows go top to
     bottom, then left to right; the list is whole (the caller caps it)."""
@@ -3865,14 +3867,18 @@ def _tiled_page_points(raw, info, tile_rows) -> list:
         return (min(b[0] for b in boxes), min(b[1] for b in boxes),
                 max(b[2] for b in boxes), max(b[3] for b in boxes))
 
+    def gap(a, b):                      # between centres, doubled
+        return abs(a[0] + a[2] - b[0] - b[2]) + abs(a[1] + a[3] - b[1] - b[3])
+
     groups: List[Dict[str, Any]] = []
     for src, entries in looks:
         for label, box, _seen in entries:
             codes = _codes(label)
-            group = next((g for g in groups
-                          if src not in g["seen_in"] and near(g["box"], box)
-                          and (not codes or not g["codes"]
-                               or codes & g["codes"])), None)
+            group = min((g for g in groups
+                         if src not in g["seen_in"] and near(g["box"], box)
+                         and (not codes or not g["codes"]
+                              or codes & g["codes"])),
+                        key=lambda g: gap(g["box"], box), default=None)
             if group is None:
                 group = {"seen_in": [], "codes": set(), "page": [],
                          "tiles": []}

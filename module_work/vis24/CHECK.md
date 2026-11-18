@@ -140,9 +140,14 @@ All in `packages/aec-agent-core/aec_agent_core/`.
   thing when they are within the reach `found` merges by (2 % of the page,
   at least `vision_view.MIN_LOCATION_ERROR_PT`) and their names carry no
   different codes, the rule `found` uses. Two boxes from one look are never
-  joined: that look named them apart. A row's box is its tiles' boxes
-  joined, or the overview's box where no tile gave one: the tiles are the
-  closer look, and a thing a seam cuts (a title block down the sheet's
+  joined: that look named them apart. A box joins the NEAREST such row,
+  centre to centre, not the first: two like squares 12 pt apart in a
+  tiles' overlap, listed in opposite order by the two tiles, used to
+  become the union of the two in both rows
+  (`test_on_a_tiled_read_a_box_joins_the_nearest_thing`). A row's box is
+  its tiles' boxes joined, or the overview's box where no tile gave one:
+  the tiles are the closer look, and a thing a seam cuts (a title block
+  down the sheet's
   edge) is seen in part in each tile. `found` keeps the smallest view's
   box instead, which for a cut thing is one part. `page_points_cut`
   counts the whole list, not `found`'s capped one.

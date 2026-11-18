@@ -122,18 +122,19 @@ def _zoom(engine, prompt, **args):
     return raw
 
 
-def _page(engine, prompt, tiles="off", rect=SQUARE):
+def _page(engine, prompt, tiles="off", rect=SQUARE, pdf=None):
     raw = dispatch_extended_tool(
         "analyze_pdf_page",
         {"attachment_key": "made_up.pdf", "page": 0, "prompt": prompt,
          "tiles": tiles},
-        engine=engine, attachments={"made_up.pdf": _sheet_pdf(rect)})
+        engine=engine,
+        attachments={"made_up.pdf": pdf or _sheet_pdf(rect)})
     vision_tools.clear_repeat_reads()
     return raw
 
 
-def _tiled(engine, prompt, rect=SQUARE):
-    return _page(engine, prompt, tiles="2", rect=rect)
+def _tiled(engine, prompt, rect=SQUARE, pdf=None):
+    return _page(engine, prompt, tiles="2", rect=rect, pdf=pdf)
 
 
 def _image(engine, prompt):
@@ -499,6 +500,49 @@ def test_on_a_tiled_read_one_thing_in_four_tiles_is_one_row(monkeypatch):
     (row,) = out["page_points"]
     assert row["seen_in"] == ["page", "r1c1", "r1c2", "r2c1", "r2c2"]
     assert _near(row["page_bbox"], SEAM), row
+
+
+#: Two like squares 12 pt apart where tiles r1c1 and r1c2 overlap.
+RED, BLUE = (580.0, 100.0, 590.0, 110.0), (602.0, 100.0, 612.0, 110.0)
+
+
+class Pair:
+    """Finds the red and the blue square in the image it is sent and names
+    each "Square", red first, except in tile r1c2, which lists blue
+    first."""
+
+    def analyze_image(self, image, prompt=""):
+        from PIL import ImageChops
+        m = TILE.search(prompt)
+        who = f"r{m.group(1)}c{m.group(2)}" if m else "whole"
+        r, _g, b = Image.open(io.BytesIO(image)).convert("RGB").split()
+
+        def where(high, low):
+            return ImageChops.multiply(
+                high.point(lambda v: 255 if v > 200 else 0),
+                low.point(lambda v: 255 if v < 100 else 0)).getbbox()
+        found = [where(r, b), where(b, r)]
+        if who == "r1c2":
+            found.reverse()
+        return "\n".join("Square px=[{}, {}, {}, {}]".format(*box)
+                         for box in found if box) or "No square here."
+
+
+def test_on_a_tiled_read_a_box_joins_the_nearest_thing(monkeypatch):
+    """Two like squares seen in two tiles that list them in opposite order
+    stay two rows, each at its own place: a box joins the nearest row."""
+    d = pymupdf.open()
+    page = d.new_page(width=1224, height=792)
+    for rect, colour in ((RED, (1, 0, 0)), (BLUE, (0, 0, 1))):
+        page.draw_rect(pymupdf.Rect(*rect), color=colour, fill=colour)
+    pdf = d.tobytes()
+    d.close()
+    monkeypatch.setenv(ENV, "1")
+    out = json.loads(_tiled(Pair(), ASK_POINTS, pdf=pdf))
+    red, blue = out["page_points"]
+    assert _near(red["page_bbox"], RED), red
+    assert _near(blue["page_bbox"], BLUE), blue
+    assert red["seen_in"] == blue["seen_in"] == ["page", "r1c1", "r1c2"]
 
 
 def test_on_a_tiled_read_the_cut_counts_the_whole_list(monkeypatch):
