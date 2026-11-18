@@ -1466,11 +1466,15 @@ def make_vision_tools(
                      ("at", at), ("to", to), ("scale", scale or None)):
             if v is not None:
                 args[k] = v
-        return _truncate(
-            run_measure(args, attachments, engine,
-                        max_chars=_document_tools.budget_for_cap(reference_cap),
-                        cap=reference_cap or None),
-            reference_cap)
+        # Under this build's host, as every other document call is: what
+        # planlens opens for a look (a DXF's plot, behind
+        # GEOTECH_REVIEW_DXF_PLOTS) it then opens for the measure too.
+        with _document_tools._review.using(review_host):
+            raw = run_measure(
+                args, attachments, engine,
+                max_chars=_document_tools.budget_for_cap(reference_cap),
+                cap=reference_cap or None)
+        return _truncate(raw, reference_cap)
 
     def log_grid(handle: str, pages: Any = None, rows: bool = True,
                  offset: int = 0, pdf_pages: Any = None,
@@ -1487,11 +1491,12 @@ def make_vision_tools(
             args["pdf_pages"] = pdf_pages
         if row_detail not in (None, ""):
             args["row_detail"] = row_detail
-        return _truncate(
-            run_log_grid(args, attachments, engine,
-                         max_chars=_document_tools.budget_for_cap(reference_cap),
-                         cap=reference_cap or None),
-            reference_cap)
+        with _document_tools._review.using(review_host):   # as measure
+            raw = run_log_grid(
+                args, attachments, engine,
+                max_chars=_document_tools.budget_for_cap(reference_cap),
+                cap=reference_cap or None)
+        return _truncate(raw, reference_cap)
 
     def save_file(path: str, content: str, encoding: str = "text") -> str:
         """Save raw text or data to a file. Returns the saved file path. For
