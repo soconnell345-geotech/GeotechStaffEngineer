@@ -14,6 +14,12 @@ The layers, in the order they go up:
    process.
 2. OS LIMITS on this process: memory, CPU time, file size, open files, no
    child processes (``resource`` on Linux; a job object on Windows).
+   Where the host asks for it (``GEOTECH_PLOT_CODE_KERNEL_LAYER``, off
+   unless set; BACKLOG INF-16), a KERNEL LAYER goes up just before these,
+   as the first thing this process does with its payload: no new
+   privileges, Landlock file and TCP rules and a seccomp filter
+   (``kernel_layer.py``, loaded from its file beside this one). It is the
+   one layer the code cannot reach from inside the interpreter.
 3. The libraries the code names are imported and drawn with once, so their
    lazy loading is done before the guard.
 4. An AUDIT HOOK (:pep:`578`), which cannot be removed once added and sees
@@ -907,6 +913,32 @@ def _format_error(exc: BaseException) -> str:
     return text[-3000:]
 
 
+def _kernel_layer(payload: dict, root: str):
+    """The kernel layer (BACKLOG INF-16), when the page asked for it:
+    ``kernel_layer.py`` beside this file, loaded from its path, puts it on
+    THIS process and its report is returned. ``None`` when the payload does
+    not ask (the default): the file is then not loaded and no system call
+    is made. Called before any library is imported, so before anything can
+    have started a thread, and long before the audit hook, which refuses
+    ``ctypes``."""
+    asked = payload.get("kernel_layer")
+    if not asked:
+        return None
+    try:
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "kernel_layer.py")
+        fspec = importlib.util.spec_from_file_location("_box_kernel_layer",
+                                                       path)
+        mod = importlib.util.module_from_spec(fspec)
+        fspec.loader.exec_module(mod)
+        return mod.put_up(str(asked), root, payload.get("tmp") or "",
+                          files=[payload.get("chart_lines_path") or ""])
+    except BaseException as exc:                           # noqa: BLE001
+        return {"asked": str(asked), "files": False, "up": [],
+                "not_up": {"all": f"{type(exc).__name__}: {exc}"}}
+
+
 def main() -> int:
     raw = sys.stdin.buffer.read()
     payload = json.loads(raw.decode("utf-8"))
@@ -936,6 +968,19 @@ def main() -> int:
 
     root = os.path.realpath(payload["root"])
     os.chdir(root)
+    layer = _kernel_layer(payload, root)
+    if layer is not None:
+        result["kernel_layer"] = layer
+        if layer.get("asked") == "require" and not layer.get("files"):
+            why = "; ".join(f"{k}: {v}" for k, v in
+                            (layer.get("not_up") or {}).items()
+                            if k in ("files", "all")) or "no reason given"
+            result["error"] = (
+                "The code was not run: this host requires the plotting "
+                "box's kernel layer and its file rules could not be put up "
+                f"({why}).")
+            report(result)
+            return 0
     limits = payload.get("limits") or {}
     memory_mb = int(limits.get("memory_mb", 2048))
     applied = {}
