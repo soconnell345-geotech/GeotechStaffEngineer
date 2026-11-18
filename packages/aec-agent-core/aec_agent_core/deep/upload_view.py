@@ -48,7 +48,8 @@ import json
 import os
 from typing import Any, Mapping, Optional, Tuple
 
-from aec_agent_core.deep.inline_images import InlineImageMiddleware
+from aec_agent_core.deep.inline_images import (
+    InlineImageMiddleware, _ID, _text, newest_image_ids)
 
 #: The looking tool whose uploaded images are shown.
 TOOL = "analyze_image"
@@ -78,6 +79,36 @@ TOO_LARGE_NOTE = (
     "{mb:.1f} MB, over the {cap_mb:.0f} MB an image shown to you may be (a "
     "request has a size limit on some gateways), so a vision call read it "
     "as before")
+
+
+#: Added to the image message when one step looked at more uploads than a
+#: model call carries (``GEOTECH_VISION_INLINE_KEEP``): each result said
+#: its image would be shown, and the oldest were not.
+NOT_SHOWN_NOTE = (
+    "[NOT shown to you: {names}. Only the newest {keep} image{s} can be "
+    "shown at one step, so {this} never in front of you: say nothing about "
+    "{it} from sight. To see {it}, call analyze_image on {it} again, at "
+    "most {keep} image{s} in one step.]")
+
+
+def left_out(messages, shown) -> list:
+    """The names of the uploads the newest step's ``analyze_image`` results
+    stored (the tool results that end ``messages``) whose images are not
+    among ``shown``, the ids this model call carries; oldest first."""
+    from langchain_core.messages import ToolMessage
+    from aec_agent_core import inline_store
+    names: list = []
+    for m in reversed(list(messages or [])):
+        if not isinstance(m, ToolMessage):
+            break
+        for image_id in reversed(_ID.findall(_text(m.content))):
+            got = inline_store.get(image_id)
+            if got is None or image_id in shown or not got[1].get("upload"):
+                continue
+            name = os.path.basename(str(got[1].get("source") or image_id))
+            if name not in names:
+                names.append(name)
+    return list(reversed(names))
 
 
 def active() -> bool:
@@ -119,6 +150,26 @@ class UploadImageMiddleware(InlineImageMiddleware):
     def _is_look(request) -> bool:
         call = getattr(request, "tool_call", None)
         return isinstance(call, dict) and call.get("name") == TOOL
+
+    def _with_images(self, request):
+        """The request with the newest images, and, straight after a step
+        that looked at more uploads than a call carries, a line naming the
+        ones not shown (their results said they would be)."""
+        out = super()._with_images(request)
+        shown = newest_image_ids(request.messages, self.keep)
+        names = left_out(request.messages, shown) if shown else []
+        if not names:
+            return out
+        from langchain_core.messages import HumanMessage
+        one = len(names) == 1
+        note = NOT_SHOWN_NOTE.format(
+            names=", ".join(names), keep=self.keep,
+            s="" if self.keep == 1 else "s",
+            this="it was" if one else "they were",
+            it="it" if one else "them")
+        *before, last = out.messages
+        return out.override(messages=[*before, HumanMessage(
+            content=[*last.content, {"type": "text", "text": note}])])
 
     def wrap_tool_call(self, request, handler):
         if not self._is_look(request):
@@ -194,7 +245,7 @@ def show_upload(arguments: dict, engine: Any, attachments: Mapping,
     name = os.path.basename(str(key))
     image_id = inline_store.put(shown, {
         "label": f"the uploaded image {name}, view {clip} in its own pixels",
-        "view": clip, "source": str(key)})
+        "view": clip, "source": str(key), "upload": True})
     out = {"image_id": image_id, "source": str(key),
            **image_view.view_payload(info, picture, engine),
            "note": UPLOAD_NOTE.format(in_view=vision_tools._in_view())}
@@ -207,5 +258,6 @@ def show_upload(arguments: dict, engine: Any, attachments: Mapping,
     return json.dumps(out)
 
 
-__all__ = ["TOOL", "UPLOAD_NOTE", "UNUSED_NOTE", "TOO_LARGE_NOTE", "active",
+__all__ = ["TOOL", "UPLOAD_NOTE", "UNUSED_NOTE", "TOO_LARGE_NOTE",
+           "NOT_SHOWN_NOTE", "left_out", "active",
            "takes_images", "UploadImageMiddleware", "show_upload"]
