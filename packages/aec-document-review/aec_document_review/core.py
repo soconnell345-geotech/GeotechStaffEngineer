@@ -1911,10 +1911,20 @@ def apply_default_output_dir(path: Optional[str]) -> None:
 
 def _unique_dest(path: str) -> str:
     """A destination path that does not overwrite a DIFFERENT existing file:
-    return ``path`` if free, else append ``_1``/``_2``/… to the stem."""
+    return ``path`` if free, else append ``_1``/``_2``/… to the stem.
+
+    A figure's interactive sidecar keeps its two-part suffix
+    (``plot.plotly.json`` becomes ``plot_1.plotly.json``, not
+    ``plot.plotly_1.json``), so it still reads as a figure and still pairs
+    with its picture ``plot_1.png`` (BACKLOG TA-10: the other form showed as
+    a plain file card)."""
     if not os.path.exists(path):
         return path
-    stem, ext = os.path.splitext(path)
+    if path.lower().endswith(PLOTLY_SIDECAR_SUFFIX):
+        cut = len(path) - len(PLOTLY_SIDECAR_SUFFIX)
+        stem, ext = path[:cut], path[cut:]
+    else:
+        stem, ext = os.path.splitext(path)
     n = 1
     while os.path.exists(f"{stem}_{n}{ext}"):
         n += 1
