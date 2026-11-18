@@ -2573,7 +2573,10 @@ def _dispatch_analyze_image(arguments, engine, attachments):
         image_data, src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
-    _note_image_read(key, image_data, src)
+    if not arguments.get("_image_read_noted"):
+        # once per tool call: an upload that could not be shown comes
+        # back through here for today's read (upload_view._today)
+        _note_image_read(key, image_data, src)
 
     # An upload shown to the page's main model itself, where its build asks
     # for that (GEOTECH_VISION_SHOW_UPLOADS, BACKLOG DR-38).

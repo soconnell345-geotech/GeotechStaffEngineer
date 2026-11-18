@@ -196,8 +196,10 @@ def _today(arguments, engine, attachments, note: Optional[str] = None) -> str:
     from aec_agent_core import vision_tools
     token = _ON.set(False)
     try:
-        raw = vision_tools._dispatch_analyze_image(arguments, engine,
-                                                   attachments)
+        # the call that came here already wrote this read to the run
+        # record (``image_read``): the second pass does not write it again
+        raw = vision_tools._dispatch_analyze_image(
+            {**arguments, "_image_read_noted": True}, engine, attachments)
     finally:
         _ON.reset(token)
     if not note:
