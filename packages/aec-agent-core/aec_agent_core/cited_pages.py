@@ -2201,9 +2201,17 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
         chapter = (c.kind == "page" and (c.singular or c.printed)
                    and re.match(r"\d{1,4}-\d", t[c.start:c.start + 10])
                    is not None)
+        # "p. 12-16" is one printed chapter page where the documents are
+        # not plainly numbered - unless no page prints "12-16" and pages
+        # print "12" and "16": then it is the run it reads as (one stray
+        # "A-1" in a footer does not make a report chapter-numbered).
+        chapter_only = bool(
+            chapter and numbering() != "plain"
+            and (printed_units([c.label]) or len(printed_units(
+                [str(c.numbers[0]), str(c.numbers[-1])])) < 2))
         if c.kind in ("page", "label") and (labels() is not None
                                             or cur_refs):
-            if chapter and numbering() != "plain":
+            if chapter_only:
                 # "p. 1-3" in documents numbered by chapter, or whose
                 # printed numbers are not known: one printed page, never
                 # a run of pages.
@@ -2220,7 +2228,7 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
         row: Dict[str, Any] = {"cited": c.shown}
         printed_found = any(how == "printed" for how, _u in readings)
         if c.kind != "pdf" and labels() is not None and not printed_found \
-                and (c.printed or (chapter and numbering() != "plain")):
+                and (c.printed or chapter_only):
             # Said to be a printed number, or "p. 1-3" in documents numbered
             # by chapter or whose printed numbers are not known, and no page
             # of the documents read is known to print it: it cannot be

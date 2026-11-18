@@ -224,3 +224,28 @@ def test_a_printed_number_beside_its_own_pdf_page_is_still_one_place(
                  labels=labels)
     assert _cited(res, "never_opened") == ["PDF page 13"]
     assert "unverified" not in res
+
+
+# ---------------------------------------------------------------------------
+# 5. "p. 12-16" in a plainly numbered report with one chapter-style label
+# ---------------------------------------------------------------------------
+
+def test_one_stray_label_does_not_make_a_run_unverifiable(tmp_path):
+    # every page prints its plain number but one appendix page ("A-1")
+    labels = dict(PLAIN)
+    labels[58] = {"a-1"}
+    res = _check(tmp_path, "The mix is on p. 12-16.", labels=labels)
+    assert _cited(res, "never_opened") == ["pages 12-16"]
+    assert "unverified" not in res
+    res = _check(tmp_path, "| Finding | Page |\n|---|---|\n"
+                 "| Ratio 0.6 | 12-16 |", labels=labels)
+    assert _cited(res, "never_opened") == ["pages 12-16"]
+
+
+def test_a_chapter_page_no_page_prints_is_still_unverified(tmp_path):
+    # numbered by chapter throughout: "1-3" is one printed page
+    labels = {p: {f"{p // 10 + 1}-{p % 10 + 1}"} for p in range(60)}
+    res = _check(tmp_path, "The mix is on p. 9-3.", labels=labels)
+    assert _cited(res, "unverified") == ["pages 9-3"] or \
+        _cited(res, "unverified") == ["page 9-3"]
+    assert "never_opened" not in res
