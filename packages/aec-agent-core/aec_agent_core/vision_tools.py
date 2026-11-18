@@ -4139,11 +4139,16 @@ class _Failed:
 def _vision_error(exc) -> str:
     """Why a vision call gave no reading, in plain words (a busy model is
     said to be busy, not dumped as the SDK's error text)."""
+    # Masked where it is made: this text also lands one level down in a
+    # result (a tile's ``error``, ``tiles_not_read``, ``overview_not_read``),
+    # where neither the guard on a tool's error result nor the run record
+    # masks it by its key.
+    from aec_agent_core.error_text import masked_error_text
     from aec_agent_core.deep.vision_engine import describe_error
     try:
-        return describe_error(exc)
+        return masked_error_text(describe_error(exc))
     except Exception:  # noqa: BLE001
-        return f"{type(exc).__name__}: {exc}"
+        return masked_error_text(f"{type(exc).__name__}: {exc}")
 
 
 def _run_together(jobs):
