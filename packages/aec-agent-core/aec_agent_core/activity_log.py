@@ -231,14 +231,14 @@ APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
                         "pacer_wait", "cited_pages", "cited_documents",
                         "judgment_check", "side_call_timeout",
                         "side_call_late_end", "engine_retry",
-                        "vision_slot_timeout"})
+                        "vision_slot_timeout", "image_read"})
 
 #: App events written from inside one model call, under that call's run id.
 MODEL_CALL_EVENTS = frozenset({"engine_retry"})
 
 #: App events of a vision look: written with the tool call they ran in.
 LOOK_EVENTS = frozenset({"side_call_timeout", "side_call_late_end",
-                         "vision_slot_timeout"})
+                         "vision_slot_timeout", "image_read"})
 
 PRIMARY = "primary"
 
@@ -737,6 +737,30 @@ def _tool_names(response: Any) -> list:
         return []
 
 
+#: At most this many tool calls asked for and never started go on a
+#: ``turn_end`` (``calls_not_started``; BACKLOG EV-20).
+MAX_CALLS_NOT_STARTED = 20
+
+
+def _asked_calls(response: Any) -> list:
+    """``[(id, name, args)]`` of the tool calls a model call asked for that
+    carry an id (``[]`` where they cannot be read)."""
+    try:
+        out: list = []
+        for row in getattr(response, "generations", None) or []:
+            for g in row or []:
+                msg = getattr(g, "message", None)
+                for call in getattr(msg, "tool_calls", None) or []:
+                    get = (call.get if isinstance(call, dict)
+                           else lambda k, c=call: getattr(c, k, None))
+                    if get("id"):
+                        out.append((str(get("id")), str(get("name")),
+                                    get("args")))
+        return out
+    except Exception:                                  # noqa: BLE001
+        return []
+
+
 def _tool_messages(obj: Any) -> list:
     """The tool messages in a graph node's output (a ToolMessage, a
     ``{"messages": [...]}`` update, a Command, or a list of them)."""
@@ -888,6 +912,7 @@ class ActivityLogger(BaseCallbackHandler):
         self._starts: dict = {}           # run_id -> start time
         self._sources: dict = {}          # model run_id -> lc_source
         self._call_ids: dict = {}         # tool run_id -> tool_call_id
+        self._asked: dict = {}            # tool_call_id asked, not started
         self._outputs: dict = {}          # tool_call_id -> the tool's output
         self._vision: dict = {}           # tool run_id -> [calls, queued_s]
         self._lock_wait: dict = {}        # tool run_id -> document lock wait
@@ -1124,6 +1149,17 @@ class ActivityLogger(BaseCallbackHandler):
                "error": error}
         if error_detail:
             rec["error_detail"] = str(error_detail)[:DEFAULT_MAX_CHARS]
+        with self._lock:
+            asked = list(self._asked.values())
+        if asked:
+            # Tool calls a model asked for that no tool started: the call
+            # a step cap, an error or a stop cut off, or one answered
+            # without running (EV-20, wave w8: the cut-off last call was
+            # only in messages.json).
+            rec["calls_not_started"] = [
+                {"agent": a, "name": n, "args": _json_safe(x)}
+                for a, n, x in asked[:MAX_CALLS_NOT_STARTED]]
+            rec["n_calls_not_started"] = len(asked)
         try:
             rec.update(self._turn_facts())
         except Exception as exc:                       # noqa: BLE001
@@ -1246,6 +1282,8 @@ class ActivityLogger(BaseCallbackHandler):
             self._note(rid, parent_run_id)
             if kwargs.get("tool_call_id"):
                 self._call_ids[rid] = str(kwargs["tool_call_id"])
+                with self._lock:
+                    self._asked.pop(str(kwargs["tool_call_id"]), None)
             args = inputs if inputs is not None else input_str
             rec = {"agent": self._agent_of(parent_run_id), "event": "tool_start",
                    "name": name, "run_id": rid,
@@ -1449,6 +1487,9 @@ class ActivityLogger(BaseCallbackHandler):
                       "tool_names": _tool_names(response),
                       "duration_s": (round(self._clock() - t_start, 3)
                                      if t_start is not None else None)}
+            with self._lock:
+                for cid, name, args in _asked_calls(response):
+                    self._asked[cid] = (record["agent"], name, args)
             source = self._sources.pop(rid, None)
             if source:
                 record["source"] = source

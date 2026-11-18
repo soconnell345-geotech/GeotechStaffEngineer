@@ -2492,6 +2492,36 @@ def _open_image(data, name, tools=None):
             f"image but could not be read: {exc}")})
 
 
+#: The run record's event for the image an ``analyze_image`` call read
+#: (``activity_log.APP_EVENTS``; BACKLOG EV-20).
+IMAGE_READ_EVENT = "image_read"
+
+
+def _note_image_read(key, data, src) -> None:
+    """Write which version of an image an ``analyze_image`` call read to the
+    run record (BACKLOG EV-20, wave w9: a look that followed a failed
+    redraw would read the previous file with no sign of it, and the record
+    could not tie a look to the card the user was shown). The event names
+    the image as asked, where it came from (``path`` or ``attachment``),
+    its size and the fingerprint of its bytes (the ``sha`` the turn's
+    ``turn_files`` record gives each card's file, so a look and a card can
+    be matched), and a file's modification time. A record only: the tool
+    result is unchanged. Never raises; outside a run nothing is written."""
+    try:
+        from aec_agent_core.activity_log import fingerprint
+        data = bytes(data)
+        facts = {"image": os.path.basename(str(key)), "source": src,
+                 "bytes": len(data), "sha": fingerprint(data)}
+        if src == "path":
+            path = find_readable_file(_handle_source(key) or key)
+            if path:
+                facts["mtime"] = round(os.stat(path).st_mtime, 3)
+        from langchain_core.callbacks.manager import dispatch_custom_event
+        dispatch_custom_event(IMAGE_READ_EVENT, facts)
+    except Exception:  # noqa: BLE001 - the record never fails a look
+        pass
+
+
 def _dispatch_analyze_image(arguments, engine, attachments):
     """Handle analyze_image tool call (VIS-09: the image's own pixels are
     the frame, and an image too large for one look is also read in tiles).
@@ -2521,6 +2551,7 @@ def _dispatch_analyze_image(arguments, engine, attachments):
         image_data, src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
+    _note_image_read(key, image_data, src)
 
     # An image FILE in the working folder (a contact sheet); an upload too
     # where the call asked to be shown it (show_me, BACKLOG DR-38).
