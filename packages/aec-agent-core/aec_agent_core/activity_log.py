@@ -903,6 +903,9 @@ class ActivityLogger(BaseCallbackHandler):
         self.step_cap: Optional[int] = None
         self.step_allowance: Optional[int] = None
         self._usage_sum = dict.fromkeys(TURN_USAGE_KEYS, 0)
+        # the turn's scope, seen at its model calls: its image calls go on
+        # turn_end (BACKLOG TA-43), which is written after the scope closed
+        self._turn_scope = None
         self._calls_metered = 0
         self._calls_unmetered = 0
         self._lock = threading.Lock()
@@ -1123,12 +1126,28 @@ class ActivityLogger(BaseCallbackHandler):
             rec.update(self._turn_facts())
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
+        try:
+            from aec_agent_core.deep.keep_work import image_call_facts
+            rec.update(image_call_facts(self._turn_scope))
+        except Exception:                              # noqa: BLE001
+            pass
         written = self.records_written
         self._write(rec)
         if "tools_offered" in rec and self.records_written > written:
             with _FILE_LOCKS_GUARD:
                 _TOOLS_NOTED[_log_key(self.conv_dir)] = \
                     rec.get("tools_offered_sha")
+
+    def _see_turn_scope(self) -> None:
+        """Keep the running turn's scope, when a model call runs in one
+        (:mod:`aec_agent_core.deep.keep_work`)."""
+        try:
+            from aec_agent_core.deep.keep_work import current_turn
+            scope = current_turn()
+        except Exception:                              # noqa: BLE001
+            return
+        if scope is not None:
+            self._turn_scope = scope
 
     def _add_usage(self, usage: Optional[dict]) -> None:
         with self._lock:
@@ -1315,6 +1334,7 @@ class ActivityLogger(BaseCallbackHandler):
             rid = str(run_id)
             self._starts[rid] = self._clock()
             self._note(rid, parent_run_id)
+            self._see_turn_scope()
             n_msgs = sum(len(m) for m in (messages or []))
             model = None
             try:

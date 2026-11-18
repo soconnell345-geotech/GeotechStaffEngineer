@@ -595,6 +595,12 @@ def describe_error(exc) -> str:
     result (and so the user) is told instead of an SDK's raw error text."""
     if isinstance(exc, VisionCallTimeout):
         return str(exc)
+    try:
+        from aec_agent_core.deep.keep_work import ImageBudgetSpent
+        if isinstance(exc, ImageBudgetSpent):      # TA-43: its own words
+            return str(exc)
+    except Exception:  # noqa: BLE001
+        pass
     stop = _budget_spent(exc)
     if stop is not None:
         from aec_agent_core.error_text import BUDGET_HINT, budget_tool_note
@@ -994,6 +1000,11 @@ class LangChainVisionEngine:
                 f"image_input must be bytes or file path, got {type(image_input)}"
             )
 
+        # One image call on the turn's count, before the slot and the asks:
+        # past the turn's ceiling the image is not sent (BACKLOG TA-43). A
+        # retry of this image (busy, timeout, a refused detail) is not
+        # counted again.
+        _take_image_call()
         media_type = self._media_type or vision_view.image_media_type(data)
         data_uri = f"data:{media_type};base64,{base64.b64encode(data).decode()}"
         detail = (self._detail if self._detail is not None
@@ -1041,6 +1052,22 @@ class LangChainVisionEngine:
                         "output limit (%s tokens; %d characters of answer)",
                         max_output_tokens or "the model's", len(text))
         return text
+
+
+def _take_image_call() -> None:
+    """Count one image call on the running turn
+    (:func:`aec_agent_core.deep.keep_work.take_image_call`); only the
+    ceiling's refusal raises, never the count itself."""
+    try:
+        from aec_agent_core.deep import keep_work
+    except Exception:  # noqa: BLE001 - no count, as before
+        return
+    try:
+        keep_work.take_image_call()
+    except keep_work.ImageBudgetSpent:
+        raise
+    except Exception:  # noqa: BLE001 - a count never fails a call
+        pass
 
 
 def _image_px(data: bytes) -> Optional[list]:

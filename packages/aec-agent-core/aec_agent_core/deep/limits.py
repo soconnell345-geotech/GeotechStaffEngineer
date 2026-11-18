@@ -278,6 +278,33 @@ def helper_max_model_calls() -> int:
         return DEFAULT_HELPER_MAX_MODEL_CALLS
 
 
+#: The most image calls one turn may make, its agents and helpers together
+#: (BACKLOG TA-43). Each image sent to the vision model is one call: a page
+#: read in tiles is up to 17, so a 50-sheet set read sheet by sheet is about
+#: 850, and the model-call budget does not count them. Past the ceiling a
+#: look is refused with a tool error that says so, and the turn goes on with
+#: what it has read; the running turn shows the count against the ceiling,
+#: and a turn that met it says so under its answer. ``0``, ``off`` or unset
+#: = no ceiling (the default): nothing is refused and nothing is said. The
+#: turn's count is on its record either way
+#: (:class:`aec_agent_core.deep.keep_work.TurnScope`).
+TURN_MAX_IMAGE_CALLS_ENV = "GEOTECH_TURN_MAX_IMAGE_CALLS"
+
+#: The share of the image ceiling from which each look's result says the
+#: ceiling is near (as :data:`LOW_BUDGET_NOTE` does for model calls).
+IMAGE_WARN_SHARE = 0.8
+
+
+def turn_max_image_calls() -> int:
+    """The turn's image-call ceiling (``0`` = none, the default)."""
+    import os
+    raw = (os.environ.get(TURN_MAX_IMAGE_CALLS_ENV) or "").strip().lower()
+    try:
+        return max(0, int(raw)) if raw else 0
+    except ValueError:
+        return 0
+
+
 class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
     """A per-run model-call budget that ends with an answer, not an error.
 
@@ -501,6 +528,9 @@ __all__ = [
     "helper_max_model_calls",
     "HELPER_MAX_MODEL_CALLS_ENV",
     "DEFAULT_HELPER_MAX_MODEL_CALLS",
+    "TURN_MAX_IMAGE_CALLS_ENV",
+    "IMAGE_WARN_SHARE",
+    "turn_max_image_calls",
     "HELPER_FINAL_NUDGE",
     "HELPER_EXHAUSTED",
     "HideTools",
