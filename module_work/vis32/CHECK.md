@@ -65,7 +65,7 @@ Branch `claude/vis-32-ta-43`, cut from `claude/vis-33-34-tiles` (VIS-33, VIS-34)
   - The turn goes on.
 - `deep/vision_kit.py`, `_dispatch`: the old body is now `_dispatch_tool`, wrapped in `counting_look()`. A tool call that made image calls starts its result with `image_calls`: "this look made k image calls; this turn has made u of its ceiling of N". It adds "; r more were refused at the ceiling" when some were refused, and a warning once u reaches 80 percent of N (`keep_work.with_image_calls`). A result that is not a JSON object gets the same text as its first line.
 - `aec_document_review/core.py`, `stream_turn`: after each tool result that moved the count, the turn yields a status line, "image calls this turn: u of N". It goes through the existing `tool_call` items, which the page writes into the running turn's status.
-- `aec_document_review/turn_jobs.py`: a turn whose ceiling refused a look ends its answer with one line: "_This turn reached its ceiling of N image calls: r looks after that were not made, so the answer rests on what was read before. Ask to continue for more._" A turn that met no refusal, or that ended in an error, gets no line.
+- `aec_document_review/turn_jobs.py`: a turn whose ceiling refused a look ends its answer with one line: "_This turn reached its ceiling of N image calls: r image calls after that were not made, so the answer rests on what was read before. Ask to continue for more._" A turn that met no refusal, or that ended in an error, gets no line.
 
 **Where the code moved from the design (intent kept).**
 - The design counted in `invoke_side_call`. I count in `analyze_image` instead, the one caller of `invoke_side_call`. `analyze_image` calls it a second time when a model refuses the `detail` field, and the retry ladders inside it ask the same image again. Counting there would count one image two or more times, and the count would vary with how busy the server was.
@@ -111,14 +111,39 @@ Branch `claude/vis-32-ta-43`, cut from `claude/vis-33-34-tiles` (VIS-33, VIS-34)
 - The geotech page also opens a turn scope. Its `turn_end` records gain `image_calls`, and the ceiling would apply there if a deployment set it. Its page shows no status line or line at the end, because the app's `webapp/core.py` is not changed.
 - The item's "with DR-08's cost estimate" (a price per image call) is not built.
 
+## Added in review
+
+An independent review found four things. Each is fixed in a commit on top of the three above.
+
+1. **VIS-32: a shifted reading stayed silent.** Suppose the page answer reads 508 and 509 where the tile reads 507 and 508, so every label has moved one door. The note said the page and the tiles agree, and 509 vanished. The cause: `_place_disagreements` asked whether each tag was read anywhere on the page by the other side, so a tag read at another place hid the pair. Both conditions are now tested only on the readings within the merge's own reach of the page answer's box. The shifted case names both places.
+   - Judgement call: the former as-before case "the page's tag read by a tile elsewhere" is the same hiding, so it now names its pair. It moved to its own test.
+   - The other five as-before cases and the no-tiles case still pass byte for byte.
+   - The builder's call above ("if a tile reads the page's tag elsewhere … nothing is said") no longer holds.
+2. **VIS-32: the merged row contradicted the note.** Sometimes a named pair's two readings merged into one row under the tile's label. That row now leaves `page` out of `seen_in` (`_holds_named_pair`), because the page read another tag there and the note says which.
+   - No row is split or added, and no `tiles_only` mark is added, so the found-only-in-tiles note is unchanged. This is the smaller choice.
+   - Rows of tags with letters were already two rows and are untouched.
+3. **TA-43: a tile refused at the ceiling invited a refused look.** `_tiles_not_read_note` now names such tiles with the reason alone, for example "tiles r2c1, r2c2 were NOT read: this turn's image ceiling was met". It gives no advice to read again or zoom.
+   - `_at_image_ceiling` tells these tiles by the ceiling's own error words.
+   - If some tiles failed for another reason in the same read, they follow with their reason, also without advice.
+   - Every other reason keeps its old text byte for byte. With the setting unset, nothing can change.
+4. **TA-43: the line under the answer said "looks".** It now says "image calls". The count is per image, so one tiled page refused whole used to say "17 looks".
+
+Tests added: the shifted case; the `seen_in` change; the ceiling note for one, several, all and mixed tiles; the other reasons' old text, written out literally; a tiled read with the setting unset is the same inside a turn as outside one. The cut-read test now checks its note.
+
+**Noted, not fixed.**
+- (a) `image_calls` counts only images sent through `analyze_image` for a separate reading. Images shown inline to the agent's own model are not counted, and the ceiling does not apply to them. These are the minimal build's inline images and the `show_me` path. On the minimal arm, a `turn_end.image_calls` of 0 means "not counted", not "no images". The setting's description and the count's comments now say so.
+- (b) Some misreads still merge into one agreed row: a letter read for a digit (S09 against 509), or an added revision letter (509A against 509).
+
 ## For the lead
 
 **Settings line for `tinyapps/wrapper_repo/.env.example`**, after `GEOTECH_BUSY_TURN_MAX_S`:
 
 ```
-# Image calls one turn may make (each image sent to the vision model; a
-# page read in tiles is up to 17), all its helpers together. Past it a look
-# is refused and the turn finishes with what it read (0 = no ceiling).
+# Image calls one turn may make (each image sent to the vision model for a
+# separate reading; a page read in tiles is up to 17), all its helpers
+# together. Images shown inline to the agent's own model are not counted.
+# Past it a look is refused and the turn finishes with what it read
+# (0 = no ceiling).
 # GEOTECH_TURN_MAX_IMAGE_CALLS=0
 ```
 
