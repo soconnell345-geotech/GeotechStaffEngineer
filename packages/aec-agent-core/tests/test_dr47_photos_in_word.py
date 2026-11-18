@@ -164,7 +164,12 @@ def test_order_kept_and_an_unreadable_picture_is_noted_as_before(tmp_path):
                for p in d.paragraphs)
 
 
-def test_a_twenty_photo_report_stays_under_3_mb(tmp_path):
+def test_a_twenty_photo_report_keeps_every_photo_and_shrinks(tmp_path):
+    # Made-up photographs are smoother than real ones and store smaller, so
+    # the 5 MB bound below is theirs. Real photographs at 1200 x 800 come to
+    # about 180 to 430 KB each at quality 85, more at full colour
+    # resolution: a real 20-photograph report is about 4 to 13 MB. The aim
+    # that holds is well under a 20 MB mail limit with every photograph kept.
     base = np.asarray(_photo(1400, 933, seed=7))
     lines = ["# Site visit", ""]
     for k in range(20):
@@ -179,4 +184,93 @@ def test_a_twenty_photo_report_stays_under_3_mb(tmp_path):
     d, pics = _pictures(out)
     assert len(pics) == 20                          # every photo kept
     assert all(ct == "image/jpeg" for ct, _ in pics)
-    assert os.path.getsize(out) < 3 * 1024 * 1024
+    assert os.path.getsize(out) < 5 * 1024 * 1024
+
+
+def test_photo_is_stored_at_full_colour_resolution(tmp_path):
+    """4:4:4, not the 4:2:0 a JPEG writer uses by default: a chart or a
+    drawing crop that is photograph-like in its pixels (a shaded heat map,
+    line work over an aerial photograph) converts too, and its coloured
+    lettering and symbols must not bleed."""
+    from PIL.JpegImagePlugin import get_sampling
+    _photo(1500, 1000, seed=8).save(tmp_path / "s.png")
+    out = tmp_path / "s.docx"
+    markdown_to_docx("![](s.png)", str(out), base_dir=str(tmp_path))
+    _d, pics = _pictures(out)
+    assert pics[0][0] == "image/jpeg"
+    img = PIL_Image.open(io.BytesIO(pics[0][1]))
+    assert get_sampling(img) == 0                   # 4:4:4
+
+
+# Paper tones at and across the edges of 32-level cells (224 is one, 208
+# and 240 are halfway), and flat coloured zones whose tones sit in the
+# middle of a cell: the case where a single grid of cells split the paper
+# into up to eight fragments and took the zone for the paper.
+_PAPER = [(224, 224, 224), (225, 223, 222), (223, 226, 224),
+          (240, 238, 236), (224, 208, 224)]
+_ZONES = [(144, 208, 240), (240, 240, 144), (240, 176, 208)]
+
+
+def _scan(tone, noise, zone, zone_rgb, seed):
+    """A made-up colour scan of a drawing: paper of one tone, a flat
+    coloured zone over ``zone`` of its width, line work and lettering, a
+    scanner's slight blur, and noise of standard deviation ``noise``."""
+    from PIL import ImageDraw, ImageFilter
+    rng = np.random.default_rng(seed)
+    w, h = 1275, 825
+    img = PIL_Image.new("RGB", (w, h), tone)
+    d = ImageDraw.Draw(img)
+    zw = int(w * zone)
+    x0 = int(rng.integers(0, w - zw))
+    d.rectangle((x0, 0, x0 + zw, h), fill=zone_rgb)
+    for k in range(11):
+        y = 45 + 70 * k
+        d.line((30, y, w - 30, y + int(rng.integers(-25, 25))),
+               fill=(40, 40, 40), width=2)
+    for k in range(8):
+        x = 60 + 150 * k
+        d.line((x, 30, x + int(rng.integers(-30, 30)), h - 30),
+               fill=(60, 60, 60), width=3)
+    for k in range(30):
+        d.text((int(rng.integers(30, w - 200)), int(rng.integers(20, h - 30))),
+               f"B-{k} SAND N={k + 7} EL 12.{k}", fill=(20, 20, 20))
+    img = img.filter(ImageFilter.GaussianBlur(0.7))
+    a = np.asarray(img, dtype=float) + rng.normal(0, noise, (h, w, 3))
+    return PIL_Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+
+
+def _sky_photo(w, h, seed):
+    """A made-up photograph with a smooth sky over its top 45 %."""
+    a = np.asarray(_photo(w, h, seed=seed), dtype=float)
+    top = int(h * 0.45)
+    t = np.linspace(0.0, 1.0, top)[:, None, None]
+    sky = (1 - t) * np.array([100, 150, 215]) + t * np.array([195, 215, 240])
+    rng = np.random.default_rng(seed)
+    a[:top] = sky + rng.normal(0, 2.0, (top, w, 3))
+    return PIL_Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+
+
+def test_colour_scans_stay_and_photographs_convert_whatever_the_paper_tone(
+        tmp_path):
+    import itertools
+    from aec_agent_core.docx_renderer import _is_photograph
+    judged = []
+    cases = list(itertools.product(_PAPER, (2, 3, 5), (0.15, 0.25)))
+    for i, (tone, noise, zone) in enumerate(cases):
+        if _is_photograph(_scan(tone, noise, zone, _ZONES[i % 3], seed=i)):
+            judged.append((tone, noise, zone))
+    assert judged == [], f"scans taken for photographs: {judged}"
+    photos = [_photo(1500, 1000, seed=20), _photo(900, 600, seed=21),
+              _photo(1200, 800, seed=22, noise=1.5),
+              _sky_photo(1500, 1000, 23), _sky_photo(1200, 800, 24)]
+    assert [_is_photograph(p) for p in photos] == [True] * len(photos)
+    # End to end, the first of the scans the single grid took for a
+    # photograph stays PNG, byte for byte.
+    _scan((224, 224, 224), 3, 0.25, _ZONES[1], seed=1).save(
+        tmp_path / "scan.png")
+    before = (tmp_path / "scan.png").read_bytes()
+    out = tmp_path / "scan.docx"
+    markdown_to_docx("![Scanned plan](scan.png)", str(out),
+                     base_dir=str(tmp_path))
+    _d, pics = _pictures(out)
+    assert pics == [("image/png", before)]

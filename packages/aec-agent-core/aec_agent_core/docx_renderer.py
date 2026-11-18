@@ -58,7 +58,8 @@ QUOTE_INDENT_IN = 0.4
 #: A photograph is stored in the .docx as JPEG at this quality (DR-47) ...
 PHOTO_JPEG_QUALITY = 85
 #: ... with no more pixels than this many per inch of the size it is
-#: printed at (it is never printed wider than the text).
+#: printed at (it is never printed wider than the text): a 600 x 400 px
+#: photograph printed 2 in wide is stored at 400 x 267 px.
 PHOTO_MAX_DPI = 200
 
 # DEFAULT_AUTHOR: the author written into File > Info when the caller names
@@ -581,11 +582,29 @@ def _is_photograph(rgb) -> bool:
       from pixel to pixel.
     - No paper: fewer than half of the sampled pixels lie within 32 levels,
       in every channel, of the picture's most common tone. A drawing, a
-      chart, a scan or a page of text is mostly its background, even when
-      the paper is off-white and noisy; a photograph has no one tone that
-      covers half of it. (A photograph that is half sky fails this and
-      stays as it is.)
+      chart, a scan or a page of text is mostly its background; a
+      photograph has no one tone that covers half of it. (A photograph
+      that is half sky fails this and stays as it is.)
+
+    The most common tone is the centre of the fullest cell on eight grids
+    of cells 32 levels wide, each channel's cells either as they are or
+    shifted by 16 levels, and the largest share within 32 levels of such a
+    centre is the one judged. On one of the eight grids any paper tone
+    lies at least 8 levels inside its cell in every channel, so scanner
+    noise of a few levels (checked up to a standard deviation of 5) keeps
+    the paper in one cell; on a single grid a paper tone at a cell edge
+    (about 224) split into up to eight fragments, and a flat coloured zone
+    over a sixth of a scan outnumbered each and was taken for the paper.
+
+    Some charts and drawing crops are photograph-like in their pixels and
+    pass both: a smoothly shaded heat map, a shaded-relief map, line work
+    drawn over a photograph, a scan under strongly uneven light. No rule
+    on pixels tells them from photographs; they are stored as JPEG at full
+    colour resolution (:func:`_photo_as_jpeg`), so their coloured lettering
+    and symbols do not bleed.
     """
+    import itertools
+
     import numpy as np
     from PIL import Image
     w, h = rgb.size
@@ -596,9 +615,13 @@ def _is_photograph(rgb) -> bool:
     if len(sample.getcolors(maxcolors=n)) * 5 < n:
         return False
     px = np.asarray(sample, dtype=np.int16).reshape(-1, 3)
-    coarse = (px >> 5) @ np.array([64, 8, 1], dtype=np.int16)
-    centre = px[coarse == np.bincount(coarse).argmax()].mean(axis=0)
-    return float((np.abs(px - centre).max(axis=1) <= 32).mean()) < 0.5
+    weights = np.array([81, 9, 1], dtype=np.int16)     # cells 0..8 a channel
+    for shift in itertools.product((0, 16), repeat=3):
+        cells = ((px + np.array(shift, dtype=np.int16)) >> 5) @ weights
+        centre = px[cells == np.bincount(cells).argmax()].mean(axis=0)
+        if float((np.abs(px - centre).max(axis=1) <= 32).mean()) >= 0.5:
+            return False
+    return True
 
 
 def _photo_as_jpeg(path, ctx):
@@ -609,7 +632,8 @@ def _photo_as_jpeg(path, ctx):
     unchanged, about 1 MB each: a 20-photo report passed a common 20 MB
     mail limit, and the agent dropped evidence photos to get under it. A
     photograph (:func:`_is_photograph`) is now stored as JPEG at
-    ``PHOTO_JPEG_QUALITY``, with no more than ``PHOTO_MAX_DPI`` pixels per
+    ``PHOTO_JPEG_QUALITY`` and full colour resolution (4:4:4), with no
+    more than ``PHOTO_MAX_DPI`` pixels per
     inch of the size it is printed at; it prints at the same size as
     before. Line work, lettering, charts and drawing crops are not
     photographs and stay as they are: JPEG blurs edges and lettering, and
@@ -664,8 +688,13 @@ def _photo_as_jpeg(path, ctx):
             if img.info.get("icc_profile"):
                 extra["icc_profile"] = img.info["icc_profile"]
             buf = io.BytesIO()
-            rgb.save(buf, "JPEG", quality=PHOTO_JPEG_QUALITY, dpi=(dpi, dpi),
-                     **extra)
+            # Full colour resolution (4:4:4, ``subsampling=0``), not the
+            # writer's default 4:2:0: a chart or drawing crop that is
+            # photograph-like in its pixels converts too, and its coloured
+            # lettering must not bleed. It costs about a fifth to a half
+            # more bytes.
+            rgb.save(buf, "JPEG", quality=PHOTO_JPEG_QUALITY, subsampling=0,
+                     dpi=(dpi, dpi), **extra)
         data = buf.getvalue()
         if len(data) >= os.path.getsize(path):
             return None
