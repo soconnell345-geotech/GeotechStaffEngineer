@@ -1344,6 +1344,15 @@ EXAMPLES.update({
 })
 
 
+#: The kinds of figure the ``figure_examples`` tool's description names
+#: (``figure_helper.make_figure_examples_tool``; a host's own example set
+#: names its own, BACKLOG DR-35).
+TOOL_KINDS = ("a plan of borings and a footprint, an SPT profile against "
+              "elevation, sensitivity cases, settlement against time, a load "
+              "test, an exceedance curve, a wall section with its pressure "
+              "diagrams, stress and pile profiles in panels, contours")
+
+
 def example_names() -> List[str]:
     """The ``plot_data`` examples."""
     return list(EXAMPLES)
@@ -1387,5 +1396,6 @@ def render_examples(out_dir: str, names: Optional[List[str]] = None) -> dict:
     return paths
 
 
-__all__ = ["CODE_EXAMPLES", "EXAMPLES", "code_example_names", "example",
-           "example_names", "render_examples"]
+__all__ = ["CODE_EXAMPLES", "EXAMPLES", "REDRAWS", "TOOL_KINDS",
+           "code_example_names", "example", "example_names",
+           "render_examples"]

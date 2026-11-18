@@ -227,6 +227,22 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     ``("photo_one_look", {"GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK": "1"})``.
     Kept in :data:`LATER_ENVS` for the reasons given for
     ``GEOTECH_VISION_TILE_ANSWERS``.
+
+``GEOTECH_REVIEW_FIGURE_EXAMPLES`` (default off)
+    ``1`` hands the Document Review page's figure helper that page's own
+    worked examples (``aec_document_review.figure_examples``: a plan redrawn
+    to scale from a sheet's dimensions, a schedule against the count on the
+    sheets, comments by sheet, values against a stated limit, a level as
+    each sheet gives it, a submittal timeline) in place of the core's
+    geotechnical ones, in its ``figure_examples`` tool and in the worked
+    example attached to each brief. Unset, the page's figure helper is
+    handed exactly what it was before. The geotech page keeps its own
+    examples whatever this says (its build does not read it). BACKLOG
+    DR-35, the owner's OWN-77 option (b). Not measured on a model yet: the
+    suite takes it as the arm
+    ``("figure_examples", {"GEOTECH_REVIEW_FIGURE_EXAMPLES": "1"})``.
+    Kept in :data:`LATER_ENVS` for the reasons given for
+    ``GEOTECH_VISION_TILE_ANSWERS``.
 """
 
 from __future__ import annotations
@@ -256,15 +272,18 @@ ALL_ENVS = (AGENT_ENV, CHECKLIST_ENV, CITED_PAGES_ENV,
 
 TILE_ANSWERS_ENV = "GEOTECH_VISION_TILE_ANSWERS"
 PHOTO_PAGE_ONE_LOOK_ENV = "GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK"
+FIGURE_EXAMPLES_ENV = "GEOTECH_REVIEW_FIGURE_EXAMPLES"
 
 #: Switches added after the geotech app's copy went quiet (5.36.0), whose
 #: tests pin :data:`ALL_ENVS` and :data:`ARMS` whole. They are switches like
 #: the rest: :func:`switches` clears them unless an arm names them and
 #: :func:`describe` names them when set. The first two are read by the
 #: vision tools as they look (the build is unchanged); the third at turn
-#: end. Fold them into ``ALL_ENVS`` (and give each its arm) when the app's
-#: tests are next renewed.
-LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV)
+#: end; the fourth by the Document Review page's build. Fold them into
+#: ``ALL_ENVS`` (and give each its arm) when the app's tests are next
+#: renewed.
+LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV,
+              FIGURE_EXAMPLES_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -331,6 +350,12 @@ def photo_page_one_look() -> bool:
     """Whether a page of photographs read with ``tiles='auto'`` takes one
     look instead of tiles."""
     return _on(PHOTO_PAGE_ONE_LOOK_ENV)
+
+
+def review_figure_examples() -> bool:
+    """Whether the Document Review page's figure helper gets that page's
+    own worked examples in place of the core's geotechnical ones."""
+    return _on(FIGURE_EXAMPLES_ENV)
 
 
 def checklist() -> bool:
@@ -522,7 +547,8 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "TODOS_WITH_CALLS_ENV", "todos_with_calls",
            "TILE_ANSWERS_ENV", "tile_answers",
            "PHOTO_PAGE_ONE_LOOK_ENV", "photo_page_one_look",
-           "PHOTO_PAGES_ENV", "photo_pages", "LATER_ENVS",
+           "PHOTO_PAGES_ENV", "photo_pages",
+           "FIGURE_EXAMPLES_ENV", "review_figure_examples", "LATER_ENVS",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",

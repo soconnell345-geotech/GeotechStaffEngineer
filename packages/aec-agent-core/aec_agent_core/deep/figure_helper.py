@@ -34,6 +34,16 @@ TRACE_REVIEW.md`` §2.6, §2.9).
 It is ON by default since 2026-10-20 (the owner, GM-92: "on everywhere";
 BACKLOG GM-227); ``GEOTECH_FIGURE_HELPER=0`` with ``GEOTECH_PLOT_CODE=0``
 leaves it out.
+
+A host may hand in its own worked examples (BACKLOG DR-35, the owner's
+OWN-77 option (b)): ``examples=`` on :func:`build_figure_subagent` and
+:class:`FigureTasks` (and on the functions they call) takes an EXAMPLE SET,
+a module or any object with ``EXAMPLES`` and ``CODE_EXAMPLES`` shaped as in
+:mod:`aec_agent_core.charts.figure_examples`, and optionally ``REDRAWS``
+(the ``plot_data`` redraw of a script, by the script's name) and
+``TOOL_KINDS`` (the kinds of figure the ``figure_examples`` tool's
+description names). Left out (``None``) it is that module, the
+geotechnical set, and every text is as it was before the argument existed.
 """
 
 from __future__ import annotations
@@ -197,23 +207,48 @@ FIGURE_HELPER_PROMPT = (
 _KINDS = {"plot_data": "plot_data call", "plot_code": "plot_code script"}
 
 
-def _example_names(with_code: bool = False) -> list:
+def _example_set(examples=None):
+    """The example set a host handed in, or the core's own (the
+    geotechnical set, :mod:`aec_agent_core.charts.figure_examples`)."""
+    if examples is None:
+        from aec_agent_core.charts import figure_examples as examples
+    return examples
+
+
+def _example_of(name: str, examples=None) -> dict:
+    """A deep copy of one example of the set with its name and kind, as
+    :func:`aec_agent_core.charts.figure_examples.example` gives it."""
+    import copy
+    ex = _example_set(examples)
+    if name in ex.EXAMPLES:
+        out, kind = copy.deepcopy(ex.EXAMPLES[name]), "plot_data"
+    elif name in ex.CODE_EXAMPLES:
+        out, kind = copy.deepcopy(ex.CODE_EXAMPLES[name]), "plot_code"
+    else:
+        raise KeyError(f"no example '{name}'; there are "
+                       f"{_example_names(True, examples)}")
+    out["name"] = name
+    out["kind"] = kind
+    return out
+
+
+def _example_names(with_code: bool = False, examples=None) -> list:
     """The examples offered: the plot_data calls, then the plot_code
     scripts when the helper has plot_code."""
-    from aec_agent_core.charts.figure_examples import (code_example_names,
-                                                example_names)
-    return example_names() + (code_example_names() if with_code else [])
+    ex = _example_set(examples)
+    return list(ex.EXAMPLES) + (list(ex.CODE_EXAMPLES) if with_code else [])
 
 
-def _closest_example(want: str, with_code: bool = False) -> Optional[str]:
+def _closest_example(want: str, with_code: bool = False,
+                     examples=None) -> Optional[str]:
     """The example ``want`` names among those offered: exact, then by
     shared words with the example's name and what it shows, then by
     spelling."""
     import difflib
     import re
-    from aec_agent_core.charts.figure_examples import CODE_EXAMPLES, EXAMPLES
-    names = _example_names(with_code)
-    shows = {n: (EXAMPLES.get(n) or CODE_EXAMPLES[n])["shows"]
+    ex = _example_set(examples)
+    names = _example_names(with_code, examples)
+    shows = {n: (ex.EXAMPLES.get(n) or ex.CODE_EXAMPLES[n])["shows"]
              for n in names}
     key = want.lower().strip().replace(" ", "_").replace("-", "_")
     if key in names:
@@ -231,20 +266,24 @@ def _closest_example(want: str, with_code: bool = False) -> Optional[str]:
     return close[0] if close else None
 
 
-def make_figure_examples_tool(plot_code: bool = False) -> StructuredTool:
+def make_figure_examples_tool(plot_code: bool = False,
+                              examples=None) -> StructuredTool:
     """``figure_examples``: the list of worked examples, or one in full.
     With ``plot_code`` (the helper has that tool) the list also holds the
-    worked plot_code scripts."""
+    worked plot_code scripts. ``examples``: the host's example set
+    (:func:`_example_set`); ``None`` is the core's own."""
     from aec_agent_core.deep.strict_args import strict_tool
+    ex_set = _example_set(examples)
+    # a set with no scripts says nothing of scripts
+    with_scripts = bool(plot_code and ex_set.CODE_EXAMPLES)
 
     def figure_examples(name: str = "") -> str:
         """List the worked figure examples, or return one in full."""
-        from aec_agent_core.charts.figure_examples import example
-        names = _example_names(plot_code)
+        names = _example_names(plot_code, examples)
         if not name:
             listing = []
             for n in names:
-                ex = example(n)
+                ex = _example_of(n, examples)
                 listing.append({"name": n, "kind": _KINDS[ex["kind"]],
                                 "shows": ex["shows"]})
             return json.dumps({
@@ -253,31 +292,30 @@ def make_figure_examples_tool(plot_code: bool = False) -> StructuredTool:
                          "shows, why it is drawn that way, and its complete "
                          "plot_data parameters"
                          + (", or its complete plot_code script and the "
-                            "data it reads," if plot_code else "")
+                            "data it reads," if with_scripts else "")
                          + " to adapt.")}, ensure_ascii=False)
         want = str(name).strip()
-        match = _closest_example(want, plot_code)
+        match = _closest_example(want, plot_code, examples)
         if match is None:
             return json.dumps({"error": f"no example '{want}'; there are "
                                         f"{names}"})
-        ex = example(match)
+        ex = _example_of(match, examples)
         if match != want:
             # live wave w7 (2026-10-15): the helper guessed 'plan',
             # 'settlement_vs_time' and 'sensitivity cases' first
             ex["matched"] = f"'{want}' read as '{match}'"
         return json.dumps(ex, ensure_ascii=False)
 
+    kinds = (getattr(ex_set, "TOOL_KINDS", None)
+             or "the kinds of figure the list names")
     description = (
         "Worked examples of good engineering figures, each a complete "
         "plot_data call on made-up data with why it is drawn that way: "
-        "a plan of borings and a footprint, an SPT profile against "
-        "elevation, sensitivity cases, settlement against time, a load "
-        "test, an exceedance curve, a wall section with its pressure "
-        "diagrams, stress and pile profiles in panels, contours. No "
+        + kinds + ". No "
         "name: the list. name=<example>: "
         "that one in full. Adapt the nearest one; never copy its made-up "
         "numbers.")
-    if plot_code:
+    if with_scripts:
         description += (
             " The list also holds complete plot_code scripts (matplotlib, "
             "with the data each reads) to start from where plot_data "
@@ -331,8 +369,11 @@ def build_figure_subagent(
     max_model_calls: Optional[int] = DEFAULT_FIGURE_MAX_MODEL_CALLS,
     extra_tools=None,
     extra_system_prompt: Optional[str] = None,
+    examples=None,
 ) -> Optional[dict]:
-    """The figure helper's spec, or None where plot_data cannot be built."""
+    """The figure helper's spec, or None where plot_data cannot be built.
+    ``examples``: the host's own worked examples (:func:`_example_set`;
+    BACKLOG DR-35); ``None`` hands it the core's geotechnical set."""
     from aec_agent_core.deep.limits import DEFAULT_MAX_RESULT_CHARS
     from aec_agent_core.deep.calculate_tool import make_calculate_tool
     from aec_agent_core.deep.limits import ModelCallBudgetMiddleware
@@ -350,7 +391,8 @@ def build_figure_subagent(
         return None
     plot_code = _plot_code_tool()
     tools = list(tools) + [
-        make_figure_examples_tool(plot_code=plot_code is not None),
+        make_figure_examples_tool(plot_code=plot_code is not None,
+                                  examples=examples),
         make_calculate_tool()]
     prompt = FIGURE_HELPER_PROMPT
     description = FIGURE_HELPER_DESCRIPTION
@@ -418,7 +460,8 @@ def _words(text) -> set:
     return out
 
 
-def nearest_example(brief: str, with_code: bool = False) -> Optional[str]:
+def nearest_example(brief: str, with_code: bool = False,
+                    examples=None) -> Optional[str]:
     """The worked example nearest a brief (live wave w9: the helper called
     figure_examples in none of five flows). An example is a candidate when
     the brief has every word of its name as a whole word (``time_settlement``:
@@ -429,12 +472,14 @@ def nearest_example(brief: str, with_code: bool = False) -> Optional[str]:
     no candidate: a figure no example is like gets none. Without plot_code,
     a plot_data redraw of a script (``figure_examples.REDRAWS``) is also a
     candidate under the script's name, so a host with plot code off is
-    handed the redraw where one with it on is handed the script (GM-315)."""
-    from aec_agent_core.charts.figure_examples import (CODE_EXAMPLES,
-                                                       EXAMPLES, REDRAWS)
+    handed the redraw where one with it on is handed the script (GM-315).
+    ``examples``: the host's example set (:func:`_example_set`)."""
+    ex_set = _example_set(examples)
+    EXAMPLES, CODE_EXAMPLES = ex_set.EXAMPLES, ex_set.CODE_EXAMPLES
+    REDRAWS = getattr(ex_set, "REDRAWS", None) or {}
     want = _words(brief)
     best, best_score = None, 0
-    for name in _example_names(with_code):
+    for name in _example_names(with_code, examples):
         ex = EXAMPLES.get(name) or CODE_EXAMPLES[name]
         named = _words(name.replace("_", " "))
         if not with_code and name in REDRAWS and not named <= want:
@@ -455,17 +500,18 @@ def nearest_example(brief: str, with_code: bool = False) -> Optional[str]:
 EXAMPLE_HEADING = "WORKED EXAMPLE ATTACHED"
 
 
-def brief_with_example(brief: str, with_code: bool = False) -> str:
+def brief_with_example(brief: str, with_code: bool = False,
+                       examples=None) -> str:
     """``brief`` with the nearest worked example's reasons after it (what it
     shows and why it is drawn that way, not its made-up numbers); the brief
-    unchanged when no example is near or one is attached already."""
+    unchanged when no example is near or one is attached already.
+    ``examples``: the host's example set (:func:`_example_set`)."""
     if not isinstance(brief, str) or EXAMPLE_HEADING in brief:
         return brief
-    name = nearest_example(brief, with_code)
+    name = nearest_example(brief, with_code, examples)
     if name is None:
         return brief
-    from aec_agent_core.charts.figure_examples import example
-    ex = example(name)
+    ex = _example_of(name, examples)
     lines = [brief.rstrip(), "",
              f"{EXAMPLE_HEADING} (the nearest to this brief, picked in "
              f"code): '{name}', a {_KINDS[ex['kind']]}. It shows: "
@@ -761,11 +807,14 @@ class FigureTasks(AgentMiddleware):
     carries that code (:func:`redraw_brief`; live wave w12, GM-151); its
     result ends with :func:`looks_report`. Put it just inside
     :class:`~funhouse_agent.deep.keep_work.KeepWork`, whose record of the
-    helper it reads."""
+    helper it reads. ``examples``: the host's worked examples, the same set
+    its figure helper was built with (:func:`build_figure_subagent`);
+    ``None`` is the core's own."""
 
-    def __init__(self, with_code: bool = False):
+    def __init__(self, with_code: bool = False, examples=None):
         super().__init__()
         self.with_code = bool(with_code)
+        self.examples = examples
 
     @staticmethod
     def _helper(request) -> Optional[str]:
@@ -782,7 +831,7 @@ class FigureTasks(AgentMiddleware):
         given = args.get("description")
         brief = given
         if helper == FIGURE_HELPER_NAME:
-            brief = brief_with_example(brief, self.with_code)
+            brief = brief_with_example(brief, self.with_code, self.examples)
         brief, _stems = redraw_brief(brief, named_from=given)
         if brief == given:
             return request
