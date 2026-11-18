@@ -143,6 +143,14 @@ records with no ``model_end`` and nothing to say why):
 
 Hashes and sizes, never file contents, images or keys.
 
+The text of an error is kept with anything shaped like a secret masked
+(:func:`mask_payload`, the rule of ``error_text.mask_secrets``): an
+exception from a model client or an HTTP library can carry a key, a bearer
+token or a signed URL, and the record is what a tester downloads and sends
+on. That is the :data:`ERROR_FIELDS` of every record, a ``tool_refused``'s
+text and a tool's error result; an error with no secret in it, and a
+tool's ordinary output, are kept as they came.
+
 A logging failure must never fail a turn: every handler swallows its own
 exceptions and ``raise_error`` is left False.
 """
@@ -423,7 +431,8 @@ def append_event(conv_dir: str, event: str, turn: Optional[int] = None,
         if proc is not None:
             recs.append({"turn": turn, "ts": now, **proc})
         recs.append({"turn": turn, "ts": now, "agent": APP, "event": event,
-                     **{k: _json_safe(v) for k, v in fields.items()
+                     **{k: mask_payload(event, k, _json_safe(v))
+                        for k, v in fields.items()
                         if k not in ("turn", "ts", "agent", "event")}})
         _append(conv_dir, recs)
         return True
@@ -526,6 +535,48 @@ def _json_safe(obj: Any) -> Any:
         return json.loads(json.dumps(obj, ensure_ascii=False, default=str))
     except Exception:                                  # noqa: BLE001
         return str(obj)
+
+
+#: Fields of any record that hold the text of an error: an exception's
+#: text (``tool_error``, ``model_error``, ``turn_end``'s ``error`` and
+#: ``error_detail``, ``page_error``'s ``error`` and ``traceback``) or an
+#: app event's account of a failure (``why``).
+ERROR_FIELDS = ("error", "error_detail", "traceback", "why")
+
+
+def mask_payload(event: Any, key: str, text: Any) -> Any:
+    """``text`` as the record keeps it under ``key`` of an ``event``: the
+    text of an error with anything shaped like a secret masked
+    (:func:`aec_agent_core.error_text.mask_secrets`) -- the
+    :data:`ERROR_FIELDS` of any record, a ``tool_refused``'s ``text`` (the
+    error or refusal the model was given), and a tool's error result (a
+    JSON object with an ``"error"`` string) as ``tool_end``'s ``result`` or
+    ``tool_delivered``'s ``text``. Anything else, and an error with no
+    secret in it, comes back as it was. Masked before a cut, so the copy
+    kept whole beside the log is masked too. Never raises (an error that
+    could not be masked is kept as ``""``, never raw)."""
+    if not isinstance(text, str) or not text:
+        return text
+    try:
+        from aec_agent_core.error_text import mask_error_result, mask_secrets
+        if key in ERROR_FIELDS or (event == "tool_refused" and key == "text"):
+            return mask_secrets(text)
+        if (event, key) in (("tool_end", "result"),
+                            ("tool_delivered", "text")):
+            return mask_error_result(text)
+    except Exception:                                  # noqa: BLE001
+        return ""
+    return text
+
+
+def masked_record(rec: dict) -> dict:
+    """``rec`` with :func:`mask_payload` applied to each field: the same
+    keys and types (for a reader of a record written before the masking,
+    such as :mod:`aec_agent_core.run_report`)."""
+    if not isinstance(rec, dict):
+        return rec
+    event = rec.get("event")
+    return {k: mask_payload(event, k, v) for k, v in rec.items()}
 
 
 #: The two cache counts every ``model_end``'s ``usage`` carries, named as
@@ -1003,8 +1054,8 @@ class ActivityLogger(BaseCallbackHandler):
         if prev == now:
             return
         text, truncated, n, whole = self._cap_whole(
-            now, self.max_chars, f"delivered_{getattr(msg, 'name', '') or ''}",
-            call_id)
+            mask_payload("tool_delivered", "text", now), self.max_chars,
+            f"delivered_{getattr(msg, 'name', '') or ''}", call_id)
         rec = {"agent": self._agent_of(node_rid), "event": "tool_delivered",
                "name": getattr(msg, "name", None), "tool_call_id": call_id,
                "status": getattr(msg, "status", None), "stage": "graph",
@@ -1121,9 +1172,11 @@ class ActivityLogger(BaseCallbackHandler):
         rec = {"agent": PRIMARY, "event": "turn_end",
                "duration_s": round(self._clock() - self._t0, 3),
                "turn_tokens": turn_tokens, "answer_chars": answer_chars,
-               "error": error}
+               "error": mask_payload("turn_end", "error", error)}
         if error_detail:
-            rec["error_detail"] = str(error_detail)[:DEFAULT_MAX_CHARS]
+            rec["error_detail"] = mask_payload(
+                "turn_end", "error_detail",
+                str(error_detail))[:DEFAULT_MAX_CHARS]
         try:
             rec.update(self._turn_facts())
         except Exception as exc:                       # noqa: BLE001
@@ -1277,8 +1330,12 @@ class ActivityLogger(BaseCallbackHandler):
         if parent_run_id is None:
             parent_run_id = self._parent.get(rid)
         agent = self._agent_of(parent_run_id)
+        # The text of an error masked before it is cut (the whole copy
+        # beside the log is the same text); a tool's ordinary output as is.
+        whole = payload if isinstance(payload, str) else _to_text(payload)
         text, truncated, full_len, sidecar = self._cap_whole(
-            payload, self.max_chars, f"{event}_{name}", rid)
+            mask_payload(event, payload_key, whole), self.max_chars,
+            f"{event}_{name}", rid)
         rec = {"agent": agent, "event": event, "name": name, "run_id": rid,
                "parent_run_id": str(parent_run_id) if parent_run_id else None,
                payload_key: text, "truncated": truncated,
@@ -1492,7 +1549,8 @@ class ActivityLogger(BaseCallbackHandler):
             if name in APP_EVENTS:
                 rec = {"agent": self._agent_of(run_id), "event": name}
                 if isinstance(data, dict):
-                    rec.update({k: _json_safe(v) for k, v in data.items()
+                    rec.update({k: mask_payload(name, k, _json_safe(v))
+                                for k, v in data.items()
                                 if k not in ("agent", "event")})
                 if name in MODEL_CALL_EVENTS:
                     # The model call the retry happened inside (INF-75):
@@ -1543,11 +1601,12 @@ class ActivityLogger(BaseCallbackHandler):
         if own is not None and own == content:
             return
         refused = bool(data.get("refused")) or own is None
+        event = "tool_refused" if refused else "tool_delivered"
         text, truncated, n, whole = self._cap_whole(
-            content, self.max_chars, f"delivered_{data.get('name') or ''}",
-            call_id or run_id)
+            mask_payload(event, "text", content), self.max_chars,
+            f"delivered_{data.get('name') or ''}", call_id or run_id)
         rec = {"agent": self._agent_of(run_id),
-               "event": "tool_refused" if refused else "tool_delivered",
+               "event": event,
                "name": data.get("name"), "tool_call_id": call_id or None,
                "status": data.get("status"), "text": text,
                "truncated": truncated, "chars": n}
@@ -1564,8 +1623,10 @@ class ActivityLogger(BaseCallbackHandler):
         try:
             rid = str(run_id)
             t_start = self._starts.pop(rid, None)
-            text, truncated, _n = _cap(f"{type(error).__name__}: {error}",
-                                       self.max_chars)
+            text, truncated, _n = _cap(
+                mask_payload("model_error", "error",
+                             f"{type(error).__name__}: {error}"),
+                self.max_chars)
             parent = parent_run_id or self._parent.get(rid)
             # What the refusal said (EV-14: the record held only the
             # exception's text): its status, retry-after, rate-limit

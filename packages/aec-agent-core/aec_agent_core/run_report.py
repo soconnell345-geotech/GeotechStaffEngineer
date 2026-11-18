@@ -63,6 +63,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+from aec_agent_core.activity_log import mask_payload, masked_record
 from aec_agent_core.coverage import (GRID_TOOLS, LOOK_TOOLS, SWEEP_TOOLS,
                                      parse_pages, pages_from_call)
 
@@ -366,7 +367,9 @@ class RunRecord:
         self.older: List[str] = []
         acts, self.bad_lines, err = _read_jsonl(
             os.path.join(self.folder, ACTIVITY_FILE))
-        self.activity: List[dict] = acts or []
+        # The text of an error is shown masked as the log now keeps it,
+        # including in a record written before the log masked it.
+        self.activity: List[dict] = [masked_record(r) for r in acts or []]
         self.has_activity = acts is not None
         status = err or f"found: {_n(len(self.activity))} records" + (
             f", {_n(self.bad_lines)} unreadable lines skipped"
@@ -1113,7 +1116,7 @@ def _whole_text(record: RunRecord, rec: dict, key: str) -> Tuple[str, str]:
     if not rec.get("truncated") and not rec.get("text_truncated"):
         return text, ""
     full = rec.get("full") or rec.get("text_full")
-    whole = record.sidecar(full)
+    whole = mask_payload(rec.get("event"), key, record.sidecar(full))
     if whole is not None:
         return whole, f"whole copy from {full}"
     total = rec.get("chars")

@@ -638,13 +638,21 @@ def _probe(fm) -> Tuple[bool, str]:
 
 def _logged(step: str, message: str, path: str = "") -> str:
     """``message``, after appending it to the app's SharePoint log (TA-35;
-    never raises, never blocks the turn)."""
+    never raises, never blocks the turn). Every caller passes a failure:
+    the message the tool returns has anything shaped like a secret masked
+    (an HTTP library names the URL it was refused, and a SharePoint upload
+    or download link carries its token in the query), as the run record
+    keeps the text of an error."""
     try:
         from aec_document_review import sharepoint_log
         sharepoint_log.record(step, message, path)
     except Exception:                                      # noqa: BLE001
         pass
-    return message
+    try:
+        from aec_agent_core.error_text import mask_secrets
+        return mask_secrets(message) or message
+    except Exception:                                      # noqa: BLE001
+        return message
 
 
 def _plain_refusal(exc: BaseException) -> Optional[str]:

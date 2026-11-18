@@ -431,18 +431,155 @@ def rate_limit_named(exc) -> bool:
 _TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _TAGS = re.compile(r"<[^>]+>")
 _HTML_PAGE = re.compile(r"<(?:!doctype|html|head|body|title)\b", re.IGNORECASE)
-#: Anything shaped like a key or a bearer token, never shown.
+#: Anything shaped like a key or a bearer token, never shown (the rule of
+#: :func:`html_gist`, the sign-in refusal a user is shown).
 _SECRETS = re.compile(
     r"\b(?:sk|pk|rk)-[A-Za-z0-9_*\-]{6,}|\bBearer\s+\S+|\b[A-Za-z0-9_\-]{32,}\b")
 
+# ---------------------------------------------------------------------------
+# Masking the text of an error before it is kept (the run record)
+# ---------------------------------------------------------------------------
+# An exception from a model client or an HTTP library can carry a key, a
+# bearer token or a signed URL (``requests`` names the URL it was refused:
+# "403 Client Error: Forbidden for url: https://...?...&tempauth=..."), and
+# the run record is what a tester downloads and sends on. The rules below
+# are general shapes, not one vendor's: a secret is masked where it is
+# NAMED (a header, a query parameter, a ``name=value`` or ``"name": value``
+# pair, a URL's password), where its form says it (a private-key block, a
+# JSON web token, an ``sk-`` / ``pk-`` / ``rk-`` key, a bearer token), or
+# where a long run of characters is as mixed as a random token is. A hash,
+# a UUID, a page number, a file name and a long word are not secrets and
+# are kept, so an error with no secret in it is kept as it was.
+
+#: A private key in PEM form (a certificate, being public, is kept).
+_PEM_KEY = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE "
+    r"KEY-----", re.DOTALL)
+#: Every value below stops at a quote, a backslash, a space or a closing
+#: bracket, so a secret inside JSON text (a tool's error result, where a
+#: quote is written ``\"``) is masked and the JSON stays whole.
+#: A password in a URL (``scheme://user:password@host``): the user is kept.
+_URL_PASSWORD = re.compile(
+    r"(?<=://)([^\s/:@'\"<>\\]+):[^\s/@'\"<>\\]+@")
+#: Between a name and its value: ``=``, ``: ``, ``": "``, ``\": \"``.
+_SEP = r"(\\?[\"']?\s*[:=]\s*\\?[\"']?)"
+#: An ``Authorization`` header's value, with its scheme.
+_AUTH_HEADER = re.compile(
+    r"(?i)\b((?:proxy-)?authorization)" + _SEP +
+    r"(?!\[removed\])(?:(?:bearer|basic|token|sharedkey|negotiate)\s+)?"
+    r"([^\s\"',;})\]\\]+)")
+#: A JSON web token (an access token, a signed link's ``tempauth``).
+_JWT = re.compile(
+    r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]*)?")
+#: Names that say their value is a secret wherever they stand: a query
+#: parameter, a form field, ``name=value``, ``name: value``, a quoted key.
+_SECRET_NAMES = (
+    r"api[-_]?key|x-api-key|subscription[-_]?key|ocp-apim-subscription-key|"
+    r"access[-_]?token|refresh[-_]?token|id[-_]?token|auth[-_]?token|"
+    r"session[-_]?token|security[-_]?token|client[-_]?secret|"
+    r"client[-_]?assertion|password|passwd|tempauth|x-amz-signature|"
+    r"x-amz-credential|x-amz-security-token|x-goog-signature|"
+    r"x-goog-credential|account[-_]?key|shared[-_]?access[-_]?key|"
+    r"shared[-_]?access[-_]?signature")
+_NAMED_SECRET = re.compile(
+    r"(?i)(?<![A-Za-z0-9_-])(" + _SECRET_NAMES + r")" + _SEP +
+    r"(?!\[removed\])([^\s&\"',;}\])#<>\\]+)")
+#: Names that are a secret only as a URL's query parameter (``?sig=``,
+#: ``&token=``, ``?code=``, ``?key=``): in prose they are ordinary words.
+_QUERY_SECRET = re.compile(
+    r"(?i)([?&](?:sig|signature|token|secret|code|key)=)"
+    r"([^&\s\"'#<>)\\]+)")
+#: A value that says nothing secret: a missing or already-masked one.
+_PLACEHOLDERS = frozenset({"none", "null", "nil", "true", "false", "unset",
+                           "undefined", "empty", "missing", "required",
+                           "redacted", "hidden", "[removed]"})
+#: A long run of token characters: masked only when it is as mixed as a
+#: random token (:func:`_random_like`).
+_LONG_RUN = re.compile(r"(?<![A-Za-z0-9_~-])[A-Za-z0-9_~-]{32,}"
+                       r"(?![A-Za-z0-9_~-])")
+#: ``sk-`` / ``pk-`` / ``rk-`` keys (a provider's own refusal quotes one
+#: part-starred: "Incorrect API key provided: sk-...****abcd").
+_PREFIXED_KEY = re.compile(r"\b(?:sk|pk|rk)-[A-Za-z0-9_*\-]{6,}")
+_BEARER = re.compile(r"\bBearer\s+[^\s\"',;})\]<>\\]+")
+
+
+def _keeps(value: str) -> bool:
+    """Whether a named value is no secret: a placeholder, stars or dots, or
+    under four characters."""
+    v = value.strip("\"'")
+    return (len(v) < 4 or v.lower() in _PLACEHOLDERS
+            or set(v) <= set("*.…xX"))
+
+
+def _random_like(run: str) -> bool:
+    """Whether a run of 32 or more token characters looks random: upper
+    case, lower case and digits all in it, and the kind of character
+    changing at least at four in ten places (a random token changes at
+    about six in ten; a name made of words, ``SiteInvestigationRev2``, at
+    under four). A hash, a UUID or a word in one case has no upper and
+    lower case together, and is kept."""
+    if not (any(c.isupper() for c in run) and any(c.islower() for c in run)
+            and any(c.isdigit() for c in run)):
+        return False
+
+    def kind(c: str) -> int:
+        return 0 if c.isupper() else 1 if c.islower() else \
+            2 if c.isdigit() else 3
+
+    changes = sum(kind(a) != kind(b) for a, b in zip(run, run[1:]))
+    return changes >= 0.4 * (len(run) - 1)
+
+
+def _mask(text: str) -> str:
+    s = _PEM_KEY.sub("…", text)
+    s = _URL_PASSWORD.sub(lambda m: f"{m.group(1)}:…@", s)
+    s = _AUTH_HEADER.sub(
+        lambda m: m.group(0) if _keeps(m.group(3))
+        else f"{m.group(1)}{m.group(2)}…", s)
+    s = _JWT.sub("…", s)
+    s = _NAMED_SECRET.sub(
+        lambda m: m.group(0) if _keeps(m.group(3))
+        else f"{m.group(1)}{m.group(2)}…", s)
+    s = _QUERY_SECRET.sub(
+        lambda m: m.group(0) if _keeps(m.group(2)) else f"{m.group(1)}…", s)
+    s = _PREFIXED_KEY.sub("…", s)
+    s = _BEARER.sub("…", s)
+    return _LONG_RUN.sub(
+        lambda m: "…" if _random_like(m.group(0)) else m.group(0), s)
+
 
 def mask_secrets(text: Any) -> str:
-    """``text`` with anything shaped like a key or a bearer token replaced
-    by an ellipsis (the rule :func:`html_gist` applies). Never raises."""
+    """``text`` with anything shaped like a secret replaced by an ellipsis:
+    a private-key block, a URL's password, an ``Authorization`` header's
+    value, a JSON web token, the value of a parameter or field whose name
+    says it is a secret (``api_key``, ``access_token``, ``client_secret``,
+    ``password``, ``x-amz-signature``, ...; ``sig``, ``token``, ``code``,
+    ``key`` as a URL's query parameter), an ``sk-`` / ``pk-`` / ``rk-``
+    key, a bearer token, and a run of 32 or more characters as mixed as a
+    random token. Text with none of these comes back unchanged, character
+    for character. Never raises (``""`` if masking itself failed)."""
     try:
-        return _SECRETS.sub("…", "" if text is None else str(text))
+        return _mask("" if text is None else str(text))
     except Exception:  # noqa: BLE001
         return ""
+
+
+def mask_error_result(text: Any) -> Any:
+    """A tool's result with :func:`mask_secrets` applied when the result is
+    the tool's ERROR -- a JSON object with an ``"error"`` string at its top,
+    the shape :func:`tool_error` and the tools' own error results take --
+    and unchanged otherwise (a tool's ordinary output is kept as the model
+    got it). Never raises."""
+    if not isinstance(text, str) or '"error"' not in text \
+            or not text.lstrip().startswith("{"):
+        return text
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return text
+    if isinstance(data, dict) and isinstance(data.get("error"), str):
+        return mask_secrets(text)
+    return text
 
 
 def auth_refused(exc) -> bool:
@@ -513,5 +650,6 @@ __all__ = ["scrub_paths", "error_line", "tool_error", "tool_error_json",
            "BudgetStop", "budget_signal", "budget_exhausted",
            "budget_message", "budget_tool_note", "BUDGET_HINT",
            "BUDGET_CODES", "BUDGET_PHRASES", "auth_refused", "auth_message",
-           "html_gist", "mask_secrets", "rate_limit_named",
+           "html_gist", "mask_secrets", "mask_error_result",
+           "rate_limit_named",
            "RATE_LIMIT_NAMES"]
