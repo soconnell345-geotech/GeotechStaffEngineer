@@ -141,6 +141,44 @@ pip install "aec-agent-core[anthropic]" # with Claude through LangChain
 Python 3.11 or later. An application installs it for you: each pins the
 core it was tested with.
 
+## Reading a saved run
+
+```
+python -m aec_agent_core.run_report <run folder>
+python -m aec_agent_core.run_report <run folder> -o report.html --documents <folder with the PDFs>
+```
+
+This writes one HTML file, `run_report.html`, beside the run's record (or
+where `-o` says), for an engineer to read in any browser without a network
+or a developer. It shows what was asked, the model and the totals (model
+calls, tokens, vision calls, helpers, wall time) and the files delivered;
+then every step in order: the model's own words, each tool call with its
+arguments and its result (long ones folded, with their size), and each
+helper's steps under the brief it was given; then, per document, a grid of
+its pages saying which were read as text, looked at whole, in tiles,
+zoomed, shown on a contact sheet or never opened; and each page looked at,
+with a box for every look, tile and zoom, numbered as the steps.
+
+`<run folder>` is a page conversation's folder or one task folder of the
+review suite (`runs/<arm>/<task>/`). The pages are drawn behind the boxes
+when the documents' PDFs are in that folder or under `--documents` (the
+suite deletes its uploads after scoring, so point `--documents` at its
+documents); otherwise the page outlines are drawn alone. A missing or older
+record file is named in the report. The file holds the run's text and page
+images: treat it as you treat the documents.
+
+Added in review: the questions and answers are read from `transcript.jsonl`
+as the pages write it (a long question whole, the answer as the user
+received it, or a line saying the record holds none); without an
+`activity.jsonl` the page grid says "no look recorded", not "never opened";
+a whole copy of a cut payload is read only from inside the run folder; a
+record the report cannot be built from ends in one plain line and exit code
+1, never a traceback; and the page names the run folder by its own name,
+never its absolute path. Size, measured on a made-up run of 300 large
+sheets and 600 tiled looks: the page is about 1.5 times the size of the
+activity log (a 12 MB log gave a 17.7 MB page in about 12 s), with at most
+150 page images.
+
 ## Licence
 
 MIT, as GeotechStaffEngineer. See `LICENSE`.
