@@ -518,6 +518,11 @@ _QUERY_SECRET = re.compile(
 _LOOSE_SECRET = re.compile(
     r"(?i)(?<![A-Za-z0-9?&])(key|token|secret|signature|sig|code)" + _SEP +
     r"([^\s&\"',;}\])#<>\\]+)(?<!\.)")
+#: A cookie header's pairs (``Cookie: a=1; b=2``, ``Set-Cookie: a=1``).
+_COOKIE = re.compile(
+    r"(?i)\b((?:set-)?cookie)" + _SEP +
+    r"(?!…)[^\s;=\"'\\]+=[^\s;\"'\\]*"
+    r"(?:;\s*[^\s;=\"'\\]+=[^\s;\"'\\]*)*")
 #: A value that says nothing secret: a missing or already-masked one.
 _PLACEHOLDERS = frozenset({"none", "null", "nil", "true", "false", "unset",
                            "undefined", "empty", "missing", "required",
@@ -559,6 +564,7 @@ def _mask(text: str) -> str:
     s = _LOOSE_SECRET.sub(
         lambda m: f"{m.group(1)}{m.group(2)}…" if _generated(m.group(3))
         else m.group(0), s)
+    s = _COOKIE.sub(lambda m: f"{m.group(1)}{m.group(2)}…", s)
     s = _PREFIXED_KEY.sub("…", s)
     return _BEARER.sub("…", s)
 

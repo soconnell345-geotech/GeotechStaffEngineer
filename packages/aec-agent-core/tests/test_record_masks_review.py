@@ -108,3 +108,26 @@ def test_an_ordinary_value_under_key_token_or_code_is_kept():
             "key 'A1' on sheet S-101; the key of schedule mark W-12",
             "signature: required", "token: page 12 of 40"):
         assert mask_error_secrets(text) == text
+
+
+# ---------------------------------------------------------------------------
+# a cookie header
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text,masked", [
+    (f"sent Cookie: sessionid={VALUE}; theme=dark and was refused",
+     "sent Cookie: … and was refused"),
+    (f"Set-Cookie: SESSION={VALUE}; Path=/; HttpOnly",
+     "Set-Cookie: …; HttpOnly"),
+    ("headers {'Cookie': 'sid=" + VALUE + "', 'Accept': 'text/html'}",
+     "headers {'Cookie': '…', 'Accept': 'text/html'}"),
+])
+def test_a_cookie_header_is_masked(text, masked):
+    assert mask_error_secrets(text) == masked
+    assert mask_error_secrets(masked) == masked
+
+
+def test_the_word_cookie_in_prose_is_kept():
+    for text in ("the cookie was rejected", "Cookie: none sent",
+                 "cookie banner on page 3"):
+        assert mask_error_secrets(text) == text
