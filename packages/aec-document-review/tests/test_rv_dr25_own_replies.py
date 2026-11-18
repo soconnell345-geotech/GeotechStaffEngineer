@@ -110,3 +110,22 @@ def test_an_entry_backed_by_its_change():
         "entry-no-change",
         "A-102: the entry for door 205 is backed by the drawing; the door "
         "moved east.")
+
+
+# -- a block that was not read says nothing of what it lists ----------------
+
+@pytest.mark.parametrize("reply", [
+    "S-501: 12-20M at F3 is clouded; I could not read the revision block, "
+    "so I cannot say whether it is listed.",
+    "S-501: 12-20M at F3 is clouded. The revision block was not legible at "
+    "this zoom.",
+])
+def test_a_revision_block_not_read_is_not_a_missing_entry(reply):
+    assert not _passes("cloud-not-listed", reply)
+
+
+def test_a_revision_block_read_and_found_short():
+    assert _passes(
+        "cloud-not-listed",
+        "S-501: 12-20M at F3 is clouded; the revision block does not list "
+        "it.")

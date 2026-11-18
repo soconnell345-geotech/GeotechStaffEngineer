@@ -1159,16 +1159,22 @@ _CLOUDED = {"re": (
     r"(?!\s+(?:is\s+|was\s+)?(?:missing|absent|omitted)\b)" + _NOT_NO)}
 _REV_BLOCK = (r"rev(?:ision|\.)?\s*(?:block|table|history|list|log|"
               r"schedule|box)")
+#: After "not": what makes it a word about the reading, not the sheet ("I
+#: could not read the revision block", "the block was not legible").
+_NOT_READ = (r"(?!\s+(?:be\s+)?(?:able\s+to\s+)?(?:read|see|check|checked|"
+             r"verify|verified|confirm|confirmed|open|opened|tell|say|"
+             r"determine|legible|readable|sure|clear)\b)")
 #: A word that says a change has no entry in its sheet's revision block.
 _UNLISTED = {"re": (
     r"(?:(?<!nothing )(?<!nothing is )(?<!none )"
     rf"\b(?:{_NO_WORD}|{_NOT_WORD}|isn't|wasn't|aren't|weren't|hasn't|"
     r"doesn't|didn't|without|missing|lacks?|lacking|absent|never|nor)\b"
+    + _NOT_READ +
     r"[^.;:|]{0,40}?\b(?:entry|entries|listed|listing|recorded|logged|"
     r"noted|documented|mentioned|record|" + _REV_BLOCK +
     r"|revision\s*2|rev\.?\s*2)\b(?!\s*(?:cloud|delta))"
     r"|\b" + _REV_BLOCK + rf"\b[^.;|]{{0,60}}?\b(?:{_NO_WORD}|not|without|"
-    r"lacks?|only|still|never|none)\b"
+    r"lacks?|only|still|never|none)\b" + _NOT_READ +
     r"|\b(?:unlisted|unrecorded|undocumented|unlogged)\b"
     r"|\b(?:listed|logged|recorded|entry|entered|" + _REV_BLOCK + r")\b" +
     _SAYS_NO + r")" + _NOT_NO)}
