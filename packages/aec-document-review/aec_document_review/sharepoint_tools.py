@@ -654,7 +654,14 @@ def _logged(step: str, message: str, path: str = "") -> str:
         sharepoint_log.record(step, message, path)
     except Exception:                                      # noqa: BLE001
         pass
-    # ... and if masking itself failed, the message is not handed on raw.
+    return _masked(message)
+
+
+def _masked(message: str) -> str:
+    """A failure's ``message`` as a tool returns it: its secrets masked
+    (``error_text.mask_error_secrets``); a message with none is returned
+    as it came. If masking itself failed, the message is not handed on
+    raw: :data:`MESSAGE_NOT_CHECKED` stands for it. Never raises."""
     try:
         from aec_agent_core.error_text import mask_error_secrets
         masked = mask_error_secrets(message)
@@ -1535,8 +1542,10 @@ def make_conversation_upload_tool(thread_id: str,
                     shared = _share_mirrored_copy(thread_id, record_dir,
                                                   conv_dir, local)
                 except Exception as exc:                   # noqa: BLE001
-                    shared = (f"SharePoint upload error: "
-                              f"{type(exc).__name__}: {exc}")
+                    # Plain text the model reads: masked like every other
+                    # failure message of these tools.
+                    shared = _masked(f"SharePoint upload error: "
+                                     f"{type(exc).__name__}: {exc}")
                 if shared is not None:
                     return shared
         scope = _scope(record_dir, thread_id)

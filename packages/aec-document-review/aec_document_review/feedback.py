@@ -50,6 +50,10 @@ KINDS = ("user_feedback", "capability_gap", "tool_error", "other")
 #: Cap on free text per entry — feedback is a note, not a transcript.
 MAX_DETAILS_CHARS = 8000
 MAX_SUMMARY_CHARS = 300
+#: What stands for an error whose text could not be checked for secrets
+#: (the masker itself failed).
+REASON_NOT_CHECKED = ("its message could not be checked for secrets, so it "
+                      "is not shown")
 
 
 def _app_version() -> Optional[str]:
@@ -207,9 +211,19 @@ def make_record_feedback_tool(conv_dir: str,
             return (f"Feedback recorded ({entry['kind']}): {entry['summary']} "
                     "— saved with this conversation. Continue with the task.")
         except Exception as exc:                       # noqa: BLE001
+            # The model reads this: a secret the error's text names is
+            # masked, and the text is never handed on raw if masking fails.
+            try:
+                raw = str(exc)
+                from aec_agent_core.error_text import mask_error_secrets
+                reason = mask_error_secrets(raw)
+                if raw and not reason:
+                    reason = REASON_NOT_CHECKED
+            except Exception:                          # noqa: BLE001
+                reason = REASON_NOT_CHECKED
             return (f"Feedback could not be recorded ({type(exc).__name__}: "
-                    f"{exc}). Continue with the task; mention the gap in your "
-                    "answer instead.")
+                    f"{reason}). Continue with the task; mention the gap in "
+                    "your answer instead.")
 
     return record_feedback
 
