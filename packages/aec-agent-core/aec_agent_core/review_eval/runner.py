@@ -414,9 +414,13 @@ def record_counts(records: List[Dict[str, Any]]) -> Dict[str, Any]:
 def _masked_errors(result: Dict[str, Any]) -> Dict[str, Any]:
     """``result`` with the text of each error masked as the run record
     masks it (:func:`aec_agent_core.error_text.mask_error_secrets`): ``error``,
-    ``outcome_error``, ``traceback``, each turn's ``error`` and the vision
-    profile's ``error``. The same keys and types; an error with no secret
-    in it is kept as it was. Never raises."""
+    ``outcome_error``, ``traceback``, each turn's ``error``, the vision
+    profile's ``error`` and ``summary`` (which quotes the error), each of
+    its ``profiles``' ``error``, and the ``detail`` of a check that RAISED
+    (:data:`checks.CHECK_ERROR`; any other check's detail quotes the answer
+    and is left alone). A new run's are masked where they are made; this is
+    what a result saved before that is read through. The same keys and
+    types; an error with no secret in it is kept as it was. Never raises."""
     try:
         from aec_agent_core.error_text import mask_error_secrets
 
@@ -428,10 +432,37 @@ def _masked_errors(result: Dict[str, Any]) -> Dict[str, Any]:
             masked(result, key)
         for turn in result.get("turns") or []:
             masked(turn, "error")
-        masked(result.get("vision_profile"), "error")
+        profile = result.get("vision_profile")
+        masked(profile, "error")
+        masked(profile, "summary")
+        if isinstance(profile, dict):
+            for other in profile.get("profiles") or []:
+                masked(other, "error")
+        for check in result.get("checks") or []:
+            detail = check.get("detail") if isinstance(check, dict) else ""
+            if str(detail or "").startswith(_checks.CHECK_ERROR):
+                masked(check, "detail")
     except Exception:  # noqa: BLE001 - a record, never a failure
         pass
     return result
+
+
+def _masked_saved(prev: Dict[str, Any], saved: Any) -> Dict[str, Any]:
+    """A result read back from ``saved`` (a ``run.json`` that may have been
+    written before the masking) with its errors masked
+    (:func:`_masked_errors`), for ``results.json`` and the table. If that
+    changed anything, the file is written again, so the secret does not
+    stay on disk; a result with no secret leaves the file untouched. Never
+    raises."""
+    try:
+        before = json.dumps(prev, sort_keys=True, default=str)
+        prev = _masked_errors(prev)
+        if json.dumps(prev, sort_keys=True, default=str) != before:
+            saved.write_text(json.dumps(prev, indent=1, default=str),
+                             encoding="utf-8")
+    except Exception:  # noqa: BLE001 - a record, never a failure
+        pass
+    return prev
 
 
 def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
@@ -1111,10 +1142,13 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
                     prev = None
                 if prev and not prev.get("error"):
                     if rescore:
-                        prev = rescore_saved(prev, t, str(run_dir))
+                        prev = _masked_errors(
+                            rescore_saved(prev, t, str(run_dir)))
                         saved.write_text(json.dumps(prev, indent=1,
                                                     default=str),
                                          encoding="utf-8")
+                    else:
+                        prev = _masked_saved(prev, saved)
                     runs[arm][t.id] = prev
                     say(f"[{arm}] {t.id}: "
                         f"{'rescored' if rescore else 'done already'} "
