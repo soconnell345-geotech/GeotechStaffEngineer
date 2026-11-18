@@ -115,6 +115,14 @@ SHEET_TOOL_NAMES = ("sheet_index", "check_cross_references")
 #: that check for a host that asked for the sheet tools.
 OPTIONAL_SHEET_TOOL_NAMES = ("check_schedule_marks",)
 
+#: planlens' plan tools (a vector plan's symbols with their exact centres
+#: and labels, and page points turned into local easting / northing;
+#: BACKLOG PL-25, PL-27). Every planlens the core takes publishes them, but
+#: they are NOT in :data:`OPTIONAL_DOCUMENT_TOOL_NAMES`: a page offers them
+#: only where it was built with them (``GEOTECH_REVIEW_PLAN_TOOLS``), not
+#: measured yet, so not on by default.
+PLAN_TOOL_NAMES = ("plan_symbols", "plan_grid")
+
 #: Who a comment this app writes onto a PDF is signed by. A reviewer opening
 #: the marked-up file has to be able to tell a drafted comment from a person's
 #: without asking, so the default says so in the name; a deployment that signs
@@ -241,6 +249,44 @@ def sheet_tool_names() -> tuple:
         return ()
     return SHEET_TOOL_NAMES + tuple(
         name for name in OPTIONAL_SHEET_TOOL_NAMES if has_tool(name))
+
+
+def plan_tools_available() -> bool:
+    """Whether the installed planlens publishes the plan tools
+    (:data:`PLAN_TOOL_NAMES`)."""
+    return all(has_tool(name) for name in PLAN_TOOL_NAMES)
+
+
+def plan_tools_need_asking() -> bool:
+    """Whether the installed planlens.review serves the plan tools only to
+    a host that asks (``toolkit_options={"plan_tools": True}``, planlens
+    after 0.16.0, BACKLOG PL-27). An older one serves them to every host
+    and must not be handed the option (its toolkit would refuse it)."""
+    return hasattr(_rspecs, "PLAN_TOOLS")
+
+
+#: The plan tools' arguments shown with planlens' own schema of them (type,
+#: limits and words, read off its spec): all but ``handle`` and ``page`` /
+#: ``pdf_page``. The same rule as ``planlens.review.specs.
+#: PLAN_SHOWN_FROM_TOOLKIT``, kept here for a planlens without it.
+PLAN_SHOWN_FROM_PLANLENS = {
+    "plan_symbols": ("label_pattern", "shapes", "min_size", "max_size",
+                     "max_label_gap", "bbox"),
+    "plan_grid": ("controls", "north", "scale", "origin", "points",
+                  "on_mirror", "units"),
+}
+
+
+def plan_tool_schemas(name: str) -> Dict[str, Dict[str, Any]]:
+    """``{argument: schema}`` for plan tool ``name``: each argument of
+    :data:`PLAN_SHOWN_FROM_PLANLENS` as the installed planlens' spec shows
+    it (a copy). Empty for any other tool."""
+    import copy
+    spec = _spec(name) or {}
+    props = (spec.get("parameters") or {}).get("properties") or {}
+    return {arg: copy.deepcopy(props[arg])
+            for arg in PLAN_SHOWN_FROM_PLANLENS.get(name, ())
+            if isinstance(props.get(arg), dict)}
 
 
 def search_supports_fuzzy() -> bool:
@@ -431,7 +477,8 @@ def app_host() -> "_review.ReviewHost":
 
 
 def host_for(engine=None, markup_author: Optional[str] = None,
-             sheet_tools: bool = False) -> "_review.ReviewHost":
+             sheet_tools: bool = False,
+             plan_tools: bool = False) -> "_review.ReviewHost":
     """One agent build's host: the process's (:func:`app_host`, as
     installed) with that build's look, signer and crop render.
 
@@ -441,7 +488,10 @@ def host_for(engine=None, markup_author: Optional[str] = None,
     time, the deployment's :func:`markup_author`; the markup check's crop is
     ``vision_view.render_view`` sized to ``engine``, unpadded (the check's
     box already holds its margin). ``sheet_tools`` asks planlens for the
-    sheet tools on this build's conversations (:data:`SHEET_TOOL_NAMES`)."""
+    sheet tools on this build's conversations (:data:`SHEET_TOOL_NAMES`);
+    ``plan_tools`` for the plan tools (:data:`PLAN_TOOL_NAMES`), where the
+    installed planlens serves them only to a host that asks
+    (:func:`plan_tools_need_asking`; an older one serves them unasked)."""
     who = markup_author
 
     def signer() -> str:
@@ -463,6 +513,9 @@ def host_for(engine=None, markup_author: Optional[str] = None,
     if sheet_tools:
         host = dataclasses.replace(host, toolkit_options={
             **(host.toolkit_options or {}), "sheet_tools": True})
+    if plan_tools and plan_tools_need_asking():
+        host = dataclasses.replace(host, toolkit_options={
+            **(host.toolkit_options or {}), "plan_tools": True})
     return host
 
 
