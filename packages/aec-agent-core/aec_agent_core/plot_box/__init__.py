@@ -35,6 +35,20 @@ figure helper and the ``calc`` helper. Settings:
     the memory ceiling (2048);
 ``GEOTECH_PLOT_CODE_AT_ONCE``
     how many boxes run at once in one app process (2).
+
+And one that is OFF unless set (BACKLOG INF-16; not one of
+:data:`SETTINGS_ENVS`, which are the box's numbers):
+
+``GEOTECH_PLOT_CODE_KERNEL_LAYER``
+    a kernel layer the box's child process puts on itself on Linux, under
+    the Python-level layers: no new privileges, Landlock file and TCP rules,
+    a seccomp filter (:mod:`aec_agent_core.plot_box.kernel_layer`, where the
+    values are described). Unset or ``0``: the box exactly as before. ``1``:
+    what this kernel offers goes up, and the result says which parts did
+    (``box.kernel_layer``). ``require``: where the file rules cannot go up,
+    the box refuses to run code. It is read here, in the page's process, at
+    each call; the page's own process is never restricted. What a host
+    offers: ``python -m aec_agent_core.plot_box.kernel_probe``.
 """
 
 from __future__ import annotations
@@ -62,6 +76,9 @@ MAX_SECONDS_ENV = "GEOTECH_PLOT_CODE_MAX_SECONDS"
 MEMORY_ENV = "GEOTECH_PLOT_CODE_MEMORY_MB"
 AT_ONCE_ENV = "GEOTECH_PLOT_CODE_AT_ONCE"
 SETTINGS_ENVS = (SECONDS_ENV, MAX_SECONDS_ENV, MEMORY_ENV, AT_ONCE_ENV)
+#: The kernel layer under the box (BACKLOG INF-16): off unless set. Not in
+#: :data:`SETTINGS_ENVS`: a host's own setting, not a number of the box.
+KERNEL_LAYER_ENV = "GEOTECH_PLOT_CODE_KERNEL_LAYER"
 
 DEFAULT_SECONDS = 600
 DEFAULT_MAX_SECONDS = 3600
@@ -131,6 +148,37 @@ def settings() -> Dict[str, int]:
             "max_seconds": max_s,
             "memory_mb": _int_env(MEMORY_ENV, DEFAULT_MEMORY_MB, 256),
             "at_once": _int_env(AT_ONCE_ENV, DEFAULT_AT_ONCE, 1)}
+
+
+def kernel_layer_mode() -> str:
+    """What ``GEOTECH_PLOT_CODE_KERNEL_LAYER`` asks for now: ``''`` (off:
+    unset, empty, ``0``, ``false``, ``no``, ``off``), ``'1'`` (``1``,
+    ``true``, ``yes``, ``on``), ``'require'``, or ``'?'`` for any other
+    value, which the box refuses rather than run as "off"."""
+    raw = os.environ.get(KERNEL_LAYER_ENV, "")
+    if not raw.strip():
+        return ""                       # the default: nothing new is loaded
+    from aec_agent_core.plot_box import kernel_layer
+    return kernel_layer.mode(raw)
+
+
+def _kernel_layer_refusal(mode: str) -> Optional[str]:
+    """Why the box will not run code under this setting, before a process
+    is started; ``None`` when it may."""
+    if mode == "?":
+        return (f"The code was not run: {KERNEL_LAYER_ENV} is set to a value "
+                "the plotting box does not know (it takes 0, 1 or require). "
+                "This is a setting of the host, not of the code: nothing in "
+                "the code changes it.")
+    if mode == "require":
+        from aec_agent_core.plot_box import kernel_layer
+        why = kernel_layer.file_layer_missing()
+        if why:
+            return ("The code was not run: this host requires the plotting "
+                    f"box's kernel layer ({KERNEL_LAYER_ENV}=require) and it "
+                    f"cannot go up here: {why}. This is a setting of the "
+                    "host, not of the code: nothing in the code changes it.")
+    return None
 
 
 def available() -> bool:
@@ -597,6 +645,11 @@ def run_plot_code(code: str, data: Any = None, name: str = "",
                 "error": "The code was not run:\n" + "\n".join(problems),
                 "next": ("Rewrite the code within the box's rules (see the "
                          "tool description) and call plot_code again.")}
+    layer = kernel_layer_mode()
+    if layer:
+        refusal = _kernel_layer_refusal(layer)
+        if refusal:
+            return {"status": "error", "error": refusal}
     cfg = settings()
     notes = []
     limit = cfg["seconds"]
@@ -638,6 +691,8 @@ def run_plot_code(code: str, data: Any = None, name: str = "",
         width = None
     extra = {"replaces": replaces, "draw": draw,
              "print_width_in": width or DEFAULT_PRINT_WIDTH_IN}
+    if layer:
+        extra["kernel_layer"] = layer
 
     from aec_agent_core.drawing_wait import drawing
     # A look at a figure in this folder waits until the box has written it
@@ -704,7 +759,10 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
     try:
         before = _snapshot(root)
         marker = f"@@PLOT_BOX_{secrets.token_hex(8)}@@"
+        asked = ({"kernel_layer": extra["kernel_layer"]}
+                 if extra.get("kernel_layer") else {})
         payload = json.dumps({
+            **asked,
             "code": code, "data": json.loads(data_json),
             "name": name or "", "root": root, "tmp": tmp, "marker": marker,
             "print_width_in": extra.get("print_width_in"),
@@ -850,6 +908,18 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
         if not child.get("limits_applied"):
             notes.append("no OS memory or CPU limit could be set on this "
                          "host; only the app's time limit held")
+        layer = child.get("kernel_layer")
+        if isinstance(layer, dict):
+            # which parts of the kernel layer went up in this run, for the
+            # record (BACKLOG INF-16; only where the host's setting asks)
+            res["box"]["kernel_layer"] = layer
+            missing = layer.get("not_up") or {}
+            if missing:
+                notes.append(
+                    "kernel layer: up: "
+                    + (", ".join(layer.get("up") or []) or "nothing")
+                    + "; not up on this host: " + "; ".join(
+                        f"{k} ({v})" for k, v in missing.items()))
     if timed_out:
         res["status"] = "error"
         res["error"] = (
@@ -1072,6 +1142,7 @@ def make_plot_code_tool():
 
 __all__ = ["next_step", "run_plot_code", "make_plot_code_tool", "plot_code_description",
            "available", "settings", "check_code", "ALLOWED_IMPORTS",
+           "KERNEL_LAYER_ENV", "kernel_layer_mode",
            "MAX_CODE_CHARS", "SETTINGS_ENVS", "retire_drafts",
            "draws_so_far", "draw_cap_note", "drawn_count", "booked_notes",
            "drew_figure", "DRAW_TOOLS", "DRAW_CAP", "CAPPED_HELPER",
