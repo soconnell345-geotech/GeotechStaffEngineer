@@ -70,3 +70,41 @@ def test_names_that_only_end_like_a_secret_keep_ordinary_values():
                  "the private key file was not found",
                  "set GRAPH_CLIENT_SECRET and GRAPH_CLIENT_ID"):
         assert mask_error_secrets(text) == text
+
+
+# ---------------------------------------------------------------------------
+# key / token / secret outside a URL's query
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text,masked", [
+    (json.dumps({"key": VALUE, "model": "m"}),
+     '{"key": "…", "model": "m"}'),
+    (json.dumps({"token": VALUE}), '{"token": "…"}'),
+    (json.dumps({"secret": VALUE}), '{"secret": "…"}'),
+    ("sent {'key': '" + VALUE + "', 'token': '" + VALUE + "'}",
+     "sent {'key': '…', 'token': '…'}"),
+    (f"body: token={VALUE}&grant_type=x", "body: token=…&grant_type=x"),
+    (f"body: code={VALUE}&redirect_uri=x", "body: code=…&redirect_uri=x"),
+    (f"connection refused: secret={VALUE} was sent",
+     "connection refused: secret=… was sent"),
+    # inside a tool's JSON error result the quotes are escaped
+    (json.dumps({"error": 'body {"token": "' + VALUE + '"}'}),
+     json.dumps({"error": 'body {"token": "…"}'}, ensure_ascii=False)),
+])
+def test_a_key_or_token_outside_a_query_is_masked(text, masked):
+    assert mask_error_secrets(text) == masked
+    assert mask_error_secrets(masked) == masked
+
+
+def test_an_ordinary_value_under_key_token_or_code_is_kept():
+    for text in (
+            '{"error": "page 7 of 12: no text layer", "key": "sheet_index", '
+            '"token": "page_count"}',
+            "the token limit was reached: max_tokens=4096, "
+            "code=context_length_exceeded",
+            '{"code": "invalid_value", "param": "max_tokens"}',
+            "DXF handle 2B7: key=LAYER code=8",
+            "KeyError: 'token'",
+            "key 'A1' on sheet S-101; the key of schedule mark W-12",
+            "signature: required", "token: page 12 of 40"):
+        assert mask_error_secrets(text) == text

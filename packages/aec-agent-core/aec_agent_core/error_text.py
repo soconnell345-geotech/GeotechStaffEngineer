@@ -509,6 +509,15 @@ _NAMED_SECRET = re.compile(
 _QUERY_SECRET = re.compile(
     r"(?i)([?&](?:sig|signature|token|secret|code|key)=)"
     r"([^&\s\"'#<>)\\]+)(?<!\.)")
+#: ``key``, ``token``, ``secret``, ``signature``, ``sig`` and ``code``
+#: outside a URL's query (a JSON body's ``"token": "..."``, a dict's
+#: ``'key': '...'``, a form body that starts ``token=...``): masked only
+#: when the value has the form of a generated one (:func:`_generated`),
+#: because these names also head ordinary values (``"key": "sheet_index"``,
+#: ``code=context_length_exceeded``).
+_LOOSE_SECRET = re.compile(
+    r"(?i)(?<![A-Za-z0-9?&])(key|token|secret|signature|sig|code)" + _SEP +
+    r"([^\s&\"',;}\])#<>\\]+)(?<!\.)")
 #: A value that says nothing secret: a missing or already-masked one.
 _PLACEHOLDERS = frozenset({"none", "null", "nil", "true", "false", "unset",
                            "undefined", "empty", "missing", "required",
@@ -527,6 +536,14 @@ def _keeps(value: str) -> bool:
             or set(v) <= set("*.…xX"))
 
 
+def _generated(value: str) -> bool:
+    """Whether a value has the form of a generated secret: 16 characters or
+    more with a letter and a digit among them (``sheet_index`` and
+    ``context_length_exceeded`` have not)."""
+    return (len(value) >= 16 and any(c.isdigit() for c in value)
+            and any(c.isalpha() for c in value))
+
+
 def _mask(text: str) -> str:
     s = _PEM_KEY.sub("…", text)
     s = _URL_PASSWORD.sub(lambda m: f"{m.group(1)}:…@", s)
@@ -539,6 +556,9 @@ def _mask(text: str) -> str:
         else f"{m.group(1)}{m.group(2)}…", s)
     s = _QUERY_SECRET.sub(
         lambda m: m.group(0) if _keeps(m.group(2)) else f"{m.group(1)}…", s)
+    s = _LOOSE_SECRET.sub(
+        lambda m: f"{m.group(1)}{m.group(2)}…" if _generated(m.group(3))
+        else m.group(0), s)
     s = _PREFIXED_KEY.sub("…", s)
     return _BEARER.sub("…", s)
 
