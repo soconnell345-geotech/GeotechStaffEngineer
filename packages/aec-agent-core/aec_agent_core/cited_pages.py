@@ -1793,9 +1793,16 @@ def _unread_cue(masked: str, c: Cited, cites: Sequence[Cited]
     return _UNREAD_AFTER.match(masked, end)
 
 
+#: Short words that turn a title into a finding ("has no drainage details"):
+#: counted with a statement's other words though under four letters.
+_NEGATIONS = frozenset({"no", "not", "nor"})
+
+
 def _word_in(word: str, facts: Set[str]) -> bool:
     if word in facts or (word.endswith("s") and word[:-1] in facts):
         return True
+    if len(word) < 4:
+        return False
     return any(len(f) >= 4 and (word.startswith(f) or f.startswith(word))
                for f in facts)
 
@@ -1813,14 +1820,16 @@ def _described(statement: str, units: Sequence[Set[Tuple[str, int]]],
     The statement must (a) say of EACH cited page something a structure
     result said of it (a word of its kind, title, heading, label or flag,
     or one of its numbers), (b) give no number or identifier those results
-    did not give for those pages, and (c) have at least half of its other
-    words among their words."""
+    did not give for those pages, and (c) have every one of its other
+    words (page vocabulary left out) among their words: one word more is a
+    claim about the page ("the slope stability results on PDF page 20
+    fail"), and a claim about a page no tool opened must fire."""
     if not units or len(units) > MAX_DESCRIBED:
         return None
     words = []
     for w in _WORDS.findall(statement):
         w = re.sub(r"['’]s$", "", w.lower())
-        if len(w) >= 4 and w not in _PLAIN_WORDS:
+        if (len(w) >= 4 and w not in _PLAIN_WORDS) or w in _NEGATIONS:
             words.append(w)
     idents = []
     for tok in _IDENT.findall(statement):
@@ -1851,8 +1860,8 @@ def _described(statement: str, units: Sequence[Set[Tuple[str, int]]],
         return None
     if words:
         fw = set(_FACT_WORDS.findall(union))
-        if 2 * sum(1 for w in words if _word_in(w, fw)) < len(words):
-            return None
+        if any(not _word_in(w, fw) for w in words):
+            return None        # a word the page map did not give: a claim
     return sorted(said)
 
 
@@ -2115,7 +2124,11 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
                             if d is not c and _grp(d) == _grp(c)
                             and not d.elsewhere and d.kind in ("pdf", "page")
                             for n in d.numbers]
-                    said = _described(stmt, units, facts_of)
+                    # what the statement says of ANOTHER page being unread
+                    # ("..., and PDF page 14 was not viewed") is not said of
+                    # this one
+                    said = _described(_UNREAD.sub(" ", stmt), units,
+                                      facts_of)
                     if said:
                         row["matched"] = said
                         row["why"] = ("what the answer says of the page is "
