@@ -11,6 +11,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import time
 import uuid
 
 import pytest
@@ -90,13 +91,13 @@ def _tiles(page_w=612.0, page_h=792.0):
 
 
 def made_up_run(folder, *, helper_id_on_task_call: bool = True,
-                max_chars: int = 400) -> None:
+                max_chars: int = 400, question: str = QUESTION) -> None:
     """One turn: the main agent opens, reads, looks at and makes a contact
     sheet of a six-page made-up document, starts one helper (a zoom and a
     whole-page look), zooms itself and answers."""
     run = _Run(folder, max_chars=max_chars)
     log, top = run.log, run.top
-    log.turn_start(prompt=QUESTION, model="made-up-model")
+    log.turn_start(prompt=question, model="made-up-model")
     run.model(top, "I will open the document.",
               [("open_document", {"source": DOC})], tokens=(1000, 20))
     run.tool(top, "open_document", {"source": DOC},
@@ -349,19 +350,80 @@ def test_suite_run_folder_with_its_vision_records(tmp_path):
     assert "from reads.json" in page
 
 
+def _transcript(folder, *pairs) -> None:
+    """``transcript.jsonl`` in the shape the pages' writer gives it: one
+    line per entry, as ``append_transcript`` (aec_document_review/core.py)
+    appends it, with the entries the page makes: ``{"role": "user",
+    "text": prompt}`` (app.py) and ``{"role": "assistant", "text": final,
+    "artifacts": [...]}`` (turn_jobs.py, artifacts relative to files/)."""
+    with open(folder / "transcript.jsonl", "a", encoding="utf-8") as fh:
+        for question, answer in pairs:
+            fh.write(json.dumps({"role": "user", "text": question}) + "\n")
+            fh.write(json.dumps({"role": "assistant", "text": answer,
+                                 "artifacts": ["made_up_markup.pdf"]})
+                     + "\n")
+
+
 def test_page_conversation_folder(tmp_path):
-    made_up_run(tmp_path)
+    long_q = QUESTION + " " + "Made-up detail. " * 60
+    made_up_run(tmp_path, question=long_q)
     (tmp_path / "meta.json").write_text(json.dumps({
         "title": "Made-up review", "turn_count": 1}), encoding="utf-8")
-    (tmp_path / "transcript.jsonl").write_text(
-        json.dumps({"role": "user", "content": QUESTION}) + "\n"
-        + json.dumps({"role": "assistant", "content": FINAL,
-                      "artifacts": ["made_up_markup.pdf"]}) + "\n",
-        encoding="utf-8")
+    _transcript(tmp_path, (long_q, FINAL))
     page = run_report.build_report(str(tmp_path))
     assert "a page conversation: Made-up review" in page
     assert "made_up_markup.pdf" in page
-    assert "The answer as the user received it" in page
+    assert f"The answer as the user received it: {len(FINAL)} characters" \
+        in page
+    assert f"<pre>{html.escape(FINAL)}</pre>" in page
+    # the whole question from the transcript, not the log's first 500
+    assert long_q in page
+    assert "the activity log keeps the first 500 characters" not in page
+    assert "holds no answer as the user received it" not in page
+
+
+def test_a_turn_with_no_answer_says_so(tmp_path):
+    made_up_run(tmp_path)
+    page = run_report.build_report(str(tmp_path))
+    assert "The record holds no answer as the user received it for this " \
+           "turn." in page
+
+
+def test_a_transcript_without_its_activity_log_shows_the_questions(tmp_path):
+    created = 1_700_000_000.25
+    (tmp_path / "meta.json").write_text(json.dumps({
+        "title": "Made-up review", "created": created, "updated": created,
+        "turn_count": 2}), encoding="utf-8")
+    second = "Made-up second question about the made-up beam B2."
+    _transcript(tmp_path, (QUESTION, FINAL), (second, "Made-up reply."))
+    page = run_report.build_report(str(tmp_path))
+    asked = re.search(r"<tr><th>Asked</th><td>(.*?)</td></tr>", page)
+    assert asked, "no Asked row"
+    assert f"Turn 1: <span class='said'>{html.escape(QUESTION)}</span>" \
+        in asked.group(1)
+    assert f"Turn 2: <span class='said'>{html.escape(second)}</span>" \
+        in asked.group(1)
+    # "When" is a date and time, not meta.json's number of seconds
+    when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created))
+    assert f"<tr><th>When</th><td>{when}</td></tr>" in page
+    assert "1700000000" not in page
+
+
+def test_the_grid_says_no_look_recorded_without_the_activity_log(tmp_path):
+    (tmp_path / "reads.json").write_text(json.dumps({"reads": [
+        {"document": DOC, "page": 3, "pdf_page": 4, "view": "page",
+         "tool": "analyze_pdf_page", "prompt": "made-up", "when": 1.0}]}),
+        encoding="utf-8")
+    page = run_report.build_report(str(tmp_path))
+    assert _counts(page) == {"text": 0, "whole": 1, "tiles": 0, "zoom": 0,
+                             "contact": 0, "never": 3}
+    assert "no look recorded: <b>3</b>" in page
+    assert 'title="PDF page 1: no look recorded"' in page
+    assert "never opened" not in page
+    # with the log, nothing changes
+    made_up_run(tmp_path)
+    page = run_report.build_report(str(tmp_path))
+    assert "never opened" in page and "no look recorded" not in page
 
 
 def test_command_line_writes_only_where_asked(tmp_path, capsys):

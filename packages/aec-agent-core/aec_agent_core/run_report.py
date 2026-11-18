@@ -205,6 +205,14 @@ def _when(ts: Any) -> str:
         return ""
 
 
+def _when_any(value: Any) -> str:
+    """A time a record holds: a number of seconds (``meta.json``'s
+    ``created``) as a date and time; a text (the suite's stamp) as it is."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return _when(value)
+    return "" if value is None else str(value)
+
+
 def _json_obj(value: Any) -> Optional[dict]:
     if isinstance(value, dict):
         return value
@@ -454,10 +462,11 @@ class RunRecord:
         if not out and (self.run or {}).get("question"):
             out[1] = str(self.run["question"])
         if not out:
-            users = [e for e in self.transcript
-                     if e.get("role") in ("user", "human")]
+            # the pages' writer (append_transcript) keeps a message's words
+            # under "text"
+            users = [e for e in self.transcript if e.get("role") == "user"]
             for i, e in enumerate(users, 1):
-                out[i] = _content_text(e.get("content"))
+                out[i] = str(e.get("text") or "")
         if not out:
             for m in self.messages:
                 if not isinstance(m, dict):
@@ -478,10 +487,10 @@ class RunRecord:
         if not out:
             turn = 0
             for e in self.transcript:
-                if e.get("role") in ("user", "human"):
+                if e.get("role") == "user":
                     turn += 1
-                elif e.get("role") == "assistant" and turn:
-                    out[turn] = _content_text(e.get("content"))
+                elif e.get("role") == "assistant" and turn and e.get("text"):
+                    out[turn] = str(e["text"])
         return out
 
     def delivered(self) -> List[dict]:
@@ -1412,9 +1421,9 @@ class Report:
             out.append(f"<tr><th>Model</th><td>{_e(text)}</td></tr>")
         when = next((t.start.get("ts") for t in self.turns
                      if t.start and t.start.get("ts")), None)
-        when_text = _when(when) if when else str(
+        when_text = _when(when) if when else _when_any(
             (rec.run or {}).get("started") or (rec.meta or {}).get(
-                "created") or "")
+                "created"))
         if when_text:
             out.append(f"<tr><th>When</th><td>{_e(when_text)}</td></tr>")
         out.append("</table>")
@@ -1646,6 +1655,9 @@ class Report:
                 out.append(_fold(f"The answer as the user received it: "
                                  f"{_n(len(ans))} characters",
                                  f"<pre>{_e(ans)}</pre>"))
+            else:
+                out.append("<p class='note'>The record holds no answer as "
+                           "the user received it for this turn.</p>")
             out.append("</section>")
         return "".join(out)
 
@@ -1831,8 +1843,13 @@ class Report:
         legend = "".join(f"<li><b>{letter}</b> {_e(words)}</li>"
                          for m, letter, _c, words in MARKS
                          if m in ALWAYS_COUNTED or m in present)
+        none = ("a page with none was never opened" if
+                self.record.has_activity else
+                f"a page with none has no look recorded (there is no "
+                f"{ACTIVITY_FILE}, so only the vision tools' own records "
+                f"count, and a page may have been opened without one)")
         out = ["<p class='muted'>Each square is one page. The letters say "
-               "how it was taken in; a page with none was never opened. "
+               f"how it was taken in; {_e(none)}. "
                "Only what the record says counts: a page named in a search "
                "hit is not counted as opened. A square links to its drawing "
                "in part 4 when the page was looked at.</p>",
@@ -1848,6 +1865,10 @@ class Report:
         n = doc.n_pages or 0
         counts = {m[0]: 0 for m in MARKS}
         never = 0
+        # with no activity log no look is recorded at all: an empty square
+        # says only that
+        empty = "never opened" if self.record.has_activity else \
+            "no look recorded"
         cells = []
         for p in range(max(n, (max(doc.pages) + 1) if doc.pages else 0)):
             use = doc.pages.get(p)
@@ -1860,8 +1881,7 @@ class Report:
                                         "contact", "text_empty", "sweep")
                             if m in marks), "")
             letters = " ".join(m[1] for m in MARKS if m[0] in marks)
-            words = "; ".join(m[3] for m in MARKS if m[0] in marks) or \
-                "never opened"
+            words = "; ".join(m[3] for m in MARKS if m[0] in marks) or empty
             cls = f"pg k-{deepest}" if marks else "pg never"
             looked = use is not None and bool(use.looks)
             tag, href = ("a", f' href="#p-{doc.index}-{p}"') if looked \
@@ -1873,7 +1893,7 @@ class Report:
             f'<span data-kind="{m}">{_e(label)}: <b>{counts[m]}</b></span>'
             for m, _l, label, _w in MARKS
             if counts[m] or m in ALWAYS_COUNTED)
-        count_spans += (f'<span data-kind="never">never opened: '
+        count_spans += (f'<span data-kind="never">{empty}: '
                         f'<b>{never}</b></span>')
         about = f"{_n(n)} pages" if n else "page count unknown"
         if doc.n_from:
