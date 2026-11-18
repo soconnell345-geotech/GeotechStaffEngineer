@@ -141,6 +141,32 @@ pip install "aec-agent-core[anthropic]" # with Claude through LangChain
 Python 3.11 or later. An application installs it for you: each pins the
 core it was tested with.
 
+## Reading a saved run
+
+```
+python -m aec_agent_core.run_report <run folder>
+python -m aec_agent_core.run_report <run folder> -o report.html --documents <folder with the PDFs>
+```
+
+This writes one HTML file, `run_report.html`, beside the run's record (or
+where `-o` says), for an engineer to read in any browser without a network
+or a developer. It shows what was asked, the model and the totals (model
+calls, tokens, vision calls, helpers, wall time) and the files delivered;
+then every step in order: the model's own words, each tool call with its
+arguments and its result (long ones folded, with their size), and each
+helper's steps under the brief it was given; then, per document, a grid of
+its pages saying which were read as text, looked at whole, in tiles,
+zoomed, shown on a contact sheet or never opened; and each page looked at,
+with a box for every look, tile and zoom, numbered as the steps.
+
+`<run folder>` is a page conversation's folder or one task folder of the
+review suite (`runs/<arm>/<task>/`). The pages are drawn behind the boxes
+when the documents' PDFs are in that folder or under `--documents` (the
+suite deletes its uploads after scoring, so point `--documents` at its
+documents); otherwise the page outlines are drawn alone. A missing or older
+record file is named in the report. The file holds the run's text and page
+images: treat it as you treat the documents.
+
 ## Licence
 
 MIT, as GeotechStaffEngineer. See `LICENSE`.
