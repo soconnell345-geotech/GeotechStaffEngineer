@@ -21,10 +21,27 @@ used.** The library's own wrap is asked again for that one call with its
 summarizing switched off, so the model is handed exactly what it would have
 been handed had the history stayed under the threshold -- the history as it
 was -- and nothing is written to the state; the library tries to summarize
-again at its next call. A ``summary_failed`` event goes on the record
-(:data:`EVENT`). If that call is itself too long for the model, the library
-summarizes regardless of the threshold; if that summary fails too, the call
-ends on the error, and the history is still kept.
+again at the next TURN. A ``summary_failed`` event goes on the record
+(:data:`EVENT`), once per failure. If that call is itself too long for the
+model, the library summarizes regardless of the threshold; if that summary
+fails too, the call ends on the error, and the history is still kept.
+
+**Not again in the same turn.** The library writes the older history to a
+file BEFORE it makes the summary, and asks the summary call several times
+with a back-off; a failure that lasts would repeat both at every model
+call. So once a summary has failed, the later model calls of that turn are
+handed the history as it is from the start: no summary request, no
+back-off, no new history file. The turn is the core's own
+(:class:`aec_agent_core.deep.keep_work.TurnScope`, the scope a host opens
+around one turn and LangGraph copies into every thread and task of it), so
+two conversations on one agent at the same moment stay apart; inside a turn
+the mark is per summarizer (the main agent's, each helper type's) and per
+helper run. The next turn has a new scope and tries again. Each call that
+was over the threshold and was not summarized for this reason is counted on
+the scope (``summaries_skipped`` on the record's ``turn_end``). The one
+exception is the library's own: a call the model refuses as too long is
+summarized regardless, in any call. Outside a turn scope (a library call)
+there is no turn to remember a failure in, and every call tries.
 
 **How a failure is read.** langchain before 1.4 has no constant or code for
 it, only the text of its ``except`` branch: the summary's exact prefix
@@ -62,7 +79,10 @@ _MARK = "_aec_summary_guard"
 #: The summarizer whose summary is being made under the guard.
 _guarding: contextvars.ContextVar = contextvars.ContextVar(
     "aec_summary_guarding", default=None)
-#: The summarizer asked again with its summarizing switched off.
+#: ``(summarizer, skipped)``: the summarizer asked with its summarizing
+#: switched off. ``skipped`` is ``None`` for the call whose summary just
+#: failed, and a list for a later call of the same turn: it gets one entry
+#: when that call was over the threshold.
 _holding: contextvars.ContextVar = contextvars.ContextVar(
     "aec_summary_holding", default=None)
 
@@ -145,12 +165,23 @@ def _guard_acreate(orig):
 
 def _guard_trigger(orig):
     """A trigger (``_should_summarize``, ``_over_budget``) that says "no"
-    while its summarizer is asked again after a failed summary."""
+    while its summarizer is asked with its summarizing switched off. In a
+    later call of a turn whose summary failed, what the library's own
+    trigger would have said is noted, for the count of calls not
+    summarized."""
     @functools.wraps(orig)
     def trigger(self, *args, **kwargs):
-        if _holding.get() is self:
-            return False
-        return orig(self, *args, **kwargs)
+        held = _holding.get()
+        if held is None or held[0] is not self:
+            return orig(self, *args, **kwargs)
+        skipped = held[1]
+        if skipped is not None and not skipped:
+            try:
+                if orig(self, *args, **kwargs):
+                    skipped.append(True)
+            except Exception:  # noqa: BLE001 - the count never fails a call
+                pass
+        return False
     return trigger
 
 
@@ -161,20 +192,67 @@ def _again_failed(self, failed: SummaryFailed):
     raise failed
 
 
+def _turn_and_helper():
+    """The running turn's scope and the helper run this call belongs to
+    (``None``: the main agent); ``(None, None)`` outside a turn."""
+    try:
+        from aec_agent_core.deep import keep_work
+        return keep_work.current_turn(), keep_work.current_helper()
+    except Exception:  # noqa: BLE001 - no turn: every call tries
+        return None, None
+
+
+def _failed_this_turn(self) -> bool:
+    scope, helper = _turn_and_helper()
+    try:
+        return scope is not None and scope.summary_failed(self, helper)
+    except Exception:  # noqa: BLE001 - a scope of another shape
+        return False
+
+
+def _note_failed(self) -> None:
+    scope, helper = _turn_and_helper()
+    try:
+        if scope is not None:
+            scope.note_summary_failed(self, helper)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _note_skipped(skipped) -> None:
+    if not skipped:
+        return
+    scope, _ = _turn_and_helper()
+    try:
+        if scope is not None:
+            scope.note_summary_skipped()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _first_try(self):
+    """What the hold pass starts with: ``None`` when this call may try its
+    summary first, else the list that notes a call not summarized."""
+    return [] if _failed_this_turn(self) else None
+
+
 def _guard_wrap(orig):
     @functools.wraps(orig)
     def wrap_model_call(self, request, handler):
-        token = _guarding.set(self)
-        try:
-            return orig(self, request, handler)
-        except SummaryFailed as failed:
-            if failed.source is not self:
-                raise
-            first = failed
-        finally:
-            _guarding.reset(token)
-        _record(first)
-        hold, token = _holding.set(self), _guarding.set(self)
+        skipped = _first_try(self)
+        if skipped is None:
+            token = _guarding.set(self)
+            try:
+                return orig(self, request, handler)
+            except SummaryFailed as failed:
+                if failed.source is not self:
+                    raise
+                first = failed
+            finally:
+                _guarding.reset(token)
+            _record(first)
+            _note_failed(self)
+        hold, token = _holding.set((self, skipped)), _guarding.set(self)
         try:
             return orig(self, request, handler)
         except SummaryFailed as failed:
@@ -182,23 +260,27 @@ def _guard_wrap(orig):
         finally:
             _guarding.reset(token)
             _holding.reset(hold)
+            _note_skipped(skipped)
     return wrap_model_call
 
 
 def _guard_awrap(orig):
     @functools.wraps(orig)
     async def awrap_model_call(self, request, handler):
-        token = _guarding.set(self)
-        try:
-            return await orig(self, request, handler)
-        except SummaryFailed as failed:
-            if failed.source is not self:
-                raise
-            first = failed
-        finally:
-            _guarding.reset(token)
-        _record(first)
-        hold, token = _holding.set(self), _guarding.set(self)
+        skipped = _first_try(self)
+        if skipped is None:
+            token = _guarding.set(self)
+            try:
+                return await orig(self, request, handler)
+            except SummaryFailed as failed:
+                if failed.source is not self:
+                    raise
+                first = failed
+            finally:
+                _guarding.reset(token)
+            _record(first)
+            _note_failed(self)
+        hold, token = _holding.set((self, skipped)), _guarding.set(self)
         try:
             return await orig(self, request, handler)
         except SummaryFailed as failed:
@@ -206,6 +288,7 @@ def _guard_awrap(orig):
         finally:
             _guarding.reset(token)
             _holding.reset(hold)
+            _note_skipped(skipped)
     return awrap_model_call
 
 
