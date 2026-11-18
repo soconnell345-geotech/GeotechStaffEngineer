@@ -41,7 +41,9 @@ helper did:
   answer named them. Only a helper that stopped or gave up is noted on the
   turn (:attr:`TurnScope.kept_files`).
   Document Review names its reader; the geotech page names none, so its
-  helpers get what they always got.
+  helpers get what they always got. The minimal build's helper is not a
+  ``task`` call this wraps: it adds the same open items to its own answer,
+  from a record made of its messages (:func:`record_of_messages`; DR-50).
 
 Nothing here changes a tool's result except a ``task`` result that kept a
 file, whose helper saved files (their names are added, BACKLOG RI-31) or
@@ -697,6 +699,30 @@ class HelperRecorder(AgentMiddleware):
         result = await handler(request)
         self._record(request, result)
         return result
+
+
+def record_of_messages(messages, subagent: str = "",
+                       brief: str = "") -> HelperRecord:
+    """A :class:`HelperRecord` made after the fact from a finished helper's
+    own conversation: its model replies with their tool calls and its tool
+    results, in order (the brief and any other message are skipped).
+
+    For a helper that does not run as a ``task`` call :class:`KeepWork`
+    wraps, so nothing recorded it as it went: the minimal build's helper
+    (BACKLOG DR-50). Its final state holds each result as the helper
+    received it (the inline images are added to a request, never to the
+    state), so :func:`open_items` reads this record as it reads one
+    :class:`HelperRecorder` kept. Setting no running helper leaves
+    everything that reads :func:`current_helper` as it was."""
+    rec = HelperRecord("", subagent, brief)
+    for m in messages or ():
+        if isinstance(m, ToolMessage):
+            rec.add_result(getattr(m, "name", None),
+                           getattr(m, "tool_call_id", None) or "",
+                           _text(m.content), getattr(m, "status", None))
+        elif getattr(m, "type", "") == "ai":
+            rec.add_model(m)
+    return rec
 
 
 # ---------------------------------------------------------------------------
@@ -1455,6 +1481,21 @@ def _failed_zoom_box(args: dict) -> tuple:
     return box, False
 
 
+def _zoom_place(args: dict) -> Optional[str]:
+    """A zoom's place in the key of its flags, as it was given: its
+    ``bbox``, else its ``view`` + ``image_box``; ``None`` for a zoom on a
+    whole page or image. Only a later zoom of the same place settles a flag
+    by its key (DR-50); before, every ``view`` + ``image_box`` zoom on a
+    page shared one key, so any later good one there dropped a failed
+    one."""
+    if args.get("bbox") is not None:
+        return _json(args.get("bbox"))
+    if args.get("view") is not None or args.get("image_box") is not None:
+        return _json({"view": args.get("view"),
+                      "image_box": args.get("image_box")})
+    return None
+
+
 def open_items(rec: HelperRecord) -> List[str]:
     """The open items a helper's own tools flagged, one line per file and
     page, the most serious first: a call that failed; a look whose
@@ -1467,8 +1508,9 @@ def open_items(rec: HelperRecord) -> List[str]:
     reading asked to check.
 
     A flag is dropped when the helper read the thing again: a later result
-    of the same tool on the same file and page (for a zoom, the same box)
-    without it; for a page with no text layer, a later look at it.
+    of the same tool on the same file and page (for a zoom, the same place,
+    given the same way: :func:`_zoom_place`) without it; for a page with no
+    text layer, a later look at it.
 
     DR-50, where it is not clear that a later call replaced an earlier one,
     the earlier one stays listed:
@@ -1510,8 +1552,7 @@ def open_items(rec: HelperRecord) -> List[str]:
         data = _result_dict(s.get("text") or "")
         source = _source_of(args)
         page = _page_of(data, args)
-        box = (_json(args.get("bbox")) if tool in _ZOOM_TOOLS
-               and args.get("bbox") is not None else None)
+        box = _zoom_place(args) if tool in _ZOOM_TOOLS else None
         key = (tool, source, page, box)
         label = " ".join(x for x in (
             source or tool, f"page {page}" if page is not None else "",
@@ -1969,7 +2010,8 @@ __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
            "TurnStopped", "stop_requested", "check_stop", "note_budget",
            "note_primary_model_call", "turn_model_calls",
            "extra_model_calls", "take_extra_model_call",
-           "current_helper", "HelperRecorder", "KeepWork",
+           "current_helper", "HelperRecorder", "record_of_messages",
+           "KeepWork",
            "note_budget_reached", "gave_up", "summary_paragraph",
            "saved_files", "saved_note", "SAVED_FILES_HINT_HOOK",
            "DEFAULT_SAVED_FILES_HINT", "save_held_records",
