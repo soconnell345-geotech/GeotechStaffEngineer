@@ -6,7 +6,8 @@ and the page becomes its own package for people who are not geotechnical
 engineers (INF-26). So nothing the page's model is shown - its system
 prompts, its reading helper's prompt, every tool description - names a
 boring, a laboratory sheet, a DIGGS file or the like, on either of its two
-builds, with every review switch off and on. The geotech page keeps its
+builds, with every review switch off and on, and with SharePoint
+configured (its tools and their prompt; BACKLOG DR-34). The geotech page keeps its
 wording: the phrase swaps (``review_agent.REVIEW_REWRITES``) apply only here,
 and each must still match the text it swaps, or the original wording would
 come back unnoticed.
@@ -78,11 +79,19 @@ def _hits(texts):
 def test_review_page_names_no_geotech_report_things(build, tmp_path,
                                                     monkeypatch):
     from aec_agent_core.review_eval.runner import build_page_agent
+    from aec_document_review import sharepoint_store
     for env, value in BUILDS[build].items():
         monkeypatch.setenv(env, value)
+    # With SharePoint configured, so its tools' text is read too (BACKLOG
+    # DR-34: it named a boring log and subsurface parsers). Building them
+    # calls nothing.
+    monkeypatch.setattr(sharepoint_store, "configured", lambda: True)
     agent = build_page_agent(_Model(responses=[AIMessage("x")]), {},
                              str(tmp_path), [], page="review")
     surface = _surface(agent)
+    if build != "minimal":               # the minimal build adds no tools
+        assert {"tool sharepoint_download_file",
+                "tool sharepoint_search_files"} <= set(surface)
     assert "report_checklist" not in " ".join(surface)
     assert "log_grid" not in " ".join(surface)
     assert not _hits(surface), "\n".join(_hits(surface))
@@ -90,10 +99,12 @@ def test_review_page_names_no_geotech_report_things(build, tmp_path,
 
 def test_the_review_prompts_name_no_geotech_report_things():
     from aec_document_review import review_prompt as P
+    from aec_document_review.sharepoint_tools import SHAREPOINT_PROMPT
     texts = {"DOCUMENT_REVIEW_PROMPT": P.DOCUMENT_REVIEW_PROMPT,
              "DOCUMENT_REVIEW_READER_PROMPT":
                  P.DOCUMENT_REVIEW_READER_PROMPT,
-             "legacy": P.build_document_review_prompt()}
+             "legacy": P.build_document_review_prompt(),
+             "SHAREPOINT_PROMPT": SHAREPOINT_PROMPT}
     assert not _hits(texts), "\n".join(_hits(texts))
 
 
