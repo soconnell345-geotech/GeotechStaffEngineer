@@ -2,8 +2,8 @@
 
 Copied from GeotechStaffEngineer's ``funhouse_agent/review_eval/tasks.py`` at
 the app split's step 13 (BACKLOG INF-33): its 38 review-page tasks, and
-since BACKLOG DR-25 fourteen coordination tasks of this package's own (at
-the end of this file), 52 in all. The four
+since BACKLOG DR-25 sixteen coordination tasks of this package's own (at
+the end of this file), 54 in all. The four
 asked on the GeotechStaffEngineer page (the synthetic geotechnical report's
 three and the boring-log scale) stayed in that app, with the report fixture;
 what the text below says of them is history. The framework (the runner, the
@@ -1059,6 +1059,54 @@ _FCU_3_4 = {"re": r"fcu[\s-]?3[\s-]?4(?!\d)"}
 _LP_4B = {"re": r"lp[\s-]?4b\b"}
 
 
+#: Issue 2's reissue (BACKLOG DR-25, 2026-11-18). A word that says the
+#: other sheet was left behind: still showing the old value, not updated,
+#: disagreeing. Not "unchanged" or "no changes" alone: a list of what did
+#: not change says that of every sheet it names, and is no finding.
+_LEFT_BEHIND = {"re": r"\b(?:still|not\s+(?:been\s+)?(?:updated|revised|"
+                      r"renumbered|carried|coordinated|followed)|"
+                      r"(?:was|were|is|are|has|have)\s?n[o']t\s+(?:been\s+)?"
+                      r"(?:updated|revised|renumbered|carried|coordinated)|"
+                      r"should\s+(?:also\s+)?(?:have\s+been|be)\s+(?:updated|"
+                      r"revised|changed|renumbered)|missed|overlooked|"
+                      r"left\s+(?:at|behind)|disagree\w*|conflict\w*|"
+                      r"inconsisten\w*|mismatch\w*|discrepan\w*|"
+                      r"(?:does|do|did)\s?n[o']t\s+(?:match|agree))\b"}
+#: A word that says a cloud is there ("clouded", "inside a revision 2
+#: cloud", "delta 2"), and not "not clouded", "no cloud", "unclouded".
+_CLOUDED = {"re": r"(?<!not )(?<!n't )(?<!no )(?<!without )(?<!without a )"
+                  r"(?<!neither )(?<!nor )\b(?:clouded|cloud|delta|"
+                  r"triangle)\b"}
+#: A word that says a change has no entry in the sheet's revision block.
+_UNLISTED = {"re": r"\b(?:no|not|without|missing|lacks?|absent|never)\b"
+                   r"[^.;\n]{0,40}?\b(?:entry|entries|listed|listing|"
+                   r"revision|recorded|logged)\b|"
+                   r"\brevision\s+(?:block|table|history|list|log)\b"
+                   r"[^.;\n]{0,60}?\b(?:no|not|without|lacks?|only|still)\b|"
+                   r"\b(?:unlisted|unrecorded|undocumented)\b"}
+#: A word that says nothing on the sheet changed.
+_NO_CHANGE = {"re": r"\bnothing\b[^.;\n]{0,30}?\b(?:changed|moved|"
+                    r"different|revised)\b|"
+                    r"\bno\s+(?:visible\s+|actual\s+|real\s+|corresponding\s+|"
+                    r"matching\s+|drawn\s+|graphic\s+|such\s+)?(?:change|"
+                    r"difference|relocation|move)s?\b|"
+                    r"\bnot\s+(?:been\s+)?(?:moved|relocated|changed|"
+                    r"revised)\b|"
+                    r"\b(?:did|has|was|is)\s?n[o']t\s+(?:been\s+)?(?:move|"
+                    r"moved|relocated|change|changed)\b|"
+                    r"\b(?:unchanged|identical)\b|"
+                    r"\bsame\s+(?:place|position|location|spot)\b"}
+#: The window submittal's numbers.
+_U_WHOLE = [_num("1.90"), _num("1.9")]
+_U_SPECIFIED = [_num("1.60"), _num("1.6")]
+_SOV_TOTAL = [_num("178,500"), _num("178500"), _num("178 500")]
+_SOV_SUM = [_num("174,500"), _num("174500"), _num("174 500")]
+#: A laboratory water penetration test; not the field water test of Part 3
+#: (an answer may rightly say that one is not due yet).
+_WATER_TEST = {"re": r"(?<!field )water[\s-]?(?:penetration|test|"
+                     r"resistance|leakage|infiltration|tightness)"}
+
+
 def _n_tests(n: str, word: str) -> Dict[str, str]:
     """``n`` strength tests: "12 tests", "12 consecutive strength tests",
     "twelve tests"."""
@@ -1140,12 +1188,53 @@ _PLANTED_CHECKS: Dict[str, Dict[str, Any]] = {
     "strength-record": {
         "type": "stated_together",
         "terms": [_n_tests("12", "twelve"), _n_tests("30", "thirty")]},
+    # the window submittal's five (BACKLOG DR-25, 2026-11-18): the whole-
+    # window value beside the limit (the centre-of-glass 1.10 complies and
+    # is not the value the section governs)
+    "window-u-value": {
+        "type": "stated_together", "terms": [_U_WHOLE, _U_SPECIFIED]},
+    "window-anchorage": {
+        "type": "stated_together",
+        "terms": [["anchorage", "anchor calc", "sd-05", "sd 05",
+                   "design data"], _ABSENT], "window": 200},
+    "window-section-missing": {
+        "type": "stated_together",
+        "terms": [{"re": r"08[\s.-]?80[\s.-]?00"}, _ABSENT], "window": 200},
+    "window-water-test": {
+        "type": "stated_together", "terms": [_WATER_TEST, _ABSENT],
+        "window": 200},
+    "window-sov-total": {
+        "type": "stated_together", "terms": [_SOV_TOTAL, _SOV_SUM]},
+    # issue 2's four: each wants the sheet or value and what is wrong with
+    # how it was issued, side by side
+    "parapet-twin": {
+        "type": "stated_together",
+        "terms": [[_num("109.60"), _num("109.6")],
+                  [_num("109.30"), _num("109.3")], _sheet("A-301"),
+                  _LEFT_BEHIND]},
+    "cloud-not-listed": {
+        "type": "stated_together",
+        "terms": [_sheet("S-501"), {"re": r"12[\s-]?20\s?m\b"}, _CLOUDED,
+                  _UNLISTED], "window": 400},
+    # in one line or list item: "the other sheets are unchanged" is what
+    # a list of changes says on its last line, next to any sheet above it
+    "entry-no-change": {
+        "type": "stated_together",
+        "terms": [_sheet("A-102"), [_mark("205"), "relocat"], _NO_CHANGE],
+        "window": 200, "scope": "item"},
+    "door-renumbered": {
+        "type": "stated_together",
+        "terms": [_mark("106"), _mark("110"), [_sheet("A-101"), "plan"],
+                  _LEFT_BEHIND]},
 }
+
+#: Every planted problem a check is written for.
+_ALL_PLANTED = (_coord.LONG_PLANTED + _coord.SUBMITTAL_PLANTED +
+                _coord.SPEC_PLANTED + _coord.REISSUE_PLANTED)
 
 
 def _planted(keys: Iterable[str], with_files: bool = False,
-             source: Iterable[Any] = _coord.LONG_PLANTED +
-             _coord.SUBMITTAL_PLANTED) -> List[Dict[str, Any]]:
+             source: Iterable[Any] = _ALL_PLANTED) -> List[Dict[str, Any]]:
     """The checks for the planted problems ``keys``, each labelled with the
     problem's key."""
     known = {p.key for p in source}
@@ -1161,8 +1250,7 @@ def _planted(keys: Iterable[str], with_files: bool = False,
 
 def _truth(keys: Iterable[str]) -> str:
     """The fixture's own sentence for each planted problem."""
-    by_key = {p.key: p.truth for p in
-              _coord.LONG_PLANTED + _coord.SUBMITTAL_PLANTED}
+    by_key = {p.key: p.truth for p in _ALL_PLANTED}
     return " ".join(by_key[k] for k in keys)
 
 
@@ -1487,6 +1575,42 @@ COORDINATION_TASKS: List[Task] = [
         checks=_planted(_LONG_KEYS, with_files=True),
         truth=_truth(_LONG_KEYS) + " Nineteen planted problems over 40 "
         "sheets, one check each. " + _BUILT),
+    # BACKLOG DR-25, 2026-11-18: a specification section in the three-part
+    # form with a submittal answering it, and a third issue of the set
+    Task(
+        id="coord-spec-submittal",
+        question=("Review this window submittal against its specification "
+                  "section and the project manual. What does not comply, "
+                  "what is missing, and what in it is wrong or does not "
+                  "resolve?"),
+        documents=["fixture_coord_manual", "fixture_coord_window_section",
+                   "fixture_coord_window_submittal"],
+        category="check", doc_type="coordination_set",
+        checks=_planted([p.key for p in _coord.SPEC_PLANTED]),
+        truth=_truth([p.key for p in _coord.SPEC_PLANTED]) +
+        " The rest complies: frame wall thickness 2.2 mm (2.0 mm at "
+        "least), finish 20 micrometres (18 at least), glazing as 2.3, air "
+        "leakage 0.20 L/s per m2 (0.30 at most), the structural tests at "
+        "1.80 kPa both ways, a 1200 x 1500 mm specimen tested on "
+        "2025-09-22 (within four years). Section 07 92 00 is in the "
+        "manual's contents. The warranty is a closeout submittal, not due "
+        "yet, and the field water test of 3.3 comes after installation. "
+        "The transmittal marks no deviations. " + _BUILT),
+    Task(
+        id="coord-reissue",
+        question=("These are issues 1 and 2 of the same drawing set. Review "
+                  "issue 2 as a reissue: what changed, is each change "
+                  "clouded and listed in its sheet's revision block, does "
+                  "each new revision-block entry match a change on its "
+                  "sheet, and was each change carried to the other sheets "
+                  "that show the same thing?"),
+        documents=["fixture_coord_set", "fixture_coord_set_2"],
+        category="compare", doc_type="coordination_set",
+        checks=_planted([p.key for p in _coord.REISSUE_PLANTED]),
+        truth=_truth([p.key for p in _coord.REISSUE_PLANTED]) +
+        " The cover's sheet index and revision block changed with the "
+        "issue; the issue 1 clouds on A-401 and A-601 are as they were. "
+        "Every other sheet is as it was in issue 1. " + _BUILT),
 ]
 
 OPEN_TASKS += COORDINATION_TASKS

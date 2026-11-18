@@ -1,4 +1,4 @@
-"""Document Review's review suite: its 52 tasks, run through the shared
+"""Document Review's review suite: its 54 tasks, run through the shared
 core's framework (``aec_agent_core.review_eval``) on this package's page.
 
 Loading this package hands the framework what is this application's
@@ -8,8 +8,8 @@ Loading this package hands the framework what is this application's
 - ``review_eval.page_host``: the page whose turn a task runs on
   (:mod:`aec_document_review.suite_page`);
 - ``review_eval.fixture``: the coordination tasks' documents, one made-up
-  building's drawings, manual, memorandum and submittal
-  (:mod:`.coordination_fixture`).
+  building's drawings (three issues), manual, memorandum, a specification
+  section and two submittals (:mod:`.coordination_fixture`).
 
 ``review_eval.document_dirs`` and ``review_eval.fetch_document`` stay
 unfilled: the public documents are found in the suite's ``docs_dir`` or

@@ -24,7 +24,18 @@ building; every name and number is made up):
   (:data:`LONG_PLANTED`);
 * the project manual (a table of contents and three specification
   sections), the geotechnical recommendations memorandum, and a concrete mix
-  submittal with four things wrong with it (:data:`SUBMITTAL_PLANTED`).
+  submittal with four things wrong with it (:data:`SUBMITTAL_PLANTED`);
+* the same 15-sheet set at issue 2, reissued with four faults in how it
+  was revised (:data:`REISSUE_PLANTED`): a change made on one sheet and not
+  on the other sheet that shows the same thing, a clouded change with no
+  entry in its sheet's revision block, a revision-block entry with nothing
+  changed on the sheet, and a schedule row renumbered while the plan's tag
+  kept the old number (BACKLOG DR-25, 2026-11-18);
+* Section 08 51 13, aluminum windows, in the three-part form (general,
+  products, execution), issued apart from the manual as its contents say,
+  and a window submittal answering it (a transmittal, a product data sheet,
+  a laboratory test report and a schedule of values) with five things
+  wrong with it (:data:`SPEC_PLANTED`).
 
 Callouts are drawn as a reviewer meets them: a bubble with the view number
 over the sheet number, two separate pieces of text. A search for "7/A-501"
@@ -44,7 +55,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 PROJECT = "NORTH YARD ANNEX"
 PROJECT_NO = "24-117"
 MEMO_NO = "G-24-031"
-ISSUE_DATES = ("2026-01-12", "2026-03-02")
+ISSUE_DATES = ("2026-01-12", "2026-03-02", "2026-04-27")
 
 FLOOR_WORDS = ("FIRST", "SECOND", "THIRD", "FOURTH", "FIFTH")
 FIRST_FLOOR_EL = 100.00
@@ -193,6 +204,78 @@ SUBMITTAL_PLANTED: Tuple[Planted, ...] = (
     Planted("strength-record", ("submittal",),
             "The strength record holds 12 tests; the specification asks for "
             "30 consecutive tests or laboratory trial batches."),
+)
+
+#: Issue 2 of the 15-sheet set against issue 1: what is wrong with how the
+#: set was revised. Each is found by reading both issues; none is said by
+#: a sheet's title, a file name or a heading.
+REISSUE_PLANTED: Tuple[Planted, ...] = (
+    Planted("parapet-twin", ("A-201", "A-301"),
+            "Issue 2 raised T.O. PARAPET from EL. 109.30 to EL. 109.60 on "
+            "the elevations (A-201, clouded and listed as revision 2); the "
+            "sections (A-301) were not changed and still show EL. 109.30."),
+    Planted("cloud-not-listed", ("S-501",),
+            "On S-501 the reinforcing of footing F3 changed from 10-20M to "
+            "12-20M EACH WAY inside a revision 2 cloud, but S-501's revision "
+            "block has no entry for revision 2 (it lists revision 0 only)."),
+    Planted("entry-no-change", ("A-102",),
+            "A-102's revision block lists revision 2, DOOR 205 RELOCATED, "
+            "but nothing on A-102 changed: door 205 is where it was in "
+            "issue 1."),
+    Planted("door-renumbered", ("A-601", "A-101"),
+            "The door schedule (A-601) renumbered door 106 as 110 in issue "
+            "2, clouded and listed; the first floor plan (A-101) still tags "
+            "the door 106, so 106 has no schedule row and 110 no tag."),
+)
+
+#: What :func:`audit` finds in issue 2 beyond :data:`BASE_PLANTED`: the
+#: disagreements two of the reissue's faults leave between sheets.
+ISSUE_2_PLANTED: Tuple[Planted, ...] = (
+    Planted("level-t.o.-parapet", ("A-201", "A-301"),
+            "T.O. PARAPET is EL. 109.60 on the elevations (A-201) but EL. "
+            "109.30 on the sections (A-301)."),
+    Planted("door-not-scheduled-106", ("A-101", "A-601"),
+            "Door 106 is tagged on A-101 but is not in the issue 2 door "
+            "schedule."),
+    Planted("door-not-on-plan-110", ("A-601", "A-101"),
+            "Door 110 is in the issue 2 door schedule but is not tagged on "
+            "A-101."),
+)
+
+#: Section 08 51 13 and the window submittal: the whole-window thermal
+#: transmittance the section allows, and the two values the product data
+#: sheet gives (the whole window, and the centre of the glass alone).
+WINDOW_U = {"specified": "1.60", "whole": "1.90", "glass": "1.10"}
+#: The submittal's schedule of values: (item, section, value) and the total
+#: it prints, which is not the sum of its lines (174,500).
+WINDOW_SOV = (
+    ("Aluminum window frames, Series NW-200, 24 units", "08 51 13", 96000),
+    ("Sealed glazing units, 24 units", "08 80 00", 38400),
+    ("Perimeter sealant", "07 92 00", 6200),
+    ("Installation", "08 51 13", 31500),
+    ("Field water tests", "08 51 13", 2400),
+)
+WINDOW_SOV_TOTAL = 178500
+
+SPEC_PLANTED: Tuple[Planted, ...] = (
+    Planted("window-u-value", ("submittal",),
+            "The product data sheet gives a whole-window U-value of 1.90 "
+            "W/(m2.K); Section 08 51 13 allows 1.60 at most for the whole "
+            "window (the sheet's 1.10 is the centre of the glass alone)."),
+    Planted("window-anchorage", ("submittal",),
+            "The anchorage calculations the section requires (1.3, SD-05 "
+            "Design Data) are not in the submittal."),
+    Planted("window-section-missing", ("submittal",),
+            "The schedule of values puts the glazing units under Section "
+            "08 80 00, which is not in the project manual; the glazing is "
+            "specified in Section 08 51 13 itself (2.3)."),
+    Planted("window-water-test", ("submittal",),
+            "The laboratory test report gives the air leakage and "
+            "structural tests only; the water penetration test the section "
+            "requires (2.1 D, 1.3 SD-06) is not reported."),
+    Planted("window-sov-total", ("submittal",),
+            "The lines of the schedule of values add up to 174,500, but its "
+            "total says 178,500."),
 )
 
 
@@ -345,6 +428,8 @@ def panels_on_plan(floor: int) -> List[str]:
 
 def _project(floors: int = 2, issue: int = 1) -> Project:
     long = floors > 2
+    if issue >= 2 and long:
+        raise ValueError("issue 2 is drawn for the 15-sheet set only")
     bays = _true_bays()
     lv = dict(levels(floors))
     rev0 = [("0", ISSUE_DATES[0], "ISSUED FOR PERMIT")]
@@ -355,9 +440,14 @@ def _project(floors: int = 2, issue: int = 1) -> Project:
         sheets.append(s)
         return s
 
+    def rev2(s: Sheet, what: str) -> None:
+        if issue >= 2:
+            s.revisions.append(("2", ISSUE_DATES[2], what))
+
     cover = add("G-001", "COVER SHEET AND SHEET INDEX", "cover")
     if issue >= 1:
         cover.revisions.append(("1", ISSUE_DATES[1], "SHEET INDEX UPDATED"))
+    rev2(cover, "SHEET INDEX UPDATED")
     add("G-002", "GENERAL NOTES", "general_notes")
     add("C-101", "SITE PLAN", "site",
         levels={"FIRST FLOOR": lv["FIRST FLOOR"]}, views=["1"])
@@ -372,6 +462,8 @@ def _project(floors: int = 2, issue: int = 1) -> Project:
         elif k == 2:
             s.callouts[1] = ("section", "2", "A-302")
             s.callouts += [("plan", "2", "A-401"), ("detail", "5", "A-501")]
+            # issue 2: an entry with nothing changed on the sheet
+            rev2(s, "DOOR 205 RELOCATED")
         else:
             s.callouts += [("detail", {3: "3", 4: "5", 5: "3"}[k], "A-501")]
     if long:
@@ -381,8 +473,13 @@ def _project(floors: int = 2, issue: int = 1) -> Project:
             add(f"A-11{k}", f"{FLOOR_WORDS[k - 1]} FLOOR REFLECTED CEILING "
                 "PLAN", "rcp", floor=k, views=["1"],
                 callouts=[("detail", n, "A-502") for n in pairs[k]])
-    add("A-201", "EXTERIOR ELEVATIONS", "elevations", views=["1", "2"],
-        levels=dict(lv))
+    elevations = dict(lv)
+    if issue >= 2:
+        # issue 2 raises the parapet here and not on the sections (A-301)
+        elevations["T.O. PARAPET"] = round(lv["T.O. PARAPET"] + 0.30, 2)
+    s = add("A-201", "EXTERIOR ELEVATIONS", "elevations", views=["1", "2"],
+            levels=elevations)
+    rev2(s, "PARAPET RAISED")
     wrong = dict(lv)
     wrong["SECOND FLOOR"] = 104.50
     if long:
@@ -403,11 +500,17 @@ def _project(floors: int = 2, issue: int = 1) -> Project:
         add("A-502", "CEILING DETAILS", "details",
             views=[str(n) for n in range(1, 9)])
     first = range(1, 4) if long else range(1, floors + 1)
+    door_rows = [_door_row(d, issue) for k in first
+                 for d in doors_scheduled(k)]
+    if issue >= 2:
+        # issue 2 renumbers door 106 on the schedule; A-101 keeps its tag
+        door_rows = [("110",) + r[1:] if r[0] == "106" else r
+                     for r in door_rows]
     s = add("A-601", "DOOR SCHEDULE", "door_schedule",
-            rows={"door": [_door_row(d, issue) for k in first
-                           for d in doors_scheduled(k)]})
+            rows={"door": door_rows})
     if issue >= 1:
         s.revisions.append(("1", ISSUE_DATES[1], "REVISED DOOR HARDWARE"))
+    rev2(s, "DOOR 106 RENUMBERED 110")
     if long:
         add("A-602", "DOOR SCHEDULE (CONTINUED)", "door_schedule",
             rows={"door": [_door_row(d, issue) for k in (4, 5)
@@ -425,9 +528,15 @@ def _project(floors: int = 2, issue: int = 1) -> Project:
         add(f"S-20{k - 1}", f"{name} FRAMING PLAN", "framing", floor=k,
             views=["1"], bays=dict(bays), levels={name: lv[name]},
             callouts=[] if roof else [("detail", "4", "S-501")])
+    footings = list(footing_rows(floors))
+    if issue >= 2:
+        # issue 2 changes F3's reinforcing inside a cloud, with no entry in
+        # S-501's revision block
+        footings = [r[:3] + ("12-20M EACH WAY",) if r[0] == "F3" else r
+                    for r in footings]
     add("S-501", "FOUNDATION DETAILS AND FOOTING SCHEDULE",
         "details_schedule", views=["1", "2", "3", "4"],
-        rows={"footing": list(footing_rows(floors))})
+        rows={"footing": footings})
     if long:
         for k in range(1, floors + 1):
             add(f"M-10{k}", f"{FLOOR_WORDS[k - 1]} FLOOR MECHANICAL PLAN",
@@ -468,6 +577,11 @@ def _project(floors: int = 2, issue: int = 1) -> Project:
 # The problems, found again by rule
 # ---------------------------------------------------------------------------
 
+#: The planted keys of the marks that are not the first of their kind:
+#: the long set's doors 407 and 509, and issue 2's renumbered door.
+_MARK_KEYS = {"407": "-4", "509": "-5", "106": "-106", "110": "-110"}
+
+
 def audit(project: Project) -> List[str]:
     """Every disagreement of the kinds planted, found from the model by
     rule, as planted keys. The tests hold this equal to the planted list, so
@@ -496,9 +610,9 @@ def audit(project: Project) -> List[str]:
         listed = {r[0] for s in project.sheets
                   for r in s.rows.get(group, [])}
         for t in sorted(drawn - listed):
-            found.append(absent + ("-4" if t == "407" else ""))
+            found.append(absent + _MARK_KEYS.get(t, ""))
         for t in sorted(listed - drawn):
-            found.append(unused + ("-5" if t == "509" else ""))
+            found.append(unused + _MARK_KEYS.get(t, ""))
     for name, _el in levels(project.floors):
         printed = {round(s.levels[name], 2) for s in project.sheets
                    if name in s.levels}
@@ -598,8 +712,9 @@ class _Canvas:
                   width=1.1)
         self.text(x + 38, y + 12, f"SCALE {scale}", size=7)
 
-    def cloud(self, x0, y0, x1, y1, number="1", r=7.0):
-        """A revision cloud round a box, with its numbered triangle."""
+    def cloud(self, x0, y0, x1, y1, number="1", r=7.0, at=None):
+        """A revision cloud round a box, with its numbered triangle (above
+        the box's right end, or centred on ``at``)."""
         pts = []
         nx = max(2, int((x1 - x0) / (2 * r)))
         ny = max(2, int((y1 - y0) / (2 * r)))
@@ -612,7 +727,7 @@ class _Canvas:
             mid = ((ax + bx) / 2 + ox * r, (ay + by) / 2 + oy * r)
             self.shape.draw_curve((ax, ay), mid, (bx, by))
             self.shape.finish(width=0.9, color=BLACK, closePath=False)
-        tx, ty = x1 + 16, y0 - 8
+        tx, ty = at if at is not None else (x1 + 16, y0 - 8)
         self.poly([(tx, ty - 11), (tx - 10, ty + 6), (tx + 10, ty + 6)],
                   width=0.9)
         self.text(tx, ty + 3.5, number, size=7, bold=True, align="c")
@@ -690,7 +805,7 @@ def _frame(c: _Canvas, sheet: Sheet, n: int, total: int, issue: int) -> None:
     c.text(x + 14, MARGIN + 44, PROJECT, size=17, bold=True)
     c.text(x + 14, MARGIN + 64, f"PROJECT NO. {PROJECT_NO}", size=9)
     c.text(x + 14, MARGIN + 80,
-           f"ISSUE {issue}  -  {ISSUE_DATES[min(issue, 1)]}", size=9)
+           f"ISSUE {issue}  -  {ISSUE_DATES[issue]}", size=9)
     c.line((x, MARGIN + 100), (W - MARGIN, MARGIN + 100))
     c.text(x + 14, MARGIN + 124, "REVISIONS", size=9, bold=True)
     c.table(x + 14, MARGIN + 134, (30, 70, 160), ("NO.", "DATE",
@@ -867,9 +982,11 @@ def _doors(c: _Canvas, p: _Plan, doors: Sequence[str]) -> None:
 
 
 def _level_marks(c: _Canvas, x0: float, x1: float, base_y: float,
-                 k: float, printed: Dict[str, float], floors: int) -> None:
+                 k: float, printed: Dict[str, float], floors: int,
+                 clouded: Sequence[str] = ()) -> None:
     """Level lines across an elevation or a section, each with the level's
-    name and the elevation PRINTED on this sheet."""
+    name and the elevation PRINTED on this sheet; a level in ``clouded``
+    is revision 2's, clouded."""
     for name, true in levels(floors):
         y = base_y - (true - FIRST_FLOOR_EL) * 1000 * k
         c.line((x0 - 20, y), (x1 + 70, y), width=0.4, dashes="[10 4] 0")
@@ -877,6 +994,8 @@ def _level_marks(c: _Canvas, x0: float, x1: float, base_y: float,
         c.line((x1 + 70, y), (x1 + 86, y), width=0.6)
         c.text(x1 + 90, y - 3, name, size=8, bold=True)
         c.text(x1 + 90, y + 8, f"EL. {printed[name]:.2f}", size=8)
+        if name in clouded:
+            c.cloud(x1 + 87, y - 11, x1 + 154, y + 11, number="2", r=4)
 
 
 def _sketch(c: _Canvas, x: float, y: float, w: float, h: float,
@@ -977,7 +1096,7 @@ def _draw(c: _Canvas, project: Project, sheet: Sheet) -> None:
         c.text(DX0 + 40, DY0 + 110, PROJECT, size=60, bold=True)
         c.text(DX0 + 44, DY0 + 150, f"PROJECT NO. {PROJECT_NO}", size=16)
         c.text(DX0 + 44, DY0 + 176, f"DRAWING SET  -  ISSUE {issue}  -  "
-               f"{ISSUE_DATES[min(issue, 1)]}", size=16)
+               f"{ISSUE_DATES[issue]}", size=16)
         latest = {s.number: s.revisions[-1][0] for s in project.sheets}
         c.table(DX0 + 44, DY0 + 250, (90, 430, 50),
                 ("SHEET", "TITLE", "REV."),
@@ -1123,7 +1242,11 @@ def _draw(c: _Canvas, project: Project, sheet: Sheet) -> None:
                     for i in range(int(width / 2400)):
                         wx = x + (1200 + i * 2400 - 600) * k
                         c.rect(wx, y, wx + 1200 * k, y + 1500 * k, width=0.4)
-            _level_marks(c, x, x1, base, k, sheet.levels, floors)
+            _level_marks(c, x, x1, base, k, sheet.levels, floors,
+                         clouded=[n for n, el in levels(floors)
+                                  if kind == "elevations" and issue >= 2
+                                  and round(sheet.levels[n], 2)
+                                  != round(el, 2)])
             c.view_title(x, base + 70, str(view), sheet.number, name, "1:100")
             x = x1 + 420
         # the first view's west wall, top down: the parapet, the second
@@ -1189,9 +1312,15 @@ def _draw(c: _Canvas, project: Project, sheet: Sheet) -> None:
     elif kind == "details_schedule":
         split = DX0 + (DX1 - DX0) * 0.62
         _details(c, sheet, DX0, split, 2)
-        c.table(split + 40, DY0 + 90, (70, 130, 110, 190),
-                ("MARK", "SIZE (mm)", "THICKNESS (mm)", "REINFORCING"),
-                sheet.rows["footing"], title="FOOTING SCHEDULE")
+        cells = c.table(split + 40, DY0 + 90, (70, 130, 110, 190),
+                        ("MARK", "SIZE (mm)", "THICKNESS (mm)",
+                         "REINFORCING"),
+                        sheet.rows["footing"], title="FOOTING SCHEDULE")
+        if issue >= 2:
+            # F3's new reinforcing, clouded (S-501's revision block is
+            # left without an entry for it: REISSUE_PLANTED)
+            x0, y0, x1, y1 = cells["F3"]
+            c.cloud(x0 + 2, y0 + 1, x1 - 30, y1 - 1, number="2", r=5)
     elif kind == "door_schedule":
         cells = c.table(
             DX0 + 60, DY0 + 90, (60, 170, 80, 80, 60, 70, 100, 110),
@@ -1201,6 +1330,12 @@ def _draw(c: _Canvas, project: Project, sheet: Sheet) -> None:
         if issue >= 1 and "107" in cells:
             x0, y0, x1, y1 = cells["107"]
             c.cloud(x0 + 2, y0 + 1, x1 - 40, y1 - 1, r=5)
+        if issue >= 2 and "110" in cells:
+            # the renumbered row's number cell, its triangle in the margin
+            _x0, y0, _x1, y1 = cells["110"]
+            left = DX0 + 60
+            c.cloud(left + 2, y0 + 1, left + 54, y1 - 1, number="2", r=5,
+                    at=(left - 22, (y0 + y1) / 2))
         c.notes(DX0 + 900, DY0 + 90, "DOOR NOTES", [
             "DOOR TYPE A: SINGLE, FLUSH.",
             "FRAMES: HM, HOLLOW METAL, SEE SECTION 08 11 13.",
@@ -1234,7 +1369,7 @@ class DrawingSet:
 @lru_cache(maxsize=None)
 def build_drawing_set(floors: int = 2, issue: int = 1) -> DrawingSet:
     """The drawing set as one PDF (``floors=2``: 15 sheets; ``floors=5``: 40
-    sheets), at issue 0 or issue 1."""
+    sheets), at issue 0 or issue 1; the 15-sheet set also at issue 2."""
     import pymupdf
     project = _project(floors, issue)
     doc = pymupdf.open()
@@ -1252,6 +1387,8 @@ def build_drawing_set(floors: int = 2, issue: int = 1) -> DrawingSet:
     if issue < 1:
         planted = tuple(p for p in planted
                         if p.key not in ("bay-b-c", "bearing-pressure"))
+    elif issue >= 2:
+        planted = planted + ISSUE_2_PLANTED
     return DrawingSet(pdf, floors, issue,
                       tuple((s.number, s.title) for s in project.sheets),
                       planted)
@@ -1539,6 +1676,143 @@ def build_concrete_submittal() -> bytes:
     return d.bytes("Submittal 03 30 00-02, concrete mix design, Class C")
 
 
+@lru_cache(maxsize=None)
+def build_window_section() -> bytes:
+    """Section 08 51 13, aluminum windows, in the three-part form (general,
+    products, execution). The manual's contents list it and say the
+    sections not bound in that volume are issued separately; this is it."""
+    d = _Paper(f"{PROJECT}  -  PROJECT MANUAL  -  ISSUE 1  -  SECTION "
+               "08 51 13")
+    d.h("SECTION 08 51 13  -  ALUMINUM WINDOWS", 13)
+    d.h("PART 1  GENERAL", 11)
+    d.p("1.1  SUMMARY. Fixed and awning windows of extruded aluminum with "
+        "sealed glazing units, complete with glazing, anchors and perimeter "
+        "seals, at every window opening on the drawings.")
+    d.p("1.2  RELATED REQUIREMENTS. Section 01 33 00, Submittal Procedures. "
+        "Section 07 92 00, Joint Sealants: the sealant round each window.")
+    d.p("1.3  SUBMITTALS. Submit the following under Section 01 33 00:")
+    for line in (
+            "SD-03 Product Data: the manufacturer's data sheet for each "
+            "window series, giving the thermal transmittance of the whole "
+            "window.",
+            "SD-05 Design Data: anchorage calculations showing that the "
+            "anchors carry the design wind pressure of 2.1 A, signed by a "
+            "professional engineer.",
+            "SD-06 Test Reports: laboratory reports of the structural, air "
+            "leakage and water penetration tests of 2.1, made on a window of "
+            "the series submitted and dated not more than four years before "
+            "the submittal.",
+            "SD-11 Closeout Submittals: the warranty of 1.5, at substantial "
+            "completion."):
+        d.p(line, indent=18)
+    d.p("1.4  DELIVERY AND STORAGE. Deliver windows with protective film on "
+        "exposed finishes. Store them upright, off the ground and under "
+        "cover.")
+    d.p("1.5  WARRANTY. Ten years against failure of the glazing unit "
+        "seals; two years against leaks through a window or its perimeter "
+        "seal.")
+    d.h("PART 2  PRODUCTS", 11)
+    d.p("2.1  PERFORMANCE. Each window series, tested on a window not "
+        "smaller than 1200 x 1500 mm:")
+    for line in (
+            "A.  Design wind pressure: 1.20 kPa, inward and outward.",
+            "B.  Structural: at 1.80 kPa (1.5 times A), inward and outward, "
+            "no glass breakage and no permanent deformation of a frame "
+            "member greater than 0.2 percent of its span.",
+            "C.  Air leakage: not more than 0.30 L/s per m2 of window area "
+            "at a pressure difference of 75 Pa.",
+            "D.  Water penetration: no water beyond the inner face of the "
+            "frame at a pressure difference of 450 Pa, under a water spray "
+            "for 15 minutes.",
+            "E.  Thermal transmittance of the whole window (glass, glass "
+            "edge and frame together): not more than "
+            f"{WINDOW_U['specified']} W/(m2.K)."):
+        d.p(line, indent=18)
+    d.p("2.2  FRAMES. Extruded aluminum, thermally broken in every member, "
+        "with a wall thickness of not less than 2.0 mm where fasteners are "
+        "set.")
+    d.p("2.3  GLAZING. Sealed double glazing units: a 6 mm outer pane, a "
+        "13 mm cavity and a 6 mm inner pane with a low-emissivity coating, "
+        "glazed into the frames as part of the work of this section.")
+    d.p("2.4  FINISH. Clear anodic coating, not less than 18 micrometres "
+        "thick.")
+    d.h("PART 3  EXECUTION", 11)
+    d.p("3.1  EXAMINATION. Check each opening for size, plumb and level "
+        "before setting a window in it. Report faults in writing.")
+    d.p("3.2  INSTALLATION. Set windows plumb, level and true, fastened as "
+        "the accepted anchorage calculations show. Seal the perimeter under "
+        "Section 07 92 00.")
+    d.p("3.3  FIELD QUALITY CONTROL. Test two installed windows chosen by "
+        "the Architect for water penetration at 300 Pa, two thirds of the "
+        "pressure of 2.1 D. Repair or replace a window that leaks and test "
+        "it again.")
+    d.p("3.4  CLEANING. Remove the protective film and clean the glass and "
+        "frames before substantial completion.")
+    d.p("END OF SECTION 08 51 13")
+    return d.bytes(f"{PROJECT} Section 08 51 13, Aluminum Windows")
+
+
+@lru_cache(maxsize=None)
+def build_window_submittal() -> bytes:
+    """A window submittal under Section 08 51 13 (four pages): the
+    transmittal, the product data sheet, the laboratory test report and the
+    schedule of values, with five things wrong (:data:`SPEC_PLANTED`)."""
+    d = _Paper(f"{PROJECT}  -  SUBMITTAL 08 51 13-01")
+    d.h("SUBMITTAL TRANSMITTAL", 16)
+    d.table((150, 318), [
+        ("ITEM", "ENTRY"),
+        ("Project", f"{PROJECT}, Project No. {PROJECT_NO}"),
+        ("Submittal No.", "08 51 13-01"),
+        ("Specification section", "08 51 13, Aluminum Windows"),
+        ("Description", "Aluminum windows, Series NW-200"),
+        ("Date", "2026-04-06")])
+    d.p("ATTACHED:")
+    for line in ("1.  Product data sheet, Series NW-200.",
+                 "2.  Laboratory test report No. ET-25-0412, Series NW-200.",
+                 "3.  Schedule of values."):
+        d.p(line, indent=18)
+    d.p("CONTRACTOR'S REVIEW: Reviewed for conformance with the contract "
+        "documents. DEVIATIONS: NONE.")
+    d.new_page()
+    d.h("PRODUCT DATA SHEET  -  SERIES NW-200", 13)
+    d.p("Fixed and awning windows of extruded aluminum, thermally broken, "
+        "for sealed double glazing units.")
+    d.table((250, 218), [
+        ("PROPERTY", "VALUE"),
+        ("Frame", "Extruded aluminum, thermally broken"),
+        ("Frame wall thickness at fasteners", "2.2 mm"),
+        ("Glazing", "6 mm + 13 mm argon + 6 mm low-e"),
+        ("Finish", "Clear anodic coating, 20 micrometres"),
+        ("U-value, centre of glass", f"{WINDOW_U['glass']} W/(m2.K)"),
+        ("U-value, whole window", f"{WINDOW_U['whole']} W/(m2.K)"),
+        ("Air leakage at 75 Pa", "0.20 L/s per m2"),
+        ("Structural test pressure", "1.80 kPa, inward and outward"),
+        ("Largest size", "1800 x 2400 mm")])
+    d.p("Values are for a 1200 x 1500 mm window. The whole-window U-value "
+        "takes in the frame and the edge of the glass.")
+    d.new_page()
+    d.h("LABORATORY TEST REPORT  -  NO. ET-25-0412", 13)
+    d.p("Specimen: a Series NW-200 awning window, 1200 x 1500 mm, glazed as "
+        "the product data sheet describes. Tested on 2025-09-22, in the "
+        "order listed.")
+    d.table((40, 200, 228), [
+        ("NO.", "TEST", "RESULT"),
+        ("1", "Air leakage at 75 Pa", "0.20 L/s per m2"),
+        ("2", "Structural, 1.80 kPa inward",
+         "No breakage; set 0.05 % of span"),
+        ("3", "Structural, 1.80 kPa outward",
+         "No breakage; set 0.04 % of span")])
+    d.p("The results relate only to the specimen tested.")
+    d.new_page()
+    d.h("SCHEDULE OF VALUES  -  SUBMITTAL 08 51 13-01", 13)
+    d.table((40, 248, 80, 100),
+            [("ITEM", "DESCRIPTION", "SECTION", "VALUE")]
+            + [(str(i), what, section, f"{value:,}")
+               for i, (what, section, value) in enumerate(WINDOW_SOV, 1)]
+            + [("", "TOTAL", "", f"{WINDOW_SOV_TOTAL:,}")])
+    return d.bytes("Submittal 08 51 13-01, aluminum windows")
+
+
 #: Dots per inch of the scanned set: 6 pt lettering is about 12 pixels
 #: tall, legible in a zoom and not in a view of the whole sheet.
 SCAN_DPI = 150
@@ -1574,6 +1848,9 @@ _BUILDERS = {
     "coord_manual": build_project_manual,
     "coord_memo": build_geotechnical_memo,
     "coord_submittal": build_concrete_submittal,
+    "coord_set_2": lambda: build_drawing_set(2, 2).pdf,
+    "coord_window_section": build_window_section,
+    "coord_window_submittal": build_window_submittal,
 }
 
 
@@ -1590,4 +1867,7 @@ __all__ = ["Planted", "BASE_PLANTED", "LONG_PLANTED", "REVISIONS",
            "build_scanned_set", "SCAN_DPI", "footing_rows",
            "build_project_manual", "build_geotechnical_memo",
            "build_concrete_submittal", "audit", "fixture", "levels",
-           "doors_on_plan", "doors_scheduled", "room_names"]
+           "doors_on_plan", "doors_scheduled", "room_names",
+           "ISSUE_DATES", "REISSUE_PLANTED", "ISSUE_2_PLANTED",
+           "SPEC_PLANTED", "WINDOW_U", "WINDOW_SOV", "WINDOW_SOV_TOTAL",
+           "build_window_section", "build_window_submittal"]
