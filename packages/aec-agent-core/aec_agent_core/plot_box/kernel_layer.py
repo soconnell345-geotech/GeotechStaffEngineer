@@ -50,7 +50,9 @@ on itself: no namespace, no mount, no privilege):
    and may not mount.
 3. A SECCOMP filter (x86_64 and aarch64, little-endian): :data:`REFUSED`
    are refused with ``EPERM``: making a socket of any family (so no UDP and
-   no Unix socket either, which Landlock does not cover), starting a
+   no Unix socket either, which Landlock does not cover) or a connected
+   pair of them (a datagram pair can send to a Unix socket by its path),
+   starting a
    process (``fork``, ``vfork``, ``execve``, ``execveat``, and ``clone``
    unless it makes a thread in this process), ``io_uring`` (which can make
    sockets without ``socket``), ``ptrace`` and reading or writing another
@@ -126,20 +128,20 @@ _CLONE_NEW = (0x80 | 0x00020000 | 0x02000000 | 0x04000000 | 0x08000000
 _ARCH = {
     "x86_64": {
         "audit": 0xC000003E, "clone": 56, "clone3": 435,
-        "refused": {"socket": 41, "fork": 57, "vfork": 58, "execve": 59,
+        "refused": {"socket": 41, "socketpair": 53, "fork": 57, "vfork": 58, "execve": 59,
                     "ptrace": 101, "unshare": 272, "setns": 308,
                     "process_vm_readv": 310, "process_vm_writev": 311,
                     "execveat": 322, "io_uring_setup": 425}},
     "aarch64": {
         "audit": 0xC00000B7, "clone": 220, "clone3": 435,
-        "refused": {"socket": 198, "execve": 221, "ptrace": 117,
+        "refused": {"socket": 198, "socketpair": 199, "execve": 221, "ptrace": 117,
                     "unshare": 97, "setns": 268, "process_vm_readv": 270,
                     "process_vm_writev": 271, "execveat": 281,
                     "io_uring_setup": 425}},
 }
 #: What the filter refuses, by name (``fork`` and ``vfork`` exist on x86_64
 #: only; aarch64 starts a process with ``clone``).
-REFUSED = ("socket", "fork", "vfork", "execve", "execveat",
+REFUSED = ("socket", "socketpair", "fork", "vfork", "execve", "execveat",
            "clone (unless it makes a thread)", "clone3 (not implemented)",
            "io_uring_setup", "ptrace", "process_vm_readv",
            "process_vm_writev", "unshare", "setns")

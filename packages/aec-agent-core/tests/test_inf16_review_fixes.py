@@ -58,3 +58,97 @@ def test_each_landlock_version_is_asked_only_for_rights_it_knows(
     assert net == (3 if version >= 4 else 0)
     assert scoped == (3 if version >= 6 else 0)
     assert size == (8 if version < 4 else 16 if version < 6 else 24)
+
+
+# ---------------------------------------------------------------------------
+# the filter: a pair of sockets is a socket too
+# ---------------------------------------------------------------------------
+
+def _verdict(rows, arch_word, number, arg0=0):
+    """Read the filter as the kernel would, for one call."""
+    data = {0: number, 4: arch_word, 16: arg0 & 0xFFFFFFFF}
+    acc, i = 0, 0
+    while True:
+        code, jt, jf, k = rows[i]
+        i += 1
+        if code == kernel_layer._LD_W_ABS:
+            acc = data[k]
+        elif code == kernel_layer._RET_K:
+            return k
+        else:
+            hit = {kernel_layer._JEQ_K: acc == k,
+                   kernel_layer._JGE_K: acc >= k,
+                   kernel_layer._JSET_K: bool(acc & k)}[code]
+            i += jt if hit else jf
+
+
+#: ``socketpair`` in asm/unistd_64.h and asm-generic/unistd.h.
+SOCKETPAIR = {"x86_64": 53, "aarch64": 199}
+
+
+@pytest.mark.parametrize("machine", sorted(SOCKETPAIR))
+def test_the_filter_refuses_a_pair_of_sockets(machine):
+    arch = kernel_layer._ARCH[machine]
+    rows = kernel_layer._filter_program(arch)
+    refuse = kernel_layer._RET_ERRNO | errno.EPERM
+    assert _verdict(rows, arch["audit"], SOCKETPAIR[machine]) == refuse
+    assert _verdict(rows, arch["audit"], arch["refused"]["socket"]) == refuse
+    # and what the libraries do all day is still let through
+    for name in ("read", "write", "mmap"):
+        number = {"x86_64": {"read": 0, "write": 1, "mmap": 9},
+                  "aarch64": {"read": 63, "write": 64, "mmap": 222}}
+        assert _verdict(rows, arch["audit"],
+                        number[machine][name]) == kernel_layer._RET_ALLOW
+    assert any("socketpair" in name for name in kernel_layer.REFUSED)
+
+
+PAIR = r"""
+import importlib.util, json, socket, sys
+a = json.loads(sys.argv[1])
+spec = importlib.util.spec_from_file_location("_layer", a["layer"])
+layer = importlib.util.module_from_spec(spec); spec.loader.exec_module(layer)
+report = layer.put_up("1", a["conv"], parts=("seccomp",))
+out = {"up": report["up"], "not_up": report["not_up"]}
+try:
+    one, two = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+    out["pair"] = "ok"
+    one.sendto(b"made up", a["listener"])
+    out["sent"] = "ok"
+except OSError as exc:
+    out.setdefault("pair", type(exc).__name__)
+    out.setdefault("sent", type(exc).__name__)
+print(json.dumps(out))
+"""
+
+
+@pytest.mark.skipif(
+    not LINUX or kernel_layer._machine() not in kernel_layer._ARCH,
+    reason="the seccomp filter is written for x86_64 and aarch64 Linux")
+def test_no_datagram_reaches_a_unix_socket_outside_the_box(tmp_path):
+    """The filter refused ``socket`` and let ``socketpair`` through; a
+    datagram pair can send to any Unix socket by its path, and Landlock has
+    no rule for that. With the pair refused, a listener that stands for
+    some service of the host hears nothing."""
+    conv = tmp_path / "conv"
+    conv.mkdir()
+    path = str(tmp_path / "service.sock")
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        listener.bind(path)
+        listener.settimeout(0.5)
+        env = dict(os.environ)
+        env.pop(kernel_layer.ENV, None)
+        done = subprocess.run(
+            [sys.executable, "-B", "-c", PAIR,
+             json.dumps({"layer": LAYER, "conv": str(conv),
+                         "listener": path})],
+            capture_output=True, text=True, timeout=120, env=env)
+        got = json.loads(done.stdout.strip().splitlines()[-1])
+        if "seccomp" not in got["up"]:
+            pytest.skip("this host lets no seccomp filter be set: "
+                        + str(got["not_up"].get("seccomp")))
+        assert got["pair"] == "PermissionError", got
+        with pytest.raises(socket.timeout):
+            listener.recv(64)
+    finally:
+        listener.close()
