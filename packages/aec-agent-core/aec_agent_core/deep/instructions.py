@@ -98,13 +98,19 @@ def _read(path: str) -> str:
 
 def _reason(exc: BaseException) -> str:
     """What went wrong, without the path an OS error names: the record
-    keeps the folder's basename only, never where the host keeps it."""
+    keeps the folder's basename only, never where the host keeps it. A
+    secret the text names is masked
+    (:func:`aec_agent_core.error_text.masked_error_text`)."""
     if isinstance(exc, OSError):
         detail = exc.strerror or ""
     else:
         detail = str(exc)
-    return f"{type(exc).__name__}: {detail}" if detail else (
-        type(exc).__name__)
+    if not detail:
+        return type(exc).__name__
+    # Kept one level down in the record (``engine.build.appended.error``
+    # and ``file_errors``), where the record masks nothing by name.
+    from aec_agent_core.error_text import masked_error_text
+    return masked_error_text(f"{type(exc).__name__}: {detail}")
 
 
 class Instructions:

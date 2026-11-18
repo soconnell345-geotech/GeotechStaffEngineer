@@ -197,6 +197,29 @@ def _mark_up_tool(open_tool, annotate_tool):
                                         description=MARK_UP_DESCRIPTION)
 
 
+#: What stands for a helper's error whose text could not be checked for
+#: secrets (the masker itself failed).
+REASON_NOT_CHECKED = ("its message could not be checked for secrets, so it "
+                      "is not shown")
+
+
+def _masked_reason(exc: BaseException) -> str:
+    """The exception's text as the model reads it: its secrets masked
+    (``error_text.mask_error_secrets``: a model client's error can
+    quote the request it was refused), then cut to 300 characters. If
+    masking itself failed the text is not handed on raw."""
+    try:
+        raw = str(exc)
+    except Exception:                                  # noqa: BLE001
+        return REASON_NOT_CHECKED
+    try:
+        from aec_agent_core.error_text import mask_error_secrets
+        masked = mask_error_secrets(raw)
+    except Exception:                                  # noqa: BLE001
+        masked = ""
+    return (masked if masked or not raw else REASON_NOT_CHECKED)[:300]
+
+
 def _helper_tool(model, engine, helper_tools: list,
                  budget: int = READER_MAX_MODEL_CALLS):
     """``task`` -> a helper that looks with the same tools (and is shown its
@@ -233,8 +256,8 @@ def _helper_tool(model, engine, helper_tools: list,
                 config={"recursion_limit": 10 * budget + 30})
         except Exception as exc:  # noqa: BLE001 - the helper's answer
             return (f"The helper failed: {type(exc).__name__}: "
-                    f"{str(exc)[:300]}. Look yourself, or hand it a smaller "
-                    f"job.")
+                    f"{_masked_reason(exc)}. Look yourself, or hand it a "
+                    f"smaller job.")
         return _with_open_items(_final_text(result), result, description)
 
     return StructuredTool.from_function(task, name="task",

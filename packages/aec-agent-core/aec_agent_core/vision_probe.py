@@ -294,12 +294,24 @@ def _hold_refusal(model, prof: VisionProfile) -> None:
         del _REFUSED[min(_REFUSED, key=lambda k: _REFUSED[k][0])]
 
 
+def _error_text(text: str) -> str:
+    """A probe failure's text as the profile keeps it (``error``, and from
+    it :meth:`VisionProfile.summary` and :meth:`VisionProfile.fallback_note`,
+    which the run record keeps under ``vision.probe_fallback`` and a vision
+    result carries): each secret the text names masked, then cut to 300
+    characters (:func:`aec_agent_core.error_text.masked_error_text`). A
+    model client's exception can quote the request it was refused."""
+    from aec_agent_core.error_text import masked_error_text
+    return masked_error_text(text, 300)
+
+
 class _Busy(Exception):
     """A probe call the model still answered busy after its retries."""
 
     def __init__(self, call: str, kind: str, tries: int, exc: BaseException):
-        super().__init__(f"probe call '{call}' failed after {tries} "
-                         f"tries ({kind}): {type(exc).__name__}: {exc}"[:300])
+        super().__init__(_error_text(
+            f"probe call '{call}' failed after {tries} "
+            f"tries ({kind}): {type(exc).__name__}: {exc}"))
         self.call, self.kind, self.tries, self.exc = call, kind, tries, exc
 
 
@@ -501,7 +513,7 @@ def probe(model) -> VisionProfile:
         prof.key_refused = key_refusal(exc)
     except Exception as exc:
         prof.failed = True
-        prof.error = f"{type(exc).__name__}: {exc}"[:300]
+        prof.error = _error_text(f"{type(exc).__name__}: {exc}")
         prof.key_refused = key_refusal(exc)
     found = (_claude_budgets(budget_for_model, prof.answered_by)
              if _is_claude(model, prof.answered_by)
@@ -539,7 +551,7 @@ def _probe_host_edge(model, prof: VisionProfile, base: int,
             # after call 4): failed like any refused call, so the profile
             # is not cached as measured with no host edge (TA-39).
             prof.failed = True
-            prof.error = f"{type(exc).__name__}: {exc}"[:300]
+            prof.error = _error_text(f"{type(exc).__name__}: {exc}")
             prof.key_refused = refused
         log.info("vision probe: host edge not measured: %s", exc)
 
@@ -606,8 +618,8 @@ def profile_for(model) -> Optional[VisionProfile]:
     try:
         prof = probe(model)
     except Exception as exc:  # noqa: BLE001 - probe() never raises; belt
-        prof = VisionProfile(error=f"{type(exc).__name__}: {exc}"[:300],
-                             failed=True)
+        prof = VisionProfile(
+            error=_error_text(f"{type(exc).__name__}: {exc}"), failed=True)
     finally:
         with _LOCK:
             if prof is not None and prof.failed and prof.key_refused:

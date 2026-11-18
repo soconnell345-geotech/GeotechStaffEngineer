@@ -2663,8 +2663,11 @@ class TurnPageCheck:
             return photo_coverage(self.record_folder, self.folder,
                                   photo_source=self.photo_source)
         except Exception as exc:  # noqa: BLE001 - never the turn
-            return {"checked": False,
-                    "why": f"the check failed: {type(exc).__name__}: {exc}"}
+            # Kept one level down in the record (``photo_pages.why``), where
+            # the record masks nothing by name: masked here.
+            from aec_agent_core.error_text import masked_error_text
+            return {"checked": False, "why": masked_error_text(
+                f"the check failed: {type(exc).__name__}: {exc}")}
 
     def _record(self, result: Dict[str, Any], action: str,
                 photos: Optional[Dict[str, Any]] = None) -> None:

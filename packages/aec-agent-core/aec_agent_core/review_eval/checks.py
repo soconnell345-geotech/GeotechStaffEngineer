@@ -1630,6 +1630,11 @@ CHECKS = {
 PROCESS_CHECKS = ("tool_used", "pages_covered", "tools_called")
 
 
+#: How the ``detail`` of a check that RAISED begins (the rest is the
+#: exception's text).
+CHECK_ERROR = "check error:"
+
+
 def run_check(check: Dict[str, Any], answer: str,
               files: Sequence[str] = (),
               tool_calls: Sequence[Dict[str, Any]] = (),
@@ -1672,7 +1677,11 @@ def run_check(check: Dict[str, Any], answer: str,
                           f"({', '.join(names)}), which the user does not "
                           f"receive")
     except Exception as exc:
-        ok, detail = False, f"check error: {type(exc).__name__}: {exc}"
+        # Kept in ``run.json`` under ``checks[].detail``: an exception's
+        # text, so masked as the run record masks one.
+        from aec_agent_core.error_text import masked_error_text
+        ok, detail = False, masked_error_text(
+            f"{CHECK_ERROR} {type(exc).__name__}: {exc}")
     out = {"type": kind, "label": label, "passed": bool(ok),
            "info": bool(check.get("info")), "detail": detail}
     if notes_only and not ok:

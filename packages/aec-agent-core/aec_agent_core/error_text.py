@@ -615,6 +615,30 @@ def mask_error_secrets(text: Any) -> str:
         return ""
 
 
+#: What stands for a text that could not be checked for secrets (the
+#: masker itself failed): never the text as it came.
+TEXT_NOT_CHECKED = ("(not shown: this text could not be checked for "
+                    "secrets)")
+
+
+def masked_error_text(text: Any, limit: Optional[int] = None) -> str:
+    """The text of an error, masked WHERE IT IS PRODUCED for a field the
+    record does not mask by its name (a nested key, a profile, a check's
+    detail): :func:`mask_error_secrets`, then cut to ``limit`` characters
+    (masked before the cut, so a secret the cut would split is still
+    masked). A text with no secret in it comes back character for
+    character. If the masker failed, :data:`TEXT_NOT_CHECKED` stands for a
+    text that was not empty -- never the text as it came. Never raises."""
+    try:
+        raw = "" if text is None else str(text)
+    except Exception:  # noqa: BLE001
+        return TEXT_NOT_CHECKED
+    masked = mask_error_secrets(raw)
+    if raw and not masked:
+        masked = TEXT_NOT_CHECKED
+    return masked[:limit] if limit else masked
+
+
 def mask_error_result(text: Any) -> Any:
     """A tool's result with :func:`mask_error_secrets` applied when the
     result is the tool's ERROR -- a JSON object with an ``"error"`` string
