@@ -478,7 +478,9 @@ def compile_agent(create: Callable, *, model, tools, system_prompt,
     the todo middleware automatically; newer versions don't — attach it
     explicitly and rebuild (cheap, offline) when it is missing. Checking the
     COMPILED agent (rather than version-sniffing) stays correct on both old
-    and new deepagents without ever double-attaching.
+    and new deepagents without ever double-attaching. It goes last, ahead
+    only of trailing middleware marked ``keep_last`` (none unless the review
+    page's ``GEOTECH_REVIEW_LEAN_PROMPT`` is set, DR-29).
 
     A deployment's instructions (``GEOTECH_INSTRUCTIONS``, REF-64 (B)) are
     appended here, last, to the main prompt and each helper's, once both
@@ -501,9 +503,16 @@ def compile_agent(create: Callable, *, model, tools, system_prompt,
         except Exception:
             _tool_names = None
         if _tool_names is not None and "write_todos" not in _tool_names:
-            create_kwargs["middleware"] = (
-                list(create_kwargs.get("middleware", []) or [])
-                + [_TodoMiddleware()])
+            middleware = list(create_kwargs.get("middleware", []) or [])
+            # at the end, as before; but ahead of a middleware that must
+            # stay last to see the prompt as the model gets it (marked
+            # ``keep_last``: the review page's lean prompt, DR-29)
+            at = len(middleware)
+            while at and getattr(middleware[at - 1], "keep_last",
+                                 False) is True:
+                at -= 1
+            middleware.insert(at, _TodoMiddleware())
+            create_kwargs["middleware"] = middleware
             agent = create(
                 model=model,
                 tools=tools,

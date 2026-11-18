@@ -230,6 +230,10 @@ class TurnScope:
         self.image_calls = 0
         self.image_refused = 0
         self.image_limit = _image_limit()
+        # what the lean framework prompt did at the primary's model calls
+        # (GEOTECH_REVIEW_LEAN_PROMPT, BACKLOG DR-29; note_lean_prompt):
+        # None when the switch is off
+        self.lean_prompt: Optional[dict] = None
         self._lock = threading.Lock()
 
     def note_full_result(self, call_id: Optional[str], text: str) -> None:
@@ -448,6 +452,15 @@ def image_call_facts(scope) -> dict:
     return out
 
 
+def lean_prompt_facts(scope) -> dict:
+    """What the lean framework prompt did this turn, for its record
+    (``lean_prompt``; BACKLOG DR-29); ``{}`` when it did not run (its
+    switch off, or no scope)."""
+    value = getattr(scope, "lean_prompt", None) if scope is not None \
+        else None
+    return {"lean_prompt": dict(value)} if isinstance(value, dict) else {}
+
+
 # ---------------------------------------------------------------------------
 # One helper
 # ---------------------------------------------------------------------------
@@ -533,6 +546,24 @@ def note_budget_reached() -> None:
     scope = _TURN.get()
     if scope is not None:
         scope.budget_reached = True
+
+
+def note_lean_prompt(outcome: dict) -> None:
+    """What the lean framework prompt did at one of the primary's model
+    calls (:class:`aec_agent_core.deep.lean_prompt.LeanFrameworkPrompt`,
+    BACKLOG DR-29), kept on the running turn for its record. A call where
+    it was not applied is kept over any later call; nothing is kept in a
+    helper or outside a turn."""
+    if _HELPER.get() is not None or not isinstance(outcome, dict):
+        return
+    scope = _TURN.get()
+    if scope is None:
+        return
+    with scope._lock:
+        kept = getattr(scope, "lean_prompt", None)
+        if isinstance(kept, dict) and not kept.get("applied"):
+            return
+        scope.lean_prompt = dict(outcome)
 
 
 # ---------------------------------------------------------------------------
@@ -2027,4 +2058,5 @@ __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
            "ImageBudgetSpent", "IMAGE_CEILING_ERROR", "take_image_call",
            "counting_look", "with_image_calls", "image_calls_status",
            "image_ceiling_met",
-           "image_ceiling_told", "image_call_facts"]
+           "image_ceiling_told", "image_call_facts",
+           "note_lean_prompt", "lean_prompt_facts"]

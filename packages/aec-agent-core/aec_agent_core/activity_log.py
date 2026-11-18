@@ -141,6 +141,14 @@ records with no ``model_end`` and nothing to say why):
   ``call_with_retries``), with the ``run_id`` of that call. A long
   ``model_end`` with such events before it was waiting on retries.
 
+Since 2026-11-18 (BACKLOG DR-29), with ``GEOTECH_REVIEW_LEAN_PROMPT`` set,
+``turn_end`` carries ``lean_prompt``: ``{"applied": true, "cut": [...],
+"system_chars_cut", "tool_chars_cut"}`` (``cut``: the agent library's texts
+taken out or made short), or ``{"applied": false, "not_found": [...]}``
+when a text the agent library defines was not found word for word and the
+prompt went out as it was
+(:mod:`aec_agent_core.deep.lean_prompt`). Unset, it is not written.
+
 Hashes and sizes, never file contents, images or keys.
 
 A logging failure must never fail a turn: every handler swallows its own
@@ -1131,6 +1139,12 @@ class ActivityLogger(BaseCallbackHandler):
         try:
             from aec_agent_core.deep.keep_work import image_call_facts
             rec.update(image_call_facts(self._turn_scope))
+        except Exception:                              # noqa: BLE001
+            pass
+        try:
+            # what the lean framework prompt did (DR-29); nothing when off
+            from aec_agent_core.deep.keep_work import lean_prompt_facts
+            rec.update(lean_prompt_facts(self._turn_scope))
         except Exception:                              # noqa: BLE001
             pass
         written = self.records_written

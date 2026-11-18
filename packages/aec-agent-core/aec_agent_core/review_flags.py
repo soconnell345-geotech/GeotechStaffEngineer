@@ -260,6 +260,29 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     ``("figure_examples", {"GEOTECH_REVIEW_FIGURE_EXAMPLES": "1"})``.
     Kept in :data:`LATER_ENVS` for the reasons given for
     ``GEOTECH_VISION_TILE_ANSWERS``.
+
+``GEOTECH_REVIEW_LEAN_PROMPT`` (default off)
+    ``1`` takes the agent library's generic prompt off the Document Review
+    page's default build (:mod:`aec_agent_core.deep.lean_prompt`): its base
+    prompt is removed from the main agent's system prompt word for word,
+    and its to-do and helper sections and the ``write_todos`` and ``task``
+    tool descriptions are swapped for the page's short texts (the lean
+    build's, from before BACKLOG DR-39), the lists of helpers kept. Only
+    the texts the installed library defines: deepagents 0.7 writes no base
+    prompt and no helper section, so there the to-do section and the two
+    tool descriptions are cut. All or nothing: where a text the library
+    defines is not found word for word (an upgrade moved it), the prompt
+    goes out as it was and the turn's record says so (``lean_prompt`` on
+    ``turn_end``). Read by the page's build; the ``minimal`` build, the
+    helpers and the geotech page are not touched. Unset, the system prompt,
+    the tool descriptions and the fingerprints are byte for byte as before.
+    BACKLOG DR-29: on deepagents 0.6.8 it takes 5,312 characters off the
+    page's system prompt and 9,968 off the two tool descriptions; on 0.7.24
+    1,056 and 4,471 (counted from the library's source). Not measured on a
+    model yet: the suite
+    takes it as the arm ``("lean_prompt", {"GEOTECH_REVIEW_LEAN_PROMPT":
+    "1"})``. Kept in :data:`LATER_ENVS` for the reasons given for
+    ``GEOTECH_VISION_TILE_ANSWERS``.
 """
 
 from __future__ import annotations
@@ -291,17 +314,18 @@ TILE_ANSWERS_ENV = "GEOTECH_VISION_TILE_ANSWERS"
 PHOTO_PAGE_ONE_LOOK_ENV = "GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK"
 PLAN_TOOLS_ENV = "GEOTECH_REVIEW_PLAN_TOOLS"
 FIGURE_EXAMPLES_ENV = "GEOTECH_REVIEW_FIGURE_EXAMPLES"
+LEAN_PROMPT_ENV = "GEOTECH_REVIEW_LEAN_PROMPT"
 
 #: Switches added after the geotech app's copy went quiet (5.36.0), whose
 #: tests pin :data:`ALL_ENVS` and :data:`ARMS` whole. They are switches like
 #: the rest: :func:`switches` clears them unless an arm names them and
 #: :func:`describe` names them when set. The first two are read by the
 #: vision tools as they look (the build is unchanged); the third at turn
-#: end; the fourth and the fifth when the Document Review page is
-#: built. Fold them into ``ALL_ENVS`` (and give each its arm) when the
-#: app's tests are next renewed.
+#: end; the others when the Document Review page is built. Fold them
+#: into ``ALL_ENVS`` (and give each its arm) when the app's tests are
+#: next renewed.
 LATER_ENVS = (TILE_ANSWERS_ENV, PHOTO_PAGE_ONE_LOOK_ENV, PHOTO_PAGES_ENV,
-              PLAN_TOOLS_ENV, FIGURE_EXAMPLES_ENV)
+              PLAN_TOOLS_ENV, FIGURE_EXAMPLES_ENV, LEAN_PROMPT_ENV)
 
 #: The switches' SETTINGS (numbers the switched behaviour reads, not
 #: switches): how many inline images each call of the minimal build carries,
@@ -381,6 +405,12 @@ def review_figure_examples() -> bool:
     """Whether the Document Review page's figure helper gets that page's
     own worked examples in place of the core's geotechnical ones."""
     return _on(FIGURE_EXAMPLES_ENV)
+
+
+def lean_prompt() -> bool:
+    """Whether the review page's default build takes the agent library's
+    base prompt out and swaps its to-do and helper texts for short ones."""
+    return _on(LEAN_PROMPT_ENV)
 
 
 def checklist() -> bool:
@@ -574,7 +604,8 @@ __all__ = ["AGENT_ENV", "CHECKLIST_ENV", "CITED_PAGES_ENV",
            "PHOTO_PAGE_ONE_LOOK_ENV", "photo_page_one_look",
            "PHOTO_PAGES_ENV", "photo_pages",
            "PLAN_TOOLS_ENV", "plan_tools",
-           "FIGURE_EXAMPLES_ENV", "review_figure_examples", "LATER_ENVS",
+           "FIGURE_EXAMPLES_ENV", "review_figure_examples",
+           "LEAN_PROMPT_ENV", "lean_prompt", "LATER_ENVS",
            "DEFAULT_ON_ENVS", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "minimal_agent",
            "checklist", "report_ingest",
