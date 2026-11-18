@@ -42,8 +42,10 @@ Two readers also blurred the line:
     reported 0 included), and nothing when it did not.
   - `turn_end` gets `cache_reported_calls` (how many of the turn's calls
     carried a count) when at least one did (`_add_usage`, `_turn_facts`).
-  - `usage` itself is unchanged on every call and every turn: the same keys
-    and the same numbers as before (the app's own tests pin both shapes).
+  - `usage` itself keeps its keys on every call and every turn (the app's
+    own tests pin both shapes) and its numbers, with one exception: a call
+    where an empty count near the message hid a real count further out now
+    records the real count. No route the core has today sends such a reply.
 - `palantir_sdk_engine._claude_usage`: sets `input_token_details` whenever
   the SDK's usage has a cache field, 0 included; `input_tokens` unchanged.
 
@@ -117,8 +119,8 @@ release; the mark does not exist before it).
 
    | What the record shows | Meaning | Next |
    |---|---|---|
-   | every call `True`; call 1 `cache_creation` well above 0 (about the shared prefix: system prompt and tools); calls 2 on `cache_read` near the previous call's prefix | the proxy reads the cache | cost the turn at the cache rates; INF-66 closes |
-   | every call `True`, but `cache_read` 0 on calls 2 on (and, on Claude, `cache_creation` 0 on call 1) | the provider says nothing was cached: the marks did not reach it, or the prefix is under the provider's minimum cacheable length | a repair in the request (the core's `engine_config` / `palantir_sdk_engine`), the developer's |
+   | every call `True`; call 1 `cache_creation` well above 0 (about the shared prefix: system prompt and tools), or `cache_read` already on call 1 where another conversation ran shortly before; calls 2 on `cache_read` near the previous call's prefix | the proxy reads the cache | cost the turn at the cache rates; INF-66 closes |
+   | every call `True`, but `cache_read` 0 on calls 2 on (and, on Claude, `cache_creation` 0 on call 1) | the provider says nothing was cached: the marks did not reach it, or the prefix is under the provider's minimum cacheable length, or the proxy writes 0 where it got no count | first compare one call's cost in the hosted platform's usage view; where that shows no cache either, a repair in the request (the core's `engine_config` / `palantir_sdk_engine`), the developer's |
    | no call `True` | the proxy's replies carry no cache count; the record cannot tell | ask the hosted platform whether its proxy passes the provider's cache counts through, or read the conversation's cost in its own usage view |
    | some calls `True`, some not | the calls went by different routes (a helper on another model, the Responses route) | name the route of each unmarked call |
 
