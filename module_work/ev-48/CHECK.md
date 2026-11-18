@@ -141,4 +141,28 @@ run's working notes, not in what it delivered": the coordinate-only flags of
 the trace review (marks 204 and 509 that stood only in boxes and schedule
 rows) should drop out, and a flag whose reading stated the problem in its own
 words (the A-302 "verify" note) should stay where the check's words match it.
-The scores must be identical.
+The scores must be identical, with the one exception below.
+
+## Added in review: a column headed "NO." is not the word "no"
+
+The review found the trace review's own case still fired: a reading that
+writes a door schedule out as a table, its number column headed `NO.`, put
+"no" beside every row under it (a table's header counts as beside each of its
+rows), so the row of door 204 read as "204 ... absent" and the line still
+said the run had seen the problem. The same pattern is in the SCORE, on
+master too: a delivered comment log numbered under `| No. | Sheet | Comment |`
+passed a "not on the plan" check for any door its rows named.
+
+Fixed in one place, `_NO_WORD` in
+`packages/aec-document-review/aec_document_review/review_eval/tasks.py`:
+"no." followed by a digit, by "of" or by a table cell's edge is the
+abbreviation of "number" and is not taken as the word. The word itself still
+counts at a sentence's end ("door 204 on the plan: no.") and alone in a table
+cell. `test_a_number_column_headed_no_is_not_the_word_no`
+(`tests/test_review_eval_coordination_offline.py`) holds both sides; it fails
+with the old pattern.
+
+**This can move a score, downwards only:** a saved run re-scored offline
+loses a pass it had only because its delivered table had such a header. That
+is a wrong pass removed. A re-score that drops by such a check should be read
+with this in mind.
