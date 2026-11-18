@@ -18,7 +18,7 @@ Two applications are built on it:
 
 **1.2.0 (2026-11-18).** Word out: `write_docx` stores a photograph as a
 JPEG at print size, so a report of 20 photographs is about 4 to 13 MB
-(line work, charts and scans are stored as before). Word in: characters
+(line work, lettering and most charts and scans are stored as before; a chart whose pixels look like a photograph, such as a shaded heat map, becomes a full-colour JPEG). Word in: characters
 from the Symbol font are read, equations in Word's own format are counted
 as not read, and a file with tracked changes says so and gives its
 deletions under a key of their own. A reading helper's open items name a

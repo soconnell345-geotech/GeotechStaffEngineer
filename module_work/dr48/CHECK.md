@@ -23,7 +23,10 @@ switch `GEOTECH_PHOTO_PAGES` has three states:
 | `record` | the measure runs | the event carries `photo_pages` (and `photo_mode`) | handed exactly what it was |
 | `retry` (or `1`, `true`, `yes`, `on`) | the measure runs | as `record`, plus a `photos_fed_back` event when the note is handed | told once, before the answer goes out |
 
-What `record` and `retry` cost: no model call, but one planlens pass over
+What `record` and `retry` cost: the check itself calls no model (with
+`retry`, a turn that left photograph pages unlooked-at takes one more pass
+of the agent: more model calls, and image calls if it looks), but one
+planlens pass over
 every page of each attached PDF at the first turn end after it is attached
 (cached per file while the process lives, so again after each restart),
 before the answer is shown: a few seconds for a document of a few hundred

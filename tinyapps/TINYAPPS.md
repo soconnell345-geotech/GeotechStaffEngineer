@@ -330,10 +330,13 @@ round is the owner's call):
 - `GEOTECH_PHOTO_PAGES` (set to `record` or `retry`; `1` means `retry`):
   `record` keeps, in the turn's record, the attached documents'
   photograph pages that nothing looked at; `retry` also tells the agent
-  once, before its answer goes out. No model call, but every page of each
-  attached PDF is read once at the first turn end after it is attached (a
-  few seconds for a document of a few hundred pages, before the answer is
-  shown). Not measured on a model yet (BACKLOG DR-48).
+  once, before its answer goes out. The check itself calls no model, but
+  every page of each attached PDF is read once at the first turn end after
+  it is attached (a few seconds for a document of a few hundred pages,
+  before the answer is shown). With `retry`, a turn that left photograph
+  pages unlooked-at takes one more pass of the agent: more model calls,
+  and image calls if it looks. Not measured on a model yet (BACKLOG
+  DR-48).
 
 ## The owner's first round on the test machine (paste-ready checklist)
 
