@@ -128,3 +128,29 @@ def test_only_the_page_maps_words_is_still_filed_apart(tmp_path, text,
     res = _check(tmp_path, text)
     assert cited in _cited(res, "page_map")
     assert cited not in _cited(res, "never_opened")
+
+
+# ---------------------------------------------------------------------------
+# 2. A page cited in a heading over its findings
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text, cited", [
+    ("### PDF page 25: Foundation recommendations\n"
+     "- The allowable pressure is not justified.", "PDF page 25"),
+    ("**Page 25 (Foundation recommendations)**\n"
+     "The allowable pressure is too high.", "page 25"),
+    ("PDF page 25, foundation recommendations:\n"
+     "- no settlement estimate", "PDF page 25"),
+])
+def test_a_page_in_a_heading_over_its_findings_still_fires(tmp_path, text,
+                                                           cited):
+    res = _check(tmp_path, text)
+    assert cited in _cited(res, "never_opened")
+
+
+def test_a_layout_list_is_still_what_the_page_map_said(tmp_path):
+    res = _check(tmp_path, "Layout of the file:\n"
+                 "- PDF page 4: blank\n"
+                 "- PDF page 20: slope stability analysis results\n")
+    assert _cited(res, "page_map") == ["PDF page 4", "PDF page 20"]
+    assert "never_opened" not in res

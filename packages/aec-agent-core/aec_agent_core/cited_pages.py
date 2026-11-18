@@ -1865,6 +1865,24 @@ def _described(statement: str, units: Sequence[Set[Tuple[str, int]]],
     return sorted(said)
 
 
+def _introduces(text: str, c: Cited) -> bool:
+    """The citation's line is a heading over what follows: a Markdown
+    heading, a line wholly in bold, or a line ending in a colon, with text
+    under it ("### PDF page 25: Foundation recommendations" over a list of
+    findings). What stands under it is said of the page, so the line is
+    more than the page map's words."""
+    if c.table:
+        return False
+    lo = text.rfind("\n", 0, c.lead) + 1
+    hi = text.find("\n", max(c.end, c.lead))
+    if hi < 0 or not text[hi:hi + 400].strip():
+        return False
+    line = text[lo:hi].strip()
+    return bool(line.startswith("#")
+                or (line.startswith("**") and line.endswith("**"))
+                or line.rstrip("*_ \t").endswith(":"))
+
+
 def _paired(text: str, cites: Sequence[Cited]) -> Set[int]:
     """The citations of a page number that sit beside a PDF page given for
     the same place: in the same table row, or next to it with nothing
@@ -2115,6 +2133,8 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
                     lists["named_unread"].append(row)
                     return
                 for _how, units in readings:
+                    if _introduces(t, c):
+                        break         # a heading over what is said of it
                     if _how == "pdf":
                         # the other pages of the same phrase ("PDF pages 6
                         # and 7 are the logs of B-1 and B-2"): the statement
