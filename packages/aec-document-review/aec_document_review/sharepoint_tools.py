@@ -636,6 +636,12 @@ def _probe(fm) -> Tuple[bool, str]:
         return False, f"{type(exc).__name__}: {str(exc)[:200]}"
 
 
+#: What a SharePoint tool returns for a failure whose message could not be
+#: checked for secrets (the masker itself failed).
+MESSAGE_NOT_CHECKED = ("SharePoint: this step failed (its message could not "
+                       "be checked for secrets, so it is not shown).")
+
+
 def _logged(step: str, message: str, path: str = "") -> str:
     """``message``, after appending it to the app's SharePoint log (TA-35;
     never raises, never blocks the turn). Every caller passes a failure:
@@ -648,11 +654,13 @@ def _logged(step: str, message: str, path: str = "") -> str:
         sharepoint_log.record(step, message, path)
     except Exception:                                      # noqa: BLE001
         pass
+    # ... and if masking itself failed, the message is not handed on raw.
     try:
         from aec_agent_core.error_text import mask_error_secrets
-        return mask_error_secrets(message) or message
+        masked = mask_error_secrets(message)
     except Exception:                                      # noqa: BLE001
-        return message
+        masked = ""
+    return masked if masked or not message else MESSAGE_NOT_CHECKED
 
 
 def _plain_refusal(exc: BaseException) -> Optional[str]:
