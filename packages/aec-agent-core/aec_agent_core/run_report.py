@@ -168,7 +168,11 @@ N_FROM_LAST = "the last page reached (the record does not give the count)"
 #: App events that come many to a run: shown as one line with a count.
 COUNTED_EVENTS = ("model_busy", "pacer_wait", "engine_retry",
                   "helper_queued", "side_call_timeout", "side_call_late_end",
-                  "vision_slot_timeout", "process_start")
+                  "vision_slot_timeout", "process_start", "image_read")
+#: App events of a call that are part of its ordinary record: shown with
+#: the call as a note, where the others (a timeout, a wait given up) are
+#: shown as a warning.
+PLAIN_EVENTS = ("image_read",)
 #: What an app event is, in words, where its name does not say.
 EVENT_WORDS = {
     "cited_pages": "the answer's page citations checked against the pages "
@@ -186,6 +190,8 @@ EVENT_WORDS = {
     "side_call_timeout": "a vision call given up at its time limit",
     "side_call_late_end": "a vision call given up that ended after all",
     "vision_slot_timeout": "a look that waited too long for a vision slot",
+    "image_read": "the image a look read (a file's sha is the one the "
+                  "turn's files give its card)",
     "process_start": "a process began writing this record (more than one "
                      "means the app restarted)",
     "restored": "the conversation was brought back from a copy",
@@ -2490,7 +2496,9 @@ class Report:
         if call.side:
             body.append(self._side_calls(call.side))
         for ev in call.events:
-            body.append(f"<div class='warn'>{_e(EVENT_WORDS.get(str(ev.get('event')), ev.get('event')))}: "
+            # an ordinary record of the call is a note, not a warning
+            kind = "note" if ev.get("event") in PLAIN_EVENTS else "warn"
+            body.append(f"<div class='{kind}'>{_e(EVENT_WORDS.get(str(ev.get('event')), ev.get('event')))}: "
                         f"{_e(_fields_line(ev))}</div>")
         return (f'<div class="call" id="c{call.number}">'
                 f'<div class="ch">{" ".join(head)}</div>'

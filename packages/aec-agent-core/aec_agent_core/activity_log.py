@@ -243,14 +243,14 @@ APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
                         "pacer_wait", "cited_pages", "cited_documents",
                         "judgment_check", "side_call_timeout",
                         "side_call_late_end", "engine_retry",
-                        "vision_slot_timeout"})
+                        "vision_slot_timeout", "image_read"})
 
 #: App events written from inside one model call, under that call's run id.
 MODEL_CALL_EVENTS = frozenset({"engine_retry"})
 
 #: App events of a vision look: written with the tool call they ran in.
 LOOK_EVENTS = frozenset({"side_call_timeout", "side_call_late_end",
-                         "vision_slot_timeout"})
+                         "vision_slot_timeout", "image_read"})
 
 PRIMARY = "primary"
 
@@ -757,6 +757,30 @@ def _tool_names(response: Any) -> list:
         return []
 
 
+#: At most this many tool calls asked for and never started go on a
+#: ``turn_end`` (``calls_not_started``; BACKLOG EV-20).
+MAX_CALLS_NOT_STARTED = 20
+
+
+def _asked_calls(response: Any) -> list:
+    """``[(id, name, args)]`` of the tool calls a model call asked for that
+    carry an id (``[]`` where they cannot be read)."""
+    try:
+        out: list = []
+        for row in getattr(response, "generations", None) or []:
+            for g in row or []:
+                msg = getattr(g, "message", None)
+                for call in getattr(msg, "tool_calls", None) or []:
+                    get = (call.get if isinstance(call, dict)
+                           else lambda k, c=call: getattr(c, k, None))
+                    if get("id"):
+                        out.append((str(get("id")), str(get("name")),
+                                    get("args")))
+        return out
+    except Exception:                                  # noqa: BLE001
+        return []
+
+
 def _tool_messages(obj: Any) -> list:
     """The tool messages in a graph node's output (a ToolMessage, a
     ``{"messages": [...]}`` update, a Command, or a list of them)."""
@@ -908,6 +932,8 @@ class ActivityLogger(BaseCallbackHandler):
         self._starts: dict = {}           # run_id -> start time
         self._sources: dict = {}          # model run_id -> lc_source
         self._call_ids: dict = {}         # tool run_id -> tool_call_id
+        self._asked: dict = {}            # tool_call_id asked, not started
+        self._answered: set = set()       # of those, the ones given an answer
         self._outputs: dict = {}          # tool_call_id -> the tool's output
         self._vision: dict = {}           # tool run_id -> [calls, queued_s]
         self._lock_wait: dict = {}        # tool run_id -> document lock wait
@@ -1015,6 +1041,7 @@ class ActivityLogger(BaseCallbackHandler):
         call_id = str(getattr(msg, "tool_call_id", "") or "")
         if not call_id:
             return
+        self._note_answered(call_id)
         if call_id in self._seen:
             prev, now = self._seen.pop(call_id), _delivered_text(msg.content)
         elif call_id in self._outputs:
@@ -1037,6 +1064,13 @@ class ActivityLogger(BaseCallbackHandler):
         if whole:
             rec["full"] = whole
         self._write(rec)
+
+    def _note_answered(self, call_id: str) -> None:
+        """A call no tool started was given an answer all the same (a
+        refusal): ``turn_end`` says so beside it (``calls_not_started``)."""
+        with self._lock:
+            if call_id in self._asked:
+                self._answered.add(call_id)
 
     def note_step_cap(self, cap: Optional[int],
                       allowance: Optional[int] = None) -> None:
@@ -1145,6 +1179,27 @@ class ActivityLogger(BaseCallbackHandler):
                "error": error}
         if error_detail:
             rec["error_detail"] = str(error_detail)[:DEFAULT_MAX_CHARS]
+        with self._lock:
+            asked = [(cid in self._answered, call)
+                     for cid, call in self._asked.items()]
+        if asked:
+            # Tool calls a model asked for that no tool started (EV-20,
+            # wave w8: the cut-off last call was only in messages.json).
+            # Two kinds, told apart: a call NOTHING answered (a step cap,
+            # an error or a stop cut it off), and one the model was given
+            # an answer to without its tool running (a guard's refusal, an
+            # unknown tool name: ``"answered": true``; its own
+            # ``tool_refused`` record holds the answer). The unanswered
+            # come first, so the cap never drops the cut-off call behind
+            # a turn's refusals.
+            asked.sort(key=lambda pair: pair[0])
+            rec["calls_not_started"] = [
+                {"agent": a, "name": n, "args": _json_safe(x),
+                 **({"answered": True} if answered else {})}
+                for answered, (a, n, x) in asked[:MAX_CALLS_NOT_STARTED]]
+            rec["n_calls_not_started"] = len(asked)
+            rec["n_calls_not_answered"] = sum(
+                1 for answered, _call in asked if not answered)
         try:
             rec.update(self._turn_facts())
         except Exception as exc:                       # noqa: BLE001
@@ -1279,6 +1334,9 @@ class ActivityLogger(BaseCallbackHandler):
             self._note(rid, parent_run_id)
             if kwargs.get("tool_call_id"):
                 self._call_ids[rid] = str(kwargs["tool_call_id"])
+                with self._lock:
+                    self._asked.pop(str(kwargs["tool_call_id"]), None)
+                    self._answered.discard(str(kwargs["tool_call_id"]))
             args = inputs if inputs is not None else input_str
             rec = {"agent": self._agent_of(parent_run_id), "event": "tool_start",
                    "name": name, "run_id": rid,
@@ -1484,6 +1542,10 @@ class ActivityLogger(BaseCallbackHandler):
                                      if t_start is not None else None)}
             if cache_reported:
                 record["cache_reported"] = True
+            with self._lock:
+                for cid, name, args in _asked_calls(response):
+                    self._asked[cid] = (record["agent"], name, args)
+                    self._answered.discard(cid)   # an id asked again
             source = self._sources.pop(rid, None)
             if source:
                 record["source"] = source
@@ -1575,6 +1637,7 @@ class ActivityLogger(BaseCallbackHandler):
         if call_id:
             # what the graph's own change, if any, is measured against
             self._seen[call_id] = content
+            self._note_answered(call_id)
         if own is not None and own == content:
             return
         refused = bool(data.get("refused")) or own is None

@@ -531,6 +531,41 @@ def compile_agent(create: Callable, *, model, tools, system_prompt,
     return agent
 
 
+def _tool_label(tool) -> str:
+    """A tool's name as the model is shown it (a tool object's ``name``, a
+    function's ``__name__``, a name given as text)."""
+    if isinstance(tool, str):
+        return tool
+    return str(getattr(tool, "name", None) or getattr(tool, "__name__", None)
+               or tool)
+
+
+def _helper_tool_names(subagents, tools) -> dict:
+    """``{helper: [tool names]}``: the tools the build hands each helper, for
+    the turn's record (BACKLOG EV-20). A helper spec with no ``tools``
+    inherits the primary's (as deepagents does); a compiled helper's are
+    read off its graph where it has a tool node, and it is left out where
+    it has none. The planning and file tools deepagents' middleware adds to
+    every helper are not in the spec, so not listed. A record only: what
+    any model is handed does not change. ``{}`` when nothing can be said."""
+    out: dict = {}
+    for spec in subagents or ():
+        if not isinstance(spec, dict) or not spec.get("name"):
+            continue
+        try:
+            if "runnable" in spec:
+                graph = spec["runnable"]
+                names = sorted(graph.nodes["tools"].bound.tools_by_name)
+            elif "tools" in spec:
+                names = sorted(_tool_label(t) for t in spec["tools"] or ())
+            else:
+                names = sorted(_tool_label(t) for t in tools or ())
+        except Exception:                              # noqa: BLE001
+            continue
+        out[str(spec["name"])] = names
+    return out
+
+
 def record_build(agent, *, attachments, model, tools, subagents,
                  system_prompt, helper_models: dict,
                  judgment_consult: bool = False,
@@ -568,6 +603,12 @@ def record_build(agent, *, attachments, model, tools, subagents,
             chars = getattr(agent, "geotech_prompt_chars", None)
             if isinstance(chars, int):
                 agent.geotech_build["prompt_chars"] = chars
+        helper_tools = _helper_tool_names(subagents, tools)
+        if helper_tools:
+            # each helper's own tools (EV-20, wave w9: whether the figure
+            # helper had its examples and plotting tools was read from the
+            # code, not the record)
+            agent.geotech_build["helper_tools"] = helper_tools
         if helper_models:
             # the helpers on a model of their own (INF-41)
             agent.geotech_build["helper_models"] = helper_models
