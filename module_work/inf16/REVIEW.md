@@ -1,0 +1,70 @@
+# Review of INF-16: a kernel layer under the plotting box
+
+## 1. Verdict
+
+**MERGE AFTER FIXES**, reviewed head `f99a2b5`; the fixes are made on this branch (`claude/rv-inf-16`, three commits before this one), so the branch as it stands here can be merged. One must-fix, two should-fix, all fixed; nothing left for a design decision except the notes below.
+
+## 2. Findings
+
+| # | Severity | Where (at `f99a2b5`) | What is wrong | The input that shows it | Fix |
+|---|---|---|---|---|---|
+| 1 | must-fix | `plot_box/kernel_layer.py`, `_FS_BY_ABI` / `_landlock` | Landlock version 4 (Linux 6.7 to 6.9) was asked for the device-ioctl right, which came with version 5. A kernel refuses a rule set that names a right it does not know (EINVAL), so NO file rule went up: `1` ran with no file layer (said truthfully in the note), `require` refused every run in the child. | `_FS_BY_ABI.get(4, _FS_ALL)` gave `0xffff`; versions 1, 2, 3, 5, 6, 7 were right. | `fcf1c0b`: version 4 asks for the fifteen rights of version 3. Test `test_each_landlock_version_is_asked_only_for_rights_it_knows` (7 cases; case 4 failed before). |
+| 2 | should-fix | `kernel_layer.py`, `_ARCH[...]["refused"]` | The filter refused `socket` and let `socketpair` through. A datagram pair can send to any Unix socket by its path; Landlock through version 7 has no rule for that. The file's top comment and CHECK.md section 2 say "no Unix socket". | With every part up, a forked child made a datagram pair and sent `b"made up"` to a listener bound outside the conversation folder: the listener received it. | `2bbd8f5`: `socketpair` (53 on x86_64, 199 on aarch64) is refused. Tests `test_the_filter_refuses_a_pair_of_sockets` (both machines) and `test_no_datagram_reaches_a_unix_socket_outside_the_box`; all three failed before. The box's 89 tests still pass with the layer required. |
+| 3 | should-fix | `kernel_layer.py`, `box_paths` | The read rule for each library took the folder TWO above the file it loads from. Right for a package, one too high for a library that is one file (`six` is in `LIBRARIES`): with libraries installed in a folder beside the app's settings, the app's whole folder became readable. | `<tmp>/app/libs/madeuplib.py` beside `<tmp>/app/settings.toml`: `box_paths` listed `<tmp>/app` as "read". | `a2d7e32`: a one-file library opens the folder it sits in. Test `test_a_one_file_library_opens_its_own_folder_not_the_one_above` (failed before). |
+| 4 | note | `kernel_layer.py`, `_landlock` | "no rule could be made for the conversation folder" is tested with `any(kind == "write")`, and `/dev/null` is a "write" row too. If the folder's own rule failed the file layer would go up without it and report `files` up. Not a hole (the box could then write nothing; `skipped` names the path), and the child has just entered the folder, so it does not happen in a real run. | `rows=[[<missing>, "write"], ["/dev/null", "write"]]` gives `files: True`. | Left. |
+| 5 | note | `kernel_layer.py`, `_FS_ALL` | A Landlock version after 7 that adds a file right would not have it handled, and the report would not say so. Today no such version exists. | by reading | Left: when version 8 is published, add its row. |
+| 6 | note | the filter is a deny list | Default action is "allow". `kill` is not in it: before Landlock version 6 a signal reaches any process of the same user (CHECK.md section 6 says so). `chmod`/`chown` outside the folder pass (confirmed here; CHECK.md section 6 item 4 says so). | `os.chmod(<neighbour's file>, 0o777)` succeeded with every part up. | Owner's decision, with section 6 of CHECK.md. |
+| 7 | note | fonts | With no font list on disk, matplotlib's own `fc-list` call is now refused, so fonts that only fontconfig knows (outside the six font folders) are not found; a saved font list that names a font elsewhere gives a read error for that font. The default font ships inside matplotlib and is not affected. | by reading matplotlib's font manager; not met in any test | Left (no edge-case chasing). |
+| 8 | note | documentation | The setting and the probe are documented only in the top comments of `plot_box/__init__.py`, `kernel_layer.py` and `kernel_probe.py`, as the box's other settings are. `tinyapps/TINYAPPS.md` and `docs/FOUNDRY.md` do not name it (the builder was told not to edit them). | grep | The lead adds it to the host notes when a host is to use it. |
+
+## 3. Paths checked (numbered as in the review's prompt)
+
+1. **Unset is master.** Four box runs (a matplotlib figure, a refused import, a refused read, code that saves nothing) and `plot_code_description()` from a worktree of `58b7027` and from this branch: identical byte for byte once the three timing fields are blanked (6,794 bytes). `kernel_layer` is not in `sys.modules` of the calling process; `kernel_layer_mode()` returns before its import; the child's `_kernel_layer` returns before opening the file. The payload's key order is unchanged when unset. Windows and macOS by reading: the child's module imports only `errno`, `os`, `stat`, `sys` at its top; `put_up` returns "not available on this system" before `ctypes`; `require` refuses in the page's process. Holds.
+2. **The seccomp program**, decoded and printed for both machines (25 rows on x86_64, 22 on aarch64 after fix 2). Row 0 loads the architecture word, row 1 refuses any other; on x86_64 the next test refuses every number of `0x40000000` and up before the deny rows, so an x32 number cannot pass; every jump lands on the row meant (the two exits are the last two rows); `clone` is allowed only with `CLONE_THREAD` set and no namespace flag, read from the low word of argument 0; `clone3` answers ENOSYS; the default is allow. Run in a forked child here (x86_64), each gave EPERM: `socket` (INET, UNIX, NETLINK), `fork`, `vfork`, `execve`, `execveat`, `ptrace`, `process_vm_readv`, `process_vm_writev`, `unshare`, `setns`, `io_uring_setup`, x32 `socket`, x32 `getpid`, `clone` with only SIGCHLD, with VM and VFORK, with NEWUSER, with a namespace flag beside THREAD, with high bits set; `clone3` gave ENOSYS; a thread started. aarch64 by reading against `asm-generic/unistd.h`: 97, 117, 198, 199, 220, 221, 268, 270, 271, 281, 425, 435 are right. Holds after fix 2.
+3. **Landlock.** Handled rights per version: finding 1; after it, 13, 14, 15, 15, 16, 16, 16 bits for versions 1 to 7, the TCP pair from 4, both scopes from 6, the structure's size 8, 16, 24. In the conversation folder, tried here with version 7: delete EACCES, rename inside EACCES, rename in from the scratch folder EXDEV, hard link from outside EXDEV, new symbolic link EACCES, read through an existing link that points outside EACCES, `mkfifo` EACCES; a hard link between two files inside is allowed (harmless). Outside: read, list, write, cut short, `/proc/self/environ`, `/proc/1/environ`, `/etc/passwd`, the home folder, execute: all EACCES. A path that does not exist at start gets no rule and is denied. `/dev/null` (read and write) and `/dev/urandom` open; `os.urandom` works; `/dev/zero` and `/dev/tty` are denied and nothing needed them. Still readable without need: everything under the site folders, `/usr/lib`, `/usr/local/lib` (CHECK.md section 6 item 1 says it; a person must read `--paths` on the host). Other conversations' folders are not readable unless a read path holds them; the code leaves out a read path that holds THIS conversation's folder, the home folder and `/`. Holds after fixes 1 and 3.
+4. **Truthful report.** Forced here: filter refused (unknown machine) gives `files` up and `seccomp` in `not_up`; Landlock refused gives `files: False` with the reason under `files`, `tcp` and `scopes`, and `seccomp` up; a missing folder gives `files: False`. `up` named no failed part in any case. Under `require` the child returns its error before the limits, the libraries and the code whenever `files` is false, and a failure inside the loader counts as "not up". Under `1` the run goes on and one note names each part not up. Holds (see note 4).
+5. **Only the child.** `put_up` is called from `child._kernel_layer` and from the probe's forked child, which leaves through `os._exit` in a `finally`. The page's process calls only `mode()` and, under `require`, `landlock_abi()` (one call that asks for a number, makes no descriptor). The builder's test shows it and passes here: after a run with `1` the caller has `NoNewPrivs: 0`, `Seccomp: 0`. `threads_before` was 1 in every run. Holds.
+6. **Figures still draw.** The box's existing tests with the setting at `1` and at `require`: 89 passed each. PNG, PDF and SVG from one figure under `require`: success, all five parts up. A static Plotly image needs a browser process (Kaleido): it is not installed here and fails the same way with the setting unset; where it is installed it must start a process, which the box's audit hook refuses with or without the layer (by reading; not run here). No drawing path met needs a socket or a child process.
+7. **Other kernels.** Here (Landlock 7, x86_64, root): the builder's 42 tests ran, 0 skipped; my 11 ran, 0 skipped. On a kernel without Landlock the six `needs_landlock` tests skip with the kernel's reason, the filter tests skip with theirs, and the rest (settings, the program read by an interpreter, paths, refusals, the unset cases) still run, so no test passes having checked nothing.
+8. **The text.** Read every added line of code, comment, test and CHECK.md. None describes or shows a way round the Python-level guard; the tests call the kernel layer directly with plain `open`, `socket` and `fork`. Nothing was reworded.
+9. **Where it is documented, and the record.** Finding 8. `box.kernel_layer` is part of the tool's result, so it is in the turn's record wherever the result is.
+10. **Merge with `origin/claude/b13-integration`** (`ce970b5`): tried in a scratch worktree with this branch's fix head; the automatic merge went through with no conflict. Not committed, not pushed.
+
+## 4. Tests
+
+| Command | Result |
+|---|---|
+| venv (a), from `packages/aec-agent-core`: `pytest tests/test_inf16_kernel_layer.py tests/test_core_imports.py` at `f99a2b5` | 47 passed, 0 skipped |
+| the same folder: `pytest tests/test_inf16_review_fixes.py tests/test_inf16_kernel_layer.py` at the fix head | 53 passed, 0 skipped |
+| venv (b): `GEOTECH_PLOT_CODE_KERNEL_LAYER=require pytest funhouse_agent/tests/test_plot_box.py funhouse_agent/tests/test_plot_box_drafts.py` | 89 passed |
+| the same with `=1` | 89 passed |
+| venv (b), unset: those two files, `webapp/tests/test_page_fingerprints.py`, `webapp/tests/test_wheels.py`, both INF-16 test files, `funhouse_agent/deep/tests/test_figure_runs.py`, `test_figure_turn.py` | 199 passed, 5 skipped (the opt-in wheel builds) |
+| venv (a), from `packages/aec-document-review`: `pytest tests/test_boundary.py tests/test_review_fingerprints.py tests/test_review_switches_offline.py` | 18 passed |
+| guards before each commit: `pytest --noconftest webapp/tests/test_public_text.py webapp/tests/test_review_freeze.py` | 13 passed |
+
+- **On the base** (`58b7027`): both INF-16 test files fail at import (the module does not exist), so every new test fails there, by design.
+- **Each fix's test before its fix:** case 4 of the version test failed (1 of 7); the three `socketpair` tests failed; the one-file-library test failed.
+- **Do the tests check behaviour?** Yes: the layer is put up in a throwaway process and plain calls are made; the box is run through its normal entry; the unset cases compare keys and the child's kernel flags.
+- **My own scripts** (not committed): the decoded program and the calls of path 2; the file calls of path 3; the forced partial failures of path 4; the unset comparison of path 1.
+- **Fingerprints:** neither file moved; both tests pass with no re-record.
+
+## 5. Scope
+
+Six files at `f99a2b5`: the two edited box files, two new files beside them, one new test file, CHECK.md. No existing test edited, no frozen file, no fingerprint file, nothing outside the core. This branch adds one new test file and three small edits to `kernel_layer.py`. Beyond "socket creation and process start" the filter also refuses `io_uring_setup`, `ptrace`, the two process-memory calls, `unshare` and `setns` (CHECK.md "Calls made" 7): each is a way to the same two things, and none is needed by a drawing.
+
+## 6. CHECK.md
+
+- Section 2, part 2: "every file right the kernel's Landlock version knows is handled" was untrue for version 4 (finding 1); true now.
+- Section 2, part 3, and the top comment: "socket (every family)" left `socketpair` out (finding 2). "24 rows on x86_64 (21 on aarch64)" was right at `f99a2b5`; it is 25 and 22 now.
+- Section 5: "the folder each of the 20 plotting libraries is installed in" was one folder too high for a one-file library (finding 3).
+- Section 6: accurate; I confirmed items 3 and 4 (`stat` and `chmod` outside the folder pass). After fix 2 the "no seccomp filter" line still stands as written.
+- Sections 1 and 13 say the process-count limit does not hold where the box runs as root. That is about an operating-system limit, not the Python-level guard; I left it.
+- Section 8: the counts and the "all 42 ran" statement are as I found them.
+
+## 7. Could not check
+
+- **Landlock versions 1 to 6 on a real kernel.** Only version 7 runs here; the version table is checked by reading the kernel's header and by the test of fix 1. A host on Linux 6.7 to 6.9 should run the probe and one box run: `box.kernel_layer.up` must name `files` and `tcp`.
+- **aarch64 by running.** Read only. The first box run on such a host: `seccomp` in `up` and a figure back.
+- **Whether GitHub's runners have Landlock enabled.** Push as `ci/<name>` and read the summary: with `-rs` a skip prints "this kernel offers no Landlock: ...".
+- **The testers' host and the hosted platform:** the probe's line, `--paths` read by a person, the box's user, and one run at `require` (CHECK.md section 12 item 3 lists them; I agree with the list).
+- **A model run with the setting on.** None was made; nothing a model is handed changes unless a part is not up.
