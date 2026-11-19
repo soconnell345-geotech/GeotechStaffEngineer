@@ -73,7 +73,12 @@ dependencies = [
     # aec-document-review 1.2.0 by the tag aec-v1.2.0. No app release goes
     # with it: 5.36.0 on PyPI pins 1.1.0, and this pin moves here only
     # because test_wheels.py keeps it equal to the core's version.
-    "aec-agent-core==1.2.0",
+    # 1.3.0 on master since 2026-11-18 (the developer's work after
+    # 1.2.0; release note module_work/aec_1_3_0/RELEASE_NOTE.md),
+    # published with aec-document-review 1.3.0 by the tag
+    # aec-v1.3.0. No app release goes with it either: the pin moves
+    # for the same reason.
+    "aec-agent-core==1.3.0",
     # -- agent stack (formerly the [deep] extra) --
     # Agent-stack UPPER BOUNDS (5.10.2): unpinned drift has broken deployed
     # clusters twice (Pygments via pydiggs; then deepagents 0.7.11 dropping the

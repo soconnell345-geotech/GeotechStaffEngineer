@@ -16,6 +16,24 @@ Two applications are built on it:
 
 ## Status
 
+**1.3.0 (2026-11-18).** Every change in what an agent is offered, shown
+or told is behind a setting that is off unless set: eight new ones, none
+measured on a model yet (planlens' plan tools, its drawing tool and a DXF
+opened as a plot, each through the host layer; worked examples for the
+figure helper; a lean system prompt; an uploaded picture shown to the
+main model; pixel boxes asked of a vision call; a kernel layer under the
+plotting box). On from the start are repairs (a figure imported a second
+time keeps its chart; a reading helper names a close-up it failed to
+read; an image file is measured in its own pixels; a document's file
+name is not masked as a key) and one change that is more than a repair:
+when the summary of a long conversation fails, the turn goes on with the
+whole history instead of ending on the provider's error. The cited-pages
+and cited-documents checks, still off by default, fire less often on
+what is not a citation. The drawing tool, the DXF plot and sheet numbers
+as addresses need planlens 0.17.0; on 0.16.0 those settings change
+nothing. The release note is `module_work/aec_1_3_0/RELEASE_NOTE.md` in
+the repository.
+
 **1.2.0 (2026-11-18).** Word out: `write_docx` stores a photograph as a
 JPEG at print size, so a report of 20 photographs is about 4 to 13 MB
 (line work, lettering and most charts and scans are stored as before; a chart whose pixels look like a photograph, such as a shaded heat map, becomes a full-colour JPEG). Word in: characters
