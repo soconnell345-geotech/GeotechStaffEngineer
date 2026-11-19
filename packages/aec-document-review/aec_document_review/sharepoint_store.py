@@ -165,6 +165,12 @@ NAMES_NAME = "sp_names.json"
 #: elsewhere there is one, in order. A fifth conversation's save waits for
 #: a free worker; no turn waits for any of them.
 BG_WORKERS = 4
+#: A background save that ended with errors is queued again by itself, up
+#: to SAVE_RETRIES times, after SAVE_RETRY_S seconds (doubled each time, and
+#: never before a wait the service named is over): a tester who stops after
+#: a turn whose save failed would otherwise have it kept on the host only.
+SAVE_RETRIES = 3
+SAVE_RETRY_S = 60.0
 
 #: TA-40: characters SharePoint refuses in a file or folder name, and the
 #: names it reserves (Microsoft, "Restrictions and limitations in OneDrive
@@ -623,6 +629,7 @@ class SharePointStore:
         self._bg_workers: List[threading.Thread] = []
         self._bg_idle = 0
         self._bg_atexit = False
+        self._bg_retries: Dict[str, int] = {}
 
     def last_sync_for(self, thread_id: Optional[str]) -> Optional[dict]:
         """This conversation's own latest mirror summary in this process,
@@ -1008,13 +1015,30 @@ class SharePointStore:
                 self._bg_waiting.discard(tid)
                 self._bg_saving.add(tid)
             try:
-                self.mirror_conversation(tid, root=root)
+                summary = self.mirror_conversation(tid, root=root)
+                self._retry_later(tid, root, bool(summary.get("errors")))
             except Exception:                          # noqa: BLE001
                 pass                                   # it never raises
             finally:
                 with self._bg_cv:
                     self._bg_saving.discard(tid)
                     self._bg_cv.notify_all()
+
+    def _retry_later(self, tid: str, root: Optional[str],
+                     failed: bool) -> None:
+        """Queue a failed background save again later (SAVE_RETRIES)."""
+        tries = self._bg_retries.pop(tid, 0) if not failed else \
+            self._bg_retries.get(tid, 0)
+        if not failed or tries >= SAVE_RETRIES:
+            self._bg_retries.pop(tid, None)
+            return
+        self._bg_retries[tid] = tries + 1
+        held = getattr(self._fm, "_busy_until", 0.0) - time.time()
+        timer = threading.Timer(max(SAVE_RETRY_S * 2 ** tries, held + 1.0)
+                                if held > 0 else SAVE_RETRY_S * 2 ** tries,
+                                self.save_soon, (tid, root))
+        timer.daemon = True
+        timer.start()
 
     def save_state(self, thread_id: Optional[str]) -> Optional[str]:
         """``"saving"`` or ``"waiting"`` while this conversation has a save
