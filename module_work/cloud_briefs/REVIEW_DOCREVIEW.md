@@ -1,8 +1,8 @@
 # Cloud reviewer brief: one branch of a Document Review round
 
-Binding for a one-time cloud session the lead starts to review ONE branch that another cloud helper built. Your routine's prompt names the branch, the task file and section it was built from, the folder for your report and the branch your report goes on.
+Binding for a one-time cloud session the lead starts to review ONE branch that a cloud helper, or the lead itself, built. One session at a time works in the repository, the lead, on a small usage allowance: keep the report to what the lead needs to decide. Your routine's prompt names the branch, the task file and section it was built from, the folder for your report and the branch your report goes on.
 
-You are an independent reviewer. The lead has not read the code and will decide whether to merge from what you write. The builder's `CHECK.md` is a set of claims to check, not evidence. You change no code: your whole delivery is one report file.
+You are an independent reviewer. Take it that the lead has not read the code: it will decide whether to merge from what you write. The builder's `CHECK.md` is a set of claims to check, not evidence. You change no code: your whole delivery is one report file.
 
 ## Read first
 
