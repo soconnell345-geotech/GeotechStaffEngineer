@@ -613,6 +613,14 @@ _PLOT_LOOKS = ("analyze_pdf_page", "render_region")
 _PLOT_PAGE_TOOLS = ("document_page_map", "render_page_thumbnails",
                     "document_markups", "analyze_pdf_page", "render_region")
 
+#: The end of planlens' note on a DXF, and what it says instead where this
+#: build made the plot: the first is then untrue beside the ``plot`` line.
+_DXF_NOTE_WITH_PLOT = (
+    "There are no pages here: to LOOK at the sheet, or for a marked-up "
+    "PDF, ask the user for a PDF plot of it.",
+    "The DXF itself has no pages: to LOOK at the drawing, use the plot "
+    "made here (`plot`).")
+
 
 def _dxf_plot_said(tool_name: str, arguments: dict, raw: str, offered,
                    call) -> str:
@@ -640,9 +648,20 @@ def _dxf_plot_said(tool_name: str, arguments: dict, raw: str, offered,
         if "plot" not in out:
             return raw
         names = [n for n in _PLOT_PAGE_TOOLS if n in offered]
+        made = False
         if names:
+            # the plot is made on first use: make it now, so the line and
+            # the note say only what is so (a refused plot: no line)
+            try:
+                made = "error" not in json.loads(call(
+                    "document_page_map", {"handle": arguments.get("source")}))
+            except Exception:  # noqa: BLE001 - not known to be made
+                made = False
+        if made:
             out["plot"] = (", ".join(names) + " take this file too: they "
                            "look at " + PLOT_NOTE)
+            if isinstance(out.get("note"), str):
+                out["note"] = out["note"].replace(*_DXF_NOTE_WITH_PLOT)
         else:
             del out["plot"]
         return json.dumps(out, ensure_ascii=False)
