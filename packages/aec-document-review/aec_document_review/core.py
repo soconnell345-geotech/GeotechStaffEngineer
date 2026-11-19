@@ -131,6 +131,32 @@ def sanitize_key(name) -> str:
         return base or "file"
 
 
+def uploads_to_stage(pairs: Iterable[Tuple[object, bytes]],
+                     attachments: dict) -> List[Tuple[str, bytes]]:
+    """The ``(name, bytes)`` uploads not yet held. A file whose bytes are
+    already held is left out (the uploader hands its files back on every
+    rerun); a file whose name (once made safe, :func:`sanitize_key`) is
+    taken by OTHER bytes is renamed ``<stem>_<n><ext>``, so a revised file
+    of the same name, or a name that reads alike once its letters are made
+    safe, is staged beside the first instead of being dropped without a
+    word (audit 2026-11-18)."""
+    held = {sanitize_key(k): d for k, d in attachments.items()}
+    out: List[Tuple[str, bytes]] = []
+    for name, data in pairs:
+        data = bytes(data)
+        first = key = sanitize_key(name)
+        stem, ext = os.path.splitext(first)
+        n = 1
+        while key in held and held[key] != data:
+            n += 1
+            key = f"{stem}_{n}{ext}"
+        if key in held:                 # these bytes, held under this name
+            continue
+        held[key] = data
+        out.append((str(name) if key == first else key, data))
+    return out
+
+
 def stage_upload(attachments: dict, temp_dir: str, name, data: bytes) -> Attachment:
     """Register ``data`` in the live ``attachments`` dict under a sanitized key
     AND write it as a real file under ``temp_dir``.
@@ -259,7 +285,9 @@ def attachment_note_for(path, files_dir: str) -> Optional[str]:
     return None
 
 
-def make_save_fn(temp_dir: str, artifacts: List[str]) -> Callable[[str, object], str]:
+def make_save_fn(temp_dir: str, artifacts: List[str],
+                 uploads: Optional[dict] = None
+                 ) -> Callable[[str, object], str]:
     """Build a ``save_fn(path, content) -> saved_path`` for ``build_deep_agent``.
 
     A bare/relative path is resolved into the session ``temp_dir`` (by
@@ -270,11 +298,26 @@ def make_save_fn(temp_dir: str, artifacts: List[str]) -> Callable[[str, object],
     The returned callable also carries a ``saved_note(path) -> str | None``
     attribute, the hook ``funhouse_agent.deep.tools`` uses to let the host add
     a line to the ``save_file`` tool result (here: "this file is now attached").
+
+    ``uploads`` (the live attachments): a file the agent names after one of
+    the tester's uploads is saved beside it as ``<stem>_<n><ext>`` and the
+    tool result names that file; the upload was replaced on disk without a
+    word, and a reload or a restore then read the agent's file as the
+    tester's (audit 2026-11-18).
     """
     def save_fn(path, content) -> str:
         p = str(path)
         if not os.path.isabs(p):
             p = os.path.join(temp_dir, os.path.basename(p) or "output")
+        name = os.path.basename(p)
+        if uploads and name in uploads and os.path.abspath(
+                os.path.dirname(p)) == os.path.abspath(temp_dir):
+            stem, ext = os.path.splitext(name)
+            n = 2
+            while os.path.exists(os.path.join(temp_dir, f"{stem}_{n}{ext}")) \
+                    or f"{stem}_{n}{ext}" in uploads:
+                n += 1
+            p = os.path.join(temp_dir, f"{stem}_{n}{ext}")
         parent = os.path.dirname(p)
         if parent:
             os.makedirs(parent, exist_ok=True)
@@ -837,7 +880,7 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
     agent = page.hook("agent_builder")(
         model,
         attachments=attachments,
-        save_fn=make_save_fn(temp_dir, artifacts),
+        save_fn=make_save_fn(temp_dir, artifacts, uploads=attachments),
         temp_dir=temp_dir,
         **kw,
     )
@@ -2265,6 +2308,8 @@ def _busy_kind(exc: BaseException) -> Optional[str]:
             kind = "rate limit"
         elif "overloaded" in name or "overloaded_error" in low:
             kind = "overloaded"
+    if kind == "server error" and "connection" in name:
+        kind = "connection"             # no server answered at all
     return kind
 
 
@@ -2381,7 +2426,14 @@ def friendly_turn_error(exc: BaseException, kept: Optional[str] = None) -> str:
     try:
         from aec_agent_core.error_text import auth_message, auth_refused
         if auth_refused(exc):
-            return auth_message(exc)
+            said = auth_message(exc)
+            if kept:
+                # what the turn kept, in place of "nothing is lost"
+                lost = (", and nothing is lost: files saved or downloaded "
+                        "this turn are still in the conversation.")
+                said = (said.replace(lost, f". {kept}") if lost in said
+                        else f"{said}\n\n{kept}")
+            return said
     except Exception:  # noqa: BLE001 - the raw error is shown instead
         pass
     text = f"{type(exc).__name__}: {exc}"

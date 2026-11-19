@@ -36,6 +36,9 @@ LINE_HEIGHT_PT = 15.0
 MAX_ROW_HEIGHT_PT = 409.0
 #: Most rows written to one sheet (Excel's own limit is 1,048,576).
 MAX_ROWS = 100_000
+#: Most characters Excel holds in one cell; openpyxl cuts a longer text
+#: there without a word, so the writer says so (audit 2026-11-18).
+MAX_CELL_CHARS = 32_767
 
 _NUMBER = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
 _THOUSANDS = re.compile(r"^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
@@ -46,6 +49,9 @@ _CONTROL_CHARS = re.compile(
 _EMPHASIS = re.compile(r"^(\*\*|__|\*|_|`)(.+)\1$")
 _HEADING = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
 _SEPARATOR_CELL = re.compile(r"^:?-{2,}:?$")
+#: An HTML line break, the only way a Markdown table cell holds one: it is a
+#: line break in the cell, not the text "<br>" (audit 2026-11-18).
+_BR_TAG = re.compile(r"(?i)<br\s*/?>")
 
 
 def available() -> bool:
@@ -140,6 +146,7 @@ def cell_value(value: Any) -> Any:
     # control characters (text copied out of a PDF carries them) are not
     # allowed in a workbook: openpyxl raises on one and the file was lost
     text = _CONTROL_CHARS.sub("", str(value)).strip()
+    text = _BR_TAG.sub("\n", text)
     m = _EMPHASIS.match(text)
     while m:
         text = m.group(2).strip()
@@ -326,12 +333,16 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
         widths: Dict[int, int] = {}
         n_cols = 0
         n_equals = 0
+        n_cut = 0
         for r, row in enumerate(rows, start=1):
             n_cols = max(n_cols, len(row))
             for c, value in enumerate(row, start=1):
                 v = cell_value(value)
                 if v is not None and not isinstance(v, (int, float, str)):
                     v = str(v)
+                if isinstance(v, str) and len(v) > MAX_CELL_CHARS:
+                    v = v[:MAX_CELL_CHARS]
+                    n_cut += 1
                 cell = ws.cell(row=r, column=c, value=v)
                 # Cells hold values, not formulas: text that opens with "="
                 # (a note such as "= 2 x 150 mm") stays text. Left as a
@@ -343,6 +354,10 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
                 if spec["header"] and r == 1:
                     cell.font = Font(bold=True)
                 widths[c] = max(widths.get(c, 0), _longest_line(v))
+        if n_cut:
+            warnings.append(
+                f"sheet '{name}': {n_cut} cell(s) longer than Excel's "
+                f"{MAX_CELL_CHARS:,} characters were cut to that length")
         if n_equals:
             warnings.append(
                 f"sheet '{name}': {n_equals} cell(s) open with '=' and were "

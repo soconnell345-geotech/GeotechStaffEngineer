@@ -7,7 +7,8 @@ downloaded conversation** box takes that zip back:
 
 * it is recognised by its own layout: one top folder holding ``meta.json``
   and ``activity.jsonl`` (a record-alone zip whose ``LEFT_OUT.txt`` names
-  ``activity.jsonl`` may lack it); any other zip is refused with a plain
+  ``activity.jsonl`` may lack it, and so may the zip of a conversation
+  with no turn yet, which holds ``transcript.jsonl``); any other zip is refused with a plain
   message;
 * it unpacks into this person's conversations root (the root the export
   reads), under the thread id in its ``meta.json``, so a restored
@@ -213,6 +214,11 @@ def _read_layout(zf: zipfile.ZipFile, cap: int):
     missing = [m for m in MARKERS if m not in names]
     if missing == ["activity.jsonl"] and note is not None \
             and "activity.jsonl" in _left_out_paths(note):
+        missing = []
+    # A conversation with no turn yet (files uploaded, nothing asked) has
+    # no activity log, and the page offers its download all the same: its
+    # transcript marks it as the export's (audit 2026-11-18).
+    if missing == ["activity.jsonl"] and "transcript.jsonl" in names:
         missing = []
     if missing:
         raise Refused("It is not a conversation zip from Download this "

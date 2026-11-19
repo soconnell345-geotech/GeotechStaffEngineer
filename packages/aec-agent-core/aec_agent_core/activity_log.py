@@ -965,6 +965,17 @@ def _tool_spec(spec: Any) -> Optional[list]:
             _json_safe(schema)]
 
 
+def _reply_was_cut(response) -> bool:
+    """Whether a model call's reply stopped at the provider's output limit
+    (``deep.tool_guards.output_was_cut``). Never raises."""
+    try:
+        from aec_agent_core.deep.tool_guards import output_was_cut
+        return any(output_was_cut(getattr(g, "message", None))
+                   for gens in (response.generations or []) for g in gens)
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
 class ActivityLogger(BaseCallbackHandler):
     """Append every tool/model event of one turn to ``activity.jsonl``.
 
@@ -1169,7 +1180,13 @@ class ActivityLogger(BaseCallbackHandler):
             folder = os.path.join(self.conv_dir, SIDECAR_DIR)
             os.makedirs(folder, exist_ok=True)
             safe = "".join(ch if ch.isalnum() else "-" for ch in label)[:40]
-            name = f"turn{self.turn}_{safe}_{str(run_id or '')[:8]}.txt"
+            # A callback's run id (a UUID) is told apart by its first 8
+            # characters; a tool-call id is not (one provider's all start
+            # alike), so it is named by a hash of the whole id.
+            ident = str(run_id or '')
+            tag = (ident[:8] if ident[8:9] == "-" or len(ident) <= 8
+                   else hashlib.sha1(ident.encode("utf-8")).hexdigest()[:12])
+            name = f"turn{self.turn}_{safe}_{tag}.txt"
             with open(os.path.join(folder, name), "w",
                       encoding="utf-8") as fh:
                 fh.write(whole)
@@ -1613,6 +1630,9 @@ class ActivityLogger(BaseCallbackHandler):
                                      if t_start is not None else None)}
             if cache_reported:
                 record["cache_reported"] = True
+            if _reply_was_cut(response):
+                # stopped at the output limit: said only when it happened
+                record["output_cut"] = True
             with self._lock:
                 for cid, name, args in _asked_calls(response):
                     self._asked[cid] = (record["agent"], name, args)

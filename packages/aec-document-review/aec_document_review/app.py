@@ -1142,9 +1142,9 @@ with st.sidebar:
         if ws_upload.upload_mode() == "ws":
             ss.upload_epoch = ss.get("upload_epoch", 0) + 1
             _retired = True
-        # Only stage names not already registered this session.
-        fresh = [(n, d) for (n, d) in pairs
-                 if core.sanitize_key(n) not in ss.attachments]
+        # Only stage files not already held (a new file under a name
+        # already held is staged beside it: core.uploads_to_stage).
+        fresh = core.uploads_to_stage(pairs, ss.attachments)
         if not fresh and _retired:
             st.rerun()      # nothing new to stage, but retire the widget now
         if fresh:
@@ -1735,8 +1735,7 @@ if _chat_value is not None and not isinstance(_chat_value, str):
     if _chat_up:
         _pairs = [(core.pasted_upload_name(f.name, i), f.getvalue())
                   for i, f in enumerate(_chat_up)]
-        _fresh = [(n, d) for (n, d) in _pairs
-                  if core.sanitize_key(n) not in ss.attachments]
+        _fresh = core.uploads_to_stage(_pairs, ss.attachments)
         if _fresh:
             _atts = _stage_files(_fresh)
             if not _chat_text.strip():

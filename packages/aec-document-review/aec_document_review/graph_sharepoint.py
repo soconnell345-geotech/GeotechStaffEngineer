@@ -1044,8 +1044,10 @@ class GraphFileManager:
         """List a folder (``[]`` when it does not exist). ``type`` is
         ``files`` / ``folders`` / ``both``; ``recursive`` walks subfolders."""
         base = self._clean(path)
+        # Only the folder's own 404 means "no such folder": a site or a
+        # library that is not found is a failure, never an empty list.
+        drive_id, rest = self._split_path(base)
         try:
-            drive_id, rest = self._split_path(base)
             item = self._request("GET", self._item_url(drive_id, rest))
         except GraphError as exc:
             if exc.status == 404:
