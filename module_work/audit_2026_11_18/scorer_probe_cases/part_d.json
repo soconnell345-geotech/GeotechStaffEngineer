@@ -1,0 +1,725 @@
+[
+ {
+  "task": "coord-full-review",
+  "kind": "right",
+  "say": "numbered list, plain negative wording",
+  "answer": "Comment log:\n\n1. G-001 (p. 1): the sheet index lists A-202 INTERIOR ELEVATIONS, but there is no sheet A-202 in the set.\n2. G-001 / S-201: the index calls S-201 ROOF FRAMING PLAN; the sheet's own title is SECOND FLOOR FRAMING PLAN.\n3. A-101: callout 7/A-501 does not resolve; A-501 holds details 1 to 6 only.\n4. A-102: section callout 2/A-302 points to a sheet that does not exist (sections are on A-301).\n5. A-101 / A-601: door 109 is tagged on the plan but is not in the door schedule.\n6. A-601 / A-102: door 204 is scheduled but not tagged on the second floor plan.\n7. A-201, S-201, A-301: SECOND FLOOR is EL. 104.20 on the elevations and framing plan but EL. 104.50 on the sections.\n8. A-401: grids B to C dimensioned 7500; the floor plans and structural plans give 7200.\n9. G-001 general note 6 cites Section 07 84 00, which is not in the project manual.\n10. S-001: allowable bearing pressure 200 kPa; the geotechnical memorandum recommends 150 kPa.\n11. S-001: bottom of exterior footings 1.2 m below finished grade; the memorandum asks for 1.5 m.\n12. S-001: footing concrete 25 MPa; Section 03 30 00 requires 30 MPa for footings.\n13. S-101 / S-501: footing F4 is tagged on the foundation plan but is missing from the footing schedule (F1 to F3 only)."
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "right",
+  "say": "markdown table; units in other ordinary forms (kN/m2, mm, 104.200, 7,200 mm)",
+  "answer": "| No. | Sheet | Comment |\n|---|---|---|\n| 1 | G-001 (page 1) | Index entry A-202 Interior Elevations: sheet was never issued in this set |\n| 2 | S-201 (page 12) | Title block reads Second Floor Framing Plan; index calls it Roof Framing Plan |\n| 3 | A-101 | Detail 7 on A-501 is called out; A-501 stops at detail 6, so the callout is unresolved |\n| 4 | A-102 | Section 2/A-302: sheet A-302 is nonexistent, sections are on A-301 |\n| 5 | A-101 | Door 109 is unscheduled |\n| 6 | A-601 | Door 204 is scheduled but untagged on A-102 |\n| 7 | A-301 | Second floor level 104.500 on sections vs 104.200 on A-201 and S-201 |\n| 8 | A-401 | Bay B-C is 7,500 mm on the enlarged plan vs 7,200 mm on the floor and structural plans |\n| 9 | G-001 | Note 6 references Section 078400; the manual has no such section |\n| 10 | S-001 | Allowable bearing 200 kN/m2 on S-001 vs 150 kN/m2 in the geotechnical memo |\n| 11 | S-001 | Footing depth 1200 mm min. below grade vs 1500 mm in the geotechnical memo |\n| 12 | S-001 | Footing concrete f'c = 25 MPa vs 30 MPa in Section 03 30 00 |\n| 13 | S-101 | Footing mark F-4 lacks a row in the footing schedule on S-501 |"
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "right",
+  "say": "finding only in delivered comment_log.xlsx, action column in imperative ('add door 109 to the schedule')",
+  "answer": "The review is complete. I found 13 comments; they are in the attached comment_log.xlsx.",
+  "files": {
+   "comment_log.xlsx": [
+    [
+     "No.",
+     "Sheet",
+     "Comment",
+     "Action"
+    ],
+    [
+     1,
+     "G-001",
+     "Sheet index lists A-202 INTERIOR ELEVATIONS.",
+     "Delete A-202 from the index or add the sheet to the set."
+    ],
+    [
+     2,
+     "S-201",
+     "Index title ROOF FRAMING PLAN disagrees with sheet title SECOND FLOOR FRAMING PLAN.",
+     "Correct the index."
+    ],
+    [
+     3,
+     "A-101",
+     "Callout 7/A-501: A-501 has details 1 to 6.",
+     "Add detail 7 to A-501 or correct the callout."
+    ],
+    [
+     4,
+     "A-102",
+     "Callout 2/A-302: sections are on A-301.",
+     "Change callout to A-301."
+    ],
+    [
+     5,
+     "A-101",
+     "Door 109 tagged on plan.",
+     "Add door 109 to the door schedule."
+    ],
+    [
+     6,
+     "A-601",
+     "Door 204 in schedule.",
+     "Tag door 204 on A-102 or delete the row."
+    ],
+    [
+     7,
+     "A-301",
+     "SECOND FLOOR EL. 104.50; A-201 and S-201 give EL. 104.20.",
+     "Coordinate."
+    ],
+    [
+     8,
+     "A-401",
+     "Grid B to C 7500; plans give 7200.",
+     "Coordinate."
+    ],
+    [
+     9,
+     "G-001",
+     "General note 6 cites Section 07 84 00.",
+     "Add Section 07 84 00 to the project manual or correct the note."
+    ],
+    [
+     10,
+     "S-001",
+     "Allowable bearing pressure 200 kPa; geotechnical memorandum 150 kPa.",
+     "Revise to the memorandum."
+    ],
+    [
+     11,
+     "S-001",
+     "Bottom of footings 1.2 m below grade; memorandum 1.5 m.",
+     "Revise."
+    ],
+    [
+     12,
+     "S-001",
+     "Footings 25 MPa concrete; Section 03 30 00 calls for 30 MPa.",
+     "Revise."
+    ],
+    [
+     13,
+     "S-101",
+     "Footing F4 tagged on plan; schedule on S-501 lists F1 to F3.",
+     "Add F4 to the footing schedule."
+    ]
+   ]
+  }
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "right",
+  "say": "finding only in delivered review.docx paragraphs",
+  "answer": "The comment log is in review.docx (13 comments).",
+  "files": {
+   "review.docx": [
+    "A-202 appears in the sheet index but the sheet is absent from the set.",
+    "S-201: the index says ROOF FRAMING PLAN, the sheet says SECOND FLOOR FRAMING PLAN.",
+    "A-101: detail 7/A-501 cannot be found; A-501 ends at detail 6.",
+    "A-102: 2/A-302 - there is no A-302.",
+    "Door 109 (A-101) is missing from the door schedule.",
+    "Door 204 is in the schedule but nowhere on A-102.",
+    "Second floor: EL. 104.2 (A-201, S-201) against EL. 104.5 (A-301).",
+    "Grid B-C: 7.2 m on plans, 7.5 m on A-401.",
+    "Note 6 cites 07 84 00, a section the project manual lacks.",
+    "Bearing pressure: S-001 200 kPa, memo 150 kPa.",
+    "Footing depth: S-001 1.2 m, memo 1.5 m.",
+    "Footing concrete: S-001 25 MPa, spec 30 MPa.",
+    "F4 on S-101 is absent from the footing schedule."
+   ]
+  }
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "right",
+  "say": "units in the table's column heads",
+  "answer": "| Item | Sheet S-001 (kPa) | Geotechnical memo (kPa) |\n|---|---|---|\n| Allowable bearing pressure | 200 | 150 |\n\n| Item | S-001 (m) | Memo (m) |\n|---|---|---|\n| Depth of exterior footings below grade | 1.2 | 1.5 |\n\n| Item | S-001 (MPa) | Section 03 30 00 (MPa) |\n|---|---|---|\n| Footing concrete strength | 25 | 30 |",
+  "checks": [
+   "bearing-pressure",
+   "footing-depth",
+   "footing-concrete"
+  ]
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "right",
+  "say": "difference stated with one value",
+  "answer": "A-301 shows the second floor 300 mm higher than A-201 and S-201 (EL. 104.20). A-401 shows bay B-C 300 mm longer than the 7200 on the plans.",
+  "checks": [
+   "level-second-floor",
+   "bay-b-c"
+  ]
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "right",
+  "say": "depth spelled 'metres'",
+  "answer": "S-001 sets exterior footings 1.2 metres below finished grade; the geotechnical memorandum requires 1.5 metres.",
+  "checks": [
+   "footing-depth"
+  ]
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "wrong",
+  "say": "neutral inventory log: every sheet and value listed, each row 'No comment'",
+  "answer": "The set is coordinated; I have no comments. A sheet-by-sheet record is attached.",
+  "files": {
+   "comment_log.xlsx": [
+    [
+     "Sheet",
+     "Title",
+     "Notes read"
+    ],
+    [
+     "G-001",
+     "COVER",
+     "Sheet index: A-101, A-102, A-201, A-202 INTERIOR ELEVATIONS, A-301. General note 6: Section 07 84 00. No comment."
+    ],
+    [
+     "A-101",
+     "FIRST FLOOR PLAN",
+     "Doors 101 to 109. Callouts 7/A-501, 1/A-401. No comment."
+    ],
+    [
+     "A-102",
+     "SECOND FLOOR PLAN",
+     "Doors 201 to 209 including 204. Callout 2/A-302. No comment."
+    ],
+    [
+     "A-201",
+     "ELEVATIONS",
+     "SECOND FLOOR EL. 104.20. No comment."
+    ],
+    [
+     "A-301",
+     "SECTIONS",
+     "SECOND FLOOR EL. 104.50. No comment."
+    ],
+    [
+     "A-401",
+     "ENLARGED PLANS",
+     "Grid B to C 7500 (plans 7200). No comment."
+    ],
+    [
+     "S-001",
+     "GENERAL NOTES",
+     "Bearing 200 kPa (memo 150 kPa). Footings 1.2 m below grade (memo 1.5 m). Footing concrete 25 MPa (spec 30 MPa). No comment."
+    ],
+    [
+     "S-101",
+     "FOUNDATION PLAN",
+     "Footings F1, F2, F3, F4. No comment."
+    ],
+    [
+     "S-201",
+     "SECOND FLOOR FRAMING PLAN",
+     "Index: ROOF FRAMING PLAN. No comment."
+    ]
+   ]
+  },
+  "checks": [
+   "index-missing-sheet",
+   "index-title",
+   "callout-missing-detail",
+   "callout-missing-sheet",
+   "door-not-scheduled",
+   "door-not-on-plan",
+   "level-second-floor",
+   "bay-b-c",
+   "spec-section-missing",
+   "bearing-pressure",
+   "footing-depth",
+   "footing-concrete",
+   "footing-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "wrong",
+  "say": "says the opposite / reverses each finding",
+  "answer": "1. A-202 is in the set but is not listed in the sheet index.\n2. S-201 SECOND FLOOR FRAMING PLAN and S-202 ROOF FRAMING PLAN are both titled as in the index.\n3. Detail 7/A-501 is drawn on A-501 but no plan calls it out.\n4. Sheet A-302 is in the set but no callout points to it.\n5. Door 109 is in the door schedule but is not tagged on A-101.\n6. Door 204 is tagged on A-102 but is not in the door schedule.\n7. SECOND FLOOR reads EL. 104.20 throughout; the 104.50 on A-301 is the top of the topping and is consistent.\n8. Grids B to C: 7200 plus the 300 offset gives the 7500 on A-401, so the two agree.\n9. Section 07 84 00 is in the project manual but no drawing note cites it.\n10. The memorandum's 200 kPa ultimate and 150 kPa allowable agree with S-001.\n11. S-001's 1.5 m footing depth exceeds the memorandum's 1.2 m, so it complies.\n12. Slab concrete is 25 MPa and footing concrete 30 MPa on S-001, both as Section 03 30 00.\n13. F4 is in the footing schedule but is not tagged on S-101.",
+  "checks": [
+   "index-missing-sheet",
+   "index-title",
+   "callout-missing-detail",
+   "callout-missing-sheet",
+   "door-not-scheduled",
+   "door-not-on-plan",
+   "level-second-floor",
+   "bay-b-c",
+   "spec-section-missing",
+   "bearing-pressure",
+   "footing-depth",
+   "footing-concrete",
+   "footing-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "wrong",
+  "say": "item named in a row about something else, next to another row's 'not'",
+  "answer": "| No. | Sheet | Comment |\n|---|---|---|\n| 1 | A-101 | Door 109 swing clashes with the corridor wall |\n| 2 | A-101 | North arrow not shown |\n| 3 | A-102 | Door 204 hardware set to be confirmed |\n| 4 | S-101 | F4 dimensions to be confirmed with the structural engineer |\n| 5 | A-102 | Room names not legible at 2/A-302 |",
+  "checks": [
+   "door-not-scheduled",
+   "door-not-on-plan",
+   "footing-not-scheduled",
+   "callout-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "wrong",
+  "say": "log header 'No' with neutral first rows",
+  "answer": "See the attached log.",
+  "files": {
+   "comment_log.xlsx": [
+    [
+     "No",
+     "Sheet",
+     "Comment"
+    ],
+    [
+     1,
+     "G-001",
+     "Index reviewed incl. A-202; OK"
+    ],
+    [
+     2,
+     "A-101",
+     "Callout 7/A-501 checked; OK"
+    ]
+   ]
+  },
+  "checks": [
+   "index-missing-sheet",
+   "callout-missing-detail"
+  ]
+ },
+ {
+  "task": "coord-full-review",
+  "kind": "wrong",
+  "say": "ordered sheet list on one line",
+  "answer": "Sheets reviewed: S-101 FOUNDATION PLAN, S-201 SECOND FLOOR FRAMING PLAN, S-202 ROOF FRAMING PLAN, S-501 DETAILS. The index titles agree with the sheets.",
+  "checks": [
+   "index-title"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "prose",
+  "answer": "Two callouts do not resolve. On A-101, detail 7/A-501 is not on A-501, which carries details 1 to 6. On A-102, section 2/A-302 names a sheet that is not in the set. All the others point to views that exist."
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "bulleted list with page numbers, others listed as fine",
+  "answer": "Callouts that do not resolve:\n- 7/A-501 (called out on A-101, p. 2): no detail 7 on A-501.\n- 2/A-302 (called out on A-102, page 3): no sheet A-302.\n\nChecked and resolving: 1/A-301, 2/A-301, 1/A-401, 2/A-401, 1/A-501 to 6/A-501, 1/S-501 to 4/S-501."
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "table with a Resolves? column for every callout",
+  "answer": "| Callout | On sheet | Resolves? |\n|---|---|---|\n| 1/A-301 | A-101 | Yes |\n| 2/A-301 | A-102 | Yes |\n| 1/A-401 | A-101 | Yes |\n| 7/A-501 | A-101 | No - A-501 has details 1 to 6 only |\n| 2/A-302 | A-102 | No - sheet A-302 is missing |\n| 1/S-501 | S-101 | Yes |"
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "sound callouts closed with 'without issue' / 'not affected'",
+  "answer": "7/A-501 is unresolved (A-501 has no detail 7) and 2/A-302 is unresolved (no sheet A-302). The remaining callouts, 1/A-301, 2/A-301 and 3/A-501, resolve without issue. 1/S-501 and 2/S-501 are not affected.",
+  "checks": [
+   "no-false-alarm",
+   "callout-missing-detail",
+   "callout-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "imperative fix wording",
+  "answer": "Detail 7/A-501: add detail 7 to A-501 or renumber the bubble on A-101. Section 2/A-302: change the bubble on A-102 to 2/A-301.",
+  "checks": [
+   "callout-missing-detail",
+   "callout-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "sound callout offered as the fix",
+  "answer": "2/A-302 on A-102 is unresolved; it should read 2/A-301, since there is no A-302. Detail 7 on A-501 is not drawn.",
+  "checks": [
+   "no-false-alarm",
+   "callout-missing-sheet",
+   "callout-missing-detail"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "'no action' column for sound rows",
+  "answer": "| Callout | Status | Action |\n|---|---|---|\n| 1/A-301 | resolves | No action |\n| 7/A-501 | detail 7 not on A-501 | Correct |\n| 2/A-302 | sheet not in set | Correct |",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "wrong",
+  "say": "sound callouts called broken in other words",
+  "answer": "7/A-501 and 2/A-302 are unresolved. In addition 1/A-301 points to the wrong view, 3/A-501 fails to resolve, and 1/S-501 is incorrect.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "wrong",
+  "say": "sound callouts called broken in a table",
+  "answer": "| Callout | Resolves? |\n|---|---|\n| 1/A-301 | No |\n| 2/A-401 | No |\n| 4/S-501 | No |",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "wrong",
+  "say": "says every callout resolves, with 'no'/'not' nearby",
+  "answer": "I checked 7/A-501 and 2/A-302 with the others; no callout is broken and I did not need to zoom.",
+  "checks": [
+   "callout-missing-detail",
+   "callout-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "wrong",
+  "say": "reversed: views exist, nothing calls them",
+  "answer": "Detail 7/A-501 exists on A-501 but is not called out from any plan. Sheet A-302 exists but no section bubble points to it.",
+  "checks": [
+   "callout-missing-detail",
+   "callout-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "right",
+  "say": "prose",
+  "answer": "Door 109 is tagged on A-101 but is not in the door schedule. Door 204 is in the door schedule but is not tagged on A-102. Footing F4 is tagged on S-101 but is not in the footing schedule on S-501, which lists F1 to F3."
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "right",
+  "say": "two headed lists",
+  "answer": "On a plan but not scheduled:\n- Door 109 (A-101, page 2)\n- Footing F4 (S-101)\n\nScheduled but not on a plan:\n- Door 204 (door schedule, A-601)"
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "right",
+  "say": "table with yes/no columns",
+  "answer": "| Mark | On plan | In schedule |\n|---|---|---|\n| Door 109 | Yes (A-101) | No |\n| Door 204 | No | Yes |\n| Footing F-4 | Yes (S-101) | No |"
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "right",
+  "say": "others closed as matching",
+  "answer": "Unscheduled: door 109 and footing F4. Untagged: door 204. Doors 101 to 108, 201 to 203 and 205 to 209 match, and F1, F2 and F3 match; none of those is missing.",
+  "checks": [
+   "no-false-alarm",
+   "door-not-scheduled",
+   "door-not-on-plan",
+   "footing-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "right",
+  "say": "sound marks named singly as fine",
+  "answer": "Door 109 is unscheduled, door 204 is untagged, footing F4 is unscheduled. Door 108 and door 205 are fine and are not affected. F3 is the last mark in the schedule; there is no problem with F1 or F2.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "right",
+  "say": "imperative fix wording",
+  "answer": "Add door 109 to the door schedule. Tag door 204 on A-102 or delete its row. Add F4 to the footing schedule on S-501.",
+  "checks": [
+   "door-not-scheduled",
+   "door-not-on-plan",
+   "footing-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "right",
+  "say": "schedule extent stated with sound marks",
+  "answer": "The footing schedule stops at F3, so F4 on S-101 has no row. The door schedule runs 101 to 108 and 201 to 209: 109 on A-101 has no row, and 204 has a row but no tag.",
+  "checks": [
+   "no-false-alarm",
+   "footing-not-scheduled",
+   "door-not-scheduled",
+   "door-not-on-plan"
+  ]
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "wrong",
+  "say": "reversed direction",
+  "answer": "Door 109 is in the door schedule but is not tagged on A-101. Door 204 is tagged on A-102 but is not in the schedule. F4 is in the footing schedule but not on S-101.",
+  "checks": [
+   "door-not-scheduled",
+   "door-not-on-plan",
+   "footing-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "wrong",
+  "say": "all marks said to match",
+  "answer": "I read doors 101 to 109 and 201 to 209 including 204, and footings F1 to F4. The scan is grey but not hard to read. Every mark is both drawn and scheduled.",
+  "checks": [
+   "door-not-scheduled",
+   "door-not-on-plan",
+   "footing-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "wrong",
+  "say": "sound marks called faulty in other words",
+  "answer": "Door 109, door 204 and F4 as above. Also door 105 appears on the plan only, door 207 appears in the schedule only, and F2 is unmatched.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-scan-schedules",
+  "kind": "wrong",
+  "say": "sound marks called faulty in a table",
+  "answer": "| Mark | On plan | In schedule |\n|---|---|---|\n| Door 103 | Yes | No |\n| Door 206 | No | Yes |\n| F1 | Yes | No |",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "right",
+  "say": "numbered list",
+  "answer": "1. Product data: whole-window U-value 1.90 W/(m2.K) exceeds the 1.60 maximum of Section 08 51 13.\n2. Anchorage calculations (1.3, SD-05 Design Data) are not included in the submittal.\n3. The schedule of values puts glazing under Section 08 80 00, which is not in the project manual.\n4. The laboratory report gives air leakage and structural tests only; the water penetration test is not reported.\n5. Schedule of values: the lines add up to 174,500 but the total says 178,500."
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "right",
+  "say": "table, other number forms",
+  "answer": "| No. | Item | Comment |\n|---|---|---|\n| 1 | U-value | 1.9 W/m2K submitted vs 1.6 max. (08 51 13) - does not comply |\n| 2 | SD-05 Design Data | Anchorage calcs missing from the package |\n| 3 | Schedule of values | References Section 088000 - no such section in the manual |\n| 4 | Test report | No water penetration test results |\n| 5 | Schedule of values | Total $178,500.00 but lines sum to $174,500.00 |"
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "right",
+  "say": "other ordinary words",
+  "answer": "- The whole-window U-value on the data sheet is 1.90; the spec caps it at 1.60.\n- Design data: the anchorage calculations were left out.\n- Section 08 80 00 does not exist in this project manual; glazing is in 08 51 13 (2.3).\n- The lab report omits water penetration resistance.\n- SOV arithmetic: 174 500 summed, 178 500 stated."
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "right",
+  "say": "'not received' / 'provide' / 'does not include' wording",
+  "answer": "- Anchorage calculations (SD-05): not received. Provide with resubmittal.\n- The project manual does not include Section 08 80 00.\n- Water penetration test report: outstanding, required by 2.1 D.\n- Schedule of values: lines total 174,500; the stated total is overstated by 4,000.",
+  "checks": [
+   "window-anchorage",
+   "window-section-missing",
+   "window-water-test",
+   "window-sov-total"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "right",
+  "say": "yes/no compliance table",
+  "answer": "| Requirement | Required | Submitted | Complies? |\n|---|---|---|---|\n| Whole-window U-value | 1.60 max | 1.90 | No |\n| Anchorage calculations (SD-05) | Required | Submitted: No | No |\n| Water penetration test | Required | Reported: No | No |",
+  "checks": [
+   "window-u-value",
+   "window-anchorage",
+   "window-water-test"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "wrong",
+  "say": "both U-values named, concluded compliant",
+  "answer": "The data sheet gives 1.90 for the whole window and 1.10 centre of glass; against the 1.60 maximum the glazing complies.",
+  "checks": [
+   "window-u-value"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "wrong",
+  "say": "U-values in a neutral data table",
+  "answer": "| Property | Data sheet | Spec |\n|---|---|---|\n| U-value | 1.90 | 1.60 |\n| Frame wall | 2.2 mm | 2.0 mm |",
+  "checks": [
+   "window-u-value"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "wrong",
+  "say": "anchorage said present; another item's 'not included' on the line",
+  "answer": "Anchorage is shown on the shop drawings and the design data is complete; the warranty is not included yet, which is acceptable for a closeout submittal.",
+  "checks": [
+   "window-anchorage"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "wrong",
+  "say": "anchorage: not reviewed",
+  "answer": "Anchorage calculations (SD-05) were submitted; I have not been given the structural loads to check them.",
+  "checks": [
+   "window-anchorage"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "wrong",
+  "say": "section said to exist",
+  "answer": "Glazing is listed under Section 08 80 00 in the schedule of values, consistent with the manual; Section 07 92 00 was not found in the submittal.",
+  "checks": [
+   "window-section-missing"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "wrong",
+  "say": "section named with a general 'no such' remark elsewhere",
+  "answer": "The schedule of values references Sections 08 51 13 and 08 80 00. There is no section missing from the transmittal list.",
+  "checks": [
+   "window-section-missing"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "wrong",
+  "say": "water test said reported; other item missing on the line",
+  "answer": "Water penetration was tested and passed; the warranty was not submitted.",
+  "checks": [
+   "window-water-test"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "wrong",
+  "say": "only the field water test named",
+  "answer": "The field water test of 3.3 has not been performed yet; that comes after installation.",
+  "checks": [
+   "window-water-test"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "wrong",
+  "say": "both totals named as agreeing",
+  "answer": "The schedule of values total of 178,500 includes the 4,000 allowance on top of the 174,500 of lines, so it adds up.",
+  "checks": [
+   "window-sov-total"
+  ]
+ },
+ {
+  "task": "coord-spec-submittal",
+  "kind": "wrong",
+  "say": "totals in a neutral list",
+  "answer": "Schedule of values: lines 174,500; total 178,500; no deviations marked on the transmittal.",
+  "checks": [
+   "window-sov-total"
+  ]
+ },
+ {
+  "task": "coord-reissue",
+  "kind": "right",
+  "say": "prose list",
+  "answer": "- A-201: T.O. PARAPET raised from EL. 109.30 to EL. 109.60, clouded and listed as revision 2. Not carried: A-301 still shows the parapet at EL. 109.30.\n- S-501: footing F3 reinforcing changed from 10-20M to 12-20M inside a revision 2 cloud, but the revision block has no entry for revision 2.\n- A-102: the revision block lists revision 2, DOOR 205 RELOCATED, but nothing on the sheet changed; door 205 is where it was.\n- A-601: door 106 renumbered 110, clouded and listed. A-101 still tags the door 106, so 106 has no schedule row."
+ },
+ {
+  "task": "coord-reissue",
+  "kind": "right",
+  "say": "table with yes/no columns",
+  "answer": "| Sheet | Change | Clouded? | Listed in revision block? | Carried to other sheets? |\n|---|---|---|---|---|\n| A-201 | T.O. parapet 109.30 to 109.60 | Yes | Yes | No - A-301 not updated, parapet 109.30 |\n| S-501 | F3 bars 10-20M to 12-20M | Yes | No | n/a |\n| A-102 | Rev 2 entry 'Door 205 relocated' | No | Yes | No change found on the sheet |\n| A-601 | Door 106 renumbered 110 | Yes | Yes | No - first floor plan A-101 not updated, still 106 |"
+ },
+ {
+  "task": "coord-reissue",
+  "kind": "right",
+  "say": "other words",
+  "answer": "1. The parapet change (109.60 on A-201) was not picked up on the sections: A-301 reads 109.30.\n2. S-501 has a clouded change to F3 (12-20M each way) that is not recorded in its revision block, which lists revision 0 only.\n3. A-102's revision 2 entry for the relocation of door 205 is not backed by any change: the door has not moved.\n4. Door 106 became 110 in the schedule (A-601) but A-101 was not renumbered and the tag there is 106."
+ },
+ {
+  "task": "coord-reissue",
+  "kind": "right",
+  "say": "plain statements without 'still' / 'not updated'",
+  "answer": "- Parapet: A-201 now 109.60, A-301 109.30 - coordinate.\n- S-501: 12-20M at F3 is clouded (delta 2); revision block stops at revision 0.\n- A-102: revision block says door 205 relocated; the plan shows door 205 in its issue 1 location.\n- A-101 shows door 106; the schedule on A-601 now calls it 110."
+ },
+ {
+  "task": "coord-reissue",
+  "kind": "right",
+  "say": "finding in a table cell under 'Carried?: No'",
+  "answer": "| Change | Sheet | Carried? |\n|---|---|---|\n| Parapet 109.30 raised to 109.60 (twin sheet A-301) | A-201 | No |\n| Door 106 renumbered 110 (twin sheet A-101) | A-601 | No |",
+  "checks": [
+   "parapet-twin",
+   "door-renumbered"
+  ]
+ },
+ {
+  "task": "coord-reissue",
+  "kind": "wrong",
+  "say": "every change said carried and listed",
+  "answer": "- A-201 parapet 109.30 to 109.60: clouded, listed, and carried to A-301.\n- S-501 F3 12-20M: clouded and listed as revision 2 in the revision block.\n- A-102 door 205 relocated: clouded, listed, change found on the sheet.\n- A-601 door 106 to 110: clouded, listed, carried to A-101.",
+  "checks": [
+   "parapet-twin",
+   "cloud-not-listed",
+   "entry-no-change",
+   "door-renumbered"
+  ]
+ },
+ {
+  "task": "coord-reissue",
+  "kind": "wrong",
+  "say": "another item's fault on the same line",
+  "answer": "- A-301 matches A-201 at the parapet; the S-201 title was not updated.\n- S-501 F3 12-20M: clouded; A-102's change is not listed in the revision block.\n- A-102 door 205 relocated: the move is real but is not shown inside a cloud.\n- A-101 and door 106: carried correctly; A-201 was not updated for the parapet.",
+  "checks": [
+   "parapet-twin",
+   "cloud-not-listed",
+   "entry-no-change",
+   "door-renumbered"
+  ]
+ },
+ {
+  "task": "coord-reissue",
+  "kind": "wrong",
+  "say": "neutral change list, no judgement",
+  "answer": "Changes in issue 2:\n- A-201 and A-301: parapet, EL. 109.30 and EL. 109.60.\n- S-501: F3 12-20M, cloud, revision block.\n- A-102: door 205 relocated, revision 2.\n- A-101, A-601: doors 106 and 110.",
+  "checks": [
+   "parapet-twin",
+   "cloud-not-listed",
+   "entry-no-change",
+   "door-renumbered"
+  ]
+ },
+ {
+  "task": "coord-reissue",
+  "kind": "wrong",
+  "say": "reversed: listed but not clouded",
+  "answer": "S-501: the 12-20M change to F3 is listed in the revision block as revision 2 but the cloud is missing on the sheet.",
+  "checks": [
+   "cloud-not-listed"
+  ]
+ },
+ {
+  "task": "coord-reissue",
+  "kind": "wrong",
+  "say": "reversed: A-101 updated, schedule not",
+  "answer": "The first floor plan A-101 was renumbered to 110, but the door schedule still shows 106.",
+  "checks": [
+   "door-renumbered"
+  ]
+ }
+]

@@ -1,0 +1,908 @@
+[
+ {
+  "task": "coord-sheet-index",
+  "kind": "right",
+  "say": "full answer, prose",
+  "answer": "Two things do not match. The index lists A-202 INTERIOR ELEVATIONS, but there is no sheet A-202 in the set. The index calls S-201 ROOF FRAMING PLAN, while the title block on S-201 (page 13) reads SECOND FLOOR FRAMING PLAN. The other 14 entries match."
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "right",
+  "say": "full answer, list",
+  "answer": "1. A-202 Interior Elevations is in the sheet index; the sheet itself is absent from the PDF.\n2. S-201: index title is Roof Framing Plan; sheet title is Level 2 Framing Plan."
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "right",
+  "say": "full answer, table",
+  "answer": "| Sheet | Index title | Sheet title | In set |\n|---|---|---|---|\n| A-202 | INTERIOR ELEVATIONS | - | No |\n| S-201 | ROOF FRAMING PLAN | 2ND FLOOR FRAMING PLAN | Yes |"
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "right",
+  "say": "says 'extra entry', no negative word",
+  "answer": "The index has one extra entry, A-202 INTERIOR ELEVATIONS: the set jumps from A-201 to A-301.",
+  "checks": [
+   "index-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "right",
+  "say": "heading, then unindented sub-bullets",
+  "answer": "**S-201**\n- Index: ROOF FRAMING PLAN\n- Title block: SECOND FLOOR FRAMING PLAN",
+  "checks": [
+   "index-title"
+  ]
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "right",
+  "say": "numbered finding, the two titles on two lines under it",
+  "answer": "2. S-201 title mismatch\nIndex: ROOF FRAMING PLAN\nSheet: SECOND FLOOR FRAMING PLAN",
+  "checks": [
+   "index-title"
+  ]
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "wrong",
+  "say": "says nothing is wrong with A-202",
+  "answer": "No sheet is left out: A-201, A-202 and A-301 are all in the set, and every title matches.",
+  "checks": [
+   "index-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "wrong",
+  "say": "A-202 named as fine beside the other finding",
+  "answer": "The only mismatch is the title of S-201. A-202 INTERIOR ELEVATIONS matches its sheet.",
+  "checks": [
+   "index-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "wrong",
+  "say": "A-202 named, could not check",
+  "answer": "The index lists A-101, A-102, A-201, A-202, A-301. I could not open the later pages to compare.",
+  "checks": [
+   "index-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "wrong",
+  "say": "both titles in one line, said to match",
+  "answer": "S-201 SECOND FLOOR FRAMING PLAN and S-202 ROOF FRAMING PLAN both match the index.",
+  "checks": [
+   "index-title"
+  ]
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "wrong",
+  "say": "one-line list of every sheet",
+  "answer": "Sheets in the set: S-001 General Notes, S-101 Foundation Plan, S-201 Second Floor Framing Plan, S-202 Roof Framing Plan, S-501 Details. All match the index.",
+  "checks": [
+   "index-title"
+  ]
+ },
+ {
+  "task": "coord-sheet-index",
+  "kind": "wrong",
+  "say": "sheet list as a table, one sheet a row",
+  "answer": "| Sheet | Title |\n|---|---|\n| S-201 | SECOND FLOOR FRAMING PLAN |\n| S-202 | ROOF FRAMING PLAN |\nAll titles match the index.",
+  "checks": [
+   "index-title"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "full answer, prose",
+  "answer": "Two callouts do not resolve. A-101 calls out detail 7/A-501, but sheet A-501 has no detail 7 (it holds details 1 to 6). A-102 calls out section 2/A-302, and there is no sheet A-302 in the set; the sections are on A-301. All other callouts point to views that exist."
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "full answer, table of the two",
+  "answer": "| Callout | On sheet | Problem |\n|---|---|---|\n| 7/A-501 | A-101 | Detail 7 not on A-501 (1-6 only) |\n| 2/A-302 | A-102 | Sheet A-302 not in set |"
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "full answer, list with pages",
+  "answer": "- Detail 7 on A501 (called from A-101, p. 3): missing, A501 stops at detail 6.\n- Section 2 on A302 (called from A-102, page 4): sheet A302 does not exist."
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "no negative word: 'stops at detail 6'",
+  "answer": "A-101 references 7/A-501; A-501 stops at detail 6.",
+  "checks": [
+   "callout-missing-detail"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "no negative word: 'should read 2/A-301'",
+  "answer": "The 2/A-302 bubble on A-102 points to the wrong sheet number; it should read 2/A-301.",
+  "checks": [
+   "callout-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "table of every callout, Status column",
+  "answer": "| Callout | From | Status |\n|---|---|---|\n| 1/A-301 | A-101 | Resolves |\n| 2/A-301 | A-101 | Resolves |\n| 7/A-501 | A-101 | Not found |\n| 2/A-302 | A-102 | Sheet not in set |\n| 1/S-501 | S-101 | Resolves |",
+  "checks": [
+   "no-false-alarm",
+   "callout-missing-detail",
+   "callout-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "table of every callout, 'Missing?' column Yes/No",
+  "answer": "| Callout | Missing? |\n|---|---|\n| 1/A-301 | No |\n| 2/A-301 | No |\n| 7/A-501 | Yes |\n| 2/A-302 | Yes |",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "'all others resolve without issue' with the list",
+  "answer": "7/A-501 and 2/A-302 do not resolve. All others resolve without issue: 1/A-301, 2/A-301, 1/A-401, 2/A-401, 1/S-501 to 4/S-501.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "'the others are not affected'",
+  "answer": "7/A-501 has no target. 1/A-301 and 2/A-301 are not affected.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "sound ones listed after 'no broken callouts among'",
+  "answer": "Apart from 7/A-501 and 2/A-302, I found no broken callouts among 1/A-401, 2/A-401, 1/A-501 and 3/A-501.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "right",
+  "say": "A-501's own details named beside the missing one",
+  "answer": "A-501 has details 1/A-501 to 6/A-501, so 7/A-501 is unresolved.",
+  "checks": [
+   "no-false-alarm",
+   "callout-missing-detail"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "wrong",
+  "say": "7/A-501 said to resolve, beside the other finding",
+  "answer": "Callout 7/A-501 on A-101: found, the detail exists. Callout 2/A-302 on A-102: sheet not in the set.",
+  "checks": [
+   "callout-missing-detail"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "wrong",
+  "say": "7/A-501 'resolves without issue'",
+  "answer": "Detail 7/A-501 resolves without issue.",
+  "checks": [
+   "callout-missing-detail"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "wrong",
+  "say": "A-302 said to exist; another thing negated",
+  "answer": "Section 2/A-302 resolves to sheet A-302. Only 7/A-501 fails.",
+  "checks": [
+   "callout-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "wrong",
+  "say": "lists every callout, says none is broken",
+  "answer": "Callouts found: 1/A-301, 2/A-301, 7/A-501, 2/A-302, 1/A-401. I could not verify them.",
+  "checks": [
+   "callout-missing-detail",
+   "callout-missing-sheet"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "wrong",
+  "say": "sound callout called wrong without a listed word",
+  "answer": "Callout 3/A-501 on A-101 points to the wrong detail, and 2/A-401 is a dead reference.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "wrong",
+  "say": "sound callout 'could not be located'",
+  "answer": "Detail 4/S-501 could not be located on S-501.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-callouts",
+  "kind": "wrong",
+  "say": "sound callout 'has no matching view'",
+  "answer": "Callout 1/A-401 has no matching view on A-401.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "full answer, prose",
+  "answer": "On a plan but not scheduled: door 109 (tagged on A-101, not in the door schedule) and footing F4 (tagged on S-101, not in the footing schedule on S-501, which lists F1 to F3). Scheduled but not on a plan: door 204 is in the door schedule but is not tagged on A-102."
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "full answer, headings over lists",
+  "answer": "**On a plan but not scheduled:**\n- Door 109 (A-101)\n- Footing F-4 (S-101)\n\n**Scheduled but not on a plan:**\n- Door 204"
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "full answer, table Yes/No",
+  "answer": "| Mark | On plan | In schedule |\n|---|---|---|\n| Door 109 | Yes (A-101) | No |\n| Door 204 | No | Yes |\n| Footing F4 | Yes (S-101) | No |"
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "no negative word: 'needs to be added'",
+  "answer": "Door 109 on A-101 needs to be added to the door schedule.",
+  "checks": [
+   "door-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "no negative word: 'schedule stops at F3'",
+  "answer": "S-101 shows an F4 footing, but the footing schedule stops at F3.",
+  "checks": [
+   "footing-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "no negative word: 'has a row for 204 that the plan never uses'",
+  "answer": "The door schedule has a row for 204 that the second floor plan never uses.",
+  "checks": [
+   "door-not-on-plan"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "ranges of sound doors, then the problem",
+  "answer": "Doors 101-108 are tagged and scheduled; 109 is tagged but not scheduled. Doors 201 to 203 and 205 to 209 are fine; 204 is scheduled but not tagged.",
+  "checks": [
+   "no-false-alarm",
+   "door-not-scheduled",
+   "door-not-on-plan"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "'lists F1, F2 and F3 but not F4'",
+  "answer": "The footing schedule lists F1, F2 and F3 but not F4.",
+  "checks": [
+   "no-false-alarm",
+   "footing-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "table of every door, 'Missing from schedule?' column",
+  "answer": "| Door | Missing from schedule? |\n|---|---|\n| 101 | No |\n| 102 | No |\n| 109 | Yes |",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "'the other doors are not affected' with numbers",
+  "answer": "Door 109 is not scheduled. Doors 101, 102 and 103 are not affected.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "right",
+  "say": "neighbouring doors named to locate the missing one",
+  "answer": "Door 204 is scheduled, but on A-102 there is no tag between doors 203 and 205.",
+  "checks": [
+   "no-false-alarm",
+   "door-not-on-plan"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "wrong",
+  "say": "109 said scheduled, beside the other finding",
+  "answer": "Door 109 is in the schedule. Door 204 is not on the plan.",
+  "checks": [
+   "door-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "wrong",
+  "say": "says no door is left out",
+  "answer": "No door is left off: 101 to 109 are all in the schedule.",
+  "checks": [
+   "door-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "wrong",
+  "say": "204 said tagged; 'only'",
+  "answer": "Door 204 is tagged on A-102; only its hardware set differs.",
+  "checks": [
+   "door-not-on-plan"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "wrong",
+  "say": "F4 said scheduled, without trouble",
+  "answer": "F4 is in the footing schedule without any conflict.",
+  "checks": [
+   "footing-not-scheduled"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "wrong",
+  "say": "sound door 'left off the schedule'",
+  "answer": "Door 203 has been left off the door schedule.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "wrong",
+  "say": "sound door 'not in the schedule'",
+  "answer": "Door 105 is on A-101 but is not in the door schedule.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-schedules",
+  "kind": "wrong",
+  "say": "sound footing: 'schedule omits it'",
+  "answer": "F2 is drawn on S-101 but the footing schedule omits it.",
+  "checks": [
+   "no-false-alarm"
+  ]
+ },
+ {
+  "task": "coord-levels-dimensions",
+  "kind": "right",
+  "say": "full answer, prose",
+  "answer": "SECOND FLOOR is EL. 104.20 on the elevations (A-201) and the framing plan (S-201), but EL. 104.50 on the sections (A-301). Grid bay B-C is 7200 on the floor plans and structural plans, but 7500 on the enlarged plans (A-401). The other levels and bays agree."
+ },
+ {
+  "task": "coord-levels-dimensions",
+  "kind": "right",
+  "say": "full answer, list, units and separators",
+  "answer": "- Second floor level: 104.2 m on A-201 / S-201 versus 104.5 m on A-301.\n- Grids B to C: 7,200 mm on the plans versus 7,500 mm on A-401."
+ },
+ {
+  "task": "coord-levels-dimensions",
+  "kind": "right",
+  "say": "full answer, table",
+  "answer": "| Item | Plans / elevations | Other sheet |\n|---|---|---|\n| Second floor | EL. 104.20 (A-201, S-201) | EL. 104.50 (A-301) |\n| Bay B-C | 7.2 m | 7.5 m (A-401) |"
+ },
+ {
+  "task": "coord-levels-dimensions",
+  "kind": "right",
+  "say": "levels written to the millimetre",
+  "answer": "Second floor is +104.200 on A-201 and S-201 but +104.500 on A-301.",
+  "checks": [
+   "level-second-floor"
+  ]
+ },
+ {
+  "task": "coord-levels-dimensions",
+  "kind": "wrong",
+  "say": "both levels read, said to agree",
+  "answer": "Levels read: A-201 104.20, S-201 104.20, A-301 104.50. The floor levels agree from sheet to sheet.",
+  "checks": [
+   "level-second-floor"
+  ]
+ },
+ {
+  "task": "coord-levels-dimensions",
+  "kind": "wrong",
+  "say": "the two values on the wrong sheets",
+  "answer": "Second floor is EL. 104.50 on the elevations and framing plan but EL. 104.20 on the sections.",
+  "checks": [
+   "level-second-floor"
+  ]
+ },
+ {
+  "task": "coord-levels-dimensions",
+  "kind": "wrong",
+  "say": "both bays read, said to agree",
+  "answer": "Bay B-C reads 7200 on A-101 and 7500 on A-401; the grid dimensions are consistent.",
+  "checks": [
+   "bay-b-c"
+  ]
+ },
+ {
+  "task": "coord-levels-dimensions",
+  "kind": "wrong",
+  "say": "the two values on the wrong sheets",
+  "answer": "Grids B-C are 7500 on the floor plans and 7200 on the enlarged plans.",
+  "checks": [
+   "bay-b-c"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-manual",
+  "kind": "right",
+  "say": "full answer, prose",
+  "answer": "General note 6 cites Section 07 84 00, which is not in the project manual. S-001 gives 25 MPa concrete for footings; Section 03 30 00 requires 30 MPa for footings. The other references resolve and the other strengths agree."
+ },
+ {
+  "task": "coord-drawings-vs-manual",
+  "kind": "right",
+  "say": "full answer, list",
+  "answer": "1. Unresolved reference: Section 078400 (general note 6) - no such section in the manual's table of contents.\n2. Conflict: footing concrete is 25MPa on S-001 but 30MPa in 03 30 00."
+ },
+ {
+  "task": "coord-drawings-vs-manual",
+  "kind": "right",
+  "say": "full answer, table with units in the cells",
+  "answer": "| Item | Drawings | Manual |\n|---|---|---|\n| Footing concrete | 25 MPa (S-001) | 30 MPa (03 30 00) |\n| Section 07-84-00 | cited in note 6 | not in manual |"
+ },
+ {
+  "task": "coord-drawings-vs-manual",
+  "kind": "right",
+  "say": "table with the unit in the column heads",
+  "answer": "| Element | S-001 f'c (MPa) | Spec 03 30 00 f'c (MPa) |\n|---|---|---|\n| Footings | 25 | 30 |\n| Columns | 35 | 35 |",
+  "checks": [
+   "footing-concrete"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-manual",
+  "kind": "right",
+  "say": "the finding in two sentences",
+  "answer": "General note 6 refers to Section 07 84 00. That section does not appear anywhere in the manual.",
+  "checks": [
+   "spec-section-missing"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-manual",
+  "kind": "wrong",
+  "say": "07 84 00 said to be bound; the four separate ones negated",
+  "answer": "Sections 01 33 00, 03 30 00, 07 84 00 and 08 71 00 are bound in the manual. 04 20 00, 07 92 00, 08 11 13 and 09 91 00 are not in this volume.",
+  "checks": [
+   "spec-section-missing"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-manual",
+  "kind": "wrong",
+  "say": "07 84 00 said to resolve",
+  "answer": "Section 07 84 00 resolves. No reference fails, only the concrete strength conflicts.",
+  "checks": [
+   "spec-section-missing"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-manual",
+  "kind": "wrong",
+  "say": "both strengths named, said to agree",
+  "answer": "Footings are 25 MPa and slabs on grade 30 MPa on S-001, and both agree with Section 03 30 00.",
+  "checks": [
+   "footing-concrete"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-manual",
+  "kind": "wrong",
+  "say": "the two strengths on the wrong documents",
+  "answer": "S-001 gives footings 30 MPa where the specification asks for 25 MPa.",
+  "checks": [
+   "footing-concrete"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "right",
+  "say": "full answer, prose",
+  "answer": "Two differences. S-001 uses an allowable bearing pressure of 200 kPa; the geotechnical memorandum recommends 150 kPa. S-001 sets exterior footings at least 1.2 m below finished grade; the memorandum asks for 1.5 m. Site class, groundwater level and subgrade modulus agree."
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "right",
+  "say": "full answer, list",
+  "answer": "- Bearing: 200kPa on S-001 vs 150kPa recommended.\n- Footing depth: 1.2m on S-001 vs 1.5m in the memo."
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "right",
+  "say": "full answer, table with units in cells",
+  "answer": "| Item | S-001 | Geotech memo |\n|---|---|---|\n| Allowable bearing | 200 kPa | 150 kPa |\n| Exterior footing depth | 1.2 m | 1.5 m |"
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "right",
+  "say": "table with the unit in the column heads / row label",
+  "answer": "| Item | S-001 | Memo |\n|---|---|---|\n| Allowable bearing pressure (kPa) | 200 | 150 |\n| Min. footing depth below grade (m) | 1.2 | 1.5 |"
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "right",
+  "say": "depth as 1.20 m / 1.50 m",
+  "answer": "Exterior footings: 1.20 m below grade on S-001, 1.50 m in the memorandum.",
+  "checks": [
+   "footing-depth"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "right",
+  "say": "depth in millimetres",
+  "answer": "S-001 founds exterior footings 1200 mm below finished grade; the memo wants 1500 mm.",
+  "checks": [
+   "footing-depth"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "right",
+  "say": "depth in 'metres' written out",
+  "answer": "Footing depth is 1.2 metres on S-001 but 1.5 metres in the memorandum.",
+  "checks": [
+   "footing-depth"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "wrong",
+  "say": "values swapped: drawings said to be the lower",
+  "answer": "S-001 uses 150 kPa; the memorandum allows 200 kPa, so the drawings are conservative.",
+  "checks": [
+   "bearing-pressure"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "wrong",
+  "say": "both named, said to agree",
+  "answer": "S-001 note 2 gives 200 kPa and the memo gives 150 kPa for the interior and 200 kPa for the exterior footings, so the drawings follow it.",
+  "checks": [
+   "bearing-pressure"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "wrong",
+  "say": "values swapped",
+  "answer": "Footings are 1.5 m deep on S-001, deeper than the 1.2 m the memo asks for; no difference to report.",
+  "checks": [
+   "footing-depth"
+  ]
+ },
+ {
+  "task": "coord-drawings-vs-geotech",
+  "kind": "wrong",
+  "say": "both named, said to agree",
+  "answer": "The memo's 1.2 m to 1.5 m depth range is met by S-001.",
+  "checks": [
+   "footing-depth"
+  ]
+ },
+ {
+  "task": "coord-revisions",
+  "kind": "right",
+  "say": "full answer, prose",
+  "answer": "Three changes. A-401: grids B to C changed from 7200 to 7500; clouded and listed (REVISED CORE LAYOUT). A-601: door 107 hardware set changed from HW-1 to HW-2; clouded and listed. S-001: the allowable bearing pressure in note 2 changed from 150 kPa to 200 kPa; it is not clouded and not in the revision block."
+ },
+ {
+  "task": "coord-revisions",
+  "kind": "right",
+  "say": "full answer, table Yes/No",
+  "answer": "| Sheet | Change | Clouded | In revision block |\n|---|---|---|---|\n| A-401 | B-C 7,200 to 7,500 | Yes | Yes |\n| A-601 | Door 107 HW1 to HW2 | Yes | Yes |\n| S-001 | Bearing 150 kPa to 200 kPa | No | No |"
+ },
+ {
+  "task": "coord-revisions",
+  "kind": "right",
+  "say": "full answer, list",
+  "answer": "1. A401 - bay B-C now 7.5 m (was 7.2 m). Clouded, listed.\n2. A-601 - door 107 now HW 2. Clouded, listed.\n3. S-001 - bearing pressure now 200 kPa (was 150). Unclouded and unlisted; sheet still rev 0."
+ },
+ {
+  "task": "coord-revisions",
+  "kind": "right",
+  "say": "not flagged said as 'the sheet still shows revision 0'",
+  "answer": "S-001 note 2 went from 150 kPa to 200 kPa, yet the sheet still shows revision 0 and the change is nowhere in its revision block.",
+  "checks": [
+   "bearing-pressure, and that it is not flagged"
+  ]
+ },
+ {
+  "task": "coord-revisions",
+  "kind": "wrong",
+  "say": "change reversed",
+  "answer": "On A-401 grids B to C changed from 7500 to 7200.",
+  "checks": [
+   "core-dimension"
+  ]
+ },
+ {
+  "task": "coord-revisions",
+  "kind": "wrong",
+  "say": "A-401 said unchanged, 7500 elsewhere",
+  "answer": "A-401 is unchanged. Bay B-C reads 7500 on A-101 in both issues.",
+  "checks": [
+   "core-dimension"
+  ]
+ },
+ {
+  "task": "coord-revisions",
+  "kind": "wrong",
+  "say": "change reversed",
+  "answer": "Door 107 went from HW-2 to HW-1.",
+  "checks": [
+   "door-hardware"
+  ]
+ },
+ {
+  "task": "coord-revisions",
+  "kind": "wrong",
+  "say": "S-001 said clouded and listed; a negative about something else",
+  "answer": "S-001: bearing pressure is now 200 kPa; clouded and listed in the revision block. The sheet titles did not change.",
+  "checks": [
+   "bearing-pressure, and that it is not flagged"
+  ]
+ },
+ {
+  "task": "coord-revisions",
+  "kind": "wrong",
+  "say": "S-001 said clouded; 'no' in a Yes/No table of another row",
+  "answer": "| Sheet | Change | Clouded |\n|---|---|---|\n| S-001 | 200 kPa bearing | Yes |\n| S-101 | none | No |",
+  "checks": [
+   "bearing-pressure, and that it is not flagged"
+  ]
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "right",
+  "say": "full answer, list",
+  "answer": "- A-401: bay B-C is now 7500 (was 7200).\n- A-601: door 107 hardware set is now HW-2 (was HW-1).\n- S-001, note 2: allowable bearing pressure is now 200 kPa (was 150 kPa). This change is not clouded and has no entry in the revision block."
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "right",
+  "say": "full answer, table",
+  "answer": "| Sheet | Says now | Was | Clouded? |\n|---|---|---|---|\n| A-401 | B-C = 7,500 | 7,200 | Yes |\n| A-601 | Door 107 HW2 | HW1 | Yes |\n| S-001 | 200 kPa bearing | 150 kPa | No |"
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "right",
+  "say": "full answer, prose",
+  "answer": "Look again at three sheets. A-401 now dimensions grids B to C at 7.5 m. A-601 now gives door 107 hardware set HW-2. S-001 now allows 200 kPa bearing instead of 150 kPa, with no revision cloud and nothing in the revision block."
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "right",
+  "say": "not flagged said as 'still revision 0, nothing draws attention'",
+  "answer": "- S-001: allowable bearing pressure is now 200 kPa (was 150 kPa). The sheet is still at revision 0 and nothing draws attention to the change.",
+  "checks": [
+   "bearing-pressure, said not flagged",
+   "bearing-pressure"
+  ]
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "right",
+  "say": "the not-flagged note in its own paragraph",
+  "answer": "- S-001: allowable bearing pressure is now 200 kPa (was 150 kPa).\n\nNote: the S-001 change is not clouded and is not in that sheet's revision block.",
+  "checks": [
+   "bearing-pressure, said not flagged"
+  ]
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "right",
+  "say": "table column 'Revision marked?'",
+  "answer": "| Sheet | Now | Revision marked? |\n|---|---|---|\n| S-001 | 200 kPa bearing pressure | No |",
+  "checks": [
+   "bearing-pressure, said not flagged"
+  ]
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "wrong",
+  "say": "S-001 said clouded; 'not' about something else in the item",
+  "answer": "- S-001: bearing pressure 200 kPa. Like the others it is clouded; I have not listed the unchanged sheets.",
+  "checks": [
+   "bearing-pressure, said not flagged"
+  ]
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "wrong",
+  "say": "S-001: 'revision cloud present, not a concern'",
+  "answer": "- S-001: 200 kPa bearing pressure; revision cloud present, not a pricing concern.",
+  "checks": [
+   "bearing-pressure, said not flagged"
+  ]
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "wrong",
+  "say": "change reversed",
+  "answer": "S-001 now says 150 kPa, down from 200 kPa.",
+  "checks": [
+   "bearing-pressure"
+  ]
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "wrong",
+  "say": "A-401 said unchanged",
+  "answer": "A-401 is as it was (7500 in both issues).",
+  "checks": [
+   "core-dimension"
+  ]
+ },
+ {
+  "task": "coord-second-issue",
+  "kind": "wrong",
+  "say": "door 107 said unchanged",
+  "answer": "Door 107 keeps HW-2 in both issues.",
+  "checks": [
+   "door-hardware"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "right",
+  "say": "full answer, prose",
+  "answer": "Does not comply: the water-cementitious ratio is 0.48 where Class C allows 0.45 at most; fly ash is 30 % of cementitious material where 25 % is the limit. Missing: the aggregate alkali-silica reactivity test report required by 1.3 D is not in the submittal. The strength record holds 12 tests; the specification asks for 30 consecutive tests."
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "right",
+  "say": "full answer, list",
+  "answer": "- w/cm = 0.48 > 0.45 max.\n- Fly ash 30% > 25% max.\n- ASR report: missing.\n- Strength history: 12 test results submitted, 30 test results required."
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "right",
+  "say": "full answer, table",
+  "answer": "| Item | Submitted | Required | OK? |\n|---|---|---|---|\n| w/cm | 0.48 | 0.45 max | No |\n| Fly ash | 30% | 25% max | No |\n| Aggregate reactivity report | not included | required (1.3 D) | No |\n| Strength record | 12 tests | 30 tests | No |"
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "right",
+  "say": "'only 12 of the required 30 tests'",
+  "answer": "The strength record has only 12 of the required 30 tests.",
+  "checks": [
+   "strength-record"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "right",
+  "say": "'12 tests where 30 are required'",
+  "answer": "The strength record holds 12 tests where 30 are required.",
+  "checks": [
+   "strength-record"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "right",
+  "say": "percent sign in the column head",
+  "answer": "| Item | Submitted (%) | Limit (%) |\n|---|---|---|\n| Fly ash | 30 | 25 |",
+  "checks": [
+   "fly-ash"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "right",
+  "say": "'per cent' written British",
+  "answer": "Fly ash is 30 per cent of the cementitious content; the limit is 25 per cent.",
+  "checks": [
+   "fly-ash"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "right",
+  "say": "no negative word: 'left out', 'please provide'",
+  "answer": "The ASR test report (1.3 D) was left out of the package; please provide it.",
+  "checks": [
+   "reactivity-report"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "wrong",
+  "say": "values swapped, said to comply",
+  "answer": "The mix w/cm is 0.45, under the 0.48 maximum, so it complies.",
+  "checks": [
+   "water-cement"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "wrong",
+  "say": "both named, said to comply",
+  "answer": "Fly ash is between 25% and 30%, which the specification allows.",
+  "checks": [
+   "fly-ash"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "wrong",
+  "say": "report said included; 'only' about another item",
+  "answer": "The ASR report is included. The strength record has only 12 tests.",
+  "checks": [
+   "reactivity-report"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "wrong",
+  "say": "report said included, no deviations",
+  "answer": "The alkali-silica reactivity report is attached and no deviation is marked on the transmittal.",
+  "checks": [
+   "reactivity-report"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "wrong",
+  "say": "record said to satisfy",
+  "answer": "The record of 12 tests satisfies the specification; 30 tests are asked only of trial batches.",
+  "checks": [
+   "strength-record"
+  ]
+ }
+]
