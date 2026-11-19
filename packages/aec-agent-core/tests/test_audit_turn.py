@@ -34,3 +34,30 @@ def test_a_run_id_keeps_the_name_it_had(tmp_path):
         "x" * 5000, 1000, "tool_end_big",
         "01a1f1d2-4877-737f-86ec-990f33368da1")
     assert name.endswith("turn2_tool-end-big_01a1f1d2.txt")
+
+
+def _model_end(tmp_path, message):
+    import json
+    import uuid
+    from langchain_core.outputs import ChatGeneration, LLMResult
+    log = ActivityLogger(str(tmp_path), turn=1)
+    log.on_llm_end(LLMResult(generations=[[ChatGeneration(message=message)]]),
+                   run_id=uuid.uuid4())
+    with open(os.path.join(str(tmp_path), "activity.jsonl"),
+              encoding="utf-8") as fh:
+        rows = [json.loads(line) for line in fh if line.strip()]
+    return [r for r in rows if r.get("event") == "model_end"][-1]
+
+
+def test_the_record_says_a_reply_stopped_at_the_output_limit(tmp_path):
+    """A text reply still cut after its continuations is delivered as it
+    is; nothing in the record said any reply had been cut."""
+    from langchain_core.messages import AIMessage
+    cut = _model_end(tmp_path / "a", AIMessage(
+        content="Part 1 of an answer that is cut",
+        response_metadata={"finish_reason": "length"}))
+    assert cut.get("output_cut") is True
+    whole = _model_end(tmp_path / "b", AIMessage(
+        content="A whole answer.",
+        response_metadata={"finish_reason": "stop"}))
+    assert "output_cut" not in whole
