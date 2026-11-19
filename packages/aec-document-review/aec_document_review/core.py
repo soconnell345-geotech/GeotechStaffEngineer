@@ -285,7 +285,9 @@ def attachment_note_for(path, files_dir: str) -> Optional[str]:
     return None
 
 
-def make_save_fn(temp_dir: str, artifacts: List[str]) -> Callable[[str, object], str]:
+def make_save_fn(temp_dir: str, artifacts: List[str],
+                 uploads: Optional[dict] = None
+                 ) -> Callable[[str, object], str]:
     """Build a ``save_fn(path, content) -> saved_path`` for ``build_deep_agent``.
 
     A bare/relative path is resolved into the session ``temp_dir`` (by
@@ -296,11 +298,26 @@ def make_save_fn(temp_dir: str, artifacts: List[str]) -> Callable[[str, object],
     The returned callable also carries a ``saved_note(path) -> str | None``
     attribute, the hook ``funhouse_agent.deep.tools`` uses to let the host add
     a line to the ``save_file`` tool result (here: "this file is now attached").
+
+    ``uploads`` (the live attachments): a file the agent names after one of
+    the tester's uploads is saved beside it as ``<stem>_<n><ext>`` and the
+    tool result names that file; the upload was replaced on disk without a
+    word, and a reload or a restore then read the agent's file as the
+    tester's (audit 2026-11-18).
     """
     def save_fn(path, content) -> str:
         p = str(path)
         if not os.path.isabs(p):
             p = os.path.join(temp_dir, os.path.basename(p) or "output")
+        name = os.path.basename(p)
+        if uploads and name in uploads and os.path.abspath(
+                os.path.dirname(p)) == os.path.abspath(temp_dir):
+            stem, ext = os.path.splitext(name)
+            n = 2
+            while os.path.exists(os.path.join(temp_dir, f"{stem}_{n}{ext}")) \
+                    or f"{stem}_{n}{ext}" in uploads:
+                n += 1
+            p = os.path.join(temp_dir, f"{stem}_{n}{ext}")
         parent = os.path.dirname(p)
         if parent:
             os.makedirs(parent, exist_ok=True)
@@ -863,7 +880,7 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
     agent = page.hook("agent_builder")(
         model,
         attachments=attachments,
-        save_fn=make_save_fn(temp_dir, artifacts),
+        save_fn=make_save_fn(temp_dir, artifacts, uploads=attachments),
         temp_dir=temp_dir,
         **kw,
     )

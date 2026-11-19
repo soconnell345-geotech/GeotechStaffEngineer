@@ -65,3 +65,19 @@ def test_the_same_bytes_under_another_name_are_still_an_upload():
     held = {"report.pdf": b"%PDF rev A"}
     assert core.uploads_to_stage([("copy.pdf", b"%PDF rev A")], held) == \
         [("copy.pdf", b"%PDF rev A")]
+
+
+def test_a_delivered_file_never_replaces_the_testers_upload(tmp_path):
+    files = str(tmp_path)
+    held = {}
+    core.stage_uploads(held, files, [("memo.docx", b"PK tester original")])
+    artifacts = []
+    save = core.make_save_fn(files, artifacts, uploads=held)
+    saved = save("memo.docx", b"PK agent version")
+    assert os.path.basename(saved) == "memo_2.docx"
+    with open(os.path.join(files, "memo.docx"), "rb") as fh:
+        assert fh.read() == b"PK tester original"
+    assert artifacts == [saved]
+    # a file the agent delivered itself is rewritten in place, as before
+    assert save("memo_2.docx", b"PK agent rev 2") == saved
+    assert save("other.docx", b"x") == os.path.join(files, "other.docx")
