@@ -1169,7 +1169,13 @@ class ActivityLogger(BaseCallbackHandler):
             folder = os.path.join(self.conv_dir, SIDECAR_DIR)
             os.makedirs(folder, exist_ok=True)
             safe = "".join(ch if ch.isalnum() else "-" for ch in label)[:40]
-            name = f"turn{self.turn}_{safe}_{str(run_id or '')[:8]}.txt"
+            # A callback's run id (a UUID) is told apart by its first 8
+            # characters; a tool-call id is not (one provider's all start
+            # alike), so it is named by a hash of the whole id.
+            ident = str(run_id or '')
+            tag = (ident[:8] if ident[8:9] == "-" or len(ident) <= 8
+                   else hashlib.sha1(ident.encode("utf-8")).hexdigest()[:12])
+            name = f"turn{self.turn}_{safe}_{tag}.txt"
             with open(os.path.join(folder, name), "w",
                       encoding="utf-8") as fh:
                 fh.write(whole)
