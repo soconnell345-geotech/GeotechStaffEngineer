@@ -106,9 +106,10 @@ _holding: contextvars.ContextVar = contextvars.ContextVar(
 
 
 #: The summaries made during one guarded pass of the library's wrap:
-#: ``("sync", id(messages))`` to ``(messages, summary)`` and ``("async",
-#: id(messages))`` to ``(messages, task)``; the list is held so that its id
-#: stays its own. One dict per pass, shared with the tasks the library
+#: ``("sync", id(messages))`` to ``(messages, summary, tuple(messages))``
+#: and ``("async", id(messages))`` to ``(messages, task, tuple(messages))``;
+#: the list is held so that its id stays its own, and what it held is kept
+#: so that a list changed in place is not taken for the one summarized. One dict per pass, shared with the tasks the library
 #: starts inside it.
 _made: contextvars.ContextVar = contextvars.ContextVar(
     "aec_summary_made", default=None)
@@ -200,6 +201,16 @@ def _guard_acreate(orig):
     return _acreate_summary
 
 
+def _same(entry, messages) -> bool:
+    """``entry`` (of ``_made``) is for this very list, and the list still
+    holds the messages it held when its summary was asked for: a list
+    changed in place since is summarized again, not answered with a summary
+    of other messages."""
+    return (entry is not None and entry[0] is messages
+            and len(entry[2]) == len(messages)
+            and all(a is b for a, b in zip(entry[2], messages)))
+
+
 def _once(guarded):
     """``guarded`` (a guarded summary method), made once per messages in one
     guarded pass: a second request for the same list is handed the first
@@ -212,9 +223,10 @@ def _once(guarded):
             if made is None:
                 return await guarded(self, messages, *args, **kwargs)
             key = ("async", id(messages))
-            if key not in made:
+            if not _same(made.get(key), messages):
                 made[key] = (messages, asyncio.ensure_future(
-                    guarded(self, messages, *args, **kwargs)))
+                    guarded(self, messages, *args, **kwargs)),
+                    tuple(messages))
             return await made[key][1]
         return once
 
@@ -224,8 +236,9 @@ def _once(guarded):
         if made is None:
             return guarded(self, messages, *args, **kwargs)
         key = ("sync", id(messages))
-        if key not in made:
-            made[key] = (messages, guarded(self, messages, *args, **kwargs))
+        if not _same(made.get(key), messages):
+            made[key] = (messages, guarded(self, messages, *args, **kwargs),
+                         tuple(messages))
         return made[key][1]
     return once
 
