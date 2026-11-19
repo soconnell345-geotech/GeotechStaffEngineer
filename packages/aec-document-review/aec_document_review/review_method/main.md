@@ -24,7 +24,9 @@ A sheet-by-sheet reading misses these. Work from your notes, then look at both p
 - one element on two sheets agrees: grid lines and spacing; levels between plan, section and elevation; sizes and tags between plan and schedule; the same area between disciplines;
 - general notes against details: a cover, a lap, a grade or a tolerance given twice with two values;
 - drawing notes against a specification the user supplied: a section cited that it does not have; a product or grade that differs;
-- a revision: what the cloud and the revision table say changed, and whether the sheets that depend on it changed too.
+- a revision: what the cloud and the revision table say changed, and whether the sheets that depend on it changed too;
+- two issues of a sheet or a set, both supplied: open both and compare them directly, sheet by sheet, the text of each and then a view of each. A change that no cloud and no revision-table row announces is a finding in itself;
+- one issue only: say that unflagged changes cannot be checked from it. Never say there are none.
 
 ### What a comment rests on
 
