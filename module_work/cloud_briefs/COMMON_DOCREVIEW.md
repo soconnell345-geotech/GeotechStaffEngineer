@@ -2,7 +2,7 @@
 
 Binding for every one-time cloud session the lead starts on Document Review, the shared core or planlens. The routine's own prompt names a task file and one section of it; this file holds the rules that do not change between tasks.
 
-You are a cloud helper for the GeotechStaffEngineer project. Its repository builds a geotechnical agent app (GSE) and two packages: the shared core `aec-agent-core` (model connections, the vision and file tools, the agent's guards, the run record) and Document Review `aec-document-review`, an LLM agent that reviews architecture, engineering and construction documents as a Streamlit page. Testers use Document Review on a shared host (Tiny Apps), several people in one process, so one tester's turn must never hold up, see or pay for another's. The document layer, `planlens`, is a separate repository. All the repositories are PUBLIC on GitHub. The lead session reviews your branch independently before anything is merged. Work on your own and ask no questions. If you are blocked, write down why in CHECK.md, push, and stop.
+You are a cloud helper for the GeotechStaffEngineer project. Its repository builds a geotechnical agent app (GSE) and two packages: the shared core `aec-agent-core` (model connections, the vision and file tools, the agent's guards, the run record) and Document Review `aec-document-review`, an LLM agent that reviews architecture, engineering and construction documents as a Streamlit page. Testers use Document Review on a shared host (Tiny Apps), several people in one process, so one tester's turn must never hold up, see or pay for another's. The document layer, `planlens`, is a separate repository. All the repositories are PUBLIC on GitHub. One session at a time works in this repository, the lead, on a small usage allowance; it hands a build or a review to a cloud session such as you. The lead reviews your branch independently, or has a cloud reviewer do it (`REVIEW_DOCREVIEW.md`), before anything is merged. Work on your own and ask no questions. If you are blocked, write down why in CHECK.md, push, and stop.
 
 ## Where things are
 
@@ -16,7 +16,7 @@ You are a cloud helper for the GeotechStaffEngineer project. Its repository buil
 ## What you deliver
 
 - Commits on ONE new branch, named in your section, from `master` (this repository) or `main` (planlens), pushed to origin after each piece of work.
-- Never do any of these: open a pull request; push to `master` or `main`; push a branch named `ci/...` (that name is how the lead starts the full suite on GitHub); create a tag (here a `v*`, `core-v*` or `document-review-v*` tag publishes to PyPI, in planlens a `v*` tag does); edit a GitHub release; publish anything.
+- Never do any of these: open a pull request; push to `master` or `main`; push a branch named `ci/...` (that name is how the lead starts the full suite on GitHub); create a tag (here a `v*` or `aec-v*` tag publishes to PyPI, in planlens a `v*` tag does); edit a GitHub release; publish anything.
 
 ## Read first
 
@@ -61,7 +61,7 @@ python3.12 -m venv /tmp/dr
 /tmp/dr/bin/pip install -r tinyapps/wrapper_repo/requirements-thirdparty.txt
 ```
 
-`aec-document-review` pins its core and planlens exactly (`aec-agent-core==1.0.1`, `planlens==0.15.1` on master). The core comes from this checkout, at the pinned version; planlens comes from PyPI. Run the package's tests from its folder:
+`aec-document-review` pins its core and planlens exactly (`aec-agent-core==1.3.0`, `planlens==0.17.0` on master). The core comes from this checkout, at the pinned version; planlens comes from PyPI. Run the package's tests from its folder:
 
 ```
 cd packages/aec-document-review && MPLBACKEND=Agg /tmp/dr/bin/python -m pytest -q -p no:cacheprovider tests/<file>
