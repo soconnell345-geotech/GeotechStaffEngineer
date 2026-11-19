@@ -1,0 +1,1100 @@
+[
+ {
+  "task": "ufc04-density",
+  "kind": "right",
+  "say": "prose, 'page 29'",
+  "answer": "Beneath structures the manual asks for 95 to 100 percent of CE 55 maximum density for cohesionless backfill and at least 95 percent for cohesive backfill; open areas need only 90 percent (page 29, printed 5-2)."
+ },
+ {
+  "task": "ufc04-density",
+  "kind": "right",
+  "say": "percent signs, 'p. 5-2'",
+  "answer": "Open areas: 90%. Under structures: 95-100% (cohesionless), >=95% (cohesive). See p. 5-2."
+ },
+ {
+  "task": "ufc04-density",
+  "kind": "right",
+  "say": "table, 'PDF p. 29'",
+  "answer": "| Area | Required density |\n|---|---|\n| Open areas, no structures | 90% of CE 55 |\n| Beneath structures, cohesionless | 95%-100% |\n| Beneath structures, cohesive | 95% min. |\n\nSource: PDF p. 29."
+ },
+ {
+  "task": "ufc04-density",
+  "kind": "right",
+  "say": "cites paragraph and chapter, no page word",
+  "answer": "Open areas 90 percent; beneath structures 95 percent or more. Paragraph 5-x(4), Density requirements, Chapter 5 (pg 29).",
+  "checks": [
+   "cites"
+  ]
+ },
+ {
+  "task": "ufc04-density",
+  "kind": "right",
+  "say": "cites 'page 5-2 (29 of the PDF)'",
+  "answer": "90 percent in open areas against 95 percent under structures, on page 5-2 (29 of the PDF).",
+  "checks": [
+   "cites"
+  ]
+ },
+ {
+  "task": "ufc04-density",
+  "kind": "wrong",
+  "say": "swaps the two values",
+  "answer": "Open areas need 95 percent; beneath structures only 90 percent is required (page 29).",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "ufc04-density",
+  "kind": "wrong",
+  "say": "denies both numbers",
+  "answer": "The manual gives neither 90 nor 95 percent; it leaves density to the designer (page 29).",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "ufc04-density",
+  "kind": "wrong",
+  "say": "right page number in a list of every page",
+  "answer": "Density is discussed on pages 12, 18, 29, 44 and 61.",
+  "checks": [
+   "cites"
+  ]
+ },
+ {
+  "task": "ufc04-table-5-1",
+  "kind": "right",
+  "say": "prose with hyphen and in.",
+  "answer": "Table 5-1 recommends 4-8 passes of a sheepsfoot roller with a compacted lift thickness of 6 in. for semipervious and impervious soils."
+ },
+ {
+  "task": "ufc04-table-5-1",
+  "kind": "right",
+  "say": "'4 to 8', 6 inches",
+  "answer": "4 to 8 passes; 6 inches compacted lift."
+ },
+ {
+  "task": "ufc04-table-5-1",
+  "kind": "right",
+  "say": "table, 6\"",
+  "answer": "| Item | Value |\n|---|---|\n| Passes | four to eight |\n| Compacted lift | 6\" |"
+ },
+ {
+  "task": "ufc04-table-5-1",
+  "kind": "right",
+  "say": "en-dash range and '6-inch'",
+  "answer": "Sheepsfoot roller: 4–8 passes on a 6-inch compacted lift."
+ },
+ {
+  "task": "ufc04-table-5-1",
+  "kind": "right",
+  "say": "'between 4 and 8', metric conversion first",
+  "answer": "Between 4 and 8 passes, with a compacted lift of 150 mm (6 in)."
+ },
+ {
+  "task": "ufc04-table-5-1",
+  "kind": "right",
+  "say": "'4 - 8' spaced, 'six inches'",
+  "answer": "Passes: 4 - 8. Compacted lift thickness: six inches."
+ },
+ {
+  "task": "ufc04-table-5-1",
+  "kind": "wrong",
+  "say": "values given for another roller row",
+  "answer": "The 4-8 passes and 6 in. lift are for the rubber-tired roller; for the sheepsfoot roller the table gives 10 passes on a 12 in. lift.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "ufc04-table-5-1",
+  "kind": "wrong",
+  "say": "6 in as a loose lift, range denied",
+  "answer": "Not 4-8 passes: the table calls for 2 passes, and 6 in. is the loose lift, compacted lift being 3 in.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "ufc04-supersedes",
+  "kind": "right",
+  "say": "prose",
+  "answer": "This UFC supersedes TM 5-818-4, dated 1 June 1983."
+ },
+ {
+  "task": "ufc04-supersedes",
+  "kind": "right",
+  "say": "date as June 1, 1983",
+  "answer": "It replaces Army Technical Manual TM 5-818-4 (June 1, 1983)."
+ },
+ {
+  "task": "ufc04-supersedes",
+  "kind": "right",
+  "say": "list",
+  "answer": "- Superseded document: TM 5-818-4\n- Date: 1 June 1983 (page 2)"
+ },
+ {
+  "task": "ufc04-supersedes",
+  "kind": "right",
+  "say": "TM number with no hyphen after TM, slash date",
+  "answer": "Supersedes TM 5-818-4/AFM 88-5 Chap. 5, dated 6/1/1983."
+ },
+ {
+  "task": "ufc04-supersedes",
+  "kind": "right",
+  "say": "ISO date",
+  "answer": "Supersedes: TM 5-818-4. Dated: 1983-06-01."
+ },
+ {
+  "task": "ufc04-supersedes",
+  "kind": "wrong",
+  "say": "says it is NOT superseded",
+  "answer": "This UFC does not supersede TM 5-818-4; that manual was cancelled in 1983 and this one supersedes TM 5-820-1 dated 1990.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "ufc04-supersedes",
+  "kind": "wrong",
+  "say": "both words, no relation",
+  "answer": "References include TM 5-818-4. The UFC supersedes a 1983 edition of another manual.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "ufc04-confined-zones",
+  "kind": "right",
+  "say": "prose",
+  "answer": "Specify rammer compactors and a loose-lift thickness of not more than 4 inches; \"two-by-four\" wood rammers and single air tampers do not give enough compaction."
+ },
+ {
+  "task": "ufc04-confined-zones",
+  "kind": "right",
+  "say": "4 in., 2x4",
+  "answer": "Loose lift: 4 in. max. Equipment: powered rammers. Does not work: 2x4 wood rammers, single air tampers."
+ },
+ {
+  "task": "ufc04-confined-zones",
+  "kind": "right",
+  "say": "table, 4\"",
+  "answer": "| Item | Manual says |\n|---|---|\n| Loose lift | 4\" maximum |\n| Equipment | rammer compactors |\n| Not adequate | wood two-by-fours used as rammers; air tampers |"
+ },
+ {
+  "task": "ufc04-confined-zones",
+  "kind": "right",
+  "say": "'2 by 4' and '100 mm (4-in)'",
+  "answer": "Use rammer-type compactors on loose lifts no thicker than 100 mm (4-in). Hand tamping with a 2 by 4 or a single pneumatic tamper is not sufficient."
+ },
+ {
+  "task": "ufc04-confined-zones",
+  "kind": "wrong",
+  "say": "says the banned equipment works",
+  "answer": "A 4 inch loose lift; the manual says two-by-four wood rammers work well and that a rammer compactor does not.",
+  "checks": [
+   "contains_all",
+   "contains_any"
+  ]
+ },
+ {
+  "task": "ufc04-confined-zones",
+  "kind": "wrong",
+  "say": "4 inches as compacted not loose; no failing equipment named except by denial",
+  "answer": "Compacted lift 4 inches, loose lift 12 inches, with a vibratory roller, not a rammer. The manual does not mention any air tamper.",
+  "checks": [
+   "contains_all",
+   "contains_any"
+  ]
+ },
+ {
+  "task": "ufc07-figure-1-1",
+  "kind": "right",
+  "say": "prose",
+  "answer": "Figure 1-1 shows examples of cracks in an exterior wall: (a) vertical cracks and (b) diagonal and vertical cracks. The text says slopes greater than 5 degrees (9 percent) are at risk from downhill creep."
+ },
+ {
+  "task": "ufc07-figure-1-1",
+  "kind": "right",
+  "say": "degree sign",
+  "answer": "Fig. 1-1: wall cracking, vertical in part a, diagonal plus vertical in part b. Risk slope: > 5° (about 9%)."
+ },
+ {
+  "task": "ufc07-figure-1-1",
+  "kind": "right",
+  "say": "list",
+  "answer": "- Figure 1-1: examples of cracks in an exterior wall\n  - a. Vertical cracks\n  - b. Diagonal and vertical cracks\n- Slope at risk: steeper than 5 deg (page 13)"
+ },
+ {
+  "task": "ufc07-figure-1-1",
+  "kind": "wrong",
+  "say": "denies both crack types and the slope",
+  "answer": "The figure shows no vertical or diagonal cracks, only a floor plan; the text does not give 5 degrees, it gives 15 degrees.",
+  "checks": [
+   "contains_all",
+   "contains_any"
+  ]
+ },
+ {
+  "task": "ufc07-figure-1-1",
+  "kind": "wrong",
+  "say": "5 degrees named as safe",
+  "answer": "Figure 1-1 shows vertical and diagonal reinforcement in a wall. Slopes up to 5 degrees are safe; risk begins at 20 degrees.",
+  "checks": [
+   "contains_all",
+   "contains_any"
+  ]
+ },
+ {
+  "task": "ufc07-drilled-shaft-table",
+  "kind": "right",
+  "say": "prose",
+  "answer": "Table 8-3, Inspection of Drilled Shafts, which the list of tables places on page 8-4."
+ },
+ {
+  "task": "ufc07-drilled-shaft-table",
+  "kind": "right",
+  "say": "p. form",
+  "answer": "Table 8-3 (p. 8-4)."
+ },
+ {
+  "task": "ufc07-drilled-shaft-table",
+  "kind": "right",
+  "say": "table",
+  "answer": "| Table | Title | Printed page |\n|---|---|---|\n| 8-3 | Inspection of Drilled Shafts | 8-4 |"
+ },
+ {
+  "task": "ufc07-drilled-shaft-table",
+  "kind": "right",
+  "say": "en dash in table number",
+  "answer": "Table 8–3 on page 8–4."
+ },
+ {
+  "task": "ufc07-drilled-shaft-table",
+  "kind": "right",
+  "say": "gives the table's own PDF page (made-up number), not the printed 8-4",
+  "answer": "Table 8-3, Inspection of Drilled Shafts. It appears on PDF page 142."
+ },
+ {
+  "task": "ufc07-drilled-shaft-table",
+  "kind": "wrong",
+  "say": "swapped: table 8-4 on page 8-3",
+  "answer": "Table 8-4 covers inspection of drilled shafts and appears on page 8-3.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "ufc07-drilled-shaft-table",
+  "kind": "wrong",
+  "say": "lists the whole list of tables",
+  "answer": "Tables: 8-1 (p. 8-2), 8-2 (p. 8-3), 8-3 (p. 8-4), 8-4 (p. 8-5), 8-5 (p. 8-6). One of these covers drilled shafts.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "ufc301-changes",
+  "kind": "right",
+  "say": "prose",
+  "answer": "Four changes have been issued: Change 1 on Oct 2, 2023, Change 2 on Sept 4, 2024, Change 3 on Feb 3, 2025 and Change 4 on June 3, 2025. It supersedes UFC 3-301-01 dated 1 October 2019."
+ },
+ {
+  "task": "ufc301-changes",
+  "kind": "right",
+  "say": "table, numeric count",
+  "answer": "| Change | Date |\n|---|---|\n| 1 | 2 Oct 2023 |\n| 2 | 4 Sep 2024 |\n| 3 | 3 Feb 2025 |\n| 4 | 3 June 2025 |\n\n4 changes in all. Supersedes the 1 October 2019 edition."
+ },
+ {
+  "task": "ufc301-changes",
+  "kind": "right",
+  "say": "abbreviated month 'Jun 3, 2025'",
+  "answer": "There are 4 changes (Oct 2, 2023; Sep 4, 2024; Feb 3, 2025; Jun 3, 2025). Supersedes UFC 3-301-01 of 1 October 2019."
+ },
+ {
+  "task": "ufc301-changes",
+  "kind": "right",
+  "say": "slash dates",
+  "answer": "Four changes: 10/2/2023, 9/4/2024, 2/3/2025, 6/3/2025. Supersedes the edition of 10/1/2019."
+ },
+ {
+  "task": "ufc301-changes",
+  "kind": "right",
+  "say": "table rows only, count not spelled",
+  "answer": "| Change | Date |\n|---|---|\n| 1 | 2 Oct 2023 |\n| 2 | 4 Sep 2024 |\n| 3 | 3 Feb 2025 |\n| 4 | 3 June 2025 |\n\nSupersedes the 1 October 2019 edition.",
+  "checks": [
+   "contains_any"
+  ]
+ },
+ {
+  "task": "ufc301-changes",
+  "kind": "wrong",
+  "say": "says three changes, change 4 not issued",
+  "answer": "Three changes have been issued; Change 4, planned for June 2025, has not been issued. It supersedes the 2019 edition.",
+  "checks": [
+   "contains_all",
+   "contains_any"
+  ]
+ },
+ {
+  "task": "ufc301-changes",
+  "kind": "wrong",
+  "say": "denies",
+  "answer": "It does not supersede the 2019 edition, and no change was issued in June 2025; there are not four changes but two.",
+  "checks": [
+   "contains_all",
+   "contains_any"
+  ]
+ },
+ {
+  "task": "ufc260-appendices",
+  "kind": "right",
+  "say": "bullet list 'Appendix A - title'",
+  "answer": "- Appendix A - References\n- Appendix B - Airfield/heliport design analysis outline\n- Appendix C - Recommended contract drawing outline for airfield/heliport pavements\n- Appendix D - Waiver processing procedures\n- Appendix E - Determination of flexural strength and modulus of elasticity of bituminous concrete\n- Appendix F - Curves for determining effective strain repetitions\n- Appendix G - Procedure for preparation of bituminous cylindrical specimens\n- Appendix H - Procedure for determining the dynamic modulus of bituminous concrete mixtures\n- Appendix I - Procedure for estimating the modulus of elasticity of bituminous concrete\n- Appendix J - Procedure for determining the modulus of elasticity of unbound granular base and subbase course materials\n- Appendix K - Procedure for determining the flexural modulus and fatigue characteristics of stabilized soils\n- Appendix L - Procedure for determining resilient modulus of subgrade material\n- Appendix M - Procedures for determining the fatigue life of bituminous concrete\n- Appendix N - Procedure for determining the resilient modulus of granular base material"
+ },
+ {
+  "task": "ufc260-appendices",
+  "kind": "right",
+  "say": "table Letter | Covers",
+  "answer": "| Appendix | Covers |\n|---|---|\n| A | References |\n| B | Airfield/heliport design analysis outline |\n| C | Recommended contract drawing outline for airfield/heliport pavements |\n| D | Waiver processing procedures |\n| E | Determination of flexural strength and modulus of elasticity of bituminous concrete |\n| F | Curves for determining effective strain repetitions |\n| G | Procedure for preparation of bituminous cylindrical specimens |\n| H | Procedure for determining the dynamic modulus of bituminous concrete mixtures |\n| I | Procedure for estimating the modulus of elasticity of bituminous concrete |\n| J | Procedure for determining the modulus of elasticity of unbound granular base and subbase course materials |\n| K | Procedure for determining the flexural modulus and fatigue characteristics of stabilized soils |\n| L | Procedure for determining resilient modulus of subgrade material |\n| M | Procedures for determining the fatigue life of bituminous concrete |\n| N | Procedure for determining the resilient modulus of granular base material |"
+ },
+ {
+  "task": "ufc260-appendices",
+  "kind": "right",
+  "say": "numbered 'A: title'",
+  "answer": "The manual has 14 appendices:\n1. A: References\n2. B: Airfield/heliport design analysis outline\n3. C: Recommended contract drawing outline for airfield/heliport pavements\n4. D: Waiver processing procedures\n5. E: Determination of flexural strength and modulus of elasticity of bituminous concrete\n6. F: Curves for determining effective strain repetitions\n7. G: Procedure for preparation of bituminous cylindrical specimens\n8. H: Procedure for determining the dynamic modulus of bituminous concrete mixtures\n9. I: Procedure for estimating the modulus of elasticity of bituminous concrete\n10. J: Procedure for determining the modulus of elasticity of unbound granular base and subbase course materials\n11. K: Procedure for determining the flexural modulus and fatigue characteristics of stabilized soils\n12. L: Procedure for determining resilient modulus of subgrade material\n13. M: Procedures for determining the fatigue life of bituminous concrete\n14. N: Procedure for determining the resilient modulus of granular base material"
+ },
+ {
+  "task": "ufc260-appendices",
+  "kind": "right",
+  "say": "prose, 'Appendix A covers ...'",
+  "answer": "Appendix A covers references. Appendix B covers airfield/heliport design analysis outline. Appendix C covers recommended contract drawing outline for airfield/heliport pavements. Appendix D covers waiver processing procedures. Appendix E covers determination of flexural strength and modulus of elasticity of bituminous concrete. Appendix F covers curves for determining effective strain repetitions. Appendix G covers procedure for preparation of bituminous cylindrical specimens. Appendix H covers procedure for determining the dynamic modulus of bituminous concrete mixtures. Appendix I covers procedure for estimating the modulus of elasticity of bituminous concrete. Appendix J covers procedure for determining the modulus of elasticity of unbound granular base and subbase course materials. Appendix K covers procedure for determining the flexural modulus and fatigue characteristics of stabilized soils. Appendix L covers procedure for determining resilient modulus of subgrade material. Appendix M covers procedures for determining the fatigue life of bituminous concrete. Appendix N covers procedure for determining the resilient modulus of granular base material."
+ },
+ {
+  "task": "ufc260-appendices",
+  "kind": "right",
+  "say": "bold 'Appendix A (p. 431)' then title",
+  "answer": "**Appendix A** (printed A-1): References\n**Appendix B** (printed B-1): Airfield/heliport design analysis outline\n**Appendix C** (printed C-1): Recommended contract drawing outline for airfield/heliport pavements\n**Appendix D** (printed D-1): Waiver processing procedures\n**Appendix E** (printed E-1): Determination of flexural strength and modulus of elasticity of bituminous concrete\n**Appendix F** (printed F-1): Curves for determining effective strain repetitions\n**Appendix G** (printed G-1): Procedure for preparation of bituminous cylindrical specimens\n**Appendix H** (printed H-1): Procedure for determining the dynamic modulus of bituminous concrete mixtures\n**Appendix I** (printed I-1): Procedure for estimating the modulus of elasticity of bituminous concrete\n**Appendix J** (printed J-1): Procedure for determining the modulus of elasticity of unbound granular base and subbase course materials\n**Appendix K** (printed K-1): Procedure for determining the flexural modulus and fatigue characteristics of stabilized soils\n**Appendix L** (printed L-1): Procedure for determining resilient modulus of subgrade material\n**Appendix M** (printed M-1): Procedures for determining the fatigue life of bituminous concrete\n**Appendix N** (printed N-1): Procedure for determining the resilient modulus of granular base material"
+ },
+ {
+  "task": "ufc260-appendices",
+  "kind": "right",
+  "say": "paraphrased subjects, dash list",
+  "answer": "- A – the reference list\n- B – an outline for the design analysis\n- C – an outline of the contract drawings\n- D – how waivers are processed\n- E – flexural strength and elastic modulus of bituminous concrete\n- F – effective strain repetition curves\n- G – preparing cylindrical bituminous specimens\n- H – dynamic modulus of bituminous mixtures\n- I – estimating the elastic modulus of bituminous concrete\n- J – elastic modulus of unbound base and subbase\n- K – flexural modulus and fatigue of stabilized soil\n- L – resilient modulus of the subgrade\n- M – fatigue life of bituminous concrete\n- N – resilient modulus of granular base"
+ },
+ {
+  "task": "ufc260-appendices",
+  "kind": "right",
+  "say": "title first, letter in brackets",
+  "answer": "- References (Appendix A)\n- Airfield/heliport design analysis outline (Appendix B)\n- Recommended contract drawing outline for airfield/heliport pavements (Appendix C)\n- Waiver processing procedures (Appendix D)\n- Determination of flexural strength and modulus of elasticity of bituminous concrete (Appendix E)\n- Curves for determining effective strain repetitions (Appendix F)\n- Procedure for preparation of bituminous cylindrical specimens (Appendix G)\n- Procedure for determining the dynamic modulus of bituminous concrete mixtures (Appendix H)\n- Procedure for estimating the modulus of elasticity of bituminous concrete (Appendix I)\n- Procedure for determining the modulus of elasticity of unbound granular base and subbase course materials (Appendix J)\n- Procedure for determining the flexural modulus and fatigue characteristics of stabilized soils (Appendix K)\n- Procedure for determining resilient modulus of subgrade material (Appendix L)\n- Procedures for determining the fatigue life of bituminous concrete (Appendix M)\n- Procedure for determining the resilient modulus of granular base material (Appendix N)"
+ },
+ {
+  "task": "ufc260-appendices",
+  "kind": "wrong",
+  "say": "letters matched to the wrong titles (shifted by one)",
+  "answer": "- Appendix A - Airfield/heliport design analysis outline\n- Appendix B - Recommended contract drawing outline for airfield/heliport pavements\n- Appendix C - Waiver processing procedures\n- Appendix D - Determination of flexural strength and modulus of elasticity of bituminous concrete\n- Appendix E - Curves for determining effective strain repetitions\n- Appendix F - Procedure for preparation of bituminous cylindrical specimens\n- Appendix G - Procedure for determining the dynamic modulus of bituminous concrete mixtures\n- Appendix H - Procedure for estimating the modulus of elasticity of bituminous concrete\n- Appendix I - Procedure for determining the modulus of elasticity of unbound granular base and subbase course materials\n- Appendix J - Procedure for determining the flexural modulus and fatigue characteristics of stabilized soils\n- Appendix K - Procedure for determining resilient modulus of subgrade material\n- Appendix L - Procedures for determining the fatigue life of bituminous concrete\n- Appendix M - Procedure for determining the resilient modulus of granular base material\n- Appendix N - References",
+  "checks": [
+   "names at least 12 of the 14 appendices by letter with what each covers"
+  ]
+ },
+ {
+  "task": "ufc260-appendices",
+  "kind": "wrong",
+  "say": "letters, then topics in one unordered sentence",
+  "answer": "Appendices A, B, C, D, E, F, G, H, I, J, K, L, M and N. Together they cover references, design analysis, contract drawings, waivers, flexural strength, strain repetitions, cylindrical specimens, dynamic modulus, estimating the modulus, unbound materials, stabilized soils, subgrade material, fatigue life and granular base material.",
+  "checks": [
+   "names at least 12 of the 14 appendices by letter with what each covers"
+  ]
+ },
+ {
+  "task": "ufc260-appendices",
+  "kind": "wrong",
+  "say": "says which appendices do NOT exist",
+  "answer": "- Appendix A: there is no appendix on references\n- Appendix B: there is no appendix on airfield/heliport design analysis outline\n- Appendix C: there is no appendix on recommended contract drawing outline for airfield/heliport pavements\n- Appendix D: there is no appendix on waiver processing procedures\n- Appendix E: there is no appendix on determination of flexural strength and modulus of elasticity of bituminous concrete\n- Appendix F: there is no appendix on curves for determining effective strain repetitions\n- Appendix G: there is no appendix on procedure for preparation of bituminous cylindrical specimens\n- Appendix H: there is no appendix on procedure for determining the dynamic modulus of bituminous concrete mixtures\n- Appendix I: there is no appendix on procedure for estimating the modulus of elasticity of bituminous concrete\n- Appendix J: there is no appendix on procedure for determining the modulus of elasticity of unbound granular base and subbase course materials\n- Appendix K: there is no appendix on procedure for determining the flexural modulus and fatigue characteristics of stabilized soils\n- Appendix L: there is no appendix on procedure for determining resilient modulus of subgrade material\n- Appendix M: there is no appendix on procedures for determining the fatigue life of bituminous concrete\n- Appendix N: there is no appendix on procedure for determining the resilient modulus of granular base material",
+  "checks": [
+   "names at least 12 of the 14 appendices by letter with what each covers"
+  ]
+ },
+ {
+  "task": "ufc260-ch12-tables",
+  "kind": "right",
+  "say": "bullets 'Table 12-1: title'",
+  "answer": "- Table 12-1: Example of Mixed Traffic Design\n- Table 12-2: Stress-Strength Ratios and Allowable Coverages\n- Table 12-3: Fatigue Damage Summary Sheet for Mixed Traffic\n- Table 12-4: Pass-to-Coverage Ratios\n- Table 12-5: Design Example for Primary (Channelized) Traffic Areas\n- Table 12-6: Design Example for Secondary (Unchannelized) Traffic Areas\n- Table 12-7: Recommended Spacing of Transverse Contraction Joints\n- Table 12-8: Dowel Size and Spacing for Construction, Contraction, and Expansion Joints"
+ },
+ {
+  "task": "ufc260-ch12-tables",
+  "kind": "right",
+  "say": "table No. | Title | Page",
+  "answer": "| Table | Title | Printed page |\n|---|---|---|\n| 12-1 | Example of Mixed Traffic Design | 12-6 |\n| 12-2 | Stress-Strength Ratios and Allowable Coverages | 12-8 |\n| 12-3 | Fatigue Damage Summary Sheet for Mixed Traffic | 12-10 |\n| 12-4 | Pass-to-Coverage Ratios | 12-11 |\n| 12-5 | Design Example for Primary (Channelized) Traffic Areas | 12-15 |\n| 12-6 | Design Example for Secondary (Unchannelized) Traffic Areas | 12-17 |\n| 12-7 | Recommended Spacing of Transverse Contraction Joints | 12-21 |\n| 12-8 | Dowel Size and Spacing for Construction, Contraction, and Expansion Joints | 12-22 |"
+ },
+ {
+  "task": "ufc260-ch12-tables",
+  "kind": "right",
+  "say": "numbered list, 'Table 12-1 (p. 12-6) - title'",
+  "answer": "1. Table 12-1 (p. 12-6) - Example of Mixed Traffic Design\n2. Table 12-2 (p. 12-8) - Stress-Strength Ratios and Allowable Coverages\n3. Table 12-3 (p. 12-10) - Fatigue Damage Summary Sheet for Mixed Traffic\n4. Table 12-4 (p. 12-11) - Pass-to-Coverage Ratios\n5. Table 12-5 (p. 12-15) - Design Example for Primary (Channelized) Traffic Areas\n6. Table 12-6 (p. 12-17) - Design Example for Secondary (Unchannelized) Traffic Areas\n7. Table 12-7 (p. 12-21) - Recommended Spacing of Transverse Contraction Joints\n8. Table 12-8 (p. 12-22) - Dowel Size and Spacing for Construction, Contraction, and Expansion Joints"
+ },
+ {
+  "task": "ufc260-ch12-tables",
+  "kind": "right",
+  "say": "page column BEFORE the title, printed pages bare",
+  "answer": "| Table | Printed page | Title |\n|---|---|---|\n| 12-1 | 12-6 | Example of Mixed Traffic Design |\n| 12-2 | 12-8 | Stress-Strength Ratios and Allowable Coverages |\n| 12-3 | 12-10 | Fatigue Damage Summary Sheet for Mixed Traffic |\n| 12-4 | 12-11 | Pass-to-Coverage Ratios |\n| 12-5 | 12-15 | Design Example for Primary (Channelized) Traffic Areas |\n| 12-6 | 12-17 | Design Example for Secondary (Unchannelized) Traffic Areas |\n| 12-7 | 12-21 | Recommended Spacing of Transverse Contraction Joints |\n| 12-8 | 12-22 | Dowel Size and Spacing for Construction, Contraction, and Expansion Joints |"
+ },
+ {
+  "task": "ufc260-ch12-tables",
+  "kind": "right",
+  "say": "title then number in brackets",
+  "answer": "- Example of Mixed Traffic Design (Table 12-1)\n- Stress-Strength Ratios and Allowable Coverages (Table 12-2)\n- Fatigue Damage Summary Sheet for Mixed Traffic (Table 12-3)\n- Pass-to-Coverage Ratios (Table 12-4)\n- Design Example for Primary (Channelized) Traffic Areas (Table 12-5)\n- Design Example for Secondary (Unchannelized) Traffic Areas (Table 12-6)\n- Recommended Spacing of Transverse Contraction Joints (Table 12-7)\n- Dowel Size and Spacing for Construction, Contraction, and Expansion Joints (Table 12-8)"
+ },
+ {
+  "task": "ufc260-ch12-tables",
+  "kind": "right",
+  "say": "prose, PDF pages",
+  "answer": "Chapter 12 has eight tables. Table 12-1, Example of Mixed Traffic Design, is on PDF page 196. Table 12-2, Stress-Strength Ratios and Allowable Coverages, is on PDF page 198. Table 12-3, Fatigue Damage Summary Sheet for Mixed Traffic, is on PDF page 200. Table 12-4, Pass-to-Coverage Ratios, is on PDF page 201. Table 12-5, Design Example for Primary (Channelized) Traffic Areas, is on PDF page 205. Table 12-6, Design Example for Secondary (Unchannelized) Traffic Areas, is on PDF page 207. Table 12-7, Recommended Spacing of Transverse Contraction Joints, is on PDF page 211. Table 12-8, Dowel Size and Spacing for Construction, Contraction, and Expansion Joints, is on PDF page 212."
+ },
+ {
+  "task": "ufc260-ch12-tables",
+  "kind": "wrong",
+  "say": "numbers with the wrong titles (shifted)",
+  "answer": "- Table 12-1: Pass-to-Coverage Ratios\n- Table 12-2: Design Example for Primary (Channelized) Traffic Areas\n- Table 12-3: Design Example for Secondary (Unchannelized) Traffic Areas\n- Table 12-4: Recommended Spacing of Transverse Contraction Joints\n- Table 12-5: Dowel Size and Spacing for Construction, Contraction, and Expansion Joints\n- Table 12-6: Example of Mixed Traffic Design\n- Table 12-7: Stress-Strength Ratios and Allowable Coverages\n- Table 12-8: Fatigue Damage Summary Sheet for Mixed Traffic",
+  "checks": [
+   "numbers and titles at least 7 of the chapter's 8 tables"
+  ]
+ },
+ {
+  "task": "ufc260-ch12-tables",
+  "kind": "wrong",
+  "say": "numbers then titles in a separate sentence",
+  "answer": "Tables 12-1, 12-2, 12-3, 12-4, 12-5, 12-6, 12-7 and 12-8. Their subjects include mixed traffic design, stress-strength ratios, a fatigue damage summary, pass-to-coverage ratios, channelized and unchannelized areas, joint spacing and dowels.",
+  "checks": [
+   "numbers and titles at least 7 of the chapter's 8 tables"
+  ]
+ },
+ {
+  "task": "ufc260-ch12-tables",
+  "kind": "wrong",
+  "say": "says each table is absent",
+  "answer": "- Table 12-1: not found; no table on example of mixed traffic design exists in this chapter\n- Table 12-2: not found; no table on stress-strength ratios and allowable coverages exists in this chapter\n- Table 12-3: not found; no table on fatigue damage summary sheet for mixed traffic exists in this chapter\n- Table 12-4: not found; no table on pass-to-coverage ratios exists in this chapter\n- Table 12-5: not found; no table on design example for primary (channelized) traffic areas exists in this chapter\n- Table 12-6: not found; no table on design example for secondary (unchannelized) traffic areas exists in this chapter\n- Table 12-7: not found; no table on recommended spacing of transverse contraction joints exists in this chapter\n- Table 12-8: not found; no table on dowel size and spacing for construction, contraction, and expansion joints exists in this chapter",
+  "checks": [
+   "numbers and titles at least 7 of the chapter's 8 tables"
+  ]
+ },
+ {
+  "task": "ufc301-asce7-chapters",
+  "kind": "right",
+  "say": "bullets 'Chapter N (subject), UFC section'",
+  "answer": "- Chapter 1 (General: basic requirements and classification of buildings) - UFC section 3-1\n- Chapter 2 (Combinations of Loads) - UFC section 3-2\n- Chapter 6 (Tsunami Loads) - UFC section 3-3\n- Chapter 7 (Snow Loads) - UFC section 3-4\n- Chapter 11 (Seismic Design Criteria) - UFC section 3-5\n- Chapter 12 (Seismic Design Requirements for Building Structures) - UFC section 3-6\n- Chapter 13 (Seismic Design Requirements for Nonstructural Components) - UFC section 3-7\n- Chapter 15 (Seismic Design Requirements for Nonbuilding Structures) - UFC section 3-8\n- Chapter 26 (Wind Loads: General Requirements) - UFC section 3-9"
+ },
+ {
+  "task": "ufc301-asce7-chapters",
+  "kind": "right",
+  "say": "table Section | Chapter | Subject",
+  "answer": "| UFC section | ASCE 7 chapter | Subject |\n|---|---|---|\n| 3-1 | 1 | General: basic requirements and classification of buildings |\n| 3-2 | 2 | Combinations of Loads |\n| 3-3 | 6 | Tsunami Loads |\n| 3-4 | 7 | Snow Loads |\n| 3-5 | 11 | Seismic Design Criteria |\n| 3-6 | 12 | Seismic Design Requirements for Building Structures |\n| 3-7 | 13 | Seismic Design Requirements for Nonstructural Components |\n| 3-8 | 15 | Seismic Design Requirements for Nonbuilding Structures |\n| 3-9 | 26 | Wind Loads: General Requirements |"
+ },
+ {
+  "task": "ufc301-asce7-chapters",
+  "kind": "right",
+  "say": "prose, section first",
+  "answer": "section 3-1 modifies ASCE 7-22 Chapter 1, General: basic requirements and classification of buildings; section 3-2 modifies ASCE 7-22 Chapter 2, Combinations of Loads; section 3-3 modifies ASCE 7-22 Chapter 6, Tsunami Loads; section 3-4 modifies ASCE 7-22 Chapter 7, Snow Loads; section 3-5 modifies ASCE 7-22 Chapter 11, Seismic Design Criteria; section 3-6 modifies ASCE 7-22 Chapter 12, Seismic Design Requirements for Building Structures; section 3-7 modifies ASCE 7-22 Chapter 13, Seismic Design Requirements for Nonstructural Components; section 3-8 modifies ASCE 7-22 Chapter 15, Seismic Design Requirements for Nonbuilding Structures; section 3-9 modifies ASCE 7-22 Chapter 26, Wind Loads: General Requirements."
+ },
+ {
+  "task": "ufc301-asce7-chapters",
+  "kind": "right",
+  "say": "table ASCE 7 chapter | UFC section | Subject (section between)",
+  "answer": "| ASCE 7 chapter | UFC section | Subject |\n|---|---|---|\n| 1 | 3-1 | General: basic requirements and classification of buildings |\n| 2 | 3-2 | Combinations of Loads |\n| 6 | 3-3 | Tsunami Loads |\n| 7 | 3-4 | Snow Loads |\n| 11 | 3-5 | Seismic Design Criteria |\n| 12 | 3-6 | Seismic Design Requirements for Building Structures |\n| 13 | 3-7 | Seismic Design Requirements for Nonstructural Components |\n| 15 | 3-8 | Seismic Design Requirements for Nonbuilding Structures |\n| 26 | 3-9 | Wind Loads: General Requirements |"
+ },
+ {
+  "task": "ufc301-asce7-chapters",
+  "kind": "right",
+  "say": "'Ch. N' and short subjects",
+  "answer": "Ch. 1 general, Ch. 2 load combinations, Ch. 6 tsunami, Ch. 7 snow, Ch. 11 seismic design criteria, Ch. 12 seismic for building structures, Ch. 13 nonstructural components, Ch. 15 nonbuilding structures, Ch. 26 wind (UFC 3-1 to 3-9 in that order)."
+ },
+ {
+  "task": "ufc301-asce7-chapters",
+  "kind": "right",
+  "say": "UFC section heading style '3-5 ASCE 7-22 Chapter 11 ...', subject after dash",
+  "answer": "- **3-1** ASCE 7-22 Chapter 1 — General: basic requirements and classification of buildings\n- **3-2** ASCE 7-22 Chapter 2 — Combinations of Loads\n- **3-3** ASCE 7-22 Chapter 6 — Tsunami Loads\n- **3-4** ASCE 7-22 Chapter 7 — Snow Loads\n- **3-5** ASCE 7-22 Chapter 11 — Seismic Design Criteria\n- **3-6** ASCE 7-22 Chapter 12 — Seismic Design Requirements for Building Structures\n- **3-7** ASCE 7-22 Chapter 13 — Seismic Design Requirements for Nonstructural Components\n- **3-8** ASCE 7-22 Chapter 15 — Seismic Design Requirements for Nonbuilding Structures\n- **3-9** ASCE 7-22 Chapter 26 — Wind Loads: General Requirements"
+ },
+ {
+  "task": "ufc301-asce7-chapters",
+  "kind": "wrong",
+  "say": "chapters with shifted subjects",
+  "answer": "- Chapter 1: Tsunami Loads\n- Chapter 2: Snow Loads\n- Chapter 6: Seismic Design Criteria\n- Chapter 7: Seismic Design Requirements for Building Structures\n- Chapter 11: Seismic Design Requirements for Nonstructural Components\n- Chapter 12: Seismic Design Requirements for Nonbuilding Structures\n- Chapter 13: Wind Loads: General Requirements\n- Chapter 15: General: basic requirements and classification of buildings\n- Chapter 26: Combinations of Loads",
+  "checks": [
+   "names at least 8 of the 9 ASCE 7 chapters, none with another chapter's subject"
+  ]
+ },
+ {
+  "task": "ufc301-asce7-chapters",
+  "kind": "wrong",
+  "say": "bare list of chapters, nothing on subject or section",
+  "answer": "It modifies chapters 1, 2, 6, 7, 11, 12, 13, 15 and 26.",
+  "checks": [
+   "names at least 8 of the 9 ASCE 7 chapters, none with another chapter's subject"
+  ]
+ },
+ {
+  "task": "ufc301-asce7-chapters",
+  "kind": "wrong",
+  "say": "says the chapters are NOT modified",
+  "answer": "Chapter 3 leaves chapters 1, 2, 6, 7, 11, 12, 13, 15 and 26 of ASCE 7 unmodified; it changes only chapters 4 and 5.",
+  "checks": [
+   "names at least 8 of the 9 ASCE 7 chapters, none with another chapter's subject"
+  ]
+ },
+ {
+  "task": "ufc301-asce7-chapters",
+  "kind": "wrong",
+  "say": "lists all 31 chapters",
+  "answer": "It modifies ASCE 7 chapter 1, chapter 2, chapter 3, chapter 4, chapter 5, chapter 6, chapter 7, chapter 8, chapter 9, chapter 10, chapter 11, chapter 12, chapter 13, chapter 14, chapter 15, chapter 16, chapter 17, chapter 18, chapter 19, chapter 20, chapter 21, chapter 22, chapter 23, chapter 24, chapter 25, chapter 26, chapter 27, chapter 28, chapter 29, chapter 30, chapter 31.",
+  "checks": [
+   "names at least 8 of the 9 ASCE 7 chapters, none with another chapter's subject"
+  ]
+ },
+ {
+  "task": "calc-wall-check",
+  "kind": "right",
+  "say": "prose",
+  "answer": "No. Sliding has a factor of safety of 1.185 against a required 1.5, so it fails; overturning passes at 2.733 against 2.0. The summary also lists bearing as 99.900 / N/A / OK with no bearing calculation behind it."
+ },
+ {
+  "task": "calc-wall-check",
+  "kind": "right",
+  "say": "table with FAIL",
+  "answer": "| Check | FOS | Required | Result |\n|---|---|---|---|\n| Sliding | 1.185 | 1.5 | FAIL |\n| Overturning | 2.733 | 2.0 | OK |\n| Bearing | 99.900 | N/A | not supported: no calculation |"
+ },
+ {
+  "task": "calc-wall-check",
+  "kind": "right",
+  "say": "1.50 with a trailing zero, 'not adequate'",
+  "answer": "Sliding is not adequate: FS = 1.185 < 1.50. Overturning is fine. The bearing line in the summary (99.9, shown OK) is not backed by any calculation."
+ },
+ {
+  "task": "calc-wall-check",
+  "kind": "right",
+  "say": "rounded FOS 1.19, 'less than required', bearing flagged without its number",
+  "answer": "The wall does not satisfy sliding: the factor of safety is 1.19, less than the 1.5 required. The summary reports bearing as OK but the package holds no bearing calculation."
+ },
+ {
+  "task": "calc-wall-check",
+  "kind": "right",
+  "say": "'NG' / 'no good' wording",
+  "answer": "Sliding FOS 1.185 vs 1.5 required: NG. Overturning OK. Bearing 99.900 in the summary has no calc.",
+  "checks": [
+   "contains_any",
+   "contains_all"
+  ]
+ },
+ {
+  "task": "calc-wall-check",
+  "kind": "right",
+  "say": "'insufficient', 'falls short'",
+  "answer": "Sliding resistance is insufficient: 1.185 falls short of 1.5. The summary's bearing entry of 99.900 kPa has nothing behind it.",
+  "checks": [
+   "contains_any"
+  ]
+ },
+ {
+  "task": "calc-wall-check",
+  "kind": "wrong",
+  "say": "says the wall passes",
+  "answer": "Yes, the design meets its requirements: sliding 1.185, and overturning 2.733 exceeds 1.5. Nothing fails. Bearing 99.900 is OK and is supported.",
+  "checks": [
+   "contains_all",
+   "contains_any",
+   "flags the unsupported bearing value"
+  ]
+ },
+ {
+  "task": "calc-wall-check",
+  "kind": "wrong",
+  "say": "'does not fail'",
+  "answer": "The sliding check (1.185) does not fail because the 1.5 requirement applies only to overturning. The bearing value of 99.9 is fully supported.",
+  "checks": [
+   "contains_any",
+   "flags the unsupported bearing value",
+   "contains_all"
+  ]
+ },
+ {
+  "task": "calc-bearing-consistency",
+  "kind": "right",
+  "say": "prose with thousands separator",
+  "answer": "Yes: q_ult = 1,195.3 kPa divided by FS = 3.0 gives 398.4 kPa, which matches the reported allowable."
+ },
+ {
+  "task": "calc-bearing-consistency",
+  "kind": "right",
+  "say": "equation, no separator",
+  "answer": "1195.3 / 3.0 = 398.43 kPa -> reported q_all 398.4 kPa. Consistent (page 4)."
+ },
+ {
+  "task": "calc-bearing-consistency",
+  "kind": "right",
+  "say": "table",
+  "answer": "| Quantity | Value |\n|---|---|\n| q_ult | 1195.3 kPa |\n| FS | 3.0 |\n| q_ult / FS | 398.4 kPa |\n| Reported q_all | 398.4 kPa |"
+ },
+ {
+  "task": "calc-bearing-consistency",
+  "kind": "right",
+  "say": "rounded to 1,200 / says about 400",
+  "answer": "Yes. About 1,195 kPa over 3 is about 398 kPa."
+ },
+ {
+  "task": "calc-bearing-consistency",
+  "kind": "right",
+  "say": "LaTeX",
+  "answer": "$q_{all} = \\frac{1195.3}{3.0} = 398.4$ kPa, consistent."
+ },
+ {
+  "task": "calc-bearing-consistency",
+  "kind": "wrong",
+  "say": "says it does NOT follow",
+  "answer": "No. 1195.3 / 3.0 is 358 kPa, not the 398 kPa reported, so the allowable does not follow.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "calc-bearing-consistency",
+  "kind": "wrong",
+  "say": "quotes numbers, no check",
+  "answer": "The package reports 1,195.3 kPa and 398.4 kPa. I could not find the factor of safety, so I cannot say.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "fixture-markups",
+  "kind": "right",
+  "say": "prose",
+  "answer": "Reviewer A commented 'CONFIRM THE PILE EMBEDMENT SHOWN HERE.' Contractor B replied 'Embedment revised to 6 m per updated calcs.' Reviewer A also placed an APPROVED stamp."
+ },
+ {
+  "task": "fixture-markups",
+  "kind": "right",
+  "say": "table",
+  "answer": "| Author | Type | Text | Response |\n|---|---|---|---|\n| Reviewer A | Comment | Confirm the pile embedment shown here. | Yes, by Contractor B: embedment revised to 6 m per updated calcs. |\n| Reviewer A | Stamp | APPROVED | None |"
+ },
+ {
+  "task": "fixture-markups",
+  "kind": "right",
+  "say": "paraphrase 'embedment of the pile', '6 metres'",
+  "answer": "Reviewer A asks for the embedment of the pile to be confirmed; Contractor B answered that it is now 6 metres. Reviewer A stamped the sheet APPROVED."
+ },
+ {
+  "task": "fixture-markups",
+  "kind": "right",
+  "say": "hyphen names",
+  "answer": "Reviewer-A: confirm the pile embedment. Contractor-B: revised to 6 m. Reviewer-A: APPROVED."
+ },
+ {
+  "task": "fixture-markups",
+  "kind": "wrong",
+  "say": "says nobody responded and swaps authors",
+  "answer": "Contractor B commented on the pile embedment; Reviewer A has not responded. No one mentions 6 m anywhere except the title block.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "fixture-markups",
+  "kind": "wrong",
+  "say": "lists words only",
+  "answer": "Words seen: Reviewer A, Contractor B, pile embedment, 6 m, 9 m, 12 m, REJECTED, APPROVED.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "right",
+  "say": "prose",
+  "answer": "Yes. Page 8 is a duplicate of page 3; both carry the report's printed 'Page 2'."
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "right",
+  "say": "p. forms",
+  "answer": "Yes: p. 8 repeats p. 3."
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "right",
+  "say": "'pages 3 and 8'",
+  "answer": "Pages 3 and 8 are identical."
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "right",
+  "say": "table",
+  "answer": "| Duplicate | Of |\n|---|---|\n| PDF page 8 | PDF page 3 |\n\nPage 8 is the same as page 3."
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "right",
+  "say": "mentions page 7 as the true neighbour",
+  "answer": "Yes. Page 8 repeats page 3; it sits between page 7 and page 9, which are not duplicates."
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "right",
+  "say": "'3rd and 8th pages'",
+  "answer": "Yes, the 3rd and 8th pages of the PDF are the same sheet twice."
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "right",
+  "say": "'a copy of'",
+  "answer": "Page 8 is a copy of page 3."
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "wrong",
+  "say": "says no duplicates",
+  "answer": "No duplicates: page 8 is not the same as page 3, and no page is repeated.",
+  "checks": [
+   "contains_all",
+   "cites viewer page 8",
+   "cites viewer page 3"
+  ]
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "wrong",
+  "say": "wrong pair, right numbers elsewhere",
+  "answer": "Page 5 duplicates page 6. Pages 3 and 8 are different pages.",
+  "checks": [
+   "contains_all",
+   "cites viewer page 8",
+   "cites viewer page 3"
+  ]
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "wrong",
+  "say": "0-based written 'page index 7' / 'p. 7'",
+  "answer": "Yes: p. 7 repeats p. 2 (zero-based indexes).",
+  "checks": [
+   "does not cite the 0-based index 7"
+  ]
+ },
+ {
+  "task": "fixture-duplicate-page",
+  "kind": "wrong",
+  "say": "lists every page",
+  "answer": "Duplicates may be among pages 1, 2, 3, 4, 5, 6, 8, 9 and 10.",
+  "checks": [
+   "contains_all",
+   "cites viewer page 8",
+   "cites viewer page 3"
+  ]
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "right",
+  "say": "prose",
+  "answer": "FPG callouts with leaders are on pages 4, 12 and 20."
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "right",
+  "say": "bullets",
+  "answer": "FPG callouts appear on these pages:\n- 4\n- 12\n- 20"
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "right",
+  "say": "sheets",
+  "answer": "Sheets 4, 12, and 20."
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "right",
+  "say": "one 'page' per number",
+  "answer": "Page 4, page 12 and page 20 each carry one FPG callout."
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "right",
+  "say": "table",
+  "answer": "| Page | FPG callouts |\n|---|---|\n| 4 | 1 |\n| 12 | 1 |\n| 20 | 1 |"
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "right",
+  "say": "says which pages were checked",
+  "answer": "I looked at all pages 1 to 24. FPG callouts: pages 4, 12 and 20."
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "right",
+  "say": "says the legend is on every page",
+  "answer": "The FPG callouts are on pages 4, 12 and 20. The legend row on pages 1 through 24 does not count."
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "right",
+  "say": "bold numbers without the word page",
+  "answer": "**4, 12, 20**"
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "wrong",
+  "say": "says those pages have none",
+  "answer": "No FPG callout on pages 4, 12 and 20; they are on page 7.",
+  "checks": [
+   "names pages 4, 12 and 20 and little else"
+  ]
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "wrong",
+  "say": "adds one wrong page (passes by the check's 0.75 precision floor)",
+  "answer": "Pages 4, 9, 12 and 20.",
+  "checks": [
+   "names pages 4, 12 and 20 and little else"
+  ]
+ },
+ {
+  "task": "set-long-rare-tag",
+  "kind": "wrong",
+  "say": "wide range",
+  "answer": "FPG appears on pages 1-24.",
+  "checks": [
+   "names pages 4, 12 and 20 and little else"
+  ]
+ },
+ {
+  "task": "produce-memo",
+  "kind": "right",
+  "say": "memo paragraphs",
+  "answer": "Memo attached.",
+  "checks": [
+   "docx_contains"
+  ],
+  "files": {
+   "memo.docx": [
+    "MEMO",
+    "Concrete: 3600 psi (sheets 10.25A, 20.00A, 20.00B).",
+    "Curb ramp slope: 8.33% maximum (sheet 10.31A).",
+    "Street pavement: S9.5B surface course (sheet 11.01)."
+   ]
+  }
+ },
+ {
+  "task": "produce-memo",
+  "kind": "right",
+  "say": "thousands separator, lower-case mix name spaced",
+  "answer": "See memo.",
+  "checks": [
+   "docx_contains"
+  ],
+  "files": {
+   "memo.docx": [
+    "Concrete strength 3,600 psi - 10.25A",
+    "Ramp slope not over 8.33 percent - 10.31A",
+    "Surface course S9.5B - 11.01"
+   ]
+  }
+ },
+ {
+  "task": "produce-memo",
+  "kind": "right",
+  "say": "slope as 1:12 only",
+  "answer": "See memo.",
+  "checks": [
+   "docx_contains"
+  ],
+  "files": {
+   "memo.docx": [
+    "Concrete: 3600 psi.",
+    "Ramp slope: 1:12 maximum (12:1).",
+    "Pavement: S9.5B surface course."
+   ]
+  }
+ },
+ {
+  "task": "produce-memo",
+  "kind": "right",
+  "say": "two docx delivered, a draft and the final",
+  "answer": "See memo.",
+  "checks": [
+   "docx_contains"
+  ],
+  "files": {
+   "memo_draft.docx": [
+    "Draft - to be completed."
+   ],
+   "memo.docx": [
+    "Concrete: 3600 psi.",
+    "Ramp: 8.33% max.",
+    "Pavement: S9.5B."
+   ]
+  }
+ },
+ {
+  "task": "produce-memo",
+  "kind": "wrong",
+  "say": "denies each",
+  "answer": "See memo.",
+  "checks": [
+   "docx_contains"
+  ],
+  "files": {
+   "memo.docx": [
+    "The set does not call for 3600 psi anywhere.",
+    "No 8.33% slope is given.",
+    "S9.5B is not used."
+   ]
+  }
+ },
+ {
+  "task": "produce-memo",
+  "kind": "wrong",
+  "say": "word list",
+  "answer": "See memo.",
+  "checks": [
+   "docx_contains"
+  ],
+  "files": {
+   "memo.docx": [
+    "Values seen: 3000, 3600, 4000 psi; 2%, 5%, 8.33%, 10%; S9.5B, S9.5C, I19.0C, B25.0C."
+   ]
+  }
+ },
+ {
+  "task": "produce-memo",
+  "kind": "wrong",
+  "say": "memo empty, values only in chat",
+  "answer": "Memo attached: 3600 psi, 8.33%, S9.5B.",
+  "checks": [
+   "docx_contains"
+  ],
+  "files": {
+   "memo.docx": [
+    "Memo to follow."
+   ]
+  }
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "prose",
+  "answer": "B-1 and B-4 are about 184 ft apart. The sheet's note says 1\" = 20', but the graphic scale bar shows 1\" = 40', so the sheet was re-plotted at half size and I used the bar."
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "feet spelled, bar disagrees",
+  "answer": "Distance from B-1 to B-4: 184 feet. Note that the scale note does not match the scale bar; the bar governs."
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "table",
+  "answer": "| From | To | Distance |\n|---|---|---|\n| B-1 | B-4 | 184 ft |\n\nThe printed scale is wrong for this half-size print."
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "prime for feet",
+  "answer": "B-1 to B-4 = 184'. The plan is at half scale; the noted scale conflicts with the bar."
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "gives both values, commits to the right one",
+  "answer": "At the noted scale the distance would be 92 ft, but the bar scale shows the sheet is half size, so B-1 to B-4 is 184 ft."
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "B1/B4 without hyphen, decimals",
+  "answer": "B1 to B4: 183.8 ft (from coordinates E 1040, N 2180 and E 1210, N 2110). The scale note of 1 in = 20 ft is inconsistent with the bar."
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "answer first, then the borings in another sentence",
+  "answer": "The distance is 184 ft.\n\nThis is between borings B-1 and B-4, measured with the graphic scale because the bar and the note disagree."
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "'ft' before explanation with numbers first",
+  "answer": "Using the scale bar (0, 10, 20, 40 feet), 1 inch equals 40 feet on this print, not 20 feet as noted. Borings B-1 and B-4 are therefore 184 ft apart."
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "notice worded 'the bar shows twice the note'",
+  "answer": "B-1 to B-4 is 184 ft. The scale bar gives twice the distance the scale note would, so the note cannot be trusted.",
+  "checks": [
+   "notices that the stated scale disagrees with the bar"
+  ]
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "notice worded 'printed at 50%'",
+  "answer": "B-1 to B-4 is 184 ft. The drawing has been printed at 50% of its original size, so the 1\" = 20' note no longer holds.",
+  "checks": [
+   "notices that the stated scale disagrees with the bar"
+  ]
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "right",
+  "say": "notice worded 'scale note is wrong'",
+  "answer": "B-1 to B-4 is 184 ft; the scale note is wrong, use the bar.",
+  "checks": [
+   "notices that the stated scale disagrees with the bar"
+  ]
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "wrong",
+  "say": "commits to the wrong value, mentions the right one as rejected",
+  "answer": "B-1 and B-4 are 92 ft apart. A figure of 184 ft would follow only if the scale bar were used, which I rejected.",
+  "checks": [
+   "B-1 to B-4 within 1 ft of 183.85 ft"
+  ]
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "wrong",
+  "say": "says there is no disagreement",
+  "answer": "B-1 to B-4 is 92 ft. The scale note and the bar agree; nothing was re-plotted.",
+  "checks": [
+   "notices that the stated scale disagrees with the bar"
+  ]
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "wrong",
+  "say": "says the scale bar is consistent after checking for a mismatch",
+  "answer": "B-1 to B-4 is 92 ft at 1\" = 20'. I checked for a mismatch between the note and the scale bar and found none.",
+  "checks": [
+   "notices that the stated scale disagrees with the bar"
+  ]
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "wrong",
+  "say": "right number for another pair",
+  "answer": "B-1 to B-4 is 92 ft; B-2 to B-3 is 184 ft.",
+  "checks": [
+   "B-1 to B-4 within 1 ft of 183.85 ft"
+  ]
+ },
+ {
+  "task": "scale-plan-distance",
+  "kind": "wrong",
+  "say": "right number in metres mislabelled / sum of coordinates",
+  "answer": "B-1 (E 1040, N 2180) and B-4 (E 1210, N 2110) are 240 ft apart, 170 + 70.",
+  "checks": [
+   "B-1 to B-4 within 1 ft of 183.85 ft"
+  ]
+ }
+]

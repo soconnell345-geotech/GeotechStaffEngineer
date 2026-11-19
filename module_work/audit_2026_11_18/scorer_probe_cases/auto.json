@@ -1,0 +1,150 @@
+[
+ {
+  "task": "meck-driveway-notes",
+  "kind": "right",
+  "say": "says it zoomed to read small text",
+  "answer": "The note was small, so I re-read it at higher resolution: 3,600 psi concrete; breakover A is 8% maximum (page 1).",
+  "checks": [
+   "does not give up on legibility",
+   "no 0-based page citation",
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "right",
+  "say": "recommends a better scan for one illegible dimension, after answering",
+  "answer": "Concrete is 3600 psi and breakover A is limited to 8 percent. One dimension at the gutter is illegible in this scan; request a clearer copy from the designer to confirm it.",
+  "checks": [
+   "does not give up on legibility",
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "right",
+  "say": "finding 'p. 0' never written; revision 0 on p. 1",
+  "answer": "3600 psi; 8% max. See detail on p. 1 (sheet 10.25A, rev. 0).",
+  "checks": [
+   "no 0-based page citation",
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "right",
+  "say": "says the PDF has no page 0 / cover is unnumbered",
+  "answer": "3600 psi; 8% maximum. The detail is on page 1; there is no page 0 or cover sheet in this file.",
+  "checks": [
+   "no 0-based page citation"
+  ]
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "right",
+  "say": "quotes a note 'the scan is not too blurry'",
+  "answer": "3600 psi and 8% max. The scan is not too blurry to read; both values are legible on page 1.",
+  "checks": [
+   "does not give up on legibility"
+  ]
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "wrong",
+  "say": "gives up in other words",
+  "answer": "I cannot read this drawing; the text is illegible and I am unable to determine the strength or the limit.",
+  "checks": [
+   "does not give up on legibility"
+  ]
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "wrong",
+  "say": "0-based citation written 'page index 0'",
+  "answer": "3600 psi and 8% (page index 0 of the PDF).",
+  "checks": [
+   "no 0-based page citation"
+  ]
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "wrong",
+  "say": "opposite numbers beside the right ones",
+  "answer": "The detail does not require 3600 psi; it requires 3000 psi, and the 8% figure is a minimum, not a limit.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "zoomed to get a sharper image, then answered",
+  "answer": "I rendered A-101 again at 300 dpi to get a sharper image of the bubbles. 7/A-501: A-501 has no detail 7. 2/A-302: there is no sheet A-302.",
+  "checks": [
+   "does not give up on legibility"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "too blurry at first zoom, read after zooming",
+  "answer": "At the default zoom the bubbles were too blurry to read, so I zoomed in: 7/A-501 has no detail 7 on A-501, and sheet A-302 is not in the set.",
+  "checks": [
+   "does not give up on legibility"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "re-rendered to obtain a higher-resolution image",
+  "answer": "To confirm, I re-rendered the detail sheet to obtain a higher-resolution image. A-501 stops at detail 6, so 7/A-501 does not resolve; 2/A-302 names a sheet that does not exist.",
+  "checks": [
+   "does not give up on legibility"
+  ]
+ },
+ {
+  "task": "coord-submittal",
+  "kind": "right",
+  "say": "review comment asks the contractor for a clearer copy of one sheet",
+  "answer": "Fly ash is 30%, over the 25% limit; w/cm 0.48 exceeds 0.45; the ASR report is missing; only 12 of 30 strength tests. Also ask the contractor to provide a clearer copy of the mill certificate with the resubmittal.",
+  "checks": [
+   "does not give up on legibility"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "right",
+  "say": "says which tool page number maps to which sheet",
+  "answer": "7/A-501 does not resolve (no detail 7). 2/A-302 does not resolve (no such sheet). Sheet G-001 is page 1 of the PDF; the tools count it as page 0.",
+  "checks": [
+   "no 0-based page citation"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "wrong",
+  "say": "gives up: 'scan quality is too poor', asks nothing",
+  "answer": "The scan quality is too poor for me to check the callouts. I could not read the bubbles and have no findings.",
+  "checks": [
+   "does not give up on legibility"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "wrong",
+  "say": "gives up: asks for the original CAD PDF",
+  "answer": "These are scanned sheets and I cannot check callouts on them. Please upload the original vector PDF.",
+  "checks": [
+   "does not give up on legibility"
+  ]
+ },
+ {
+  "task": "coord-scan-callouts",
+  "kind": "wrong",
+  "say": "0-based citation written 'index 0' / 'page_index 3'",
+  "answer": "7/A-501 is missing (A-101, page index 3). 2/A-302 is missing (page index 4).",
+  "checks": [
+   "no 0-based page citation"
+  ]
+ }
+]

@@ -1,0 +1,862 @@
+[
+ {
+  "task": "meck-driveway-notes",
+  "kind": "right",
+  "say": "unit written PSI with periods, percent as word",
+  "answer": "Note 1 calls for 3600 P.S.I. concrete, and Note 4 limits the 'A' breakover to 8 percent or less (sheet 10.25A)."
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "right",
+  "say": "table, strength in ksi and MPa-free words",
+  "answer": "| Item | Requirement |\n|---|---|\n| Concrete strength | 3.6 ksi (3,600 psi) |\n| Breakover 'A' | 8% max |"
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "right",
+  "say": "breakover as 'eight percent'",
+  "answer": "All concrete is to be 3,600 psi. The breakover 'A' may not exceed eight percent."
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "right",
+  "say": "number bolded with unit, slope as 0.08",
+  "answer": "- Concrete: **3600psi**\n- Breakover \"A\": 8% or less (p. 1)"
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "wrong",
+  "say": "names both numbers as unknowns it could not confirm",
+  "answer": "I could not confirm whether the strength is 3600 psi or the breakover is 8%; neither value is legible to me, so I cannot say.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-driveway-notes",
+  "kind": "wrong",
+  "say": "swaps the roles of the numbers",
+  "answer": "The concrete is 8% air entrained and the breakover is limited at station 3600.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-ramp-slopes",
+  "kind": "right",
+  "say": "ratio form beside percent",
+  "answer": "Ramp (running) slope: 8.33% maximum (1:12). Cross slope: 2.1% maximum. Note 4, sheet 10.31A."
+ },
+ {
+  "task": "meck-ramp-slopes",
+  "kind": "right",
+  "say": "table",
+  "answer": "| Slope | Max |\n|---|---|\n| Running | 8.33 % |\n| Cross | 2.1 % |"
+ },
+ {
+  "task": "meck-ramp-slopes",
+  "kind": "right",
+  "say": "both percents after 'and'",
+  "answer": "The maximum running and cross slopes are 8.33 and 2.1 percent respectively."
+ },
+ {
+  "task": "meck-ramp-slopes",
+  "kind": "wrong",
+  "say": "swapped",
+  "answer": "The maximum ramp slope is 2.1% and the maximum cross slope is 8.33%.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-ramp-slopes",
+  "kind": "wrong",
+  "say": "says they are minimums",
+  "answer": "The ramp slope must be at least 8.33% and the cross slope at least 2.1%.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-ramp-warning-mat",
+  "kind": "right",
+  "say": "std number with # and space",
+  "answer": "A detectable warning mat per MCLDS #10.35B, set no more than 2\" from the back of curb."
+ },
+ {
+  "task": "meck-ramp-warning-mat",
+  "kind": "right",
+  "say": "calls it truncated-dome panel / surface",
+  "answer": "It calls for a detectable warning surface (truncated domes) within 2 inches of the back of curb, and refers to Standard 10.35B for it."
+ },
+ {
+  "task": "meck-ramp-warning-mat",
+  "kind": "wrong",
+  "say": "says it points nowhere",
+  "answer": "The sheet shows a mat but does not point to any other standard; 10.35B is not referenced anywhere.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-ramp-warning-mat",
+  "kind": "wrong",
+  "say": "wrong standard, right one ruled out",
+  "answer": "It calls for a concrete mat per standard 10.31A (not 10.35B).",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-pavement-section",
+  "kind": "right",
+  "say": "inch as words, mix names as on sheet",
+  "answer": "Surface and intermediate: 1 1/2\" S9.5B each. Base: 8\" compacted aggregate base course, or 4\" ACBC Type B25.0C."
+ },
+ {
+  "task": "meck-pavement-section",
+  "kind": "right",
+  "say": "table with in. unit",
+  "answer": "| Course | Section |\n|---|---|\n| Surface | 1.5 in. S9.5B |\n| Intermediate | 1.5 in. S9.5B |\n| Base | 8 in. CABC or 4 in. B25.0C |"
+ },
+ {
+  "task": "meck-pavement-section",
+  "kind": "right",
+  "say": "8-inch hyphen, lower-case mixes",
+  "answer": "1.5\" s9.5b surface + 1.5\" s9.5b intermediate on an 8-inch ABC base or 4\" b25.0c asphalt base."
+ },
+ {
+  "task": "meck-pavement-section",
+  "kind": "right",
+  "say": "8 in followed by article-free word",
+  "answer": "Base: 8 in of compacted aggregate, or 4 in of B25.0C. Surface/intermediate: S9.5B, 1.5 in each."
+ },
+ {
+  "task": "meck-pavement-section",
+  "kind": "wrong",
+  "say": "says the mixes were removed",
+  "answer": "Revision 3 removed S9.5B and B25.0C from the sheet; the base is no longer 8\" and no section is given.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-pavement-section",
+  "kind": "wrong",
+  "say": "lists words without a section",
+  "answer": "The sheet mentions S9.5B, B25.0C, and an 8\" curb height somewhere, but I cannot tell which course is which.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-revision-block",
+  "kind": "right",
+  "say": "dates as on sheet",
+  "answer": "1. 5/09 Revised pavement section\n2. 11/16 Revised surface course amount\n3. 9/22 Revised pavement mix types (S9.5B, B25.0C), added Note 3"
+ },
+ {
+  "task": "meck-revision-block",
+  "kind": "right",
+  "say": "month names in full",
+  "answer": "Rev 1, May 2009: revised pavement section. Rev 2, November 2016: revised surface course amount. Rev 3, September 2022: revised mix types and added note #3."
+ },
+ {
+  "task": "meck-revision-block",
+  "kind": "right",
+  "say": "four-digit year slash",
+  "answer": "Revisions: 5/2009 (pavement section), 11/2016 (surface course amount), 9/2022 (mix types; note 3 added)."
+ },
+ {
+  "task": "meck-revision-block",
+  "kind": "right",
+  "say": "abbreviated months with period",
+  "answer": "Rev. 1 (May 2009), Rev. 2 (Nov. 2016), Rev. 3 (Sep. 2022): pavement section; surface course amount; mix types and note 3."
+ },
+ {
+  "task": "meck-revision-block",
+  "kind": "wrong",
+  "say": "dates listed, changes mismatched/absent",
+  "answer": "The block shows dates 5/09, 11/16 and 9/22 but the descriptions are not legible, so I cannot say what changed.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-revision-block",
+  "kind": "wrong",
+  "say": "says there are no such revisions",
+  "answer": "There are no revisions dated 5/09, 11/16 or 9/22; the revision block is empty.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-row-sidewalk",
+  "kind": "right",
+  "say": "prime marks",
+  "answer": "Minimum R/W is 50'. Sidewalk at least 4' from back of curb (Note 1)."
+ },
+ {
+  "task": "meck-row-sidewalk",
+  "kind": "right",
+  "say": "feet spelled, table",
+  "answer": "| Item | Value |\n|---|---|\n| Right-of-way (min) | 50 feet |\n| Sidewalk offset from back of curb | 4 feet minimum |"
+ },
+ {
+  "task": "meck-row-sidewalk",
+  "kind": "right",
+  "say": "ft. with period and hyphen",
+  "answer": "50-ft minimum right-of-way; sidewalk a minimum of 4 ft. behind the back of curb."
+ },
+ {
+  "task": "meck-row-sidewalk",
+  "kind": "right",
+  "say": "feet-inches form",
+  "answer": "R/W 50'-0\" min.; sidewalk 4'-0\" min. from back of curb."
+ },
+ {
+  "task": "meck-row-sidewalk",
+  "kind": "right",
+  "say": "R/W = 50 ft. after 'Note 1'",
+  "answer": "Per Note 1, 4 ft from back of curb; the section shows 50 ft R/W minimum."
+ },
+ {
+  "task": "meck-row-sidewalk",
+  "kind": "wrong",
+  "say": "swapped",
+  "answer": "The right-of-way is 4 ft minimum and the sidewalk must be 50 ft from the back of curb.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-row-sidewalk",
+  "kind": "wrong",
+  "say": "values named as not what the sheet says",
+  "answer": "The sheet does not give 50 ft for the right-of-way, and the sidewalk is not 4 ft from the curb; neither is stated.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-underdrain",
+  "kind": "right",
+  "say": "as on sheet",
+  "answer": "Min. 6\" perforated Schedule 40 PVC (AASHTO M278) or double-wall HDPE (AASHTO M252). Perforations 3/8\" at 3\" on center in 4 longitudinal rows 90 degrees apart."
+ },
+ {
+  "task": "meck-underdrain",
+  "kind": "right",
+  "say": "Sch. 40 abbreviation, M 278 hyphen",
+  "answer": "6-inch min. perforated Sch. 40 PVC per AASHTO M-278, or double wall HDPE per M-252; 3/8-inch holes, 3 in. o.c., four rows at 90°."
+ },
+ {
+  "task": "meck-underdrain",
+  "kind": "right",
+  "say": "table, 0.375 in decimal",
+  "answer": "| Item | Spec |\n|---|---|\n| Pipe | 6 in. min. perforated schedule 40 PVC (M 278) or HDPE (M 252) |\n| Perforations | 0.375 in. dia., 3 in. o.c., 4 rows @ 90 deg |"
+ },
+ {
+  "task": "meck-underdrain",
+  "kind": "right",
+  "say": "SCH 40 abbreviation",
+  "answer": "A 6-inch (minimum) perforated SCH 40 PVC pipe to AASHTO M278, or double-wall HDPE to M252, with 3/8\" perforations 3\" apart in four rows spaced 90 degrees."
+ },
+ {
+  "task": "meck-underdrain",
+  "kind": "right",
+  "say": "list form",
+  "answer": "- Pipe: 6\" min, schedule 40 PVC, AASHTO M 278\n- Alternate: double wall HDPE (AASHTO M 252)\n- Perforations: 3/8\" dia @ 3\" O.C., 4 rows, 90° apart"
+ },
+ {
+  "task": "meck-underdrain",
+  "kind": "wrong",
+  "say": "negated",
+  "answer": "The detail does not specify 6\" schedule 40 PVC or M278 pipe, nor HDPE, and no 3/8\" perforations are shown.",
+  "checks": [
+   "contains_all",
+   "contains_any"
+  ]
+ },
+ {
+  "task": "meck-underdrain",
+  "kind": "wrong",
+  "say": "words with wrong relations",
+  "answer": "A 3/8\" schedule 40 pipe with 6\" perforations per M278; HDPE is prohibited.",
+  "checks": [
+   "contains_all",
+   "contains_any"
+  ]
+ },
+ {
+  "task": "meck-bioretention-access",
+  "kind": "right",
+  "say": "as on sheet",
+  "answer": "Minimum 20 foot access easement to a public right of way; access road min. 12' stabilized width, max. longitudinal grade 15%, max. cross slope 5%; 10-foot perimeter maintenance easement."
+ },
+ {
+  "task": "meck-bioretention-access",
+  "kind": "right",
+  "say": "table with ft",
+  "answer": "| Requirement | Value |\n|---|---|\n| Access easement | 20 ft min |\n| Access road width | 12 ft min, stabilized |\n| Longitudinal grade | 15% max |\n| Cross-slope | 5% max |\n| Maintenance easement | 10 ft around perimeter |"
+ },
+ {
+  "task": "meck-bioretention-access",
+  "kind": "right",
+  "say": "feet-inches and percent word",
+  "answer": "20'-0\" access easement; 12'-0\" stabilized access road, grade not over 15 percent, cross slope not over 5 percent; 10'-0\" maintenance easement."
+ },
+ {
+  "task": "meck-bioretention-access",
+  "kind": "right",
+  "say": "20 ft. wide, list",
+  "answer": "- 20 ft. wide access easement to public R/W\n- Road: 12 ft. wide (min), 15% max grade, 5% max cross slope\n- 10 ft. maintenance easement at perimeter"
+ },
+ {
+  "task": "meck-bioretention-access",
+  "kind": "wrong",
+  "say": "swapped",
+  "answer": "Access easement 12 ft; road 20 ft wide; cross slope up to 15%; longitudinal grade up to 5%.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-bioretention-access",
+  "kind": "wrong",
+  "say": "negated",
+  "answer": "No 20 ft easement or 12 ft road is required, and the 15% and 5% limits do not apply.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-sediment-trap-criteria",
+  "kind": "right",
+  "say": "as on sheet",
+  "answer": "Drainage area < 5 ac.; minimum length to width ratio 2:1; minimum volume 3600 cu. ft. per acre disturbed; surface area 435 sq. ft. per cfs of Q10."
+ },
+ {
+  "task": "meck-sediment-trap-criteria",
+  "kind": "right",
+  "say": "table, comma thousands, 'less than 5 acres'",
+  "answer": "| Criterion | Value |\n|---|---|\n| Drainage area | less than 5 acres |\n| L:W ratio | 2:1 min |\n| Volume | 3,600 cf/acre |\n| Surface area | 435 sf per cfs (Q10) |"
+ },
+ {
+  "task": "meck-sediment-trap-criteria",
+  "kind": "right",
+  "say": "ratio as '2 to 1'",
+  "answer": "Drainage area under 5 acres; length-to-width at least 2 to 1; 3,600 cubic feet of storage per disturbed acre; 435 square feet of surface per cfs of the 10-year peak."
+ },
+ {
+  "task": "meck-sediment-trap-criteria",
+  "kind": "right",
+  "say": "ratio 2:1 followed by period-less, 5 AC.",
+  "answer": "- Drainage area: < 5 AC.\n- Length:width = 2:1 minimum\n- 3600 CF/AC\n- 435 SF/CFS"
+ },
+ {
+  "task": "meck-sediment-trap-criteria",
+  "kind": "wrong",
+  "say": "swapped numbers",
+  "answer": "Volume 435 cu ft per acre, surface area 3600 sq ft per cfs, slopes 2:1, drainage area more than 5 acres.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-sediment-trap-criteria",
+  "kind": "wrong",
+  "say": "says more than 5 acres",
+  "answer": "The trap is for drainage areas greater than 5 acres only.",
+  "checks": [
+   "contains_any"
+  ]
+ },
+ {
+  "task": "meck-sediment-trap-criteria",
+  "kind": "wrong",
+  "say": "negated",
+  "answer": "The data block does not give 3600, 435 or 2:1; no criteria are listed.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-monument",
+  "kind": "right",
+  "say": "as on sheet",
+  "answer": "30\" deep; brass plate with grooved dowel, an iron pin and steel reinforcing rods (ferrous materials required)."
+ },
+ {
+  "task": "meck-monument",
+  "kind": "right",
+  "say": "feet-inches",
+  "answer": "The monument is 2'-6\" deep, with a brass plate, an iron pin and reinforcing steel."
+ },
+ {
+  "task": "meck-monument",
+  "kind": "right",
+  "say": "table 30 in.",
+  "answer": "| Depth | 30 in. |\n|---|---|\n| Materials | concrete, brass plate, iron pin, reinforcing rods |"
+ },
+ {
+  "task": "meck-monument",
+  "kind": "wrong",
+  "say": "30 inch is the width; depth different",
+  "answer": "The monument is 30\" wide and 4 ft deep, with a brass plate.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-monument",
+  "kind": "wrong",
+  "say": "negated",
+  "answer": "It is not 30 inches deep and uses no brass or reinforcing.",
+  "checks": [
+   "contains_all",
+   "contains_any"
+  ]
+ },
+ {
+  "task": "meck-curb-types",
+  "kind": "right",
+  "say": "as on sheet",
+  "answer": "1'-6\" standard curb and gutter; standard 2'-6\" curb and gutter; 2'-0\" standard curb & gutter."
+ },
+ {
+  "task": "meck-curb-types",
+  "kind": "right",
+  "say": "inches",
+  "answer": "Three types: 18\" standard curb and gutter, 30\" standard curb and gutter, and 24\" standard curb and gutter."
+ },
+ {
+  "task": "meck-curb-types",
+  "kind": "right",
+  "say": "feet with space, list",
+  "answer": "- 1' 6\" curb and gutter\n- 2' 6\" curb and gutter\n- 2' 0\" curb and gutter"
+ },
+ {
+  "task": "meck-curb-types",
+  "kind": "right",
+  "say": "2' written without inches",
+  "answer": "Standard curb and gutter in three widths: 1'-6\", 2'-6\" and 2'."
+ },
+ {
+  "task": "meck-curb-types",
+  "kind": "wrong",
+  "say": "words as dimensions not types",
+  "answer": "One valley gutter only; it has a 1'-6\" radius, a 2'-6\" apron and 2'-0\" of stone.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-curb-types",
+  "kind": "wrong",
+  "say": "negated",
+  "answer": "The sheet does not detail 1'-6\", 2'-6\" or 2'-0\" curb and gutter; it shows only a median curb.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-trap-dimensions",
+  "kind": "right",
+  "say": "as on sheet",
+  "answer": "L=10' MIN., W=5' MIN., X=7' MIN., 1.5' MIN. and 21\" MIN."
+ },
+ {
+  "task": "meck-trap-dimensions",
+  "kind": "right",
+  "say": "table label|value|min column",
+  "answer": "| Label | Dimension | Limit |\n|---|---|---|\n| L | 10' | Min |\n| W | 5' | Min |\n| X | 7' | Min |\n| (unlabelled) | 1.5' | Min |\n| (unlabelled) | 21\" | Min |"
+ },
+ {
+  "task": "meck-trap-dimensions",
+  "kind": "right",
+  "say": "prose 'minimum of'",
+  "answer": "Length L is a minimum of 10 ft, width W a minimum of 5 ft, and X a minimum of 7 ft. Two unlettered dimensions: a minimum of 1.5 ft and a minimum of 21 inches."
+ },
+ {
+  "task": "meck-trap-dimensions",
+  "kind": "right",
+  "say": "list 'L = 10 ft (min)'",
+  "answer": "- L = 10 ft (min)\n- W = 5 ft (min)\n- X = 7 ft (min)\n- 1.5 ft (min)\n- 21 in. (min)"
+ },
+ {
+  "task": "meck-trap-dimensions",
+  "kind": "right",
+  "say": "heading 'Minimums:' then bare values",
+  "answer": "Minimum dimensions:\n- L: 10 ft\n- W: 5 ft\n- X: 7 ft\n- 1.5 ft (unlabelled)\n- 21 in. (unlabelled)"
+ },
+ {
+  "task": "meck-trap-dimensions",
+  "kind": "right",
+  "say": "L, W, X all minimums sentence",
+  "answer": "L=10', W=5' and X=7', all minimums; plus 1.5' min. and 21\" min."
+ },
+ {
+  "task": "meck-trap-dimensions",
+  "kind": "wrong",
+  "say": "calls them maximums",
+  "answer": "L=10' maximum, W=5' maximum, X=7' maximum; 1.5' maximum; 21\" maximum. Minimum values are not shown.",
+  "checks": [
+   "the lettered minimums L, W and X",
+   "the two unlettered minimums"
+  ]
+ },
+ {
+  "task": "meck-trap-dimensions",
+  "kind": "wrong",
+  "say": "lists every dimension incl. the max ones as min",
+  "answer": "10' min, 5' min, 7' min, 1.5' min, 21\" min, 5' min fill, 2' min, 3.5' min — every dimension on the sheet is a minimum.",
+  "checks": [
+   "the lettered minimums L, W and X",
+   "the two unlettered minimums"
+  ]
+ },
+ {
+  "task": "meck-trap-dimensions",
+  "kind": "wrong",
+  "say": "letters mismatched",
+  "answer": "L=5' min, W=7' min, X=10' min.",
+  "checks": [
+   "the lettered minimums L, W and X"
+  ]
+ },
+ {
+  "task": "meck-bioretention-section-dims",
+  "kind": "right",
+  "say": "as on sheet",
+  "answer": "Section A-A shows 10' MIN. and 4' MIN."
+ },
+ {
+  "task": "meck-bioretention-section-dims",
+  "kind": "right",
+  "say": "prose minimum of, ft",
+  "answer": "Two minimums are dimensioned on Section A-A: a minimum of 10 ft and a minimum of 4 ft."
+ },
+ {
+  "task": "meck-bioretention-section-dims",
+  "kind": "right",
+  "say": "table with limit column",
+  "answer": "| Dimension | Limit |\n|---|---|\n| 10' | Min |\n| 4' | Min |"
+ },
+ {
+  "task": "meck-bioretention-section-dims",
+  "kind": "right",
+  "say": "heading then bare values",
+  "answer": "Minimum dimensions on Section A-A:\n- 10 ft\n- 4 ft"
+ },
+ {
+  "task": "meck-bioretention-section-dims",
+  "kind": "right",
+  "say": "feet-inches (min.)",
+  "answer": "10'-0\" (min.) and 4'-0\" (min.) across the section."
+ },
+ {
+  "task": "meck-bioretention-section-dims",
+  "kind": "right",
+  "say": "10-foot minimum width",
+  "answer": "A 10-foot minimum bottom width and a 4-foot minimum bench."
+ },
+ {
+  "task": "meck-bioretention-section-dims",
+  "kind": "wrong",
+  "say": "calls them maximums",
+  "answer": "10' maximum and 4' maximum; no minimum is shown.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-bioretention-section-dims",
+  "kind": "wrong",
+  "say": "min attached to other dims",
+  "answer": "1' min ponding; the 10' and 4' dimensions carry no min. label. Minimum filter media 2'.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "meck-ramp-detail-callouts",
+  "kind": "right",
+  "say": "as on sheet",
+  "answer": "Callouts: 3/4\" flowline depth at ramp location; edge of pavement elevation; typ. match ramp slope."
+ },
+ {
+  "task": "meck-ramp-detail-callouts",
+  "kind": "right",
+  "say": "hyphenated and list",
+  "answer": "- 3/4-inch flowline depth at the ramp\n- Edge-of-pavement elevation\n- Match ramp slope (typ.)"
+ },
+ {
+  "task": "meck-ramp-detail-callouts",
+  "kind": "right",
+  "say": "decimal inch, 'matches the ramp slope'",
+  "answer": "The leaders point out the edge of pavement elevation, that the gutter matches the ramp slope, and a flowline depth of 0.75 in."
+ },
+ {
+  "task": "meck-ramp-detail-callouts",
+  "kind": "right",
+  "say": "'flow line' two words, EOP",
+  "answer": "Flow line depth 3/4\" at ramp; EOP (edge of pavement) elevation; match ramp slope."
+ },
+ {
+  "task": "meck-ramp-detail-callouts",
+  "kind": "right",
+  "say": "says hidden text reads 34 but drawing is 3/4",
+  "answer": "Flowline depth: 3/4\" (the embedded text reads 34\", which is the stacked fraction losing its slash). Also: edge of pavement elevation; match ramp slope."
+ },
+ {
+  "task": "meck-ramp-detail-callouts",
+  "kind": "right",
+  "say": "slope to match the ramp",
+  "answer": "Flowline depth of 3/4 inch at the ramp; edge of pavement elevation; gutter slope to match the ramp."
+ },
+ {
+  "task": "meck-ramp-detail-callouts",
+  "kind": "wrong",
+  "say": "reads 34",
+  "answer": "34 inch flowline depth, edge of pavement, match ramp slope.",
+  "checks": [
+   "does not read the stacked 3/4 as 34"
+  ]
+ },
+ {
+  "task": "meck-ramp-detail-callouts",
+  "kind": "wrong",
+  "say": "reads 34 written with words",
+  "answer": "Flowline depth thirty-four inches (34 inches). Edge of pavement. Match ramp slope.",
+  "checks": [
+   "does not read the stacked 3/4 as 34"
+  ]
+ },
+ {
+  "task": "meck-ramp-detail-callouts",
+  "kind": "wrong",
+  "say": "negated list of words",
+  "answer": "There is no 3/4\" flowline depth callout, no edge of pavement note and nothing says match ramp slope.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "set-sheet-index",
+  "kind": "right",
+  "say": "list with page numbers",
+  "answer": "- Page 1: 10.17A curb and gutter\n- Page 2: 10.25A residential driveway\n- Page 3: 10.31A perpendicular curb ramp\n- Page 4: 11.01 local residential street\n- Page 5: 20.00A NCDOT drainage standards\n- Page 6: 20.00B NCDOT drainage standards\n- Page 7: 21.01 bioretention\n- Page 8: 30.00 special erosion control requirements\n- Page 9: 30.01 temporary sediment trap\n- Page 10: 50.03 concrete control monument"
+ },
+ {
+  "task": "set-sheet-index",
+  "kind": "right",
+  "say": "table",
+  "answer": "| Page | Std. No. | Title |\n|---|---|---|\n| 1 | 10.17A | curb and gutter |\n| 2 | 10.25A | residential driveway |\n| 3 | 10.31A | perpendicular curb ramp |\n| 4 | 11.01 | local residential street |\n| 5 | 20.00A | NCDOT drainage standards |\n| 6 | 20.00B | NCDOT drainage standards |\n| 7 | 21.01 | bioretention |\n| 8 | 30.00 | special erosion control requirements |\n| 9 | 30.01 | temporary sediment trap |\n| 10 | 50.03 | concrete control monument |"
+ },
+ {
+  "task": "set-sheet-index",
+  "kind": "right",
+  "say": "20.00A and 20.00B merged as 20.00A/B",
+  "answer": "10.17A, 10.25A, 10.31A, 11.01, 20.00A/B (two sheets), 21.01, 30.00, 30.01, 50.03."
+ },
+ {
+  "task": "set-sheet-index",
+  "kind": "right",
+  "say": "lower-case suffix letters",
+  "answer": "Std. 10.17a, 10.25a, 10.31a, 11.01, 20.00a, 20.00b, 21.01, 30.00, 30.01 and 50.03."
+ },
+ {
+  "task": "set-sheet-index",
+  "kind": "right",
+  "say": "'20.00 (sheets A and B)', STD# prefix",
+  "answer": "STD#10.17A; STD#10.25A; STD#10.31A; STD#11.01; STD#20.00 (sheets A and B); STD#21.01; STD#30.00; STD#30.01; STD#50.03."
+ },
+ {
+  "task": "set-sheet-index",
+  "kind": "right",
+  "say": "30.00 written 30.0 by trimming? no: trailing period after each",
+  "answer": "1. 10.17A. 2. 10.25A. 3. 10.31A. 4. 11.01. 5. 20.00A. 6. 20.00B. 7. 21.01. 8. 30.00. 9. 30.01. 10. 50.03."
+ },
+ {
+  "task": "set-sheet-index",
+  "kind": "wrong",
+  "say": "numbers only, titles wrong/absent",
+  "answer": "Sheets 10.17A, 10.25A, 10.31A, 11.01, 20.00A, 20.00B, 21.01, 30.00, 30.01, 50.03 — all are curb details.",
+  "checks": [
+   "set_match"
+  ]
+ },
+ {
+  "task": "set-3600-psi",
+  "kind": "right",
+  "say": "plain",
+  "answer": "10.25A (Note 1), 20.00A and 20.00B (Note 1)."
+ },
+ {
+  "task": "set-3600-psi",
+  "kind": "right",
+  "say": "rules out 30.01 by name",
+  "answer": "Sheets 10.25A, 20.00A and 20.00B. Note that 30.01 also prints 3600, but that is cubic feet per acre, not concrete strength."
+ },
+ {
+  "task": "set-3600-psi",
+  "kind": "right",
+  "say": "table with page numbers; merged A/B",
+  "answer": "| Sheet | Page | Note |\n|---|---|---|\n| 10.25A | 2 | All concrete 3600 psi |\n| 20.00A/B | 5-6 | County requires 3600 psi |"
+ },
+ {
+  "task": "set-3600-psi",
+  "kind": "right",
+  "say": "A & B form",
+  "answer": "10.25A and 20.00A & B."
+ },
+ {
+  "task": "set-3600-psi",
+  "kind": "right",
+  "say": "table of every sheet with yes/no",
+  "answer": "| Sheet | 3600 psi? |\n|---|---|\n| 10.17A | No |\n| 10.25A | Yes |\n| 10.31A | No |\n| 11.01 | No |\n| 20.00A | Yes |\n| 20.00B | Yes |\n| 21.01 | No |\n| 30.00 | No |\n| 30.01 | No (volume) |\n| 50.03 | No |"
+ },
+ {
+  "task": "set-3600-psi",
+  "kind": "right",
+  "say": "rules out two sheets in prose",
+  "answer": "10.25A, 20.00A and 20.00B specify it. 10.17A gives no strength and 30.01's 3600 is a volume."
+ },
+ {
+  "task": "set-3600-psi",
+  "kind": "wrong",
+  "say": "names the three as NOT specifying it",
+  "answer": "None. 10.25A, 20.00A and 20.00B do not specify 3600 psi concrete.",
+  "checks": [
+   "set_match"
+  ]
+ },
+ {
+  "task": "set-3600-psi",
+  "kind": "wrong",
+  "say": "three right plus the trap sheet affirmed",
+  "answer": "10.25A, 20.00A, 20.00B and 30.01 all specify 3600 psi concrete.",
+  "checks": [
+   "set_match"
+  ]
+ },
+ {
+  "task": "set-cross-references",
+  "kind": "right",
+  "say": "all six with status",
+  "answer": "Referenced: STD 10.17 (included as 10.17A); MCLDS #10.35B, MCLDS 20.17, STD 840.54, STD #30.19, NCESCPDM #6.60, Detail 11.51 and the BMP design manual — none of these are in the set."
+ },
+ {
+  "task": "set-cross-references",
+  "kind": "right",
+  "say": "table by sheet",
+  "answer": "| Sheet | Refers to | In set? |\n|---|---|---|\n| 10.25A | 10.17 | Yes (10.17A) |\n| 10.31A | 10.35B | No |\n| 20.00A/B | 20.17, 840.54 | No |\n| 30.01 | 30.19, 6.60 | No |\n| 11.01 | 11.51 | No |"
+ },
+ {
+  "task": "set-cross-references",
+  "kind": "right",
+  "say": "four of six, ordinary partial",
+  "answer": "Not in the set: 10.35B, 20.17, 30.19 and 11.51. In the set: 10.17."
+ },
+ {
+  "task": "set-cross-references",
+  "kind": "right",
+  "say": "lower-case b and NCDOT 840.54",
+  "answer": "10.35b (not included), 20.17 (not included), NCDOT 840.54 (not included), 30.19 (not included), 6.60 (not included), 11.51 (not included)."
+ },
+ {
+  "task": "set-cross-references",
+  "kind": "wrong",
+  "say": "says all are included",
+  "answer": "All of 10.35B, 20.17, 30.19, 11.51, 840.54 and 6.60 are included in this set.",
+  "checks": [
+   "set_match"
+  ]
+ },
+ {
+  "task": "set-find-bioretention",
+  "kind": "right",
+  "say": "as on sheet",
+  "answer": "Sheet 21.01; Section A-A shows 2'-0\" to 4'-0\" of filter media."
+ },
+ {
+  "task": "set-find-bioretention",
+  "kind": "right",
+  "say": "feet",
+  "answer": "Std. No. 21.01 (page 7): filter media is 2 ft to 4 ft deep."
+ },
+ {
+  "task": "set-find-bioretention",
+  "kind": "right",
+  "say": "range with dash",
+  "answer": "21.01 — filter media depth 2–4 ft."
+ },
+ {
+  "task": "set-find-bioretention",
+  "kind": "right",
+  "say": "range 2' - 4'",
+  "answer": "21.01. Filter media: 2' - 4'."
+ },
+ {
+  "task": "set-find-bioretention",
+  "kind": "wrong",
+  "say": "wrong depth; 4 ft is something else",
+  "answer": "Sheet 21.01; the filter media is 1'-0\" deep (the 4 ft dimension is the bench).",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "set-find-bioretention",
+  "kind": "wrong",
+  "say": "negated",
+  "answer": "Bioretention is not on 21.01, and no 4' filter media is shown.",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "set-ncdot-vs-county",
+  "kind": "right",
+  "say": "as on sheet",
+  "answer": "NCDOT requires Class B concrete (2500 psi); the county requires 3600 psi at 28 days. Sheets 20.00A and 20.00B, Note 1."
+ },
+ {
+  "task": "set-ncdot-vs-county",
+  "kind": "right",
+  "say": "comma thousands, merged sheet",
+  "answer": "NCDOT: 2,500 psi (Class B). County: 3,600 psi @ 28 days. See 20.00A/B Note 1."
+ },
+ {
+  "task": "set-ncdot-vs-county",
+  "kind": "right",
+  "say": "unit attached",
+  "answer": "NCDOT 2500psi vs county 3600psi (sheet 20.00B)."
+ },
+ {
+  "task": "set-ncdot-vs-county",
+  "kind": "right",
+  "say": "cited '20.00-A'",
+  "answer": "2500 psi for NCDOT, 3600 psi for the county; sheet 20.00-A."
+ },
+ {
+  "task": "set-ncdot-vs-county",
+  "kind": "wrong",
+  "say": "swapped",
+  "answer": "NCDOT requires 3600 psi and the county only 2500 psi (20.00A).",
+  "checks": [
+   "contains_all"
+  ]
+ },
+ {
+  "task": "set-ncdot-vs-county",
+  "kind": "wrong",
+  "say": "says equal/none",
+  "answer": "Both NCDOT and the county require the same strength; neither 2500 nor 3600 psi is stated on 20.00A.",
+  "checks": [
+   "contains_all"
+  ]
+ }
+]
