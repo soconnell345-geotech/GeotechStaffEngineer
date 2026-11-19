@@ -2265,6 +2265,8 @@ def _busy_kind(exc: BaseException) -> Optional[str]:
             kind = "rate limit"
         elif "overloaded" in name or "overloaded_error" in low:
             kind = "overloaded"
+    if kind == "server error" and "connection" in name:
+        kind = "connection"             # no server answered at all
     return kind
 
 

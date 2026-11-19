@@ -20,3 +20,12 @@ def test_a_refused_sign_in_says_what_the_turn_kept():
     assert "files saved or downloaded this turn are still in the " \
            "conversation" in plain
 
+
+class APIConnectionError(Exception):
+    """Named as the model SDKs name a call no server answered."""
+
+
+def test_a_failed_connection_is_not_called_a_server_error():
+    text = core.friendly_turn_error(APIConnectionError("Connection error."))
+    assert "network connection to the AI model failed" in text
+    assert "server error" not in text
