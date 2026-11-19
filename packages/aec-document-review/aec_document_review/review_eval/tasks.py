@@ -2,8 +2,8 @@
 
 Copied from GeotechStaffEngineer's ``funhouse_agent/review_eval/tasks.py`` at
 the app split's step 13 (BACKLOG INF-33): its 38 review-page tasks, and
-since BACKLOG DR-25 sixteen coordination tasks of this package's own (at
-the end of this file), 54 in all. The four
+since BACKLOG DR-25 seventeen coordination tasks of this package's own (at
+the end of this file), 55 in all. The four
 asked on the GeotechStaffEngineer page (the synthetic geotechnical report's
 three and the boring-log scale) stayed in that app, with the report fixture;
 what the text below says of them is history. The framework (the runner, the
@@ -979,6 +979,13 @@ OPEN_TASKS: List[Task] = [
 # drawn and scheduled, and an answer that calls one of them broken or
 # missing fails that check. On the other tasks false alarms are not scored;
 # the full read of each run is where they show.
+#
+# Two tasks are asked of the same two issues (0 and 1). ``coord-revisions``
+# tells the reviewer what to look for (is each change clouded and listed);
+# ``coord-second-issue`` does not: it asks what a contractor asks who priced
+# the earlier issue, and scores apart whether the change nobody marked is
+# found and whether the answer says nobody marked it. So a run of both shows
+# what a reviewer, or a review method, finds without being told to look.
 
 from aec_document_review.review_eval import coordination_fixture as _coord
 
@@ -1659,6 +1666,44 @@ COORDINATION_TASKS: List[Task] = [
         "changed from 150 kPa to 200 kPa with no cloud and no entry in the "
         "revision block; the sheet still shows revision 0. The cover's "
         "index and revision block changed with the issue. " + _BUILT),
+    # The same two issues, asked as a contractor asks: the question names
+    # no cloud, revision block or flag, so whether the change nobody marked
+    # is found, and whether the answer says nobody marked it, is the
+    # reviewer's own doing. Found and said are scored apart.
+    Task(
+        id="coord-second-issue",
+        question=("These are two issues of the same drawing set. We priced "
+                  "the job from the earlier one. What in the later issue do "
+                  "we have to look at again before we confirm our price? "
+                  "Give the sheet and what it says now."),
+        documents=["fixture_coord_set_prev", "fixture_coord_set"],
+        category="compare", doc_type="coordination_set",
+        checks=[
+            {"type": "stated_together",
+             "terms": [_sheet("A-401"), _BAY_7500],
+             "label": "core-dimension"},
+            {"type": "stated_together",
+             "terms": [_mark("107"), {"re": r"hw[\s-]?2(?!\d)"}],
+             "label": "door-hardware"},
+            {"type": "stated_together",
+             "terms": [_sheet("S-001"), _qty("200", "kpa")],
+             "label": "bearing-pressure"},
+            {"type": "stated_together",
+             "terms": [_sheet("S-001"), _qty("200", "kpa"), _UNFLAGGED],
+             "window": 400, "scope": "finding",
+             "label": "bearing-pressure, said not flagged"},
+        ],
+        truth=" ".join(what for _k, _s, what, _f in _coord.REVISIONS[:2]) +
+        " Both are clouded with revision 1 and listed in their sheets' "
+        "revision blocks (A-401 and A-601). On S-001 the allowable bearing "
+        "pressure in note 2 "
+        "changed from 150 kPa to 200 kPa with no cloud and no entry in the "
+        "revision block; the sheet still shows revision 0, so only a "
+        "comparison of the two issues finds it. The cover's index and "
+        "revision block changed with the issue; every other sheet is as it "
+        "was. The question asks for neither clouds nor revision blocks: the "
+        "fourth check is whether the answer says, unasked and in the same "
+        "finding, that the S-001 change is not marked. " + _BUILT),
     Task(
         id="coord-submittal",
         question=("Review this concrete mix submittal against the "
