@@ -46,6 +46,9 @@ _CONTROL_CHARS = re.compile(
 _EMPHASIS = re.compile(r"^(\*\*|__|\*|_|`)(.+)\1$")
 _HEADING = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
 _SEPARATOR_CELL = re.compile(r"^:?-{2,}:?$")
+#: An HTML line break, the only way a Markdown table cell holds one: it is a
+#: line break in the cell, not the text "<br>" (audit 2026-11-18).
+_BR_TAG = re.compile(r"(?i)<br\s*/?>")
 
 
 def available() -> bool:
@@ -140,6 +143,7 @@ def cell_value(value: Any) -> Any:
     # control characters (text copied out of a PDF carries them) are not
     # allowed in a workbook: openpyxl raises on one and the file was lost
     text = _CONTROL_CHARS.sub("", str(value)).strip()
+    text = _BR_TAG.sub("\n", text)
     m = _EMPHASIS.match(text)
     while m:
         text = m.group(2).strip()
