@@ -23,3 +23,9 @@ def test_a_line_break_written_as_br_in_a_table_is_a_line_break():
     assert _cells(data)[1:] == [[1, "first line\nsecond line"],
                                 [2, "one\ntwo\nthree"]]
 
+
+def test_a_cell_over_excels_limit_is_named_in_the_warnings():
+    data, _summary, warnings = build_workbook(
+        sheets=[{"name": "Log", "rows": [["Comment"], ["x" * 40000]]}])
+    assert len(_cells(data)[1][0]) == 32767
+    assert any("32,767" in w and "Log" in w for w in warnings), warnings
