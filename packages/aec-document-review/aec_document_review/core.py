@@ -2381,7 +2381,14 @@ def friendly_turn_error(exc: BaseException, kept: Optional[str] = None) -> str:
     try:
         from aec_agent_core.error_text import auth_message, auth_refused
         if auth_refused(exc):
-            return auth_message(exc)
+            said = auth_message(exc)
+            if kept:
+                # what the turn kept, in place of "nothing is lost"
+                lost = (", and nothing is lost: files saved or downloaded "
+                        "this turn are still in the conversation.")
+                said = (said.replace(lost, f". {kept}") if lost in said
+                        else f"{said}\n\n{kept}")
+            return said
     except Exception:  # noqa: BLE001 - the raw error is shown instead
         pass
     text = f"{type(exc).__name__}: {exc}"
