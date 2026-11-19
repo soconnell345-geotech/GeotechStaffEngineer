@@ -9,7 +9,7 @@ When one of these fires, open the named file BEFORE you answer. Each exists beca
 | When the owner... | Read this FIRST |
 |---|---|
 | pastes a `%pip install` or host install log, or asks "any concerns?" about one | `docs/DATABRICKS_INSTALL.md`. The numpy cascade, the expected warnings and whether a new major version is safe are settled there; do not re-derive them. |
-| asks what state things are in, wants something added to the to-do list, or you pick up work | `HANDOFF.md` section 0a-current, then `BACKLOG.md` section 0. BACKLOG is THE one list of open work for the app, planlens and geotech-references. The owner answers on the Backlog Desk: read its `responses` first and fold them in (`module_work/backlog_dashboard/README.md`). |
+| asks what state things are in, wants something added to the to-do list, or you pick up work | The first block of `HANDOFF.md` section 0a-current (it ends at the line "A session picking up work stops reading here"; the rest of the section is history, about 185,000 bytes, to search and never to read through), then `BACKLOG.md` section 0 (about 8,000 bytes; never the whole file: `python module_work/backlog_dashboard/keeper_view.py developer` prints a session's own list). BACKLOG is THE one list of open work for the app, planlens and geotech-references. The owner answers on the Backlog Desk: read its `responses` first and fold them in (`module_work/backlog_dashboard/README.md`). |
 | asks you to change an agent or a pipeline (prompts, tools, vision, report-ingest stages, scorers) | `module_work/harness_theory/`: how the harnesses work, from the code and the recorded runs, with their known failure modes. |
 | brings back the results of ANY model run (suite run, live check, hosted-platform hand-back, a field session, an eval) | "Review every model run in full" below. |
 | asks about a number published in planlens' docs or README | `module_work/drawing_ground_truth/doc_claims_check.py`. If a number disagrees with it, the DOCUMENT is wrong: fix the prose, never the script. |
@@ -91,17 +91,18 @@ Each is binding. The long form is where the pointer says ("archive" = `module_wo
 
 ## CURRENT WORKING STATE (replace this block whole, never append; at most 12 lines)
 
-- Released 2026-11-18: aec-agent-core and aec-document-review 1.2.0 (one tag `aec-v1.2.0`); Document Review pins `aec-agent-core==1.2.0` and `planlens==0.16.0`. Release note `module_work/aec_1_2_0/RELEASE_NOTE.md`.
-- Its four new settings are off unless set and not measured on a model yet: `GEOTECH_VISION_TILE_ANSWERS`, `GEOTECH_VISION_PHOTO_PAGE_ONE_LOOK`, `GEOTECH_PHOTO_PAGES`, `GEOTECH_TURN_MAX_IMAGE_CALLS`. Brief 9 (EV-45) measures them.
-- Released 2026-11-17 (the close-out): geotech-staff-engineer 5.36.0 (tag `v5.36.0`), pinning `aec-agent-core==1.1.0`, `planlens>=0.16.0`, `geotech-references>=1.8.0`; planlens 0.16.0 and geotech-references 1.8.0 (tags `v0.16.0` and `v1.8.0` in their repositories). No app release goes with 1.2.0.
-- Master is 5.36.0 plus 1.2.0 and notes; its `aec-agent-core==1.2.0` pin moved only because `test_wheels.py` keeps it equal to the core's version. The app's code is quiet here; the maintainer's copy starts from tag `v5.36.0`.
-- The testers get 1.2.0 when the owner bumps the wrapper's pins (OWN-147, then TA-42).
+- Released 2026-11-18: planlens 0.17.0 (tag `v0.17.0` in its repository), then aec-agent-core and aec-document-review 1.3.0 (one tag `aec-v1.3.0`); Document Review pins `aec-agent-core==1.3.0` and `planlens==0.17.0`. Release note `module_work/aec_1_3_0/RELEASE_NOTE.md`. Earlier the same day: 1.2.0 (`module_work/aec_1_2_0/RELEASE_NOTE.md`). Nothing is merged and unreleased.
+- Twelve settings are off unless set and none is measured on a model: the four of 1.2.0 and the eight in the 1.3.0 note's table. Brief 9 (EV-45) measures them: it is with the maintainer, and its last part starts when the 1.3.0 release note reaches the maintainer through the owner. Reading its hand-back is the next large piece of work.
+- Released 2026-11-17 (the close-out): geotech-staff-engineer 5.36.0 (tag `v5.36.0`), pinning `aec-agent-core==1.1.0`, `planlens>=0.16.0`, `geotech-references>=1.8.0`; planlens 0.16.0 and geotech-references 1.8.0 (tags `v0.16.0` and `v1.8.0` in their repositories). No app release goes with 1.2.0 or 1.3.0.
+- Master is 5.36.0 plus 1.3.0 and notes; its `aec-agent-core==1.3.0` pin moved only because `test_wheels.py` keeps it equal to the core's version. The app's code is quiet here; the maintainer's copy starts from tag `v5.36.0`.
+- The testers get 1.3.0 when the owner bumps the wrapper's pins (OWN-147, then TA-42).
+- One session works here now. Whole suites run on GitHub (push the head as `ci/<name>`; a `claude/...` branch starts no run), only the touched test files locally; cloud sessions take builds and reviews (`module_work/cloud_briefs/`).
 - Every open id has a keeper (BACKLOG section 0 (a)); the developer's first items are section 0 (b), the owner's open decisions section 0 (c). A session's own list: `python module_work/backlog_dashboard/keeper_view.py developer`.
-- State and release notes: HANDOFF section 0a-current (its first block is 1.2.0). Open work: BACKLOG section 0.
+- State and release notes: HANDOFF section 0a-current (its first block is 1.3.0). Open work: BACKLOG section 0.
 
 ## Where things are
 
-- `HANDOFF.md` section 0a-current: the current state and the release notes by module; earlier releases below it.
+- `HANDOFF.md` section 0a-current: its first block is the current state; below it the release notes by module and earlier releases (history: search it, do not read it through).
 - `BACKLOG.md` section 0: who keeps what, what is picked up next, the owner's open decisions. `BACKLOG_DONE.md`: every closed item with its commit.
 - `MAINTAINERS.md`: the way in to the app (what the repository holds, who owns what, the reference library, setting up and testing, the owner's rules, a module's layout, adopting an upstream wheel, bringing the work back).
 - `RELEASING.md`: what is released and in which order, an app release step by step, a labelled build for a closed platform, taking an upstream release.
@@ -117,7 +118,7 @@ Each is binding. The long form is where the pointer says ("archive" = `module_wo
 - The guards, before every commit (about 20 s): `webapp/tests/test_backlog.py`, `test_public_text.py`, `test_docs_currency.py`. Often met: `test_page_fingerprints.py`, `test_user_manual_current.py`, `test_wheels.py`, `test_review_freeze.py`; the packages' own `packages/*/tests/`.
 - CI's eight jobs include `core-only` (the core with planlens, nothing geotech) and `document-review` (the package alone, Python 3.11 and 3.12): test a package change the way they do (`module_work/cloud_briefs/COMMON_DOCREVIEW.md`, "Setup").
 - The full suite runs on GitHub (the gate rule above); on the laptop it is slow and is stopped when memory runs low.
-- Laptop-only failures that are green on GitHub: the `legacy`, `minimal` and `legacy+switches` cases of `test_review_page_vocabulary_offline.py` (NoPageHost), and the geotech page's fingerprint in any worktree without the `geotech-references` submodule.
+- Laptop-only failure that is green on GitHub: the geotech page's fingerprint in any worktree without the `geotech-references` submodule.
 - The code must also run on numpy 1.26.4: names numpy 2 added come from `geotech_common.numpy_compat` (`trapezoid`, never `np.trapezoid`); `geotech_common/tests/test_numpy_compat.py` scans for the rest.
 - On the laptop Smart App Control blocks openseespy's DLL, so its tests skip there (run them in WSL); CI runs them.
 - Live tests are opt-in (`RUN_LIVE_TESTS=1`) and cost money: run one only on the owner's word.
