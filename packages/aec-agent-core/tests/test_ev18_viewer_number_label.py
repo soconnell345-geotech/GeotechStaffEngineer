@@ -43,7 +43,9 @@ CHAPTER = {**PLAIN, **{p: {f"2-{p - 20}"} for p in range(21, 30)}}
 #: No printed number known but PDF page 1's label, its viewer number.
 UNKNOWN = {**{p: set() for p in range(40)}, 0: {"1"}}
 
-PAIR_CHAPTER = "Source: PDF page 1, printed page 2-3."
+# "3-3" is printed on no page the map knows ("2-3" is known on PDF page 23:
+# beside PDF page 1 that is a wrong pairing, listed since the review fix)
+PAIR_CHAPTER = "Source: PDF page 1, printed page 3-3."
 PAIR_PLAIN = "Source: PDF page 1, printed page 34."
 
 

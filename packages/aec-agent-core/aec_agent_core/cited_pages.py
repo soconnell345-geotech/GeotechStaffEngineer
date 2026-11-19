@@ -2172,8 +2172,18 @@ def check_answer(text: Any, opened: Optional[PagesOpened] = None,
             known = [ls if plain else ls - {str(n)} for ls in
                      (rows.get(n - 1) for rows in lab.values()) if ls]
             known = [ls for ls in known if ls]
-            if not known or any(ls & wanted for ls in known):
+            if any(ls & wanted for ls in known):
                 return False
+            if not known:
+                # a page labelled only with its viewer number: still two
+                # places where ANOTHER page is known to print the printed
+                # label cited, by a label that is not its own viewer number
+                named = set(c.all_labels())
+                if plain or not named or not any(
+                        ls and (ls - {str(p + 1)}) & named
+                        for rows in lab.values() if rows.get(n - 1)
+                        for p, ls in rows.items() if p != n - 1):
+                    return False
         return bool(d.numbers)
 
     fact_cache: Dict[Tuple[str, int], str] = {}
