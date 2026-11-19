@@ -1053,6 +1053,32 @@ _UNFLAGGED = {"re": rf"\b(?:{_NO_WORD}|{_NOT_WORD}|never|without|"
                     r"silent\w*|"
                     r"un(?:clouded|marked|flagged|documented|recorded|"
                     r"identified|tracked|noted|announced))\b"}
+#: ``coord-second-issue``'s own term (brief 15's review): the change said
+#: not to be marked. Its question asks for no such thing, so the finding's
+#: other sentences hold a "not" or a "no" about the footings, the price or
+#: the report (nine of ten made-up findings that never said it passed on
+#: ``_UNFLAGGED``). Here the negative word must sit with a word for the
+#: marking: just before a participle ("not clouded", "never listed",
+#: "isn't flagged"), in one clause with a noun ("no entry in the revision
+#: block", "without a cloud", "the revision table does not show it"), or as
+#: a table cell under such a head ("Flagged?: No"). ``_UNFLAGGED`` and
+#: ``coord-revisions``, whose question asks for the marking, are as they
+#: were.
+_NEG = (rf"(?:\b(?:{_NO_WORD}|{_NOT_WORD}|never|without|neither|nor|none|"
+        r"missing|absent|omitted|lacks?|lacking)|n't)\b")
+_MARK_DONE = (r"(?:clouded|flagged|marked|listed|highlighted|announced|"
+              r"bubbled|called\s+out|tagged)")
+_MARK_THING = (r"(?:(?:revision\s+)?(?:clouds?|clouding|deltas?|triangles?)|"
+               r"revision\s*(?:\d+\s*)?(?:blocks?|tables?|rows?|entry|"
+               r"entries|lists?|logs?|history|records?|notes?|tags?|"
+               r"marks?|symbols?|lines?|columns?|box(?:es)?))")
+_NOT_MARKED = {"re": (
+    rf"{_NEG}(?:\s+\w+){{0,3}}?\s+(?:{_MARK_DONE}|flags?)\b"
+    rf"|{_NEG}[^.;|\n]{{0,50}}?\b{_MARK_THING}\b"
+    rf"|\b{_MARK_THING}\b[^.;|\n]{{0,50}}?{_NEG}"
+    rf"|\b{_MARK_DONE}\W{{0,4}}(?:no|not|none)\b"
+    r"|\bsilent\w*|\bun(?:clouded|marked|flagged|documented|recorded|"
+    r"identified|tracked|noted|announced|listed|highlighted)\b")}
 _PCT = r"(?:%|percent)"
 _EL_104_20 = [_num("104.20"), _num("104.2")]
 _EL_104_50 = [_num("104.50"), _num("104.5")]
@@ -1689,7 +1715,7 @@ COORDINATION_TASKS: List[Task] = [
              "terms": [_sheet("S-001"), _qty("200", "kpa")],
              "label": "bearing-pressure"},
             {"type": "stated_together",
-             "terms": [_sheet("S-001"), _qty("200", "kpa"), _UNFLAGGED],
+             "terms": [_sheet("S-001"), _qty("200", "kpa"), _NOT_MARKED],
              "window": 400, "scope": "finding",
              "label": "bearing-pressure, said not flagged"},
         ],

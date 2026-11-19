@@ -23,7 +23,7 @@ from aec_agent_core.review_eval import checks as C  # noqa: E402
 from aec_document_review.review_eval import (  # noqa: E402
     coordination_fixture as F, score_review_suite)
 from aec_document_review.review_eval.tasks import (  # noqa: E402
-    COORDINATION_TASKS, OPEN_TASKS, _UNFLAGGED)
+    COORDINATION_TASKS, OPEN_TASKS, _NOT_MARKED, _UNFLAGGED)
 
 BY_ID = {t.id: t for t in COORDINATION_TASKS}
 NEW = "coord-second-issue"
@@ -103,8 +103,12 @@ def test_the_checks_are_the_twins_but_found_and_said_are_apart():
         assert task[label] == twin[label]
     old = twin["bearing-pressure, and that it is not flagged"]
     assert task[FOUND]["terms"] == old["terms"][:2]
-    assert task[SAID]["terms"] == old["terms"]
-    assert task[SAID]["terms"][-1] is _UNFLAGGED
+    # the said-so term is this task's own since the review of brief 15: the
+    # negative word with a word for the marking, where the twin's (asked
+    # about the marking) takes the negative word alone
+    assert task[SAID]["terms"][:2] == old["terms"][:2]
+    assert old["terms"][-1] is _UNFLAGGED
+    assert task[SAID]["terms"][-1] is _NOT_MARKED
     assert task[SAID]["scope"] == "finding"
 
 
@@ -294,10 +298,11 @@ def test_a_change_called_a_drafting_error_is_found_and_not_said():
             "S-001 gives 200 kPa where the earlier issue gave 150 kPa. This "
             "looks like a typo and should be queried."):
         assert _passed(reply) == [FOUND], reply
-    # the limit: "not" in the same finding, said of something else, passes
+    # "not" in the same finding, said of something else, is not saying it
+    # (it passed until the review of brief 15 gave the check its own term)
     loose = ("- S-001 note 2: 200 kPa, was 150 kPa. Probably a drafting "
              "error, as the footings on S-501 were not resized.")
-    assert _passed(loose) == [FOUND, SAID]
+    assert _passed(loose) == [FOUND]
 
 
 def test_a_table_with_a_flagged_column_is_read_row_by_row():
@@ -313,7 +318,8 @@ def test_a_table_with_a_flagged_column_is_read_row_by_row():
     assert _passed(rows("No")) == LABELS
     assert _passed(rows("Yes")) == LABELS[:3]
     assert _passed(rows("")) == LABELS[:3]
-    # the limit: a "No" under any other head passes too
+    # a "No" under any other head is not saying it (it passed until the
+    # review of brief 15)
     other = _table(["Sheet", "Change", "Affects our price?"],
                    ["S-001", "Bearing pressure 150 kPa to 200 kPa", "No"])
-    assert _passed(other) == [FOUND, SAID]
+    assert _passed(other) == [FOUND]
