@@ -16,6 +16,17 @@ Two applications are built on it:
 
 ## Status
 
+**1.3.1 (2026-11-19).** No new setting. Repairs from an audit of older code: a
+model call stopped at the output limit is marked `output_cut` in the record;
+a cut tool result's whole copy has a file of its own; the Excel writer
+reads `<br>` in a cell as a line break and says when a cell is cut at
+Excel's limit; a saved run whose files are named with the other system's
+path separator is re-scored with its files. Document Review's page gains
+repairs for uploads under a name already held, SharePoint saves and error
+lines; the suite is 55 tasks and 151 checks. Document Review 1.3.1 pins
+planlens 0.18.0. The release note is `module_work/aec_1_3_1/RELEASE_NOTE.md`
+in the repository.
+
 **1.3.0 (2026-11-18).** Every change in what an agent is offered, shown
 or told is behind a setting that is off unless set: eight new ones, none
 measured on a model yet (planlens' plan tools, its drawing tool and a DXF
