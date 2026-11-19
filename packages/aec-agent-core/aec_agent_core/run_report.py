@@ -69,6 +69,7 @@ import argparse
 import base64
 import html
 import json
+import math
 import os
 import re
 import sys
@@ -137,6 +138,30 @@ VIEW_ASKED_CHARS = 1500
 VIEW_BACK_CHARS = 1500
 #: A page outline's long side on screen, in CSS pixels.
 FIGURE_PX = 300
+
+#: A box may pass its PDF page's edge by this much, in points, and still be
+#: drawn (a view is logged in whole points, a page is 595.28 wide).
+EDGE_PT = 1.0
+#: Why a record is left out of the drawings: the kind -> its line near the
+#: top of the report (its count follows). Nothing left out is repaired: a box
+#: is never moved onto its page, filled in or taken from what was asked.
+LEFT_OUT = {
+    "box": "View boxes that are not four finite numbers with some area "
+           "(nan, null, text or too few numbers), each look listed without "
+           "its box",
+    "off_page": "View boxes that reach outside their PDF page, each look "
+                "listed without its box",
+    "no_page": "Looks whose page in the record is not a page number, "
+               "placed on no page",
+    "past_end": "Pages numbered below the first page of their document or "
+                "beyond its last, left out of the page grid, the drawings "
+                "and the viewer",
+    "bad_line": f"Lines of {ACTIVITY_FILE} that are not a whole record (cut "
+                "off, empty or not an object), skipped",
+}
+#: The same, said beside one look.
+LOOK_LEFT = {"box": "its view box in the record cannot be drawn",
+             "off_page": "its view box reaches outside the page"}
 
 TASK_TOOL = "task"
 OPEN_TOOL = "open_document"
@@ -341,15 +366,27 @@ def _pretty(text: str) -> str:
 
 def _box(value: Any) -> Optional[Tuple[float, float, float, float]]:
     """``[x0, y0, x1, y1]`` as four floats with some area, else ``None``."""
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
+    if not isinstance(value, (list, tuple)) or len(value) != 4 or any(
+            isinstance(v, bool) or not isinstance(v, (int, float))
+            or not math.isfinite(v) for v in value):
         return None
-    try:
-        x0, y0, x1, y1 = (float(v) for v in value)
-    except (TypeError, ValueError):
-        return None
+    x0, y0, x1, y1 = (float(v) for v in value)
     if x1 <= x0 or y1 <= y0:
         return None
     return x0, y0, x1, y1
+
+
+def _view(holder: dict, key: str, left: Optional[List[str]]
+          ) -> Tuple[Optional[tuple], str]:
+    """``(box, why not)``: ``holder[key]`` as a box. A value that is there
+    and cannot be drawn is counted in ``left`` and never repaired; a key
+    that is not there (an older record) is no fault."""
+    box = _box(holder.get(key))
+    if box is None and key in holder:
+        if left is not None:
+            left.append("box")
+        return None, "box"
+    return box, ""
 
 
 def _usage(rec: dict) -> Dict[str, Optional[int]]:
@@ -433,7 +470,9 @@ class RunRecord:
             os.path.join(self.folder, ACTIVITY_FILE))
         # The text of an error is shown masked as the log now keeps it,
         # including in a record written before the log masked it.
-        self.activity: List[dict] = [masked_record(r) for r in acts or []]
+        self.activity: List[dict] = [masked_record(r) for r in acts or []
+                                     if r]
+        self.bad_lines += len(acts or []) - len(self.activity)  # "{}"
         self.has_activity = acts is not None
         status = err or f"found: {_n(len(self.activity))} records" + (
             f", {_n(self.bad_lines)} unreadable lines skipped"
@@ -994,6 +1033,7 @@ class Look:
     tool: str = ""
     who: str = ""
     source: str = ""          # "" (the activity log) or the file it came from
+    left: str = ""            # why its box is not drawn (a LEFT_OUT kind)
 
 
 @dataclass
@@ -1026,37 +1066,44 @@ _TILE_RE = re.compile(r'"tile"\s*:\s*"([^"]+)"\s*,\s*"view"\s*:\s*\[([^\]]*)\]')
 
 
 def _nums(text: str) -> Optional[Tuple[float, float, float, float]]:
-    return _box([v for v in text.split(",")])
+    try:
+        return _box([float(v) for v in text.split(",")])
+    except ValueError:
+        return None
 
 
-def _looks_of(name: str, args: Any, data: Optional[dict], text: str
-              ) -> List[Tuple[str, Optional[tuple], str]]:
-    """``[(kind, box, label)]`` one look call made: a whole page (with its
+def _looks_of(name: str, args: Any, data: Optional[dict], text: str,
+              left: Optional[List[str]] = None
+              ) -> List[Tuple[str, Optional[tuple], str, str]]:
+    """``[(kind, box, label, why no box)]`` one look call made: a whole page (with its
     tiles) for ``analyze_pdf_page``, a zoom for ``render_region``. The boxes
     are the ``view`` rects the tool returned (PDF points, as the page
     displays); from a result cut short with no whole copy, what can be found
     in its text."""
     args = args if isinstance(args, dict) else {}
-    out: List[Tuple[str, Optional[tuple], str]] = []
+    out: List[Tuple[str, Optional[tuple], str, str]] = []
     if data is not None:
-        view = _box(data.get("view"))
+        view, why = _view(data, "view", left)
         tiles = [t for t in data.get("tiles") or [] if isinstance(t, dict)]
     else:
         tiles_found = _TILE_RE.findall(text or "")
         tiles = [{"tile": lab, "view": list(_nums(v) or ())}
                  for lab, v in tiles_found]
         spans = [m.span() for m in _TILE_RE.finditer(text or "")]
-        view = None
+        view, why = None, ""
         for m in _VIEW_RE.finditer(text or ""):
             if not any(a <= m.start() < b for a, b in spans):
-                view = _nums(m.group(1))
+                view, why = _view({"view": _nums(m.group(1))}, "view", left)
                 break
     if name == ZOOM_TOOL:
-        out.append(("zoom", view or _box(args.get("bbox")), ""))
+        if view is None and not why:   # no view came back: the box asked for
+            view, why = _view(args, "bbox", left)
+        out.append(("zoom", view, "", why))
         return out
-    out.append(("page", view, ""))
+    out.append(("page", view, "", why))
     for t in tiles:
-        out.append(("tile", _box(t.get("view")), str(t.get("tile") or "")))
+        box, why = _view(t, "view", left)
+        out.append(("tile", box, str(t.get("tile") or ""), why))
     return out
 
 
@@ -1069,6 +1116,7 @@ class PageMap:
         self.docs: Dict[str, Document] = {}
         self.handles: Dict[str, str] = {}
         self.unplaced = 0
+        self.left: List[str] = []      # one LEFT_OUT kind per record left out
         owner = _owner(turns)
         for call in _all_calls(turns):
             try:
@@ -1133,6 +1181,9 @@ class PageMap:
         if call.name not in OPENING_TOOLS:
             return
         ref, pages = pages_from_call(call.name, args, text)
+        if call.name in LOOK_TOOLS and text.strip() and not pages:
+            self.left.append("no_page")    # a page given, and not a number
+            return
         doc = self._ref_doc(ref, args)
         if doc is None or not pages:
             return
@@ -1143,13 +1194,13 @@ class PageMap:
         if call.name in LOOK_TOOLS:
             page = pages[0][0]
             use = doc.use(page)
-            looks = _looks_of(call.name, args, data, text)
-            tiled = any(k == "tile" for k, _b, _l in looks)
+            looks = _looks_of(call.name, args, data, text, self.left)
+            tiled = any(k == "tile" for k, _b, _l, _w in looks)
             use.mark("zoom" if call.name == ZOOM_TOOL
                      else "tiles" if tiled else "whole", call.number)
-            for kind, box, label in looks:
+            for kind, box, label, why in looks:
                 use.looks.append(Look(call.number, kind, box, label,
-                                      call.name, who))
+                                      call.name, who, "", why))
             call.where.append((doc.key, page))
 
     def _vision_records(self) -> None:
@@ -1164,12 +1215,18 @@ class PageMap:
             page = r.get("page")
             name = str(r.get("document") or "")
             if not name or not isinstance(page, int) or isinstance(page, bool):
+                if name:
+                    self.left.append("no_page")
                 continue
             key = _doc_key(name)
             if (key, page) in logged:      # the activity log has its looks
                 continue
             view = r.get("view")
             region = _box(r.get("region")) or _box(view)
+            why = "box" if region is None and (
+                r.get("region") is not None or isinstance(view, list)) else ""
+            if why:
+                self.left.append(why)
             zoom = view == "zoom" or (region is not None
                                       and fname == READS_FILE)
             what = (key, page, "zoom" if zoom else "page",
@@ -1182,22 +1239,22 @@ class PageMap:
             if zoom:
                 use.mark("zoom", 0)
                 use.looks.append(Look(0, "zoom", region, "", str(
-                    r.get("tool") or ZOOM_TOOL), "", fname))
+                    r.get("tool") or ZOOM_TOOL), "", fname, why))
                 continue
             tiled = "tiles" in str(view or "")
             use.mark("tiles" if tiled else "whole", 0)
-            looks = _looks_of(PAGE_TOOL, {}, data, "") if data else \
-                [("page", None, "")]
-            for kind, box, label in looks:
+            looks = _looks_of(PAGE_TOOL, {}, data, "", self.left) if data \
+                else [("page", None, "", why)]
+            for kind, box, label, why in looks:
                 use.looks.append(Look(0, kind, box, label, str(
-                    r.get("tool") or PAGE_TOOL), "", fname))
+                    r.get("tool") or PAGE_TOOL), "", fname, why))
 
     def anchor(self, call: Call) -> List[Tuple[str, str]]:
         """``(href, words)`` for the pages a call reached."""
         out = []
         for key, page in call.where:
             d = self.docs.get(key)
-            if d is None:
+            if d is None or (page is not None and page not in d.pages):
                 continue
             if page is None:
                 out.append((f"#doc-{d.index}", f"{d.name}: its pages"))
@@ -1634,7 +1691,7 @@ def _script_json(obj: Any) -> str:
     ``</script>``)."""
     esc = chr(92) + "u00"
     return (json.dumps(obj, ensure_ascii=False, separators=(",", ":"),
-                       default=str)
+                       default=str, allow_nan=False)
             .replace("<", esc + "3c").replace(">", esc + "3e")
             .replace("&", esc + "26"))
 
@@ -1683,7 +1740,9 @@ class Report:
         self.images = PageImages()
         self.pdfs = find_pdfs([self.record.folder] + (
             [documents] if documents else []))
+        self._rects: Dict[Tuple[int, int], Optional[tuple]] = {}
         for doc in self.pages.docs.values():
+            self._drop(doc, lambda p: p < 0)
             path = self.pdfs.get(doc.key)
             if path is None and not doc.key.endswith(".pdf"):
                 path = self.pdfs.get(os.path.splitext(doc.key)[0] + ".pdf")
@@ -1694,11 +1753,40 @@ class Report:
                     doc.n_pages, doc.n_from = n, "the PDF"
             if doc.n_pages is None and doc.pages:
                 doc.n_pages, doc.n_from = max(doc.pages) + 1, N_FROM_LAST
+            if doc.n_pages is not None:
+                self._drop(doc, lambda p, n=doc.n_pages: p >= n)
+            for page, use in doc.pages.items() if path else ():
+                rect = self._page_rect(doc, page, None)[0]
+                for lk in use.looks if rect else ():
+                    b, (x, y, w, h) = lk.box, rect
+                    if b and (b[0] < x - EDGE_PT or b[1] < y - EDGE_PT
+                              or b[2] > x + w + EDGE_PT
+                              or b[3] > y + h + EDGE_PT):
+                        lk.box, lk.left = None, "off_page"
+                        self.pages.left.append("off_page")
         self._drawn: Optional[Dict[Tuple[int, int], Dict[int, str]]] = None
         self._failed: set = set()
-        self._rects: Dict[Tuple[int, int], Optional[tuple]] = {}
         self.image_stats: Dict[str, int] = {}
         self.viewer_problem = ""
+
+    def _drop(self, doc: Document, outside) -> None:
+        """Leaves out, and counts, the pages of ``doc`` that are not pages
+        of it (a record can name page 5,000 of a six-page document)."""
+        for page in [p for p in doc.pages if outside(p)]:
+            del doc.pages[page]
+            self.pages.left.append("past_end")
+
+    def _left_out(self) -> str:
+        """Near the top: what was left out of the drawings, a line a kind."""
+        kinds = self.pages.left + ["bad_line"] * self.record.bad_lines
+        if not kinds:
+            return ""
+        return ("<div class='warn' id='left-out'><b>Left out, as the record "
+                "holds them (nothing is repaired or guessed):</b><ul>"
+                + "".join(f"<li>{_e(words)}: <b>{_n(kinds.count(k))}</b>"
+                          "</li>" for k, words in LEFT_OUT.items()
+                          if k in kinds)
+                + "</ul></div>")
 
     # -- page images, drawn once within the caps --------------------------
     @staticmethod
@@ -1892,6 +1980,11 @@ class Report:
         which the viewer takes when it has no large one)."""
         drawn = self._plan_images()
         docs, wanted = [], set()
+        notes: Dict[str, str] = {}
+        rf_words = {"view": "The outline is the whole-page view a look "
+                            "returned; the page itself is not drawn.",
+                    "boxes": "The page size is not in the record: the "
+                             "outline is drawn round its boxes."}
         for d in self._docs():
             n = self._n_pages(d)
             if not n:
@@ -1918,6 +2011,14 @@ class Report:
                                else None, lk.label, lk.tool, lk.source]
                               for lk in use.looks]
                     wanted.update(lk.number for lk in use.looks if lk.number)
+                    out = [lk.left for lk in use.looks if lk.left]
+                    if out:        # said on the page, by its own note
+                        notes[f"left-{d.index}-{p}"] = " ".join(
+                            [rf_words[k] for k in (e.get("rf"),) if k] + [
+                                f"Not drawn here. {LEFT_OUT[k]}: "
+                                f"{_n(out.count(k))}." for k in LEFT_OUT
+                                if k in out])
+                        e["rf"] = f"left-{d.index}-{p}"
                 imgs = drawn.get((d.index, p)) or {}
                 looked = use is not None and bool(use.looks)
                 img = imgs.get(VIEW_IMAGE_PX) if looked else \
@@ -1956,10 +2057,7 @@ class Report:
                 "cap": "No image: the report's cap on page images was "
                        "reached. " + self._image_note(),
                 "none": "No image of this page in the report."},
-            "rf": {"view": "The outline is the whole-page view a look "
-                           "returned; the page itself is not drawn.",
-                   "boxes": "The page size is not in the record: the "
-                            "outline is drawn round its boxes."},
+            "rf": {**rf_words, **notes},
         }
 
     # -- the page ---------------------------------------------------------
@@ -2000,11 +2098,12 @@ class Report:
             toc.append(f'<li><a href="#{anchor}">{_e(title[3:])}</a>{sub}'
                        f'</li>')
         toc.append("</ol></nav>")
-        banner = ""
+        banner = self._left_out()
         if not self.record.has_activity:
             banner = ('<p class="warn"><b>This record has no '
                       f'{ACTIVITY_FILE}</b>: the step list, the totals and '
-                      'most of the page grid cannot be made. See part 5.</p>')
+                      'most of the page grid cannot be made. See part 5.</p>'
+                      ) + banner
         body = "".join(f'<section id="{a}"><h2>{_e(t)}</h2>{b}</section>'
                        for a, t, b in sections)
         return (
@@ -2710,7 +2809,8 @@ class Report:
                 what += (f" on x {lk.box[0]:.0f}-{lk.box[2]:.0f}, "
                          f"y {lk.box[1]:.0f}-{lk.box[3]:.0f} pt")
             if lk.box is None:
-                what += " (no view box in the record)"
+                why = LOOK_LEFT.get(lk.left, "no view box in the record")
+                what += f" ({why})"
             labels = tiles.get((lk.number, lk.source)) if lk.kind == "page" \
                 else None
             if labels:
