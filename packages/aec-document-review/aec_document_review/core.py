@@ -1985,17 +1985,19 @@ def import_external_artifacts(working_dir: str, files_dir: str, before: set,
     inputs = set(input_paths or ())
     new = sorted(p for p in (snapshot_dir(wd) - set(before or ()))
                  if p not in inputs)
-    out: List[str] = []
+    done: dict = {}
     paired = _figure_dests(new, fd)
-    for src in new:
+    # A whole figure is copied first: a lone file of the same name from
+    # another folder must not take one of the names planned for it.
+    for src in sorted(new, key=lambda s: s not in paired):
         dst = _unique_dest(
             paired.get(src) or os.path.join(fd, os.path.basename(src)))
         try:
             _shutil.copy2(src, dst)
         except OSError:
             continue
-        out.append(dst)
-    return out
+        done[src] = dst
+    return [done[src] for src in new if src in done]
 
 
 #: Files larger than this are not copied into the conversation folder.
@@ -2089,7 +2091,8 @@ def import_reported_outputs(paths: Iterable[str], files_dir: str,
             continue
         todo.append(src)
     paired = _figure_dests(todo, fd, reuse=True)
-    for src in todo:
+    # whole figures first, as in import_external_artifacts
+    for src in sorted(todo, key=lambda s: s not in paired):
         try:
             os.makedirs(fd, exist_ok=True)
             dst = paired.get(src) or os.path.join(fd, os.path.basename(src))
@@ -2099,7 +2102,7 @@ def import_reported_outputs(paths: Iterable[str], files_dir: str,
         except OSError:
             continue
         copied[src] = dst
-    return copied
+    return {src: copied[src] for src in todo if src in copied}
 
 
 _LOCAL_MD_IMAGE = re.compile(r"!\[([^\]]*)\]\((?!https?:|data:)([^)\s]+)[^)]*\)")
