@@ -114,3 +114,17 @@ def test_a_half_set_up_app_registration_says_conversations_are_not_kept(
         assert "made-up-secret-value" not in reason
     finally:
         tinyapps_settings.reset()
+
+
+def test_a_site_that_is_not_found_is_a_failed_listing(graph):
+    """The site address names no site (a mistyped path: the site lookup
+    answers 404). Before the fix ``ls`` read that 404 as an empty folder,
+    so the past-conversations list said nothing was kept, with no error."""
+    def before(method, path, req):
+        if path.startswith("sites/") and ":" in path:
+            raise _http(req.full_url, 404)
+
+    graph.before = before
+    listing = _store().list_remote_conversations()
+    assert list(listing) == []
+    assert listing.error and "404" in listing.error
