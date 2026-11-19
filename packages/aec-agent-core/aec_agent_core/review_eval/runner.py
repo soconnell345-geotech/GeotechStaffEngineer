@@ -637,6 +637,22 @@ def _run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
     return result
 
 
+def _saved_file(run_dir: str, name: str) -> str:
+    """A saved run's file under ``run_dir``. ``run.json`` names it with the
+    path separator of the system the run was saved on: where that path is
+    not there, the same path with this system's separator is tried, so a
+    run saved on Windows ("files\\log.xlsx") re-scored elsewhere still
+    has its delivered files read (they were skipped without a word, and
+    every check that reads them failed)."""
+    path = os.path.join(run_dir, name)
+    if not os.path.exists(path):
+        other = os.path.join(run_dir,
+                             *str(name).replace("\\", "/").split("/"))
+        if os.path.exists(other):
+            return other
+    return path
+
+
 def rescore_saved(result: Dict[str, Any], task: Task,
                   run_dir: str) -> Dict[str, Any]:
     """Re-run ``task``'s checks on a saved run's answer and files — no model
@@ -644,7 +660,7 @@ def rescore_saved(result: Dict[str, Any], task: Task,
     correct answers failed on parsing). The previous score is kept as
     ``score_before_rescore`` the first time."""
     run_dir = os.path.abspath(run_dir)
-    files = [os.path.join(run_dir, f) for f in result.get("files") or []]
+    files = [_saved_file(run_dir, f) for f in result.get("files") or []]
     records = _activity_records(run_dir)
     checks = [_checks.run_check(c, result.get("answer") or "", files=files,
                                 tool_calls=result.get("tool_calls") or [],
