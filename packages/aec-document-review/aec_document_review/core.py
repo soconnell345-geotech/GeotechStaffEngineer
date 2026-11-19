@@ -131,6 +131,32 @@ def sanitize_key(name) -> str:
         return base or "file"
 
 
+def uploads_to_stage(pairs: Iterable[Tuple[object, bytes]],
+                     attachments: dict) -> List[Tuple[str, bytes]]:
+    """The ``(name, bytes)`` uploads not yet held. A file whose bytes are
+    already held is left out (the uploader hands its files back on every
+    rerun); a file whose name (once made safe, :func:`sanitize_key`) is
+    taken by OTHER bytes is renamed ``<stem>_<n><ext>``, so a revised file
+    of the same name, or a name that reads alike once its letters are made
+    safe, is staged beside the first instead of being dropped without a
+    word (audit 2026-11-18)."""
+    held = {sanitize_key(k): d for k, d in attachments.items()}
+    out: List[Tuple[str, bytes]] = []
+    for name, data in pairs:
+        data = bytes(data)
+        first = key = sanitize_key(name)
+        stem, ext = os.path.splitext(first)
+        n = 1
+        while key in held and held[key] != data:
+            n += 1
+            key = f"{stem}_{n}{ext}"
+        if key in held:                 # these bytes, held under this name
+            continue
+        held[key] = data
+        out.append((str(name) if key == first else key, data))
+    return out
+
+
 def stage_upload(attachments: dict, temp_dir: str, name, data: bytes) -> Attachment:
     """Register ``data`` in the live ``attachments`` dict under a sanitized key
     AND write it as a real file under ``temp_dir``.
