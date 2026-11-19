@@ -47,7 +47,7 @@ Where the code is (all in `packages/aec-document-review/aec_document_review/`):
 |---|---|
 | `tinyapps_entry.py` | `main()`, which the wrapper's `app.py` calls: marks the process as a Tiny Apps deployment, installs the Prompter engine, runs the page |
 | `pages_entry.py`, `profiles.py`, `review_page.py`, `app.py` | the one page and its chat shell |
-| `tinyapps_settings.py` | the settings: environment, then Key Vault by `KV_NAME`, then the local `.env` |
+| `tinyapps_settings.py` | the settings: environment, then Key Vault by `KV_NAME` on the App Service, or the local `.env` on a local run |
 | `tinyapps_keys.py` | whose Prompter key serves a caller (per-tester keys) |
 | `identity.py` | the signed-in user from the identity header, or `DEV_IDENTITY` locally |
 | `graph_sharepoint.py`, `sharepoint_store.py` | the SharePoint mirror over an app registration |
