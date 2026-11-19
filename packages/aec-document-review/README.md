@@ -82,9 +82,10 @@ section 6.
 
 ## Settings
 
-Read from the environment, then from an Azure Key Vault (when `KV_NAME`
-names one and the host has a managed identity), then from a `.env` file in
-the working folder.
+Read from the environment, then, on an Azure host, from an Azure Key Vault
+(when `KV_NAME` names one and the host has a managed identity), or, on a
+local run, from a `.env` file (the one `GEOTECH_DOTENV` names, else the
+working folder's).
 
 | Setting | What it is |
 |---|---|
