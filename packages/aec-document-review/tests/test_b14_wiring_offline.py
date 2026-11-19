@@ -498,8 +498,11 @@ def test_on_the_page_tools_and_the_looks_take_a_dxf_as_its_plot(
     conversation._SPACES.clear()
     kit = _kit(att, dxf_plots=True)
     opened = _call(kit, "open_document", source=DXF)
-    # asking adds the plot's line and changes nothing else
+    # asking adds the plot's line, and the note's last sentence points at
+    # the plot instead of saying there are no pages (the review of B15);
+    # nothing else changes
     assert opened.pop("plot").endswith(PLOT_NOTE)
+    assert opened.pop("note") != before.pop("note")
     assert opened == before
     rows = _call(kit, "document_page_map", handle=DXF)
     assert [r["page"] for r in rows["rows"]] == [0]

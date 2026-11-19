@@ -337,6 +337,9 @@ def turn_scope(scope: Optional[TurnScope] = None) -> Iterator[TurnScope]:
     try:
         yield scope
     finally:
+        # the images the turn stored to show its model go with it
+        # (aec_agent_core.inline_store)
+        scope.__dict__.pop("inline_images", None)
         try:
             _TURN.reset(token)
         except (ValueError, RuntimeError):     # closed from another context
@@ -476,6 +479,10 @@ def image_call_facts(scope) -> dict:
         out["image_limit"] = int(scope.image_limit)
     if getattr(scope, "image_refused", 0):
         out["image_calls_refused"] = int(scope.image_refused)
+    if getattr(scope, "uploads_not_shown", None):
+        # uploads whose stored image was gone when its turn came to be
+        # shown (aec_agent_core.deep.upload_view)
+        out["uploads_not_shown"] = list(scope.uploads_not_shown)
     return out
 
 

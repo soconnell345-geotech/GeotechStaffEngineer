@@ -1931,6 +1931,46 @@ def _unique_dest(path: str) -> str:
     return f"{stem}_{n}{ext}"
 
 
+def _figure_dests(sources: Iterable[str], fd: str,
+                  reuse: bool = False) -> dict:
+    """``{source: destination in fd}`` for every source that is one file of a
+    figure imported WHOLE: an interactive sidecar and the picture or HTML
+    copy of the same stem, from one folder. The files of one figure get one
+    stem, the first of ``plot``/``plot_1``/``plot_2``/... under which none of
+    them meets a different file, so they still pair as one chart card where
+    only one of the names was taken. ``reuse``: an existing file with the
+    same bytes does not count as taken under the figure's own stem. Every
+    other source is absent and is named file by file (:func:`_unique_dest`)."""
+    figures: dict = {}
+    for src in sources:
+        name = os.path.basename(src)
+        if name.lower().endswith(PLOTLY_SIDECAR_SUFFIX):
+            cut = len(name) - len(PLOTLY_SIDECAR_SUFFIX)
+        elif name.lower().endswith(_SUPERSEDED_BY_PLOTLY_EXTS):
+            cut = len(os.path.splitext(name)[0])
+        else:
+            continue
+        figures.setdefault((os.path.dirname(src), name[:cut].lower()),
+                           []).append((src, name[:cut], name[cut:]))
+    dests: dict = {}
+    for mates in figures.values():
+        if len(mates) < 2 or not any(
+                ext.lower() == PLOTLY_SIDECAR_SUFFIX for _, _, ext in mates):
+            continue
+        n = 0
+        while True:
+            names = {src: os.path.join(fd, f"{stem}_{n}{ext}" if n
+                                       else stem + ext)
+                     for src, stem, ext in mates}
+            if not any(d in dests.values() or (os.path.exists(d) and not (
+                    reuse and not n and os.path.isfile(d)
+                    and _same_bytes(src, d))) for src, d in names.items()):
+                break
+            n += 1
+        dests.update(names)
+    return dests
+
+
 def import_external_artifacts(working_dir: str, files_dir: str, before: set,
                               input_paths: Iterable[str]) -> List[str]:
     """Copy files newly produced in ``working_dir`` (since the ``before``
@@ -1945,15 +1985,19 @@ def import_external_artifacts(working_dir: str, files_dir: str, before: set,
     inputs = set(input_paths or ())
     new = sorted(p for p in (snapshot_dir(wd) - set(before or ()))
                  if p not in inputs)
-    out: List[str] = []
-    for src in new:
-        dst = _unique_dest(os.path.join(fd, os.path.basename(src)))
+    done: dict = {}
+    paired = _figure_dests(new, fd)
+    # A whole figure is copied first: a lone file of the same name from
+    # another folder must not take one of the names planned for it.
+    for src in sorted(new, key=lambda s: s not in paired):
+        dst = _unique_dest(
+            paired.get(src) or os.path.join(fd, os.path.basename(src)))
         try:
             _shutil.copy2(src, dst)
         except OSError:
             continue
-        out.append(dst)
-    return out
+        done[src] = dst
+    return [done[src] for src in new if src in done]
 
 
 #: Files larger than this are not copied into the conversation folder.
@@ -2029,12 +2073,13 @@ def import_reported_outputs(paths: Iterable[str], files_dir: str,
         except (TypeError, ValueError):
             continue
     copied: dict = {}
+    todo: List[str] = []
     for p in dict.fromkeys(paths or ()):
         try:
             src = _reported_path(p, base)
         except (TypeError, ValueError):
             continue
-        if (src in skip or src in copied or not os.path.isfile(src)
+        if (src in skip or src in todo or not os.path.isfile(src)
                 or src.startswith(conv + os.sep)):
             continue
         if not any(_under(src, folder) for folder in sources):
@@ -2042,15 +2087,22 @@ def import_reported_outputs(paths: Iterable[str], files_dir: str,
         try:
             if os.path.getsize(src) > IMPORT_MAX_BYTES:
                 continue
+        except OSError:
+            continue
+        todo.append(src)
+    paired = _figure_dests(todo, fd, reuse=True)
+    # whole figures first, as in import_external_artifacts
+    for src in sorted(todo, key=lambda s: s not in paired):
+        try:
             os.makedirs(fd, exist_ok=True)
-            dst = os.path.join(fd, os.path.basename(src))
+            dst = paired.get(src) or os.path.join(fd, os.path.basename(src))
             if not (os.path.isfile(dst) and _same_bytes(src, dst)):
                 dst = _unique_dest(dst)
                 _shutil.copy2(src, dst)
         except OSError:
             continue
         copied[src] = dst
-    return copied
+    return {src: copied[src] for src in todo if src in copied}
 
 
 _LOCAL_MD_IMAGE = re.compile(r"!\[([^\]]*)\]\((?!https?:|data:)([^)\s]+)[^)]*\)")

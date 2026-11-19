@@ -607,6 +607,92 @@ _DXF_PLOT_REWRITE = (
 #: The looking tools that take a PDF page, and so a DXF's plot.
 _PLOT_LOOKS = ("analyze_pdf_page", "render_region")
 
+#: The tools that work on a page and write nothing, in the order the plot's
+#: line of ``open_document`` names those a build offers. None that writes:
+#: a helper shares the page's tool objects and has no writing tool.
+_PLOT_PAGE_TOOLS = ("document_page_map", "render_page_thumbnails",
+                    "document_markups", "analyze_pdf_page", "render_region")
+
+#: The end of planlens' note on a DXF, and what it says instead where this
+#: build made the plot: the first is then untrue beside the ``plot`` line.
+_DXF_NOTE_WITH_PLOT = (
+    "There are no pages here: to LOOK at the sheet, or for a marked-up "
+    "PDF, ask the user for a PDF plot of it.",
+    "The DXF itself has no pages: to LOOK at the drawing, use the plot "
+    "made here (`plot`).")
+
+
+def _dxf_plot_said(tool_name: str, arguments: dict, raw: str, offered,
+                   call) -> str:
+    """A document tool's result where a DXF is also a plot, saying what
+    this build can say of it (BACKLOG DR-19). ``open_document``'s ``plot``
+    line is planlens' own and names planlens' tools (``render_page`` is not
+    a tool of any build here): it names instead the page tools in
+    ``offered``, and is left out where there is none. The plot's row of
+    ``document_page_map`` and its segment of ``document_structure`` are
+    planlens' classification of the drawn page, which calls a plot of few
+    lines ``blank``: the row says it is a plot, with the entity count,
+    extent and units planlens read from the DXF (``call`` runs
+    ``open_document`` for them). Any other result is returned as it is."""
+    if tool_name not in ("open_document", "document_page_map",
+                         "document_structure"):
+        return raw
+    try:
+        out = json.loads(raw)
+    except (TypeError, ValueError):
+        return raw
+    if not isinstance(out, dict) or "error" in out:
+        return raw
+    from planlens.dxf.plot import PLOT_NOTE, is_dxf
+    if tool_name == "open_document":
+        if "plot" not in out:
+            return raw
+        names = [n for n in _PLOT_PAGE_TOOLS if n in offered]
+        made = False
+        if names:
+            # the plot is made on first use: make it now, so the line and
+            # the note say only what is so (a refused plot: no line)
+            try:
+                made = "error" not in json.loads(call(
+                    "document_page_map", {"handle": arguments.get("source")}))
+            except Exception:  # noqa: BLE001 - not known to be made
+                made = False
+        if made:
+            out["plot"] = (", ".join(names) + " take this file too: they "
+                           "look at " + PLOT_NOTE)
+            if isinstance(out.get("note"), str):
+                out["note"] = out["note"].replace(*_DXF_NOTE_WITH_PLOT)
+        else:
+            del out["plot"]
+        return json.dumps(out, ensure_ascii=False)
+    name = str(arguments.get("handle") or "")
+    try:
+        if name.startswith("doc_"):
+            name = _document_tools.handle_source(name) or name
+        if not is_dxf(name):
+            return raw
+        head = json.loads(call("open_document", {"source": name}))
+    except Exception:  # noqa: BLE001 - nothing known of it: as planlens said
+        return raw
+    if not isinstance(head, dict) or "plot" not in head:
+        return raw
+    held = {k: head[k] for k in ("n_entities", "extent", "drawing_units")
+            if k in head}
+    plot = {"of": os.path.basename(name.replace("\\", "/")) or name, **held,
+            "what": PLOT_NOTE}
+    for row in out.get("rows") or []:
+        if row.get("kind") == "blank":
+            row["kind"] = "dxf_plot"
+        row["plot"] = plot
+    for seg in out.get("segments") or []:
+        kinds = seg.get("kinds") or {}
+        if "blank" in kinds:
+            kinds["dxf_plot"] = kinds.pop("blank")
+        if seg.get("title") == "blank":
+            seg["title"] = "DXF plot"
+        seg["plot"] = plot
+    return json.dumps(out, ensure_ascii=False)
+
 
 def _dxf_plot_for_look(arguments: dict, attachments: dict,
                        kept: Dict[str, Any]):
@@ -860,13 +946,17 @@ def make_vision_tools(
             # Text-payload reads, budgeted by planlens itself: its limit sits
             # just under the reference cap, so results page through cursors
             # as valid JSON instead of being string-truncated here.
-            return _truncate(
-                _document_tools.dispatch_document_tool(
-                    tool_name, arguments, attachments=attachments,
+            def _document(name: str, args: dict) -> str:
+                return _document_tools.dispatch_document_tool(
+                    name, args, attachments=attachments,
                     max_chars=_document_tools.budget_for_cap(reference_cap),
-                    cap=reference_cap or None, host=review_host),
-                reference_cap,
-            )
+                    cap=reference_cap or None, host=review_host)
+            raw = _document(tool_name, arguments)
+            if plots:
+                # the plot's line and its row, as this build can say them
+                raw = _dxf_plot_said(tool_name, arguments, raw, include,
+                                     _document)
+            return _truncate(raw, reference_cap)
         if tool_name == "find_like":
             # planlens.review's find_like, each candidate read by this
             # build's look.
