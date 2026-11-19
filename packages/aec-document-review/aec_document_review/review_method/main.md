@@ -25,7 +25,7 @@ A sheet-by-sheet reading misses these. Work from your notes, then look at both p
 - general notes against details: a cover, a lap, a grade or a tolerance given twice with two values;
 - drawing notes against a specification the user supplied: a section cited that it does not have; a product or grade that differs;
 - a revision: what the cloud and the revision table say changed, and whether the sheets that depend on it changed too;
-- two issues of a sheet or a set, both supplied: open both and compare them directly, sheet by sheet, the text of each and then a view of each. A change that no cloud and no revision-table row announces is a finding in itself;
+- two issues supplied: compare the text of each sheet in both; view both where it differs, where a cloud or a revision row points, or where there is no text layer. A change that no cloud and no revision row announces is a finding in itself. Name the sheets compared from text alone;
 - one issue only: say that unflagged changes cannot be checked from it. Never say there are none.
 
 ### What a comment rests on
