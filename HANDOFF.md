@@ -1,6 +1,6 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-11-18** (aec-agent-core and aec-document-review 1.2.0, the first block of section 0a-current; before it, release 5.36.0 with geotech-references 1.8.0, planlens 0.16.0 and the shared core `aec-agent-core` 1.1.0, item 0 of "Where things stand"; 5.35.0, with Document Review alone as `aec-document-review` 0.1.0, is item 0a; open work is in `BACKLOG.md`). This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-11-18** (aec-agent-core and aec-document-review 1.3.0 with planlens 0.17.0, and the ten pieces merged after them and not released: the first block of section 0a-current; before it, release 5.36.0 with geotech-references 1.8.0, planlens 0.16.0 and the shared core `aec-agent-core` 1.1.0, item 0 of "Where things stand"; 5.35.0, with Document Review alone as `aec-document-review` 0.1.0, is item 0a; open work is in `BACKLOG.md`). This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
