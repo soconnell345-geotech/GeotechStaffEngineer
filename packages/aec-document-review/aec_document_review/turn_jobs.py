@@ -419,8 +419,17 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     # The forced last reply of a turn whose model-call budget ended came
     # back empty (TA-38): say so, and what the turn did, from its record,
     # instead of "(no answer text)"; its work is kept like a stopped turn's.
+    # The same when that last reply asked for tools again and the budget's
+    # own closing line took its place: the line offers to "pick up from the
+    # pages already read", so what was read is kept for the next turn.
+    closing = False
+    try:
+        from aec_document_review.review_agent import EXHAUSTED
+        closing = str(final or "").strip() == EXHAUSTED
+    except Exception:                                  # noqa: BLE001
+        closing = False
     if (not stopped and not turn_error and record is not None
-            and not str(final or answer or "").strip()
+            and (closing or not str(final or answer or "").strip())
             and bool(getattr(getattr(record, "scope", None),
                              "budget_reached", False))):
         budget_ended = True
@@ -429,10 +438,18 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                                turn=_turn_no_of(ctx))
         except Exception:                              # noqa: BLE001
             kept = None
-        try:
-            final = core.budget_ended_text(record.messages, kept)
-        except Exception:                              # noqa: BLE001
-            final = core.BUDGET_ENDED_LEAD
+        if closing:
+            # the closing line is the answer below: not kept a second time
+            last = kept.messages[-1] if kept is not None and kept.messages \
+                else {}
+            if last.get("role") == "assistant" and \
+                    str(last.get("content") or "").strip() == EXHAUSTED:
+                kept.messages.pop()
+        else:
+            try:
+                final = core.budget_ended_text(record.messages, kept)
+            except Exception:                          # noqa: BLE001
+                final = core.BUDGET_ENDED_LEAD
     final = final or answer or "(no answer text)"
     # A turn whose image ceiling refused a look says so once, under its
     # answer (GEOTECH_TURN_MAX_IMAGE_CALLS, BACKLOG TA-43); no line for any
