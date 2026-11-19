@@ -626,7 +626,7 @@ the first release with the Foundry entry, and the core release it pins
 (1.1.0); 0.1.1 and earlier cannot save to a Foundry dataset. From 1.1.0 on
 the two packages carry one version number and are published together
 (BACKLOG INF-76), so `aec-document-review==X` installs `aec-agent-core==X`.
-Until 1.1.0 is on PyPI, use test wheels as in section 1, step 3, with three wheels
+For a build that is not on PyPI, use test wheels as in section 1, step 3, with three wheels
 instead of four: `aec-document-review`, `aec-agent-core` and `planlens`
 (nothing geotechnical).
 
