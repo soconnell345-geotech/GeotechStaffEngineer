@@ -91,6 +91,52 @@ NOT_SHOWN_NOTE = (
     "most {keep} image{s} in one step.]")
 
 
+#: Put in an upload's result, in the request, when its stored image was
+#: pushed out before the model call that would have shown it.
+GONE_NOTE = (
+    "{name} was NOT shown to you: this turn stored more than {most} images "
+    "after it before your next step, so its image was no longer held when "
+    "its turn came. It was never in front of you: say nothing about it "
+    "from sight. To see it, call analyze_image on it again.")
+
+
+def tell_not_shown(request):
+    """``request`` with every upload result of this turn whose stored image
+    was pushed out before it was shown saying so in place of its note (in
+    the request only, at every later call of the turn); the names go to
+    the turn's record (``uploads_not_shown``)."""
+    from langchain_core.messages import HumanMessage, ToolMessage
+    from aec_agent_core import inline_store
+    from aec_agent_core.deep import keep_work
+    messages, names = list(request.messages or []), []
+    for at in range(len(messages) - 1, -1, -1):
+        m = messages[at]
+        if isinstance(m, HumanMessage):
+            break
+        for image_id in _ID.findall(_text(m.content)) \
+                if isinstance(m, ToolMessage) else ():
+            meta = inline_store.pushed_out(image_id) or {}
+            if not meta.get("upload") or meta.get("shown"):
+                continue
+            name = os.path.basename(str(meta.get("source") or image_id))
+            note = GONE_NOTE.format(name=name, most=inline_store.MAX_IMAGES)
+            try:
+                data = json.loads(_text(m.content))
+                data.pop("note", None)
+                text = json.dumps({"not_shown": note, **data})
+            except (TypeError, ValueError, AttributeError):
+                text = f"[not shown] {note}\n\n{_text(m.content)}"
+            messages[at] = m.model_copy(update={"content": text})
+            names.append(name)
+    if not names:
+        return request
+    scope = keep_work.current_turn()
+    if scope is not None:
+        told = scope.__dict__.setdefault("uploads_not_shown", [])
+        told.extend(n for n in reversed(names) if n not in told)
+    return request.override(messages=messages)
+
+
 def left_out(messages, shown) -> list:
     """The names of the uploads the newest step's ``analyze_image`` results
     stored (the tool results that end ``messages``) whose images are not
@@ -155,8 +201,13 @@ class UploadImageMiddleware(InlineImageMiddleware):
         """The request with the newest images, and, straight after a step
         that looked at more uploads than a call carries, a line naming the
         ones not shown (their results said they would be)."""
+        request = tell_not_shown(request)
         out = super()._with_images(request)
         shown = newest_image_ids(request.messages, self.keep)
+        from aec_agent_core import inline_store
+        for image_id in shown:
+            # an image pushed out later is then known to have been seen
+            (inline_store.get(image_id) or (b"", {}))[1]["shown"] = True
         names = left_out(request.messages, shown) if shown else []
         if not names:
             return out
@@ -266,5 +317,6 @@ def show_upload(arguments: dict, engine: Any, attachments: Mapping,
 
 
 __all__ = ["TOOL", "UPLOAD_NOTE", "UNUSED_NOTE", "TOO_LARGE_NOTE",
-           "NOT_SHOWN_NOTE", "left_out", "active",
+           "NOT_SHOWN_NOTE", "GONE_NOTE", "tell_not_shown", "left_out",
+           "active",
            "takes_images", "UploadImageMiddleware", "show_upload"]
