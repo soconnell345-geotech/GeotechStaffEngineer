@@ -1053,6 +1053,7 @@ class Document:
     name: str
     n_pages: Optional[int] = None
     n_from: str = ""
+    n_most: int = 0           # the largest count any open_document gave
     pages: Dict[int, PageUse] = field(default_factory=dict)
     pdf: Optional[str] = None
     index: int = 0
@@ -1166,6 +1167,7 @@ class PageMap:
                 d = self.doc(_doc_key(shown), os.path.basename(
                     shown.replace("\\", "/")))
                 d.n_pages, d.n_from = data["n_pages"], "open_document"
+                d.n_most = max(d.n_most, data["n_pages"])
             return
         if call.name == THUMB_TOOL and data is not None:
             doc = self._ref_doc(None, args)
@@ -1754,7 +1756,10 @@ class Report:
             if doc.n_pages is None and doc.pages:
                 doc.n_pages, doc.n_from = max(doc.pages) + 1, N_FROM_LAST
             if doc.n_pages is not None:
-                self._drop(doc, lambda p, n=doc.n_pages: p >= n)
+                # Two documents of one name are kept as one here: a page of
+                # the longer one is a page, whichever was opened last.
+                self._drop(doc, lambda p, n=max(doc.n_pages, doc.n_most):
+                           p >= n)
             for page, use in doc.pages.items() if path else ():
                 rect = self._page_rect(doc, page, None)[0]
                 for lk in use.looks if rect else ():
