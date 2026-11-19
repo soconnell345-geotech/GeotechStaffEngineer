@@ -95,8 +95,9 @@ Push, and ask the App Services team to sync.
 ## Settings
 
 The package reads these itself, in this order: a real environment variable
-or app setting, then the Key Vault named by `KV_NAME` (secret names use
-hyphens: `PROMPTER-API-KEY`), then the local `.env`. Several names begin
+or app setting, then, on the App Service, the Key Vault named by `KV_NAME`
+(secret names use hyphens: `PROMPTER-API-KEY`), or, on a local run, the
+local `.env`. Several names begin
 `GEOTECH_`: Document Review was built inside a larger project and kept its
 setting names, so existing deployments keep working.
 
