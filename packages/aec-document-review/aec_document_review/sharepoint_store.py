@@ -705,6 +705,17 @@ class SharePointStore:
         other host. Never raises."""
         if self._fm is not None and self.backend != "foundry":
             return None
+        if self.backend != "foundry":
+            # An app registration begun but not complete (a setting
+            # missing, empty or misspelled): nothing is saved to SharePoint.
+            try:
+                from aec_document_review import graph_sharepoint as gs
+                if gs.started() and not gs.configured():
+                    return ("SharePoint is not set up: "
+                            + ", ".join(gs.missing_settings())
+                            + " missing (Connection diagnostics).")
+            except Exception:                          # noqa: BLE001
+                pass
         try:
             from aec_agent_core import foundry_dataset_store
             fm = self.file_manager() if self.backend == "foundry" \

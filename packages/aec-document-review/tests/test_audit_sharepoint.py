@@ -89,3 +89,28 @@ def test_scope_holds_with_the_library_alone_as_the_root(monkeypatch):
         assert scope.where(spt._resolve(path)) == "private", path
     assert scope.where(spt._resolve(
         "Shared Documents/conversations/corp_alice/a.pdf")) == "own"
+
+
+def test_a_half_set_up_app_registration_says_conversations_are_not_kept(
+        monkeypatch):
+    """Three of the four app-registration settings set, the secret's name
+    misspelled: nothing reaches SharePoint, and before the fix the page
+    showed no line saying so (``not_kept_reason`` spoke only on Foundry)."""
+    from aec_document_review import tinyapps_settings
+    for name in ("GRAPH_CLIENT_SECRET", "GRAPH_CLIENT_CERT", "GRAPH_CLIENT_KEY",
+                 "SHAREPOINT_SITE_URLS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GRAPH_TENANT_ID", "made-up-tenant")
+    monkeypatch.setenv("GRAPH_CLIENT_ID", "made-up-client")
+    monkeypatch.setenv("GRAPH_CLIENT_SECERT", "made-up-secret-value")
+    monkeypatch.setenv("SHAREPOINT_SITE_URL", "https://contoso.sharepoint.com/sites/Alpha")
+    monkeypatch.setenv(tinyapps_settings.DOTENV_PATH_VAR, "/nonexistent/.env")
+    tinyapps_settings.reset()
+    try:
+        store = sp.SharePointStore()
+        assert not store.configured
+        reason = store.not_kept_reason()
+        assert reason and "GRAPH_CLIENT_SECRET" in reason
+        assert "made-up-secret-value" not in reason
+    finally:
+        tinyapps_settings.reset()
