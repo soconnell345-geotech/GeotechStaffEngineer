@@ -31,12 +31,22 @@ again at the next TURN. A ``summary_failed`` event goes on the record
 model, the library summarizes regardless of the threshold; if that summary
 fails too, the call ends on the error, and the history is still kept.
 
-**Not again in the same turn.** The library writes the older history to a
-file BEFORE it makes the summary, and asks the summary call several times
-with a back-off; a failure that lasts would repeat both at every model
-call. So once a summary has failed, the later model calls of that turn are
-handed the history as it is from the start: no summary request, no
-back-off, no new history file. The turn is the core's own
+**Nothing left in the history files.** The library writes the older
+history to a file before it makes the summary (its sync wrap) or beside it
+(its async wrap), so a summary that failed left that copy behind. Under the
+guard the summary is made before the library's write starts
+(:func:`_guard_offload`): a failure writes nothing, and a summary that
+succeeded is handed to the library when it asks for it, made once, with
+the file written as before. Inline images of the older history are another
+matter: deepagents 0.7 uploads them (``_offload_inline_media``) before
+either step, and those files stay, each once, under a name made from its
+content.
+
+**Not again in the same turn.** The library asks the summary call several
+times with a back-off; a failure that lasts would repeat that at every
+model call. So once a summary has failed, the later model calls of that
+turn are handed the history as it is from the start: no summary request,
+no back-off. The turn is the core's own
 (:class:`aec_agent_core.deep.keep_work.TurnScope`, the scope a host opens
 around one turn and LangGraph copies into every thread and task of it), so
 two conversations on one agent at the same moment stay apart; inside a turn
@@ -64,6 +74,7 @@ without those methods is left alone.
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import functools
 import logging
@@ -92,6 +103,25 @@ _guarding: contextvars.ContextVar = contextvars.ContextVar(
 #: when that call was over the threshold.
 _holding: contextvars.ContextVar = contextvars.ContextVar(
     "aec_summary_holding", default=None)
+
+
+#: The summaries made during one guarded pass of the library's wrap:
+#: ``("sync", id(messages))`` to ``(messages, summary, tuple(messages))``
+#: and ``("async", id(messages))`` to ``(messages, task, tuple(messages))``;
+#: the list is held so that its id stays its own, and what it held is kept
+#: so that a list changed in place is not taken for the one summarized. One dict per pass, shared with the tasks the library
+#: starts inside it.
+_made: contextvars.ContextVar = contextvars.ContextVar(
+    "aec_summary_made", default=None)
+
+
+def _on(self):
+    return _guarding.set(self), _made.set({})
+
+
+def _off(tokens) -> None:
+    _guarding.reset(tokens[0])
+    _made.reset(tokens[1])
 
 
 class SummaryFailed(Exception):
@@ -169,6 +199,70 @@ def _guard_acreate(orig):
             raise SummaryFailed(self)
         return summary
     return _acreate_summary
+
+
+def _same(entry, messages) -> bool:
+    """``entry`` (of ``_made``) is for this very list, and the list still
+    holds the messages it held when its summary was asked for: a list
+    changed in place since is summarized again, not answered with a summary
+    of other messages."""
+    return (entry is not None and entry[0] is messages
+            and len(entry[2]) == len(messages)
+            and all(a is b for a, b in zip(entry[2], messages)))
+
+
+def _once(guarded):
+    """``guarded`` (a guarded summary method), made once per messages in one
+    guarded pass: a second request for the same list is handed the first
+    one's summary, or its failure."""
+    orig = guarded.__wrapped__
+    if asyncio.iscoroutinefunction(guarded):
+        @functools.wraps(orig)
+        async def once(self, messages, *args, **kwargs):
+            made = _made.get() if _guarding.get() is self else None
+            if made is None:
+                return await guarded(self, messages, *args, **kwargs)
+            key = ("async", id(messages))
+            if not _same(made.get(key), messages):
+                made[key] = (messages, asyncio.ensure_future(
+                    guarded(self, messages, *args, **kwargs)),
+                    tuple(messages))
+            return await made[key][1]
+        return once
+
+    @functools.wraps(orig)
+    def once(self, messages, *args, **kwargs):
+        made = _made.get() if _guarding.get() is self else None
+        if made is None:
+            return guarded(self, messages, *args, **kwargs)
+        key = ("sync", id(messages))
+        if not _same(made.get(key), messages):
+            made[key] = (messages, guarded(self, messages, *args, **kwargs),
+                         tuple(messages))
+        return made[key][1]
+    return once
+
+
+def _guard_offload(orig):
+    """The library's history write (``_offload_to_backend``): under the
+    guard the summary of the same messages is made first, so a summary that
+    fails raises before anything is written. The library's own request for
+    that summary is then answered with the one made here."""
+    @functools.wraps(orig)
+    def _offload_to_backend(self, backend, messages, *args, **kwargs):
+        if _guarding.get() is self:
+            self._create_summary(messages)
+        return orig(self, backend, messages, *args, **kwargs)
+    return _offload_to_backend
+
+
+def _guard_aoffload(orig):
+    @functools.wraps(orig)
+    async def _aoffload_to_backend(self, backend, messages, *args, **kwargs):
+        if _guarding.get() is self:
+            await self._acreate_summary(messages)
+        return await orig(self, backend, messages, *args, **kwargs)
+    return _aoffload_to_backend
 
 
 def _guard_trigger(orig):
@@ -249,7 +343,7 @@ def _guard_wrap(orig):
     def wrap_model_call(self, request, handler):
         skipped = _first_try(self)
         if skipped is None:
-            token = _guarding.set(self)
+            token = _on(self)
             try:
                 return orig(self, request, handler)
             except SummaryFailed as failed:
@@ -257,16 +351,16 @@ def _guard_wrap(orig):
                     raise
                 first = failed
             finally:
-                _guarding.reset(token)
+                _off(token)
             _record(first)
             _note_failed(self)
-        hold, token = _holding.set((self, skipped)), _guarding.set(self)
+        hold, token = _holding.set((self, skipped)), _on(self)
         try:
             return orig(self, request, handler)
         except SummaryFailed as failed:
             _again_failed(self, failed)
         finally:
-            _guarding.reset(token)
+            _off(token)
             _holding.reset(hold)
             _note_skipped(skipped)
     return wrap_model_call
@@ -277,7 +371,7 @@ def _guard_awrap(orig):
     async def awrap_model_call(self, request, handler):
         skipped = _first_try(self)
         if skipped is None:
-            token = _guarding.set(self)
+            token = _on(self)
             try:
                 return await orig(self, request, handler)
             except SummaryFailed as failed:
@@ -285,29 +379,32 @@ def _guard_awrap(orig):
                     raise
                 first = failed
             finally:
-                _guarding.reset(token)
+                _off(token)
             _record(first)
             _note_failed(self)
-        hold, token = _holding.set((self, skipped)), _guarding.set(self)
+        hold, token = _holding.set((self, skipped)), _on(self)
         try:
             return await orig(self, request, handler)
         except SummaryFailed as failed:
             _again_failed(self, failed)
         finally:
-            _guarding.reset(token)
+            _off(token)
             _holding.reset(hold)
             _note_skipped(skipped)
     return awrap_model_call
 
 
-#: The methods guarded, and how; all but ``_over_budget`` (deepagents 0.7
-#: only) must be there.
+#: The methods guarded, and how. The first five must be there;
+#: ``_over_budget`` is deepagents 0.7 only, and without the two history
+#: writes the guard still stands (a failed summary then leaves its copy).
 _GUARDS = (("wrap_model_call", _guard_wrap),
            ("awrap_model_call", _guard_awrap),
-           ("_create_summary", _guard_create),
-           ("_acreate_summary", _guard_acreate),
+           ("_create_summary", lambda orig: _once(_guard_create(orig))),
+           ("_acreate_summary", lambda orig: _once(_guard_acreate(orig))),
            ("_should_summarize", _guard_trigger))
-_OPTIONAL = (("_over_budget", _guard_trigger),)
+_OPTIONAL = (("_over_budget", _guard_trigger),
+             ("_offload_to_backend", _guard_offload),
+             ("_aoffload_to_backend", _guard_aoffload))
 
 
 logger = logging.getLogger(__name__)
