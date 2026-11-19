@@ -78,6 +78,10 @@ def _hits(texts):
 @pytest.mark.parametrize("build", list(BUILDS))
 def test_review_page_names_no_geotech_report_things(build, tmp_path,
                                                     monkeypatch):
+    # The package's suite first: importing it hands the core this page (the
+    # hook ``review_eval.page_host``). Without it the file run alone raised
+    # NoPageHost, and passed only after another file's import (INF-87).
+    import aec_document_review.review_eval  # noqa: F401
     from aec_agent_core.review_eval.runner import build_page_agent
     from aec_document_review import sharepoint_store
     for env, value in BUILDS[build].items():

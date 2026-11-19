@@ -34,9 +34,7 @@ from aec_document_review import foundry_entry, identity, pages_entry
 ALIAS = "made_up_review_conversations"
 
 #: Env the tests set or clear, and the entry WRITES straight into
-#: ``os.environ`` (``GEOTECH_DEPLOYMENT``, ``GEOTECH_PLOT_CODE``): restored
-#: by hand afterwards,
-#: since monkeypatch records no undo for a variable it deleted while absent.
+#: ``os.environ`` (``GEOTECH_DEPLOYMENT``, ``GEOTECH_PLOT_CODE``).
 _ENV = ("GEOTECH_DEPLOYMENT", fds.ENV_DATASET, sp.ENV_ROOT, sp.ENV_SITE,
         sp.ENV_CLIENT_ID, sp.ENV_CLIENT_SECRET, sp.ENV_TOKEN,
         sp.ENV_TOKEN_FILE, sp.ENV_DRIVE, "GEOTECH_APP_PROFILE",
@@ -47,20 +45,22 @@ _ENV = ("GEOTECH_DEPLOYMENT", fds.ENV_DATASET, sp.ENV_ROOT, sp.ENV_SITE,
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch, tmp_path):
-    before = {e: os.environ.get(e) for e in _ENV}
     for e in _ENV:
-        monkeypatch.delenv(e, raising=False)
+        # Set, then delete: monkeypatch records no undo for a variable it
+        # deletes while absent, and its undo runs AFTER this fixture's own
+        # teardown. Without a first record of its own, a test that calls the
+        # entry (which writes os.environ) and then ``monkeypatch.setenv``s
+        # the same name leaves the entry's value as the one monkeypatch puts
+        # back, for every later file in the process (BACKLOG INF-87). The
+        # first record for a name is the last one undone, so this one wins.
+        monkeypatch.setenv(e, "")
+        monkeypatch.delenv(e)
     monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "data"))
     monkeypatch.setattr(sp, "_graph_configured", lambda: False)
     monkeypatch.setattr(sp, "_STORE", None)
     monkeypatch.setattr(fds, "_READS", fds._Reads())   # what reads found
     yield
     fds.wait_checks(5)
-    for e, value in before.items():
-        if value is None:
-            os.environ.pop(e, None)
-        else:
-            os.environ[e] = value
 
 
 # ---------------------------------------------------------------------------

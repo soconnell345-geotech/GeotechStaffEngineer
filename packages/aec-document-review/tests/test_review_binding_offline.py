@@ -25,6 +25,10 @@ pytest.importorskip("PIL.Image")
 
 from planlens import review  # noqa: E402
 
+# The app first: the process host takes its own-mark words from the
+# application named when ``document_tools`` is first imported, so this file
+# run alone must name it as the page does (BACKLOG INF-87).
+import aec_document_review  # noqa: E402,F401
 from aec_agent_core import document_tools  # noqa: E402
 from aec_agent_core.deep.vision_kit import make_vision_tools  # noqa: E402
 
