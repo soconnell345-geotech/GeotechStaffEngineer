@@ -348,8 +348,10 @@ def _conversations_needle() -> List[str]:
     ``/sites/<site>/…`` or a Graph ``…/root:/…``, so the match is on the
     folders that follow): ``["general", "gse_app", "conversations"]``."""
     root = _segments(_root()) or []
-    tail = root[1:] if len(root) > 1 else root
-    return tail + ["conversations"]
+    # The first segment is always the library, which paths may also spell
+    # by its other name; a root that is the library alone leaves only the
+    # conversations folder itself to match.
+    return root[1:] + ["conversations"]
 
 
 def _in_app_log(path) -> bool:

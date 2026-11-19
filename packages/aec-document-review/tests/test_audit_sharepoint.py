@@ -71,3 +71,21 @@ def test_a_failed_background_save_is_tried_again_without_a_new_turn(
                                  for p in list(graph.files)), timeout=5.0), \
         "the failed save was never tried again"
     assert _wait_for(lambda: store.last_sync_for("AAAA1111")["errors"] == [])
+
+
+def test_scope_holds_with_the_library_alone_as_the_root(monkeypatch):
+    """With the base folder set to a document library alone, every spelling
+    of another person's conversation folder is closed to a conversation."""
+    pytest.importorskip("langchain_core")
+    import aec_document_review.sharepoint_tools as spt
+    monkeypatch.setenv(sp.ENV_ROOT, "Shared Documents")
+    store = sp.SharePointStore(file_manager=object())
+    monkeypatch.setattr(sp, "_STORE", store)
+    scope = spt._Scope([store.conversations_base("corp__alice")],
+                       "corp__alice")
+    for path in ("Shared Documents/conversations/corp_bob/a.pdf",
+                 "/sites/Alpha/Documents/conversations/corp_bob/a.pdf",
+                 "sites/Alpha/Documents/conversations/corp_bob"):
+        assert scope.where(spt._resolve(path)) == "private", path
+    assert scope.where(spt._resolve(
+        "Shared Documents/conversations/corp_alice/a.pdf")) == "own"
