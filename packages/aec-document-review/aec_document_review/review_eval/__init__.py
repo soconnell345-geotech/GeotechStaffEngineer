@@ -1,4 +1,4 @@
-"""Document Review's review suite: its 54 tasks, run through the shared
+"""Document Review's review suite: its 55 tasks, run through the shared
 core's framework (``aec_agent_core.review_eval``) on this package's page.
 
 Loading this package hands the framework what is this application's

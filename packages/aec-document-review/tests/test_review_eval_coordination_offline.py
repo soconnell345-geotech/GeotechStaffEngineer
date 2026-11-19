@@ -208,7 +208,7 @@ def test_a_build_is_the_same_bytes_every_time():
 # ---------------------------------------------------------------------------
 
 def test_the_tasks_cover_every_planted_problem():
-    assert len(COORDINATION_TASKS) == 16
+    assert len(COORDINATION_TASKS) == 17
     assert all(t in OPEN_TASKS for t in COORDINATION_TASKS)
     labels = {t.id: [c["label"] for c in t.checks if not c.get("info")]
               for t in COORDINATION_TASKS}
@@ -353,7 +353,7 @@ def test_the_dry_run_resolves_the_coordination_documents(tmp_path):
     out = score_review_suite(out_dir=str(tmp_path), dry_run=True,
                              ids=["coord-"])
     text = out["results_md"]
-    assert "16 tasks" in text
+    assert "17 tasks" in text
     assert ("fixture_coord_set_long -> "
             "north_yard_annex_full_set_issue_1.pdf") in text
     assert "MISSING" not in text.upper().replace("CALLOUT-MISSING", "")
