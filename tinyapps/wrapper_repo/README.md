@@ -34,7 +34,7 @@ error if `APP_SOURCE` names a route whose files are missing.
 | Route | Put in the repo | Setting |
 | --- | --- | --- |
 | **C. Nexus** (the normal one) | Nothing beyond this template. `packages.txt` pins `aec-document-review==1.3.1`, `aec-agent-core==1.3.1` and `planlens==0.18.0`, and includes `requirements-thirdparty.txt`; `run.sh` installs it all from Nexus. | `APP_SOURCE=nexus` |
-| **B. Wheels** (the backup) | The two wheels in `wheels/`: `aec_agent_core-1.3.1-py3-none-any.whl` and `aec_document_review-1.3.1-py3-none-any.whl`. `run.sh` installs them with `requirements-thirdparty.txt`; planlens 0.17.0 (pinned exactly by Document Review's wheel) and every other dependency resolve from Nexus. A planlens wheel may sit in `wheels/` too. | `APP_SOURCE=wheel` |
+| **B. Wheels** (the backup) | The two wheels in `wheels/`: `aec_agent_core-1.3.1-py3-none-any.whl` and `aec_document_review-1.3.1-py3-none-any.whl`. `run.sh` installs them with `requirements-thirdparty.txt`; planlens 0.18.0 (pinned exactly by Document Review's wheel) and every other dependency resolve from Nexus. A planlens wheel may sit in `wheels/` too. | `APP_SOURCE=wheel` |
 | **A. Source folder** (development copies) | `app_src/aec_document_review/` (from `packages/aec-document-review/` in the source repository) and `app_src/requirements.txt`, below. `run.sh` puts `app_src/` first on `PYTHONPATH` and installs `requirements-thirdparty.txt` plus that file from Nexus. | `APP_SOURCE=source` |
 
 **Route A's `app_src/requirements.txt`** lists what the copied source needs

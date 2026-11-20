@@ -155,7 +155,7 @@ its commands without installing or starting anything.
 | Route | Put in the repo | Setting |
 | --- | --- | --- |
 | **C. Nexus** (the normal one; owner, 2026-11-09) | Only the template: `packages.txt` pins the three packages and includes the third-party pins. | `APP_SOURCE=nexus` |
-| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.3.1-py3-none-any.whl` and `wheels/aec_document_review-1.3.1-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.17.0, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
+| **B. Wheels** (the backup, if Nexus lacks a package) | `wheels/aec_agent_core-1.3.1-py3-none-any.whl` and `wheels/aec_document_review-1.3.1-py3-none-any.whl` (the lead builds them, `python -m build --wheel packages/<name>`). They install with `requirements-thirdparty.txt`; planlens 0.18.0, which Document Review's wheel pins exactly, and every other dependency resolve from Nexus. A planlens wheel may sit beside them. | `APP_SOURCE=wheel` |
 | **A. Source folder** (development copies) | `app_src/aec_document_review/` (copied from `packages/aec-document-review/`) and `app_src/requirements.txt` holding `aec-agent-core==1.3.1`, `planlens==0.18.0` and `websockets>=14,<16`. It goes first on `PYTHONPATH` (`app.py` also adds it for a plain `streamlit run app.py`). For an unreleased core as well, add `app_src/aec_agent_core/` and list the core's own dependencies in place of its pin. | `APP_SOURCE=source` |
 
 Tests: `webapp/tests/test_tinyapps_wrapper.py` (each route's dry run, the
